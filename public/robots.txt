@@ -1,0 +1,17 @@
+# robots.txt for vivreal.io
+
+# Allow all well-behaved crawlers
+User-agent: *
+Disallow: /admin/
+Disallow: /tmp/
+Disallow: /private/
+Allow: /
+
+# Sitemap location
+Sitemap: https://vivreal.io/sitemap.xml
+
+# Extra hints for crawlers
+# Crawl-delay helps prevent server overload (optional, adjust if needed)
+# Crawl-delay: 10
+
+# Allow indexing of all main site content while blocking sensitive directories

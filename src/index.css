@@ -1,0 +1,159 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 219 22% 38%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 219 22% 38%;
+
+    --radius: 0.75rem;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5% 26%;
+    --sidebar-primary: 240 6% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 5% 96%;
+    --sidebar-accent-foreground: 240 6% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217 91% 60%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .clip-path-slant {
+    clip-path: polygon(0 0, 100% 0, 100% 92%, 0 100%);
+  }
+
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .prose ul {
+    list-style-type: circle;
+  }
+
+  .prose h1 {
+    font-weight: 700;
+    font-size: 2em;
+  }
+
+  .prose h2 {
+    font-weight: 700;
+    font-size: 1.5em;
+  }
+
+  .prose h3 {
+    font-weight: 700;
+    font-size: 1.17em;
+  }
+
+  .prose h4 {
+    font-weight: 700;
+    font-size: 1em;
+  }
+
+  .prose h5 {
+    font-weight: 700;
+    font-size: 0.83em;
+  }
+
+  .prose h6 {
+    font-weight: 700;
+    font-size: 0.67em;
+  }
+
+  .content-grid {
+    --padding-inline: 1rem;
+    --content-max-width: 1280px;
+    --breakout-max-width: calc(var(--content-max-width) + 30vw);
+
+    display: grid;
+    grid-template-columns:
+      [full-start] minmax(var(--padding-inline), 1fr)
+      [breakout-start] minmax(0, calc((var(--breakout-max-width) - var(--content-max-width)) / 2))
+      [content-start] min(100% - (var(--padding-inline) * 2), var(--content-max-width))
+      [content-end] minmax(0, calc((var(--breakout-max-width) - var(--content-max-width)) / 2))
+      [breakout-end] minmax(var(--padding-inline), 1fr)
+      [full-end];
+  }
+
+  .content-grid > :not(.breakout, .full) {
+    grid-column: content;
+  }
+
+  .content-grid > .breakout {
+    grid-column: breakout;
+  }
+
+  .content-grid > .full {
+    grid-column: full;
+  }
+
+  /* Smooth transitions for theme toggling */
+  html.light body {
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .bg-glass {
+    @apply bg-white/80 backdrop-blur-lg;
+  }
+
+  .hover-lift {
+    @apply transition-transform duration-300 ease-in-out hover:-translate-y-1 hover:shadow-lg;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/30 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+}
