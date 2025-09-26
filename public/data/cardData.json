@@ -1,0 +1,23 @@
+[
+    {
+        "id": "1",
+        "icon": "lightBulb",
+        "title": "Innovation",
+        "description": "We strive to lead with creativity.",
+        "imageSource": "/buzzOrBusiness.png"
+    },
+    {
+        "id": "2",
+        "icon": "target",
+        "title": "Focus",
+        "description": "Our goals are aligned and intentional.",
+        "imageSource": "/developers.png"
+    },
+    {
+        "id": "3",
+        "icon": "heart",
+        "title": "Trust",
+        "description": "We build partnerships based on integrity.",
+        "imageSource": "/marketingSpecialist.png"
+    }
+]

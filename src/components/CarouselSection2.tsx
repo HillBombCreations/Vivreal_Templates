@@ -13,21 +13,21 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Blog } from "@/types/Blogs"
+import { CarouselSection2Type } from "@/types/CarouselSection2"
 import { ArrowRight } from "lucide-react"
 
-export default function BlogSection() {
-  const [blogs, setBlogs] = useState<Blog[]>([])
+export default function CarouselSection2() {
+  const [carouselSectionData, setCarouselSectionData] = useState<CarouselSection2Type>({});
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch("/data/blogsData.json")
+    fetch("/data/carouse2lData.json")
       .then((res) => {
         if (!res.ok) throw new Error("Network response was not ok")
         return res.json()
       })
-      .then((data: Blog[]) => {
-        setBlogs(data || [])
+      .then((data: CarouselSection2Type) => {
+        setCarouselSectionData(data || {})
         setLoading(false)
       })
       .catch((err) => {
@@ -37,34 +37,35 @@ export default function BlogSection() {
   }, [])
 
   const slides = useMemo(() => {
-    if (!blogs?.length) return []
-    const MIN_SLIDES = 6 // at least 2 full rotations on lg (3 per view)
-    const target = Math.max(MIN_SLIDES, blogs.length)
-    return Array.from({ length: target }, (_, i) => blogs[i % blogs.length])
-  }, [blogs])
+    if (!carouselSectionData?.carouselData?.length) return []
+    const MIN_SLIDES = 6
+    const target = Math.max(MIN_SLIDES, carouselSectionData?.carouselData?.length)
+    return Array.from({ length: target }, (_, i) => carouselSectionData?.carouselData[i % carouselSectionData?.carouselData?.length])
+  }, [carouselSectionData])
 
   if (loading) {
-    return <p className="text-center text-gray-500">Loading blogs...</p>
+    return <p className="text-center text-gray-500">{carouselSectionData?.loadingMessage}</p>
   }
-  if (!blogs || blogs.length === 0) {
-    return <p className="text-center text-gray-500">No blogs available</p>
+
+  if (!carouselSectionData || carouselSectionData?.carouselData?.length === 0) {
+    return <p className="text-center text-gray-500">{carouselSectionData?.noDataMessage}</p>
   }
 
   return (
     <div className="relative w-full md:max-w-6xl px-5 md:px-0 mx-auto py-12">
       <div className="flex flex-row items-center justify-between mb-12 space-y-0">
         <h2 className="text-3xl md:text-4xl font-display font-bold max-w-sm md:max-w-xl tracking-tight">
-          Latest <span className="text-primary">Insights</span>
+          {carouselSectionData?.title}
         </h2>
         <a
-          href="/developers/articles"
+          href={carouselSectionData?.linkSlug}
           className="text-primary font-semibold flex items-center gap-1 hover:underline"
         >
-          View all articles <ArrowRight className="w-5 h-5" />
+          {carouselSectionData?.linkText} <ArrowRight className="w-5 h-5" />
         </a>
       </div>
       <div className="md:hidden flex items-center justify-end mb-4 text-sm text-gray-500 animate-bounce">
-        Swipe →
+        {carouselSectionData?.mobileLabel}
       </div>
 
       <Carousel opts={{ align: "start", loop: true }}>
@@ -95,7 +96,6 @@ export default function BlogSection() {
                     <p className="text-sm text-gray-500">{blog.date}</p>
                   </CardHeader>
 
-                  {/* Description */}
                   <CardContent className="flex-1">
                     <p className="text-sm text-gray-600 line-clamp-3">
                       {blog.description}

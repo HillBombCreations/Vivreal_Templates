@@ -3,7 +3,7 @@ import { Helmet } from "react-helmet";
 import { Link } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { Blog } from "@/types/Blogs"
+import { Blog } from "@/types/CarouselSection2"
 import {
   Carousel,
   CarouselContent,

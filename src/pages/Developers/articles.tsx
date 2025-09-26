@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { Blog } from "@/types/Blogs"
+import { Blog } from "@/types/CarouselSection2"
 const ArticlesPage = () => {
   const [blogs, setBlogs] = useState<Blog[]>(null);
   const [loading, setLoading] = useState<boolean>(true);
