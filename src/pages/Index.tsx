@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import HeroSection from '@/components/HeroSection';
-import FeaturesSection from '@/components/FeaturesSection';
-import HeroEditorDemo from '@/components/HeroEditorDemo';
-import SolutionsSection from '@/components/SolutionsSection';
 import CTASection from '@/components/CTASection';
 import CarouselSection from '@/components/CarouselSection';
-import FeaturesGifSection from '@/components/FeaturesGifSection';
-import BlogsSection from '@/components/BlogsSection';
+import CardSection from '@/components/CardSection';
+import CarouselSection2 from '@/components/CarouselSection2';
 import Footer from '@/components/Footer';
-import WhatWeDoSection from '@/components/WhatWeDoSection';
-import TeamSync from '@/components/TeamSync';
+// import FeaturesSection from '@/components/FeaturesSection';
+// import HeroEditorDemo from '@/components/HeroEditorDemo';
+// import SolutionsSection from '@/components/SolutionsSection';
+// import FeaturesGifSection from '@/components/FeaturesGifSection';
+// import WhatWeDoSection from '@/components/WhatWeDoSection';
+// import TeamSync from '@/components/TeamSync';
 import { Helmet } from 'react-helmet';
 
 const Index = () => {
@@ -64,17 +65,19 @@ const Index = () => {
       <main>
         <HeroSection page="landing" />
         <CarouselSection page="landing" />
-        
+        <CarouselSection2 />
+        <CardSection />
+
         {/* {
           !isMobile && <HeroEditorDemo />
         } */}
         
         {/* <FeaturesGifSection /> */}
-        <TeamSync />
+        {/* <TeamSync />
         <SolutionsSection />
-        <BlogsSection />
+        
         <FeaturesSection />
-        <WhatWeDoSection />
+        <WhatWeDoSection /> */}
         {/* <TestimonialsSection /> */}
         <CTASection page='Landing'/>
       </main>

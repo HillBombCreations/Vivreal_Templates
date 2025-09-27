@@ -5,7 +5,7 @@ import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import { ArrowLeft } from "lucide-react";
-import { Blog } from "@/types/Blogs"
+import { Blog } from "@/types/CarouselSection2"
 
 const ArticlePost = () => {
     const { slug } = useParams<{ slug: string }>();
