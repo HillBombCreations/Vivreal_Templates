@@ -1,13 +1,25 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { XMLParser } from "fast-xml-parser";
 import { LucideIcon } from 'lucide-react';
+import { XMLParser } from "fast-xml-parser";
 import {
   PiggyBank,
   Handshake,
   CalendarClock,
   Code,
-  // Add more as needed
+  Users,
+  UserCheck,
+  BarChart2,
+  Clock,
+  Calendar,
+  ClipboardList,
+  Zap,
+  Server,
+  ShieldCheck,
+  Layers,
+  Globe,
+  Lock,
+  MessageSquare
 } from "lucide-react";
 
 export interface SitemapEntry {
@@ -23,6 +35,26 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export const iconMap: Record<string, LucideIcon> = {
+  PiggyBank,
+  Handshake,
+  CalendarClock,
+  Code,
+  Users,
+  UserCheck,
+  BarChart2,
+  Clock,
+  Calendar,
+  ClipboardList,
+  Zap,
+  Server,
+  ShieldCheck,
+  Layers,
+  Globe,
+  Lock,
+  MessageSquare
+};
+
 export function xmlToJSON(xml: string): SitemapEntry[] {
     const parser = new XMLParser({
         ignoreAttributes: false,
@@ -37,9 +69,19 @@ export function xmlToJSON(xml: string): SitemapEntry[] {
     return parsed.urlset.url;
 }
 
-export const iconMap: Record<string, LucideIcon> = {
-  PiggyBank,
-  Handshake,
-  CalendarClock,
-  Code,
-};
+export const hexToRgba = (hex: string, alpha: number): string => {
+  // Remove leading "#" if present
+  hex = hex.replace("#", "");
+
+  // Expand shorthand hex (#abc → #aabbcc)
+  if (hex.length === 3) {
+      hex = hex.split("").map(c => c + c).join("");
+  }
+
+  const bigint = parseInt(hex, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}

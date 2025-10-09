@@ -48,26 +48,20 @@ type CardTitleProps<T extends React.ElementType> = PolymorphicComponentProps<
   }
 >;
 
-const CardTitle = React.forwardRef(
-  <T extends React.ElementType = "h3">(
-    { as, className, ...props }: CardTitleProps<T>,
-    ref: PolymorphicRef<T>
-  ) => {
-    const Component = as || "h3";
-    return (
-      <Component
-        ref={ref}
-        className={cn(
-          "text-2xl font-semibold leading-none tracking-tight",
-          className
-        )}
-        {...props}
-      />
-    );
-  }
-);
+const CardTitle = React.forwardRef(function CardTitleInner(props, ref) {
+  const { as, className, ...rest } = props as CardTitleProps<React.ElementType>;
+  const Component = as || ("h3" as React.ElementType);
 
-CardTitle.displayName = "CardTitle";
+  return React.createElement(Component, {
+    ref: ref as PolymorphicRef<React.ElementType>,
+    className: cn("text-2xl font-semibold leading-none tracking-tight", className),
+    ...rest,
+  });
+}) as unknown as <T extends React.ElementType = "h3">(
+  props: CardTitleProps<T> & { ref?: PolymorphicRef<T> }
+) => React.ReactElement | null;
+
+(CardTitle as unknown as { displayName?: string }).displayName = "CardTitle";
 
 const CardDescription = React.forwardRef<
   HTMLParagraphElement,

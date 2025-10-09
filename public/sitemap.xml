@@ -1,7 +1,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:custom="https://vivreal.io/schemas/custom">
 	<url>
-    	<lastmod>2025-09-25</lastmod>
+    	<lastmod>2025-09-11</lastmod>
 		<loc>https://vivreal.io/</loc>
 		<custom:path>/</custom:path>
 		<custom:component>landing</custom:component>
@@ -9,48 +9,219 @@
 
 	<!-- FEATURES PAGES -->
 	<url>
-    	<lastmod>2025-09-25</lastmod>
-		<loc>https://vivreal.io/what-we-do</loc>
-		<custom:path>/what-we-do</custom:path>
-		<custom:component>whatWeDoPage</custom:component>
-		<custom:group>whatWeDo</custom:group>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/features</loc>
+		<custom:path>/features</custom:path>
+		<custom:component>featuresPage</custom:component>
+		<custom:group>features</custom:group>
+		<custom:linklabel>Features</custom:linklabel>
 	</url>
 	<url>
-    	<lastmod>2025-09-25</lastmod>
-		<loc>https://vivreal.io/faq</loc>
-		<custom:path>/faq</custom:path>
-		<custom:component>faqPage</custom:component>
-		<custom:group>faq</custom:group>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/features/quick-updates</loc>
+		<custom:path>/features/quick-updates</custom:path>
+		<custom:component>quickUpdatesPage</custom:component>
+		<custom:group>features</custom:group>
+		<custom:linklabel>Quick Updates</custom:linklabel>
+		<custom:iconstring>quickUpdates</custom:iconstring>
+		<custom:iconcolor>text-blue-700</custom:iconcolor>
+		<custom:subtitle>Quickly create and update live content without developer support.</custom:subtitle>
 	</url>
 	<url>
-    	<lastmod>2025-09-25</lastmod>
-		<loc>https://vivreal.io/articles</loc>
-		<custom:path>/articles</custom:path>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/features/easy-scheduling</loc>
+		<custom:path>/features/easy-scheduling</custom:path>
+		<custom:component>schedulingPage</custom:component>
+		<custom:group>features</custom:group>
+		<custom:linklabel>Easy Scheduling</custom:linklabel>
+		<custom:iconstring>scheduling</custom:iconstring>
+		<custom:iconcolor>text-purple-700</custom:iconcolor>
+		<custom:subtitle>Plan, schedule, and automate your content with a built-in calendar.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/features/data-analytics</loc>
+		<custom:path>/features/data-analytics</custom:path>
+		<custom:component>dataAnalyticsPage</custom:component>
+		<custom:group>features</custom:group>
+		<custom:linklabel>Data Analytics</custom:linklabel>
+		<custom:iconstring>dataAnalytics</custom:iconstring>
+		<custom:iconcolor>text-red-700</custom:iconcolor>
+		<custom:subtitle>Track Vivrecords, media, users, and integrations all in one dashboard.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/features/order-analytics</loc>
+		<custom:path>/features/order-analytics</custom:path>
+		<custom:component>orderAnalyticsPage</custom:component>
+		<custom:group>features</custom:group>
+		<custom:linklabel>Order Analytics</custom:linklabel>
+		<custom:iconstring>orderAnalytics</custom:iconstring>
+		<custom:iconcolor>text-green-700</custom:iconcolor>
+		<custom:subtitle>Monitor sales, revenue, and top features with Stripe-powered analytics.</custom:subtitle>
+	</url>
+	
+	<!-- SOLUTIONS PAGES -->
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/solutions</loc>
+		<custom:path>/solutions</custom:path>
+		<custom:component>solutionsPage</custom:component>
+		<custom:group>solutions</custom:group>
+		<custom:linklabel>Solutions</custom:linklabel>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/solutions/websites</loc>
+		<custom:path>/solutions/websites</custom:path>
+		<custom:component>websitesPage</custom:component>
+		<custom:group>solutions</custom:group>
+		<custom:linklabel>Websites</custom:linklabel>
+		<custom:iconstring>websites</custom:iconstring>
+		<custom:iconcolor>text-blue-700</custom:iconcolor>
+		<custom:subtitle>Power fast, flexible websites with structured content you can manage in one place.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/solutions/content-hub</loc>
+		<custom:path>/solutions/content-hub</custom:path>
+		<custom:component>contentHubPage</custom:component>
+		<custom:group>solutions</custom:group>
+		<custom:linklabel>Content Hub</custom:linklabel>
+		<custom:iconstring>contentHub</custom:iconstring>
+		<custom:iconcolor>text-purple-700</custom:iconcolor>
+		<custom:subtitle>Organize all your content in one place, ready to publish across any channel.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/solutions/multi-channel</loc>
+		<custom:path>/solutions/multi-channel</custom:path>
+		<custom:component>multiChannelPage</custom:component>
+		<custom:group>solutions</custom:group>
+		<custom:linklabel>Multi-Channel Marketing</custom:linklabel>
+		<custom:iconstring>multichannel</custom:iconstring>
+		<custom:iconcolor>text-red-700</custom:iconcolor>
+		<custom:subtitle>Deliver consistent content across web, email, apps, and more from one centralized platform.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/solutions/sell-online</loc>
+		<custom:path>/solutions/sell-online</custom:path>
+		<custom:component>ecommercePage</custom:component>
+		<custom:group>solutions</custom:group>
+		<custom:linklabel>Sell Online</custom:linklabel>
+		<custom:iconstring>sellOnline</custom:iconstring>
+		<custom:iconcolor>text-green-700</custom:iconcolor>
+		<custom:subtitle>Sell anywhere, manage everything in one place.</custom:subtitle>
+	</url>
+	
+	<!-- DEVELOPERS SECTION -->
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers</loc>
+		<custom:path>/developers</custom:path>
+		<custom:component>developersPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>Developers</custom:linklabel>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/documentation</loc>
+		<custom:path>/developers/documentation</custom:path>
+		<custom:component>documentationPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>Documentation</custom:linklabel>
+		<custom:iconstring>documentation</custom:iconstring>
+		<custom:iconcolor>text-blue-700</custom:iconcolor>
+		<custom:subtitle>Checkout our documentation for me in detail overview of our system.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/articles</loc>
+		<custom:path>/developers/articles</custom:path>
 		<custom:component>articlesPage</custom:component>
-		<custom:group>articles</custom:group>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>Articles</custom:linklabel>
+		<custom:iconstring>contentLibrary</custom:iconstring>
+		<custom:iconcolor>text-purple-700</custom:iconcolor>
+		<custom:subtitle>Where we share what we're building, learning, and thinking.</custom:subtitle>
 	</url>
 	<url>
-    	<lastmod>2025-09-25</lastmod>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/groups</loc>
+		<custom:path>/developers/groups</custom:path>
+		<custom:component>groupsPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>What are Groups?</custom:linklabel>
+		<custom:iconstring>folder</custom:iconstring>
+		<custom:iconcolor>text-red-700</custom:iconcolor>
+    	<custom:subtitle>An explanation of Groups: how collections organize content in Vivreal CMS.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/vivrecords</loc>
+		<custom:path>/developers/vivrecords</custom:path>
+		<custom:component>vivrecordsPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>What are VivRecords?</custom:linklabel>
+		<custom:iconstring>database</custom:iconstring>
+		<custom:iconcolor>text-green-700</custom:iconcolor>
+    	<custom:subtitle>A detailed breakdown of VivRecords and their role in managing structured data.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/user-seats</loc>
+		<custom:path>/developers/user-seats</custom:path>
+		<custom:component>userSeatsPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>What are User Seats?</custom:linklabel>
+		<custom:iconstring>users</custom:iconstring>
+		<custom:iconcolor>text-blue-700</custom:iconcolor>
+    	<custom:subtitle>Learn how User Seats control access and collaboration within the platform.</custom:subtitle>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/developers/integrations</loc>
+		<custom:path>/developers/integrations</custom:path>
+		<custom:component>integrationsPage</custom:component>
+		<custom:group>developers</custom:group>
+		<custom:linklabel>What are Integrations?</custom:linklabel>
+		<custom:iconstring>plug</custom:iconstring>
+		<custom:iconcolor>text-purple-700</custom:iconcolor>
+    	<custom:subtitle>Understand how Integrations connect Vivreal with other tools and systems.</custom:subtitle>
+	</url>
+
+	<!-- PRICING PAGE -->
+	<url>
+    	<lastmod>2025-09-11</lastmod>
 		<loc>https://vivreal.io/pricing</loc>
 		<custom:path>/pricing</custom:path>
 		<custom:component>pricingPage</custom:component>
 		<custom:group>pricing</custom:group>
 	</url>
+
+	<!-- OTHER PAGES -->
 	<url>
-    	<lastmod>2025-09-25</lastmod>
+    	<lastmod>2025-09-11</lastmod>
+		<loc>https://vivreal.io/documentation</loc>
+		<custom:path>/documentation</custom:path>
+		<custom:component>apiReference</custom:component>
+	</url>
+	<url>
+    	<lastmod>2025-09-11</lastmod>
 		<loc>https://vivreal.io/contact</loc>
 		<custom:path>/contact</custom:path>
 		<custom:component>contactPage</custom:component>
 	</url>
 	<url>
-    	<lastmod>2025-09-25</lastmod>
+    	<lastmod>2025-09-11</lastmod>
 		<loc>https://vivreal.io/privacy</loc>
 		<custom:path>/privacy</custom:path>
 		<custom:component>privacyPolicy</custom:component>
 		<custom:linklabel>Privacy</custom:linklabel>
 	</url>
 	<url>
-    	<lastmod>2025-09-25</lastmod>
+    	<lastmod>2025-09-11</lastmod>
 		<loc>https://vivreal.io/terms</loc>
 		<custom:path>/terms</custom:path>
 		<custom:component>termsOfUse</custom:component>
