@@ -1,14 +1,13 @@
 "use client";
 
-import { useEffect, useState, CSSProperties } from 'react';
+import { CSSProperties } from 'react';
 import { ArrowRight } from 'lucide-react';
 
 interface GetStartedButtonProps {
-    page: string;
     color: string;
 }
 
-const GetStartedButton = ({ page, color }: GetStartedButtonProps) => {
+const GetStartedButton = ({ color }: GetStartedButtonProps) => {
     const style: CSSProperties & { [key: string]: string } = {
         '--btn-bg': color,
         backgroundColor: 'var(--btn-bg)'
@@ -34,22 +33,9 @@ const GetStartedButton = ({ page, color }: GetStartedButtonProps) => {
         return newHex;
     }
 
-    const [isMobile, setIsMobile] = useState(false);
-    useEffect(() => {
-        const mediaQuery = window.matchMedia("(max-width: 767px)");
-
-        const handleChange = (e: MediaQueryListEvent) => {
-        setIsMobile(e.matches);
-        };
-
-        setIsMobile(mediaQuery.matches);
-        mediaQuery.addEventListener("change", handleChange);
-        return () => mediaQuery.removeEventListener("change", handleChange);
-    }, []);
-
   return (
         <a
-            href="https://app.vivreal.io/register/"
+            href="/contact"
             className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-3xl text-white font-medium transition "
             style={style}
             onMouseEnter={e => {
@@ -58,18 +44,8 @@ const GetStartedButton = ({ page, color }: GetStartedButtonProps) => {
             onMouseLeave={e => {
                 (e.currentTarget as HTMLElement).style.backgroundColor = color;
             }}
-            onClick={() => {
-                if (window.gtag) {
-                window.gtag('event', 'get_started', {
-                    device_type: isMobile ? 'Mobile' : 'Desktop',
-                    page_name: page,
-                    action: 'Get Started',
-                    value: 1
-                });
-                }
-            }}
         >
-        {'Start for free'}
+        {'Learn More'}
         <ArrowRight className="w-4 h-4" />
         </a>
   );

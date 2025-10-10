@@ -3,6 +3,7 @@ import { SiteData } from "../SiteData";
 export type ArticleData = {
   title: string;
   description: string;
+  type?: string;
   date?: string;
   slug: string;
   body: string;

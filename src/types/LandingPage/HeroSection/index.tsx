@@ -27,33 +27,8 @@ export interface HeroSectionData {
 
 export interface HeroSectionProps {
   heroSectionData?: HeroSectionData;
-  featureGifSection?: FeatureGifSection;
-  solutionsSection?: SolutionsSection;
-  featuresSection?: FeaturesSection;
-  teamSyncData?: TeamSyncData;
-  whatWeDoSectionData?: WhatWeDoData;
-  page: string;
-  title?: string;
-  titleLine1?: string;
-  titleLine2?: string;
-  subtitle?: string;
-  media?: string;
-  button?: {
-    size: string;
-    text: string;
-    color?: string;
-    subtext?: string;
-  };
   siteData?: SiteData;
-  pointColumns?: string;
-  pointIconSize?: string;
-  pointTitleSize?: string;
-  pointDescSize?: string;
-  pointsMarginTop?: string;
-  dataPoints?: PointCardProps[];
-  sectionMargin?: string;
-  titleSize?: string;
-  subtitleSize?: string;
+  page: string;
 };
 
 export interface HeroValues {

@@ -1,33 +1,45 @@
-import LandingPageWrapper from '@/components/LandingPage/wrapper';
+import Head from 'next/head';
+import Navbar from '@/components/Navigation/Navbar';
 import { getArticles } from "@/lib/api/developers";
 import {
     getHeroSectionData,
-    getTeamSyncData,
     getFeatureGifSectionData,
     getSolutionsSectionData,
-    getFeaturesSectionData,
-    getWhatWeDoSectionData
+    getWhatWeDoSectionData,
+    getSiteData
 } from '@/lib/api/landing';
+import FeaturesGifSection from '@/components/LandingPage/FeatureGifSection';
+import AboutSection from '@/components/LandingPage/AboutSection';
+import ArticlesSection from '@/components/LandingPage/MediaSection';
+import WhatWeDoSection from '@/components/LandingPage/WhatWeDoSection';
+import CTASection from '@/components/CTASection';
+import Footer from '@/components/Footer';
+import HeroSection from '@/components/LandingPage/HeroSection';
 
 const Index = async () => {
     const articleSectionData = await getArticles();
-    const heroSectionDataRaw = await getHeroSectionData();
-    const teamSyncDataRaw = await getTeamSyncData();
+    const heroSectionData = await getHeroSectionData();
     const featureGifSectionData = await getFeatureGifSectionData();
     const solutionsSectionData = await getSolutionsSectionData();
-    const featuresSectionData = await getFeaturesSectionData();
     const whatWeDoSectionData = await getWhatWeDoSectionData();
+    const siteData = await getSiteData();
     return (
-        <div>
-            <LandingPageWrapper
-                articleSectionData={articleSectionData}
-                heroSectionData={heroSectionDataRaw}
-                teamSyncData={teamSyncDataRaw}
-                featureGifSectionData={featureGifSectionData}
-                solutionsSectionData={solutionsSectionData}
-                featuresSectionData={featuresSectionData}
-                whatWeDoSectionData={whatWeDoSectionData}
+        <div className='min-h-screen overflow-x-hidden' style={{ backgroundColor: siteData?.surface }}>
+            <Head>
+                <title>Vivreal Headless CMS | Modern Content Management Platform</title>
+                <meta name='description' content='Vivreal is a flexible, API-first headless CMS for modern businesses. Manage, deliver, and scale content seamlessly across web, mobile, and digital platforms.' />
+                <link rel='canonical' href={'https://www.vivreal.io'} />
+            </Head>
+            <Navbar />
+            <HeroSection />
+            <FeaturesGifSection
             />
+            <AboutSection
+            />
+            <ArticlesSection {...articleSectionData} />
+            <WhatWeDoSection/>
+            <CTASection />
+            <Footer />
         </div>
     );
 };

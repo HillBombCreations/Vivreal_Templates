@@ -1,13 +1,13 @@
 import { ArticleData, CMSArticleData } from "@/types/Articles"
 import { cache } from "react";
 import axios from 'axios';
-import { articlesSectionData } from "@/data/mockCmsData";
+import { articlesSectionData } from "@/data/mockData";
 const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
 const BLOGS_ID = process.env.NEXT_PUBLIC_BLOGS_ID;
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const BUCKET_NAME = process.env.NEXT_PUBLIC_BUCKET_NAME;
 
-export const getArticles = async () => {
+export const getArticles = async (): Promise<typeof articlesSectionData & { carouselData: ArticleData[] }> => {
   try {
     const { data } = await axios.get(`${API_URL}/tenant/collectionObjects`, {
         params: { collectionId: BLOGS_ID },
@@ -16,8 +16,6 @@ export const getArticles = async () => {
             "Content-Type": "application/json",
         },
     });
-
-    console.log('BUCKET NAME', BUCKET_NAME);
 
     const carouselData: ArticleData[] = data.map((item: CMSArticleData) => (
       {
@@ -32,13 +30,13 @@ export const getArticles = async () => {
     ));
 
     carouselData.sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
-    
-    const tempSectionData = { ...articlesSectionData, carouselData };
+
+    const tempSectionData = { ...articlesSectionData, type: 'Article', carouselData };
     return tempSectionData;
   } catch (error) {
     console.error("Error fetching articles:", error);
+    return { ...articlesSectionData, carouselData: [] };
   }
-  return articlesSectionData;
 };
 
 export const getArticleBySlug = cache(async(slug: string): Promise<ArticleData | null> => {
