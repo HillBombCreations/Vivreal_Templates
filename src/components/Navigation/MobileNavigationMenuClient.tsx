@@ -19,7 +19,7 @@ const MobileNavigationMenuClient = ({ navItems }: Props) => {
     <>
       <div className="flex md:hidden items-center justify-between">
         <Link href="/" className="flex-1 text-start">
-          <Image src="/vivreallogo.svg" alt="Vivreal" width={128} height={32} className="h-8 inline-block" />
+          <Image src="/placeHolderLogo.png" alt="Vivreal" width={128} height={32} className="h-8 inline-block" />
         </Link>
         <button
           className="p-2"

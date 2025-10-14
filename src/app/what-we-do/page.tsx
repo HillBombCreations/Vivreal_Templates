@@ -3,6 +3,7 @@ import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import { Users, Clock, BarChart2, ClipboardList, Target, Globe, Sparkles } from "lucide-react";
+import { siteData } from "@/data/mockData";
 
 const WhatWeDoPage = async () => {
   return (
@@ -19,10 +20,9 @@ const WhatWeDoPage = async () => {
       <Navbar />
 
       <main className="pt-24 md:pt-32 pb-20 md:pb-32">
-        {/* Hero Section */}
         <section className="mx-auto max-w-5xl px-6 text-center space-y-6 mb-20">
           <h1 className="text-3xl md:text-5xl font-display font-bold tracking-tight">
-            What <span className="text-primary">We Do</span>
+            What We Do
           </h1>
           <p className="text-gray-700 text-lg md:text-xl max-w-3xl mx-auto">
             We help teams bring ideas to life through thoughtful design,
@@ -30,8 +30,6 @@ const WhatWeDoPage = async () => {
             modern, flexible, and built to scale with you.
           </p>
         </section>
-
-        {/* Core Services / Focus Areas */}
         <section className="mx-auto max-w-6xl px-6 mb-24">
           <div className="grid gap-8 md:grid-cols-3">
             {[
@@ -58,15 +56,13 @@ const WhatWeDoPage = async () => {
                 key={idx}
                 className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm text-center transition hover:shadow-md"
               >
-                <item.icon className="w-10 h-10 text-primary mx-auto mb-4" />
+                <item.icon style={{ color: siteData?.primary }} className="w-10 h-10 mx-auto mb-4" />
                 <h3 className="text-lg font-semibold">{item.title}</h3>
                 <p className="text-sm text-gray-600 mt-2">{item.description}</p>
               </div>
             ))}
           </div>
         </section>
-
-        {/* How We Work */}
         <section className="mx-auto max-w-6xl px-6 mb-24 grid md:grid-cols-2 gap-12 items-center">
           <div className="space-y-6">
             <h2 className="text-2xl md:text-3xl font-display font-bold">
@@ -110,15 +106,13 @@ const WhatWeDoPage = async () => {
                 key={idx}
                 className="rounded-lg border border-gray-200 bg-white p-5 shadow-sm"
               >
-                <step.icon className="w-6 h-6 text-primary mb-2" />
+                <step.icon style={{ color: siteData?.primary }} className="w-6 h-6 mb-2" />
                 <h4 className="font-semibold">{step.title}</h4>
                 <p className="text-sm text-gray-600">{step.desc}</p>
               </div>
             ))}
           </div>
         </section>
-
-        {/* Impact / Value */}
         <section className="mx-auto max-w-6xl px-6 mb-24 text-center">
           <h2 className="text-2xl md:text-3xl font-display font-bold mb-8">
             The Value We Bring
@@ -133,15 +127,13 @@ const WhatWeDoPage = async () => {
                 key={idx}
                 className="rounded-xl border border-gray-200 bg-white p-8 shadow-sm"
               >
-                <p className="text-3xl font-bold text-primary">{fact.stat}</p>
+                <p className="text-3xl font-bold" style={{ color: siteData?.primary }}>{fact.stat}</p>
                 <p className="text-sm text-gray-600 mt-2">{fact.label}</p>
               </div>
             ))}
           </div>
         </section>
-
-        {/* Closing Section */}
-        <section className="mx-auto max-w-4xl px-6 text-center space-y-6 bg-secondary/50 py-12 rounded-xl">
+        <section className="mx-auto max-w-4xl px-6 text-center space-y-6 bg-secondary/50 pt-12 rounded-xl">
           <h2 className="text-2xl md:text-3xl font-display font-bold">
             Ready to Work Together
           </h2>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSiteData } from "@/contexts/SiteDataContext";
@@ -18,17 +18,32 @@ interface MediaPageClientProps {
 
 const MediaPageClient = ({ items }: MediaPageClientProps) => {
   const siteData = useSiteData();
+  const mountedRef = useRef(false);
   const types = ["All", "Article", "Videos", "Podcasts"];
   const [activeType, setActiveType] = useState("All");
   const [filteredItems, setFilteredItems] = useState<ArticleData[]>(items);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    console.log('INSIDE HERE', items);
-    setFilteredItems(
-      activeType === "All"
-        ? items
-        : items.filter((item) => item.type?.toLowerCase() === activeType.toLowerCase())
-    );
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
+    
+    setLoading(true);
+    console.log('Filtering items for type:', activeType);
+    const timer = setTimeout(() => {
+      const filtered =
+        activeType === "All"
+          ? items
+          : items.filter(
+              (item) =>
+                item.type?.toLowerCase() === activeType.toLowerCase()
+            );
+      setFilteredItems(filtered);
+      setLoading(false);
+    }, 600);
+    return () => clearTimeout(timer);
   }, [activeType, items]);
 
   return (
@@ -49,10 +64,16 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
               key={type}
               onClick={() => setActiveType(type)}
               style={{
-                background: activeType === type ? siteData?.primary : siteData?.surface,
-                color: activeType === type ? siteData?.["text-inverse"] : siteData?.["text-primary"],
-            }}
-              className="px-4 py-2 rounded-md transition cursor-pointer"
+                background:
+                  activeType === type
+                    ? siteData?.primary
+                    : siteData?.surface,
+                color:
+                  activeType === type
+                    ? siteData?.["text-inverse"]
+                    : siteData?.["text-primary"],
+              }}
+              className="px-4 py-2 rounded-md transition-all duration-300 cursor-pointer hover:opacity-90"
             >
               {type}
             </button>
@@ -60,22 +81,30 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
         </div>
       </section>
       <section className="mx-auto max-w-6xl px-6">
-        {filteredItems?.length > 0 ? (
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+        {loading ? (
+          <SkeletonGrid />
+        ) : filteredItems?.length > 0 ? (
+          <div
+            key={activeType}
+            className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 transition-opacity duration-500 animate-fade-in"
+          >
             {filteredItems.map((item, idx) => (
               <Link
                 key={`media_item_${idx}`}
                 href={`/media-hub/${item.slug}`}
                 className="block h-full group focus:outline-none"
               >
-                <Card className="h-full rounded-xl shadow-md overflow-hidden flex flex-col transition-transform duration-200 group-hover:-translate-y-1 group-hover:shadow-lg">
+                <Card className="h-full rounded-xl shadow-md overflow-hidden flex flex-col transition-all duration-300 transform group-hover:-translate-y-1 group-hover:shadow-lg">
                   <div className="relative h-48 w-full overflow-hidden">
                     <Image
-                      src={item.image || `https://picsum.photos/seed/${idx}/600/400`}
+                      src={
+                        item.image ||
+                        `https://picsum.photos/seed/${idx}/600/400`
+                      }
                       alt={item.title}
                       width={600}
                       height={400}
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      className="object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
                     <span className="absolute top-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded-full capitalize">
@@ -83,7 +112,6 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
                     </span>
                   </div>
 
-                  {/* Content */}
                   <CardHeader>
                     <CardTitle as="h2" className="line-clamp-2">
                       {item.title}
@@ -98,6 +126,7 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
                         : null}
                     </p>
                   </CardHeader>
+
                   <CardContent className="flex-1">
                     <p className="text-sm text-gray-600 line-clamp-3">
                       {item.description}
@@ -108,7 +137,9 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
             ))}
           </div>
         ) : (
-          <p className="text-center text-gray-500">No {activeType} found.</p>
+          <p className="text-center text-gray-500">
+            No {activeType} found.
+          </p>
         )}
       </section>
     </main>
@@ -116,3 +147,22 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
 };
 
 export default MediaPageClient;
+
+const SkeletonGrid = () => (
+  <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 animate-pulse">
+    {Array.from({ length: 6 }).map((_, idx) => (
+      <div
+        key={`skeleton_${idx}`}
+        className="rounded-xl shadow-md overflow-hidden flex flex-col bg-white border border-gray-100"
+      >
+        <div className="h-48 w-full bg-gray-200" />
+        <div className="p-4 space-y-3">
+          <div className="h-5 bg-gray-200 rounded w-3/4"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+          <div className="h-4 bg-gray-200 rounded w-full"></div>
+          <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+        </div>
+      </div>
+    ))}
+  </div>
+);

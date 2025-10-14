@@ -26,12 +26,13 @@ export const getArticles = async (): Promise<typeof articlesSectionData & { caro
         image: item.objectValue.Image?.currentFile.source,
         imageUrl: item.objectValue.Image ? `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${item.objectValue.Image.key}` : undefined,
         slug: item.objectValue["Url Slug"],
+        type: item.objectValue?.Type || "Article",
       }
     ));
 
     carouselData.sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
 
-    const tempSectionData = { ...articlesSectionData, type: 'Article', carouselData };
+    const tempSectionData = { ...articlesSectionData, carouselData };
     return tempSectionData;
   } catch (error) {
     console.error("Error fetching articles:", error);

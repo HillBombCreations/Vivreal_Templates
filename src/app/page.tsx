@@ -1,6 +1,6 @@
 import Head from 'next/head';
 import Navbar from '@/components/Navigation/Navbar';
-import { getArticles } from "@/lib/api/developers";
+import { getArticles } from "@/lib/api/media-hub";
 import {
     getHeroSectionData,
     getFeatureGifSectionData,
@@ -56,7 +56,7 @@ export const generateMetadata = async () => {
       url: "https://vivreal.io/",
       images:  [
         {
-            url: new URL("/heroImage.png", "https://vivreal.io"),
+            url: new URL("/placeHolderHeroImage.png", "https://vivreal.io"),
             width: 1200,
             height: 630,
             alt: "Vivreal CMS - Powerful Content Management Without the Cost",
@@ -68,7 +68,7 @@ export const generateMetadata = async () => {
       card: "summary_large_image",
       title: "Vivreal CMS - Powerful Content Management Without the Cost",
       description: "Vivreal helps teams manage structured content efficiently with affordable, developer-friendly tools.",
-      images: [new URL("/heroImage.png", "https://vivreal.io")]
+      images: [new URL("/placeHolderHeroImage.png", "https://vivreal.io")]
     },
   };
 }

@@ -58,10 +58,9 @@ const MediaSection: FC<MediaSectionProps> = (mediaData) => {
       className="relative pt-24 md:pt-32 pb-20 md:pb-32 overflow-hidden"
     >
       <div className="relative w-full md:max-w-6xl px-5 md:px-0 mx-auto py-12">
-        {/* Section header */}
         <div className="flex flex-row items-center justify-between mb-12">
           <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight">
-            {mediaData?.title ?? "Latest from Our Media Hub"}
+            {mediaData?.title ?? "Your Media Section"}
           </h2>
           <Link
             href={mediaData?.linkSlug ?? "/media"}
@@ -72,16 +71,12 @@ const MediaSection: FC<MediaSectionProps> = (mediaData) => {
             <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
           </Link>
         </div>
-
-        {/* Mobile label */}
         <div
           style={{ color: siteData?.["text-secondary"] }}
           className="md:hidden flex items-center justify-end mb-4 text-sm animate-bounce"
         >
           {mediaData?.mobileLabel ?? "Swipe to explore"}
         </div>
-
-        {/* Carousel */}
         <Carousel opts={{ align: "start", loop: true }}>
           <CarouselContent>
             {slides.map((item, index) => (
@@ -94,7 +89,7 @@ const MediaSection: FC<MediaSectionProps> = (mediaData) => {
                   className="block h-full group focus:outline-none py-2"
                   aria-label={`View media: ${item.title}`}
                 >
-                  <Card className="h-full rounded-2xl shadow-md overflow-hidden flex bg-white flex-col transition-transform duration-200 group-hover:-translate-y-1 hover:shadow-xl">
+                  <Card className="h-full rounded-2xl shadow-md overflow-hidden flex bg-white flex-col transition-transform duration-200 group-hover:-translate-y-1">
                     {/* Image */}
                     <div className="relative h-48 w-full overflow-hidden">
                       <Image
@@ -109,8 +104,6 @@ const MediaSection: FC<MediaSectionProps> = (mediaData) => {
                         {item.type ?? "Article"}
                       </span>
                     </div>
-
-                    {/* Content */}
                     <CardHeader className="space-y-1">
                       <CardTitle className="line-clamp-2">{item.title}</CardTitle>
                       {item.date && (
@@ -140,11 +133,9 @@ const MediaSection: FC<MediaSectionProps> = (mediaData) => {
               </CarouselItem>
             ))}
           </CarouselContent>
-
-          {/* Carousel controls */}
           <div className="hidden md:flex justify-between mt-4">
-            <CarouselPrevious className="btn bg-white" />
-            <CarouselNext className="btn bg-white" />
+            <CarouselPrevious style={{ color: siteData?.primary }} className="btn bg-white cursor-pointer" />
+            <CarouselNext style={{ color: siteData?.primary }} className="btn bg-white cursor-pointer" />
           </div>
         </Carousel>
       </div>

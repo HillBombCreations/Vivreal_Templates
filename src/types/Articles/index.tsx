@@ -15,9 +15,10 @@ export type CMSArticleData = {
   objectValue: {
     Title: string;
     Description: string;
-    createdAt?: string;
     "Url Slug": string;
     Body: string;
+    createdAt?: string;
+    Type?: string;
     Image?: {
       key: string;
       currentFile: { source: string };

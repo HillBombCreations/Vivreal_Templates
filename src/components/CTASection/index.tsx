@@ -8,7 +8,7 @@ const CTASection = () => {
   const siteData = useSiteData();
 
   return (
-    <section className="py-20 md:py-28 relative overflow-hidden">
+    <section className="py-10 md:py-16 relative overflow-hidden">
       <div className="content-grid">
         <div style={{ background: siteData?.primary }} className="rounded-2xl overflow-hidden relative">
           <div style={{ color: siteData?.['text-inverse'] }} className="absolute inset-0 bg-gradient-to-br"></div>

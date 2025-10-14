@@ -5,6 +5,7 @@ import NavigationMenuComponent from './NavigationMenu';
 import MobileNavigationMenuClient from './MobileNavigationMenuClient'
 import { NavigationData } from "@/types/Navigation";
 import { getHeroSectionData } from "@/lib/api/navigation";
+import { siteData } from '@/data/mockData';
 
 async function fetchNavItems(): Promise<NavigationData[]> {
   try {
@@ -28,10 +29,10 @@ const Navbar = async () => {
         <div className="hidden md:flex items-center justify-between">
           <Link href="/" className="flex items-center">
             <Image
-              src="/vivreallogo.svg"
+              src="/placeHolderLogo.png"
               alt="Vivreal"
-              width={128}
-              height={32}
+              width={34}
+              height={34}
               className="h-8"
             />
           </Link>
@@ -45,6 +46,7 @@ const Navbar = async () => {
               <Button
                 variant="outline"
                 size="sm"
+                style={{ color: siteData?.primary, borderColor: siteData?.primary }}
                 className="font-medium cursor-pointer"
               >
                 Contact Us

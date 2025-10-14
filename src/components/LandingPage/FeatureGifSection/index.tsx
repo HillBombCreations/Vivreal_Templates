@@ -17,7 +17,7 @@ const genericFeatures = [
     id: "feature2",
     title: "Feature Two",
     description:
-      "Showcase how this capability helps teams or individuals work smarter and faster.",
+      "A clear and concise description that explains the value of this feature in simple terms.",
     color: "#9333EA", // purple
     icon: Globe,
     media: "/dataAnalytics.mp4",
@@ -26,7 +26,7 @@ const genericFeatures = [
     id: "feature3",
     title: "Feature Three",
     description:
-      "Highlight an area that demonstrates innovation and a modern approach.",
+      "A clear and concise description that explains the value of this feature in simple terms.",
     icon: BarChart2,
     media: "/orderAnalytics.mp4",
   },
@@ -34,7 +34,7 @@ const genericFeatures = [
     id: "feature4",
     title: "Feature Four",
     description:
-      "Emphasize collaboration, growth, or another universal business need.",
+      "A clear and concise description that explains the value of this feature in simple terms.",
     icon: Users,
     media: "/quickUpdatesV2.mp4",
   },
@@ -43,8 +43,6 @@ const genericFeatures = [
 const FeaturesGifSection = () => {
   const [activeTab, setActiveTab] = useState(genericFeatures[0].id);
   const [isMobile, setIsMobile] = useState(false);
-
-  const currentTab = genericFeatures.find((tab) => tab.id === activeTab);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -55,14 +53,15 @@ const FeaturesGifSection = () => {
   }, []);
 
   return (
-    <section className="py-16 md:py-28 bg-white">
+    <section style={{ background: siteData?.["surface-alt"]}} className="py-16 md:py-28">
       <div className="w-[85%] mx-auto sm:px-6">
         <div className="text-center mb-10 md:mb-16">
           <h2 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
-            Platform <span className="text-primary">Features</span>
+            Showcase Section
           </h2>
           <p className="text-base sm:text-lg mt-2 max-w-md mx-auto text-gray-600">
-            Explore some of the key areas you can highlight in your product or service.
+            Explore some of the key areas you can highlight in your product or
+            service.
           </p>
         </div>
         <div className="flex flex-wrap justify-center gap-3 mb-8 md:mb-12">
@@ -87,7 +86,10 @@ const FeaturesGifSection = () => {
                 <Icon
                   className="w-5 h-5"
                   style={{
-                    color: activeTab === feature.id ? siteData?.primary : siteData?.["text-secondary"],
+                    color:
+                      activeTab === feature.id
+                        ? siteData?.primary
+                        : siteData?.["text-secondary"],
                   }}
                 />
                 {feature.title}
@@ -95,30 +97,42 @@ const FeaturesGifSection = () => {
             );
           })}
         </div>
-        <div className="grid md:grid-cols-[1fr_1.5fr] gap-8 w-full items-start">
-          <div className="rounded-3xl h-full transition-all animate-fade-in">
-            {currentTab && (
+
+        {/* Main grid */}
+        <div className="grid md:grid-cols-[1fr_1.5fr] gap-8 w-full items-stretch">
+          {/* --- Left content box --- */}
+          <div
+            className="relative rounded-3xl px-6 py-6 flex flex-col justify-between overflow-hidden"
+            style={{
+              border: `2px solid ${siteData?.primary}`,
+              background: siteData?.["text-inverse"],
+              minHeight: isMobile ? "240px" : "300px",
+            }}
+          >
+            {genericFeatures.map((feature) => (
               <div
-                className="rounded-3xl px-6 py-6 h-full flex flex-col"
-                style={{
-                  border: `2px solid ${siteData?.primary}`,
-                  background: "#fff",
-                }}
+                key={feature.id}
+                className={`absolute inset-0 px-6 py-6 transition-opacity duration-500 ease-in-out ${
+                  activeTab === feature.id
+                    ? "opacity-100 pointer-events-auto"
+                    : "opacity-0 pointer-events-none"
+                }`}
               >
                 <div className="pt-4">
                   <h3
                     style={{ color: siteData?.primary }}
                     className="text-2xl md:text-3xl leading-snug font-bold"
                   >
-                    {currentTab.title}
+                    {feature.title}
                   </h3>
                   <p className="text-base sm:text-lg leading-relaxed font-medium mt-2 text-gray-700">
-                    {currentTab.description}
+                    {feature.description}
                   </p>
                 </div>
+
                 <div className="mt-4 md:mt-auto">
                   <button
-                    className="inline-flex items-center gap-2 text-md font-medium group"
+                    className="inline-flex items-center cursor-pointer gap-2 text-md font-medium group"
                     style={{ color: siteData?.primary }}
                   >
                     Learn More
@@ -126,17 +140,28 @@ const FeaturesGifSection = () => {
                   </button>
                 </div>
               </div>
-            )}
+            ))}
           </div>
-          {!isMobile && currentTab && (
-            <video
-              src={currentTab.media}
-              autoPlay
-              loop
-              muted
-              playsInline
-              className="w-full h-auto rounded-md"
-            />
+
+          {/* --- Right video preview --- */}
+          {!isMobile && (
+            <div className="relative w-full h-full flex items-center justify-center rounded-md overflow-hidden">
+              {genericFeatures.map((feature) => (
+                <video
+                  key={feature.id}
+                  src={feature.media}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className={`absolute inset-0 w-full h-auto rounded-md object-cover transition-opacity duration-500 ease-in-out ${
+                    activeTab === feature.id
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
+                  }`}
+                />
+              ))}
+            </div>
           )}
         </div>
       </div>

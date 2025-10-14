@@ -4,7 +4,7 @@ import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
-import { getArticleBySlug } from "@/lib/api/developers";
+import { getArticleBySlug } from "@/lib/api/media-hub";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation"; // ✅ Detects active route
 import {
   NavigationMenu,
   NavigationMenuItem,
@@ -9,57 +10,80 @@ import {
   NavigationMenuViewport,
 } from "@/components/UI/navigation-menu";
 import { NavigationData } from "@/types/Navigation";
+import { siteData } from "@/data/mockData";
 
 interface NavigationMenuProps {
   items: NavigationData[];
 }
 
 const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
+  const pathname = usePathname(); // current URL path
+
   return (
     <>
       <style jsx global>{`
-        @keyframes slide-down {
-          0% {
-            opacity: 0;
-            transform: translateY(-20px);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        /* --- Hover underline animation --- */
+        .nav-link {
+          position: relative;
+          transition: color 0.3s ease, transform 0.3s ease;
         }
 
-        @keyframes slide-up {
-          0% {
-            opacity: 1;
-            transform: translateY(0);
-          }
-          100% {
-            opacity: 0;
-            transform: translateY(-20px);
-          }
+        .nav-link::after {
+          content: "";
+          position: absolute;
+          bottom: -2px;
+          left: 0;
+          width: 0%;
+          height: 2px;
+          background-color: ${siteData.primary};
+          transition: width 0.3s ease;
         }
 
-        .animate-slide-down {
-          animation: slide-down 1000ms ease-out forwards;
+        .nav-link:hover::after {
+          width: 100%;
         }
 
-        .animate-slide-up {
-          animation: slide-up 1000ms ease-in forwards;
+        .nav-link:hover {
+          color: ${siteData.primary};
+          transform: translateY(-1px);
+        }
+
+        /* --- Active state --- */
+        .nav-link.active {
+          color: ${siteData.primary};
+          font-weight: 600;
+        }
+
+        .nav-link.active::after {
+          width: 100%;
         }
       `}</style>
 
       <NavigationMenu className="relative">
         <NavigationMenuList>
           {items.map((item, idx) => {
-              return (
-                <NavigationMenuItem key={`nav-menu-${item.label}-${idx}`} className="relative group">
-                  <NavigationMenuLinkTrigger asChild>
-                    <Link href={item.path}>{item.label}</Link>
-                  </NavigationMenuLinkTrigger>
-                </NavigationMenuItem>
-              );
-            })}
+            const isActive =
+              pathname === item.path ||
+              (pathname.startsWith(item.path) && item.path !== "/");
+
+            return (
+              <NavigationMenuItem
+                key={`nav-menu-${item.label}-${idx}`}
+                className="relative group"
+              >
+                <NavigationMenuLinkTrigger asChild>
+                  <Link
+                    href={item.path}
+                    className={`nav-link text-base font-medium px-3 py-2 ${
+                      isActive ? "active" : "text-gray-800"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                </NavigationMenuLinkTrigger>
+              </NavigationMenuItem>
+            );
+          })}
         </NavigationMenuList>
         <NavigationMenuViewport />
       </NavigationMenu>

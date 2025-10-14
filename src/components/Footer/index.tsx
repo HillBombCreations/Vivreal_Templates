@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from 'next/image';
 import { NavigationData } from "@/types/Navigation";
 import { getHeroSectionData } from "@/lib/api/navigation";
+import { getSiteData } from "@/lib/api/landing";
 
 const DiscordIcon = () => (
   <Image
@@ -65,6 +66,7 @@ async function fetchNavigationDatas(): Promise<NavigationData[]> {
 
 const Footer = async () => {
   const navItems = await fetchNavigationDatas();
+  const siteData = await getSiteData();
   const currentYear = new Date().getFullYear();
 
   return (
@@ -73,10 +75,10 @@ const Footer = async () => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <Image src="/vivreallogo.svg" alt="Vivreal" width={128} height={32} className="h-8" />
+              <Image src="/placeHolderLogo.png" alt="Vivreal" width={48} height={48} className="h-8" />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
-              A powerful headless CMS platform that gives developers and content creators the freedom to build and deploy exceptional digital experiences.
+             Write a short sentence describing what your company does and who it serves. Highlight the value you provide in simple, clear language.
             </p>
             <div className="flex space-x-4">
               <a href="https://www.linkedin.com/company/vivreal" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
@@ -110,12 +112,31 @@ const Footer = async () => {
             </div>
           </div>
         </div>
-        <div className="border-t border-border pt-8">
+        <div className="border-t border-border pt-8 pb-8">
           <p className="text-sm text-gray-800 text-center">
-            © {currentYear} Vivreal. All rights reserved.{' '}
+            © {currentYear} {siteData?.businessInfo?.name}. All rights reserved.{' '}
             <a href="/privacy" className="underline hover:text-blue-600">Privacy Policy</a>{' | '}
             <a href="/terms" className="underline hover:text-blue-600">Terms of Use</a>
           </p>
+        </div>
+        <div className="flex items-center justify-center">
+          <a
+            href="https://vivreal.io"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
+          >
+            <Image
+              src="/vrLogo.png"
+              alt="Vivreal Logo"
+              width={16}
+              height={16}
+              className="opacity-80"
+            />
+            <span className="text-xs md:text-sm text-gray-600">
+              Powered by <span className="font-medium text-gray-800">Vivreal</span>
+            </span>
+          </a>
         </div>
       </div>
     </footer>

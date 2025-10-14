@@ -12,13 +12,73 @@ export const siteData = {
     "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/dougsKitchenIcon.png",
     "type": "image",
     "currentFile": {
-      "source": "/vivreallogo.svg"
+      "source": "/placeHolderLogo.png"
     }
   },
+  "businessInfo": {
+    "address": {
+      "street1": "123 Easy St.",
+      "street2": "",
+      "city": "Example",
+      "state": "EX",
+      "zip": "00000"
+    },
+    "contactInfo": {
+      "email": "example@email.com",
+      "phoneNumber": ""
+    },
+    "name": "Example Co.",
+    "shipping": false
+  },
+  "domainName": "vivreal.io",
   "pages": {
     "landing-hero": "horizontal",
     "landing-carousel": "horizontal"
-  }
+  },
+  "siteMap": [
+    {
+      url: 'https://vivreal.io',
+      lastModified: new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 1.0,
+    },
+    {
+      url: 'https://vivreal.io/what-we-do',
+      lastModified: new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 0.9,
+    },
+    {
+      url: 'https://vivreal.io/about',
+      lastModified: new Date(),
+      changeFrequency: 'monthly' as const,
+      priority: 0.8,
+    },
+    {
+      url: 'https://vivreal.io/media-hub',
+      lastModified: new Date(),
+      changeFrequency: 'weekly' as const,
+      priority: 0.7,
+    },
+    {
+      url: 'https://vivreal.io/contact',
+      lastModified: new Date(),
+      changeFrequency: 'yearly' as const,
+      priority: 0.6,
+    },
+    {
+      url: 'https://vivreal.io/privacy',
+      lastModified: new Date(),
+      changeFrequency: 'yearly' as const,
+      priority: 0.4,
+    },
+    {
+      url: 'https://vivreal.io/terms',
+      lastModified: new Date(),
+      changeFrequency: 'yearly' as const,
+      priority: 0.4,
+    },
+  ]
 }
 
 export const heroSectionData = {
@@ -32,10 +92,10 @@ export const heroSectionData = {
     "subtext": "No credit card required. Ever."
   },
   "heroImage": {
-    "name": "heroImage.png",
-    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/heroImage.png",
+    "name": "placeHolderHeroImage.png",
+    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/placeHolderHeroImage.png",
     "type": "image",
-    "source": "/heroImage.png"
+    "source": "/placeHolderHeroImage.png"
   },
   "dataPoints": [
     {

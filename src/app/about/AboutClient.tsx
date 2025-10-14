@@ -1,16 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import GetStartedButton from "@/components/GetStartedButton";
 import {
   Users,
   Heart,
   Globe,
   TrendingUp,
-  ArrowRight,
-  Target,
 } from "lucide-react";
 
 const values = [
@@ -76,7 +72,7 @@ const AboutClient = () => {
             >
               <val.icon
                 className="w-8 h-8"
-                style={{ color: siteData?.["text-primary"] }}
+                style={{ color: siteData?.primary }}
               />
               <h3 className="text-lg font-semibold">{val.title}</h3>
               <p
@@ -107,7 +103,7 @@ const AboutClient = () => {
               className="flex flex-col items-center space-y-4 text-center"
             >
               <Image
-                src={`/team${num}.png`}
+                src={`/placeHolderLogo.png`}
                 alt={`Team member ${num}`}
                 width={200}
                 height={200}

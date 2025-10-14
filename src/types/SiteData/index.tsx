@@ -1,9 +1,28 @@
+import type { MetadataRoute } from 'next';
+export interface Businessinfo {
+    address?: {
+        street1?: string,
+        street2?: string,
+        city?: string,
+        state?: string,
+        zip?: string
+    },
+    contactInfo: {
+        email?: string,
+        phoneNumber?: string
+    },
+    name?: string,
+    shipping?: boolean
+}
 export interface SiteData {
     primary?: string;
+    domainName?: string;
+    businessInfo?: Businessinfo;
     secondary?: string;
     hover?: string;
     surface?: string;
     pages: Record<string, string>;
+    siteMap: MetadataRoute.Sitemap;
     ["surface-alt"]?: string;
     ["text-primary"]?: string;
     ["text-secondary"]?: string;

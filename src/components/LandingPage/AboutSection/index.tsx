@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Users, Heart, Globe, TrendingUp, ArrowRight } from "lucide-react";
+import { siteData } from "@/data/mockData";
 
 const values = [
   {
@@ -32,34 +33,29 @@ const AboutSection = () => {
       <div className="max-w-7xl mx-auto px-6 sm:px-10 lg:px-16">
         <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
           <h2 className="text-3xl md:text-4xl font-display font-bold tracking-tight">
-            About <span className="text-primary">Our Company</span>
+            About Your Brand
           </h2>
           <p className="text-gray-700 text-lg md:text-xl">
-            We’re a team of builders, dreamers, and doers on a mission to help
-            people create meaningful digital experiences. Our approach blends
-            professionalism with creativity — because work should be fun.
+           Write a short paragraph introducing your brand or team. Share what you do, what drives you, and what makes your work unique. Keep it friendly, professional, and true to your mission.
           </p>
         </div>
-
-        {/* Values grid */}
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
           {values.map((val, i) => (
             <div
               key={i}
               className="rounded-xl p-6 bg-white border border-gray-200 shadow-sm flex flex-col items-center text-center space-y-3 hover:shadow-md transition"
             >
-              <val.icon className="w-8 h-8 text-primary" />
+              <val.icon style={{ color: siteData?.primary }} className="w-8 h-8" />
               <h3 className="text-lg font-semibold">{val.title}</h3>
               <p className="text-sm text-gray-600">{val.description}</p>
             </div>
           ))}
         </div>
-
-        {/* CTA */}
         <div className="text-center">
           <Link
             href="/about"
-            className="inline-flex items-center gap-2 font-medium text-primary hover:underline group"
+            style={{ color: siteData?.primary }}
+            className="inline-flex items-center gap-2 font-medium hover:underline group"
           >
             Learn more
             <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
