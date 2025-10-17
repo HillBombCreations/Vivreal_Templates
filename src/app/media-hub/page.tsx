@@ -29,7 +29,7 @@ export const generateMetadata = async () => {
       title: "Media Hub",
       description:
         "Explore our media hub: articles, videos, and podcasts featuring insights, stories, and conversations for creators, teams, and innovators.",
-      url: "https://example.com/media",
+      url: "https://thecomedycollective.com/media",
       images: [
         {
           url: "/media-thumbnail.png",

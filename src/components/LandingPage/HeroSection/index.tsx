@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import GetStartedButton from "../../GetStartedButton";
 import Image from "next/image";
 import { Sparkles, Globe, Users, BarChart2 } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
@@ -19,25 +18,10 @@ const HeroSection = () => {
 
   const highlights = [
     {
-      title: "Modern Design",
-      description: "A clean, responsive experience that looks great on any device.",
-      icon: Sparkles,
-    },
-    {
-      title: "Built for Growth",
-      description: "Scalable solutions to grow alongside your business or project.",
-      icon: BarChart2,
-    },
-    {
-      title: "Global Reach",
-      description: "Deliver your ideas and products to audiences everywhere.",
-      icon: Globe,
-    },
-    {
-      title: "Collaboration Ready",
-      description: "Work together seamlessly with tools designed for teams.",
-      icon: Users,
-    },
+      title: "Hotshots",
+      description: "Hotshots! A comedy showcase featuring a blend of Chicago's finest alongside the next generation of household names. This is a must see show",
+      image: '/hotshots.jpeg',
+    }
   ];
 
   return (
@@ -48,23 +32,9 @@ const HeroSection = () => {
     >
       <div className="mx-5 md:mx-20 lg:mx-40">
         <div className="grid items-center gap-12 sm:grid-cols-2">
-          <div className="space-y-6 text-center sm:text-left">
-            <h1
-              id="hero-heading"
-              className="text-4xl lg:text-5xl font-display font-bold tracking-tight"
-            >
-              Welcome to <span className="text-primary">Your Platform</span>
-            </h1>
-            <p className="text-gray-700 text-lg md:text-xl max-w-xl mx-auto sm:mx-0">
-              A modern and flexible starting point to showcase your brand, connect with your audience, and grow online.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center sm:justify-start">
-              <GetStartedButton color="var(--primary)" />
-            </div>
-          </div>
           <div className="relative">
             <Image
-              src="/placeHolderHeroImage.png"
+              src="/heroImage.png"
               alt="Hero illustration"
               width={600}
               height={400}
@@ -72,14 +42,35 @@ const HeroSection = () => {
               priority
             />
           </div>
+          <div className="space-y-6 text-center sm:text-left">
+            <h1
+              id="hero-heading"
+              className="text-4xl lg:text-5xl font-display font-bold tracking-tight"
+            >
+              <small className="text-primary">Welcome to</small>
+              <br />
+              <span style={{ color: siteData?.primary }}>The Comedy Collective</span>
+            </h1>
+            <p className="text-gray-700 text-lg md:text-xl max-w-xl mx-auto sm:mx-0">
+              The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
+            </p>
+          </div>
         </div>
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mt-16 text-center">
+        <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Upcoming Shows</h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mt-6 text-center">
           {highlights.map((h, idx) => (
             <div
               key={idx}
-              className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md"
+              className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm transition hover:shadow-md justify-center items-center flex flex-col"
             >
-              <h.icon style={{ color: siteData?.primary }} className="w-8 h-8 mx-auto mb-3" />
+              <Image
+                src={h.image}
+                alt="Hero illustration"
+                width={200}
+                height={100}
+                className="h-auto object-contain"
+                priority
+              />
               <h3 className="text-lg font-semibold">{h.title}</h3>
               <p className="text-sm text-gray-600 mt-2">{h.description}</p>
             </div>

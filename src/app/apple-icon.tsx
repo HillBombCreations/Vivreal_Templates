@@ -10,9 +10,9 @@ export const contentType = 'image/png'
 export default async function AppleIcon() {
   const siteData = await getSiteData()
 
-  const primaryColor = siteData?.primary || '#365B99'
+  const primaryColor = siteData?.primary || '#001a4a'
   const logoSrc =
-    siteData?.logo?.currentFile?.source || '/placeHolderLogo.png'
+    siteData?.logo?.currentFile?.source || '/comedycollectiveLogo.png'
 
   return new ImageResponse(
     (

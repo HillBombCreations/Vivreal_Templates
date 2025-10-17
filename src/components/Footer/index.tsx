@@ -75,7 +75,7 @@ const Footer = async () => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <Image src="/placeHolderLogo.png" alt="Vivreal" width={48} height={48} className="h-8" />
+              <Image src="/comedycollectiveLogo.png" alt="Vivreal" width={175} height={175} />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
              Write a short sentence describing what your company does and who it serves. Highlight the value you provide in simple, clear language.

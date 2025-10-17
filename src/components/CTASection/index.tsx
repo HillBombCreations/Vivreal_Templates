@@ -10,16 +10,44 @@ const CTASection = () => {
   return (
     <section className="py-10 md:py-16 relative overflow-hidden">
       <div className="content-grid">
-        <div style={{ background: siteData?.primary }} className="rounded-2xl overflow-hidden relative">
+        <div
+          style={{
+            background: 'url("/headsImage.png")',
+            backgroundSize: 'cover',
+            backgroundRepeat: 'repeat',
+            backgroundPosition: 'center',
+          }}
+          className="rounded-2xl overflow-hidden relative"
+        >
           <div style={{ color: siteData?.['text-inverse'] }} className="absolute inset-0 bg-gradient-to-br"></div>
           
           <div className="relative z-10 p-10 md:p-16 text-center">
             <div className="max-w-4xl mx-auto">
-              <h2 style={{ color: siteData?.['surface-alt'] }} className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in">
+              <h2
+                style={{
+                  color: siteData?.['surface-alt'],
+                  backgroundColor: '#001a4a96',
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: '8px',
+                  display: 'inline-block',
+                  padding: '10px 25px'
+                }}
+                className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in"
+              >
                 Get in Touch
               </h2>
-              <p className="text-primary-foreground/90 text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in" style={{ color: siteData?.['surface-alt'], animationDelay: '100ms' }}>
-                Have questions or want to learn more? We’d love to hear from you.
+              <p
+                style={{
+                  color: siteData?.['surface-alt'],
+                  backgroundColor: '#001a4a96',
+                  backdropFilter: 'blur(10px)',
+                  borderRadius: '8px',
+                  padding: '10px 25px',
+                  animationDelay: '100ms'
+                }}
+                className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in"
+              >
+                Have questions or want to learn more? We&apos;d love to hear from you.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in" style={{ animationDelay: '200ms' }}>
                 <a

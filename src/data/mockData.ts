@@ -1,18 +1,18 @@
 export const siteData = {
-  "primary": "#365B99",
+  "primary": "#001a4a",
   "secondary": "#4A6FB8",
   "hover": "#2A4473",
   "surface": "#F6F8FC",
-  "surface-alt": "#E9EFF7",
-  "text-primary": "#1A2433",
+  "surface-alt": "#ffffff",
+  "text-primary": "#001a4a",
   "text-secondary": "#5C6E88",
   "text-inverse": "#FFFFFF",
   "logo": {
-    "name": "dougsKitchenIcon.png",
-    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/dougsKitchenIcon.png",
+    "name": "comedycollectiveLogo.png",
+    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/comedycollectiveLogo.png",
     "type": "image",
     "currentFile": {
-      "source": "/placeHolderLogo.png"
+      "source": "/comedycollectiveLogo.png"
     }
   },
   "businessInfo": {
@@ -27,7 +27,7 @@ export const siteData = {
       "email": "example@email.com",
       "phoneNumber": ""
     },
-    "name": "Example Co.",
+    "name": "The Comedy Collective",
     "shipping": false
   },
   "domainName": "vivreal.io",
@@ -92,10 +92,10 @@ export const heroSectionData = {
     "subtext": "No credit card required. Ever."
   },
   "heroImage": {
-    "name": "placeHolderHeroImage.png",
-    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/placeHolderHeroImage.png",
+    "name": "comedycollectiveLogo.png",
+    "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/comedycollectiveLogo.png",
     "type": "image",
-    "source": "/placeHolderHeroImage.png"
+    "source": "/comedycollectiveLogo.png"
   },
   "dataPoints": [
     {
@@ -243,21 +243,6 @@ export const navigationLinks = [
     "label": "About",
     "displayOnHeader": true,
   },
-  {
-    "path": "/media-hub",
-    "label": "Media Hub",
-    "displayOnHeader": true,
-  },
-  {
-    "path": "/what-we-do",
-    "label": "What We Do",
-    "displayOnHeader": true,
-  },
-  {
-    "path": "/contact",
-    "label": "Contact",
-    "displayOnHeader": false,
-  }
 ];
 
 export const articlesSectionData = {

@@ -94,8 +94,8 @@ const ContactClient = () => {
           {error && (
             <div className="mb-6 rounded-lg bg-red-100 text-red-800 p-4 text-center">
               Something went wrong. Please try again, or reach us directly at{" "}
-              <a href="mailto:hello@example.com" className="underline font-medium">
-                hello@example.com
+              <a href="mailto:hello@thecomedycollective.com" className="underline font-medium">
+                hello@thecomedycollective.com
               </a>
               .
             </div>

@@ -27,13 +27,12 @@ const Navbar = async () => {
       <div className="w-full px-4">
         <MobileNavigationMenuClient navItems={navItems} />
         <div className="hidden md:flex items-center justify-between">
-          <Link href="/" className="flex items-center">
+          <Link href="/">
             <Image
-              src="/placeHolderLogo.png"
+              src="/comedycollectiveLogo.png"
               alt="Vivreal"
-              width={34}
-              height={34}
-              className="h-8"
+              width={70}
+              height={70}
             />
           </Link>
 

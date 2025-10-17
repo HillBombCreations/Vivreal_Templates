@@ -161,7 +161,7 @@ export const generateMetadata = async () => {
       title: "What We Do",
       description:
         "Learn about what we do: our focus areas, how we work, and the value we bring.",
-      url: "https://example.com/what-we-do",
+      url: "https://thecomedycollective.com/what-we-do",
       images: [
         {
           url: "/what-we-do-meta.png",

@@ -132,7 +132,7 @@ const TermsOfService = () => {
               </h2>
               <p className="text-gray-700">
                 If you have any questions about these Terms, please contact us
-                at: <a href="mailto:hello@example.com" className="underline">hello@example.com</a>
+                at: <a href="mailto:hello@thecomedycollective.com" className="underline">hello@thecomedycollective.com</a>
               </p>
             </div>
           </div>
