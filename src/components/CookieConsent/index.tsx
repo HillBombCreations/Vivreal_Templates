@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Button } from '../UI/Button';
+import { Button } from '../ui/Button';
 import Link from 'next/link';
 import { X } from 'lucide-react';
 import { SiteData } from '@/types/SiteData';

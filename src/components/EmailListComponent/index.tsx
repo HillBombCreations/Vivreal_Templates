@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { Button } from "@/components/UI/Button";
+import { Button } from "@/components/ui/Button";
 import { subscribeUser } from "@/lib/api/subscribe";
 // Keys for localStorage
 const SUBSCRIBE_KEY = "vivreal_subscribed";

@@ -9,13 +9,13 @@ import {
   CarouselItem,
   CarouselNext,
   CarouselPrevious,
-} from "@/components/UI/carousel";
+} from "@/components/ui/carousel";
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/UI/card";
+} from "@/components/ui/card";
 import { ArrowRight } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 interface MediaSectionProps {

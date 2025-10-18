@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Button } from "@/components/UI/Button";
+import { Button } from "@/components/ui/Button";
 import NavigationMenuComponent from './NavigationMenu';
 import MobileNavigationMenuClient from './MobileNavigationMenuClient'
 import { NavigationData } from "@/types/Navigation";

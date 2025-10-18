@@ -4,8 +4,8 @@ import React from "react"
 import Link from "next/link";
 import { cn } from "@/lib/utils"
 import { NavItem } from "@/types/Navigation"
-import { Button } from "@/components/UI/Button";
-import { ArrowRight, Home } from 'lucide-react'
+import { Button } from "@/components/ui/Button";
+import { Home } from 'lucide-react'
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import {
@@ -13,7 +13,7 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/components/UI/sheet"
+} from "@/components/ui/sheet"
 
 interface MobileNavigationMenuProps {
   items: NavItem[]

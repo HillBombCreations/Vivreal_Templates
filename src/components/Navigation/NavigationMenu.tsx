@@ -8,7 +8,7 @@ import {
   NavigationMenuList,
   NavigationMenuLinkTrigger,
   NavigationMenuViewport,
-} from "@/components/UI/navigation-menu";
+} from "@/components/ui/navigation-menu";
 import { NavigationData } from "@/types/Navigation";
 import { siteData } from "@/data/mockData";
 

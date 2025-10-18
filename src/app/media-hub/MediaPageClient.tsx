@@ -9,7 +9,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/UI/card";
+} from "@/components/ui/card";
 import { ArticleData } from "@/types/Shows";
 
 interface MediaPageClientProps {
