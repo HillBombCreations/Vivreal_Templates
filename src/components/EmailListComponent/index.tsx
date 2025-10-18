@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Button } from "@/components/UI/Button";
-
+import { subscribeUser } from "@/lib/api/subscribe";
 // Keys for localStorage
 const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
@@ -50,11 +49,15 @@ const EmailListComponent = () => {
     setSuccess(false);
 
     try {
-      await axios.post(`${API_URL}/api/subscribe`, { email });
-      localStorage.setItem(SUBSCRIBE_KEY, "true");
-      setSuccess(true);
-      setEmail("");
-      setTimeout(() => setOpen(false), 2000);
+      const success = await subscribeUser(email);
+      if (success) {
+        localStorage.setItem(SUBSCRIBE_KEY, "true");
+        setSuccess(true);
+        setEmail("");
+        setTimeout(() => setOpen(false), 2000);
+      } else {
+        setError(true);
+      }
     } catch (err) {
       setError(true);
       console.error("Subscription failed:", err);

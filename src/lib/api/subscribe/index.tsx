@@ -6,7 +6,9 @@ export const subscribeUser = async (email: string): Promise<boolean> => {
   try {
     await axios.post(
         `${API_URL}/tenant/subscribeUser`,
-        { email },
+        {
+            email
+        },
         {
             headers: {
                 Authorization: API_KEY,
