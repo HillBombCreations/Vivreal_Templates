@@ -1,12 +1,12 @@
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
-import { getArticles } from "@/lib/api/shows";
+import { getShows } from "@/lib/api/shows";
 import MediaPageClient from "./MediaPageClient";
 
 export const MediaPage = async () => {
-  const mediaData = await getArticles();
-  const items = mediaData?.carouselData || [];
+  const mediaData = await getShows();
+  const items = mediaData || [];
 
   return (
     <>

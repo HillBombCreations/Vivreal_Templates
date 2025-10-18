@@ -4,15 +4,16 @@ import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
-import { getArticleBySlug } from "@/lib/api/shows";
+import { getShowById } from "@/lib/api/shows";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
 const ArticlePost = async (props: { params: { articleId: string } }) => {
   const { articleId } = props.params;
-  const article = await getArticleBySlug(articleId || "");
-  const cleanBody = (article?.body ?? "")
+  const article = await getShowById(articleId || "");
+  // const cleanBody = (article?.body ?? "")
+  const cleanBody = ("")
     .replace(/<p>\s*<\/p>/g, "")
     // .replace(/(<\/p>)/g, "$1<br/>")
     .replace(/(<h[1-6][^>]*>)/g, "<br/>$1")
@@ -87,7 +88,7 @@ export default ArticlePost;
 
 export const generateMetadata = async (props: { params: { articleId: string } }) => {
   const { articleId } = props.params;
-  const article = await getArticleBySlug(articleId || "");
+  const article = await getShowById(articleId || "");
   if (!article) {
     return {
       title: "Article not found | Vivreal",
