@@ -6,6 +6,7 @@ import {
 } from '@/lib/api/landing';
 import CTASection from '@/components/CTASection';
 import Footer from '@/components/Footer';
+import EmailListComponent from '@/components/EmailListComponent';
 import HeroSection from '@/components/LandingPage/HeroSection';
 
 const Index = async () => {
@@ -19,6 +20,7 @@ const Index = async () => {
                 <link rel='canonical' href={'https://www.vivreal.io'} />
             </Head>
             <Navbar />
+            <EmailListComponent />
             <HeroSection />
             <CTASection />
             <Footer />

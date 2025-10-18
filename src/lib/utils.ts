@@ -85,3 +85,27 @@ export const hexToRgba = (hex: string, alpha: number): string => {
 
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+const EMAIL_POPUP_KEY = "email_popup_last_seen";
+const EMAIL_SUBSCRIBED_KEY = "email_subscribed";
+
+export function shouldShowEmailPopup(): boolean {
+  if (typeof window === "undefined") return false;
+
+  const subscribed = localStorage.getItem(EMAIL_SUBSCRIBED_KEY);
+  if (subscribed === "true") return false;
+
+  const lastSeen = localStorage.getItem(EMAIL_POPUP_KEY);
+  if (!lastSeen) return true;
+
+  const hoursSince = (Date.now() - parseInt(lastSeen, 10)) / (1000 * 60 * 60);
+  return hoursSince >= 24;
+}
+
+export function recordPopupSeen() {
+  localStorage.setItem(EMAIL_POPUP_KEY, Date.now().toString());
+}
+
+export function recordSubscription() {
+  localStorage.setItem(EMAIL_SUBSCRIBED_KEY, "true");
+}
