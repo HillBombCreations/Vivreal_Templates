@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/UI/card";
-import { ArticleData } from "@/types/Articles";
+import { ArticleData } from "@/types/Shows";
 
 interface MediaPageClientProps {
   items: ArticleData[];

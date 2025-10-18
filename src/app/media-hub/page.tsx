@@ -1,7 +1,7 @@
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
-import { getArticles } from "@/lib/api/media-hub";
+import { getArticles } from "@/lib/api/shows";
 import MediaPageClient from "./MediaPageClient";
 
 export const MediaPage = async () => {

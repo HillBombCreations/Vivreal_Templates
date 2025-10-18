@@ -1,5 +1,5 @@
 import { SiteData } from '../SiteData';
-import { ArticlesSectionData } from '@/types/Articles';
+import { ArticlesSectionData } from '@/types/Shows';
 import { HeroSectionData } from './HeroSection';
 import { TeamSyncData } from './TeamSync';
 import { FeatureGifSection } from './FeatureGifSection';

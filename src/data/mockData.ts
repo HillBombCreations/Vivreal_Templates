@@ -244,13 +244,3 @@ export const navigationLinks = [
     "displayOnHeader": true,
   },
 ];
-
-export const articlesSectionData = {
-  "title": "Latest Insights",
-  "linkText": "View all",
-  "linkSlug": "/media-hub",
-  "mobileLabel": "Swipe →",
-  "loadingMessage": "Loading placeholder...",
-  "noDataMessage": "No placeholder available",
-  "type": "Article"
-};
