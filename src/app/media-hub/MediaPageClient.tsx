@@ -10,10 +10,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ArticleData } from "@/types/Shows";
+import { ShowData } from "@/types/Shows";
 
 interface MediaPageClientProps {
-  items: ArticleData[];
+  items: ShowData[];
 }
 
 const MediaPageClient = ({ items }: MediaPageClientProps) => {
@@ -21,30 +21,30 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
   const mountedRef = useRef(false);
   const types = ["All", "Article", "Videos", "Podcasts"];
   const [activeType, setActiveType] = useState("All");
-  const [filteredItems, setFilteredItems] = useState<ArticleData[]>(items);
+  const [filteredItems, setFilteredItems] = useState<ShowData[]>(items);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (!mountedRef.current) {
-      mountedRef.current = true;
-      return;
-    }
+  // useEffect(() => {
+  //   if (!mountedRef.current) {
+  //     mountedRef.current = true;
+  //     return;
+  //   }
     
-    setLoading(true);
-    console.log('Filtering items for type:', activeType);
-    const timer = setTimeout(() => {
-      const filtered =
-        activeType === "All"
-          ? items
-          : items.filter(
-              (item) =>
-                item.type?.toLowerCase() === activeType.toLowerCase()
-            );
-      setFilteredItems(filtered);
-      setLoading(false);
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [activeType, items]);
+  //   setLoading(true);
+  //   console.log('Filtering items for type:', activeType);
+  //   const timer = setTimeout(() => {
+  //     const filtered =
+  //       activeType === "All"
+  //         ? items
+  //         : items.filter(
+  //             (item) =>
+  //               item.type?.toLowerCase() === activeType.toLowerCase()
+  //           );
+  //     setFilteredItems(filtered);
+  //     setLoading(false);
+  //   }, 600);
+  //   return () => clearTimeout(timer);
+  // }, [activeType, items]);
 
   return (
     <main className="pt-24 md:pt-32 pb-20 md:pb-32">
@@ -80,7 +80,7 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
           ))}
         </div>
       </section>
-      <section className="mx-auto max-w-6xl px-6">
+      {/* <section className="mx-auto max-w-6xl px-6">
         {loading ? (
           <SkeletonGrid />
         ) : filteredItems?.length > 0 ? (
@@ -141,7 +141,7 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
             No {activeType} found.
           </p>
         )}
-      </section>
+      </section> */}
     </main>
   );
 };

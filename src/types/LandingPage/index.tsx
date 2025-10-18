@@ -1,5 +1,5 @@
 import { SiteData } from '../SiteData';
-import { ArticlesSectionData } from '@/types/Shows';
+import { ShowsSectionProps } from '@/types/Shows';
 import { HeroSectionData } from './HeroSection';
 import { TeamSyncData } from './TeamSync';
 import { FeatureGifSection } from './FeatureGifSection';
@@ -8,7 +8,7 @@ import { FeaturesSection } from './FeaturesSection';
 import { WhatWeDoData } from './WhatWeDoSeciton';
 export interface LandingPageProps {
   siteData?: SiteData;
-  articleSectionData?: ArticlesSectionData;
+  articleSectionData?: ShowsSectionProps;
   heroSectionData?: HeroSectionData;
   teamSyncData?: TeamSyncData;
   featureGifSectionData?: FeatureGifSection;
