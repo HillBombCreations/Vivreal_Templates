@@ -15,9 +15,9 @@ const Index = async () => {
     return (
         <div className='min-h-screen overflow-x-hidden' style={{ backgroundColor: siteData?.surface }}>
             <Head>
-                <title>Vivreal Headless CMS | Modern Content Management Platform</title>
-                <meta name='description' content='Vivreal is a flexible, API-first headless CMS for modern businesses. Manage, deliver, and scale content seamlessly across web, mobile, and digital platforms.' />
-                <link rel='canonical' href={'https://www.vivreal.io'} />
+                <title>The Comedy Collective Chicago</title>
+                <meta name='description' content='The Comedy Collective Chicago' />
+                <link rel='canonical' href={'https://www.comedycollectivechi.com'} />
             </Head>
             <Navbar />
             <EmailListComponent />
@@ -37,10 +37,10 @@ export const generateMetadata = async () => {
     openGraph: {
       title: "Vivreal CMS - Powerful Content Management Without the Cost",
       description: "Vivreal helps teams manage structured content efficiently with affordable, developer-friendly tools.",
-      url: "https://vivreal.io/",
+      url: "https://comedycollectivechi.com/",
       images:  [
         {
-            url: new URL("/heroImage.png", "https://vivreal.io"),
+            url: new URL("/heroImage.png", "https://comedycollectivechi.com"),
             width: 1200,
             height: 630,
             alt: "Vivreal CMS - Powerful Content Management Without the Cost",
@@ -52,7 +52,7 @@ export const generateMetadata = async () => {
       card: "summary_large_image",
       title: "Vivreal CMS - Powerful Content Management Without the Cost",
       description: "Vivreal helps teams manage structured content efficiently with affordable, developer-friendly tools.",
-      images: [new URL("/heroImage.png", "https://vivreal.io")]
+      images: [new URL("/heroImage.png", "https://comedycollectivechi.com")]
     },
   };
 }

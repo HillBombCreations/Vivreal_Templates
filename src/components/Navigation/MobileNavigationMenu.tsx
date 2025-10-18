@@ -38,6 +38,7 @@ export default function MobileNavigationMenu({
   open
 }: MobileNavigationMenuProps) {
   const siteData = useSiteData();
+  console.log('MobileNavigationMenu items:', items);
   const groupedItems = items.reduce((acc, item) => {
     const group = item.group || "other"
     if (!acc[group]) acc[group] = []
@@ -89,48 +90,30 @@ const renderLinks = (items: NavItem[], depth = 0): React.JSX.Element[] =>
             <Home style={{ color: siteData?.primary }} className="w-6 h-6" />
           </Link>
         </div>
-
         {Object.entries(groupedItems).map(([group, groupItems]) => {
-          const [firstItem] = groupItems;
-          const hasChildren = firstItem?.url && firstItem.url.length > 0;
-          const displayName =
-            groupDisplayNames[group] ||
-            group.charAt(0).toUpperCase() + group.slice(1);
+          const displayName = groupDisplayNames[group] || group.charAt(0).toUpperCase() + group.slice(1);
 
           return (
             <div key={group} className="mb-6">
-              {hasChildren ? (
-                <>
-                  <h3 style={{ color: siteData?.["text-primary"] }} className="text-sm font-semibold mb-2">
-                    <Link
-                      href={firstItem.path}
-                      onClick={handleClose}
-                      style={{ color: siteData?.primary }}
-                      className="hover:underline inline-flex items-center gap-1 transition"
-                    >
-                      {displayName}
-                      <ArrowRight className="w-4 h-4" />
-                    </Link>
-                  </h3>
-                  <div>{firstItem?.url && renderLinks(firstItem.url)}</div>
-                </>
-              ) : (
-                <h3 className="text-sm font-semibold mb-2 text-gray-800">
+              <h3 style={{ color: siteData?.["text-primary"] }} className="text-sm font-semibold mb-2">
+                {displayName !== "Other" && displayName}
+              </h3>
+              <div>
+                {(groupItems as NavItem[]).map(item => (
                   <Link
-                    href={firstItem.path}
+                    key={item.path}
+                    href={item.path}
                     onClick={handleClose}
+                    className="block py-2 px-2 rounded-md hover:bg-muted hover:text-foreground"
                     style={{ color: siteData?.primary }}
-                    className="hover:underline inline-flex items-center gap-1 transition"
                   >
-                    {displayName}
-                    <ArrowRight className="w-4 h-4" />
+                    {item.label || "Untitled"}
                   </Link>
-                </h3>
-              )}
+                ))}
+              </div>
             </div>
-          );
+          )
         })}
-
         <div className="w-full space-y-3">
           <a
             href="https://app.vivreal.io/login/"

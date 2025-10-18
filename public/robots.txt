@@ -1,4 +1,4 @@
-# robots.txt for vivreal.io
+# robots.txt for comedycollectivechi.com
 
 # Allow all well-behaved crawlers
 User-agent: *
@@ -8,7 +8,7 @@ Disallow: /private/
 Allow: /
 
 # Sitemap location
-Sitemap: https://vivreal.io/sitemap.xml
+Sitemap: https://comedycollectivechi.com/sitemap.xml
 
 # Extra hints for crawlers
 # Crawl-delay helps prevent server overload (optional, adjust if needed)

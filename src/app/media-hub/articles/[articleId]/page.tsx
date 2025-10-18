@@ -91,7 +91,7 @@ export const generateMetadata = async (props: { params: { articleId: string } })
   if (!article) {
     return {
       title: "Article not found | Vivreal",
-      description: "Sorry, we couldn’t find that article.",
+      description: "Sorry, we couldn't find that article.",
     };
   }
 

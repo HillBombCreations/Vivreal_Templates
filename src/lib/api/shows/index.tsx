@@ -1,7 +1,7 @@
 import { ShowData, CMSShowData } from "@/types/Shows"
 import { cache } from "react";
 import axios from 'axios';
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
+const API_URL = 'https://client.vivreal.io';
 const SHOWS_ID = process.env.NEXT_PUBLIC_SHOWS_ID;
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 const BUCKET_NAME = process.env.NEXT_PUBLIC_BUCKET_NAME;

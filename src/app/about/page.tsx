@@ -23,10 +23,10 @@ export const generateMetadata = async () => {
     openGraph: {
       title: "Vivreal - Solutions",
       description: "Solve business challenges with Vivreal. Build flexible websites, manage content in one hub, deliver across channels, and grow online sales.",
-      url: "https://vivreal.io/solutions",
+      url: "https://comedycollectivechi.com/solutions",
       images: [
         {
-          url: new URL("/solutionsMeta.png", "https://vivreal.io"),
+          url: new URL("/solutionsMeta.png", "https://comedycollectivechi.com"),
           width: 1200,
           height: 630,
           alt: "Vivreal - Solutions",
@@ -39,7 +39,7 @@ export const generateMetadata = async () => {
       title: "Vivreal - Solutions",
       description: "Vivreal helps you streamline content, engage customers, and drive growth — all from one platform.",
       images: [
-        new URL("/solutionsMeta.png", "https://vivreal.io"),
+        new URL("/solutionsMeta.png", "https://comedycollectivechi.com"),
       ],
     },
   }

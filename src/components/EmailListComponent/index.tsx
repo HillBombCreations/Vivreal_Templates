@@ -159,7 +159,7 @@ const EmailListComponent = () => {
                   {isSubmitting ? "Subscribing..." : "Subscribe"}
                 </Button>
                  <p className="text-center text-xs text-gray-500">
-                    By subscribing, you agree to receive updates from Vivreal. 
+                    By subscribing, you agree to receive updates from The Comedy Collective. 
                     You can unsubscribe anytime. See our{" "}
                     <a href="/privacy" className="underline">
                         Privacy Policy

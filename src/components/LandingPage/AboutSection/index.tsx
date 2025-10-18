@@ -36,7 +36,7 @@ const AboutSection = () => {
             About Your Brand
           </h2>
           <p className="text-gray-700 text-lg md:text-xl">
-           Write a short paragraph introducing your brand or team. Share what you do, what drives you, and what makes your work unique. Keep it friendly, professional, and true to your mission.
+           The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
           </p>
         </div>
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">

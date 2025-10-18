@@ -4,53 +4,13 @@ import { NavigationData } from "@/types/Navigation";
 import { getHeroSectionData } from "@/lib/api/navigation";
 import { getSiteData } from "@/lib/api/landing";
 
-const DiscordIcon = () => (
+const InstagramIcon = () => (
   <Image
-    src="/discordLogo.svg"
-    alt="Discord Logo"
+    src="/instagramLogo.png"
+    alt="Instagram Logo"
     width={20}
     height={20}
     className="h-[20px] w-[20px]"
-  />
-);
-
-const RedditIcon = () => (
-  <Image
-    src="/redditLogo.svg"
-    alt="Reddit Logo"
-    width={20}
-    height={20}
-    className="h-auto w-[20px]"
-  />
-);
-
-const XIcon = () => (
-  <Image
-    src="/xLogo.png"
-    alt="X Logo"
-    width={20}
-    height={20}
-    className="h-auto w-[20px]"
-  />
-);
-
-const LinkedInIcon = () => (
-  <Image
-    src="/linkedInLogo.png"
-    alt="LinkedIn Logo"
-    width={20}
-    height={20}
-    className="h-auto w-[20px]"
-  />
-);
-
-const FacebookIcon = () => (
-  <Image
-    src="/facebookLogo.png"
-    alt="Meta Logo"
-    width={20}
-    height={20}
-    className="h-auto w-[20px]"
   />
 );
 
@@ -75,26 +35,14 @@ const Footer = async () => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <Image src="/comedycollectiveLogo.png" alt="Vivreal" width={175} height={175} />
+              <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={175} height={175} />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
-             Write a short sentence describing what your company does and who it serves. Highlight the value you provide in simple, clear language.
+             The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
             </p>
             <div className="flex space-x-4">
-              <a href="https://www.linkedin.com/company/vivreal" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
-                <LinkedInIcon />
-              </a>
-              <a href="https://x.com/Vivreal_io" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground transition-colors">
-                <XIcon />
-              </a>
-              <a href="https://www.facebook.com/vivreal.cms" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground transition-colors">
-                <FacebookIcon />
-              </a>
-              <a href="https://www.reddit.com/r/Vivreal" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground transition-colors">
-                <RedditIcon />
-              </a>
-              <a href="https://discord.gg/8vr5vK3C" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground transition-colors">
-                <DiscordIcon />
+              <a href="https://www.instagram.com/comedycollective1" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
+                <InstagramIcon />
               </a>
             </div>
           </div>

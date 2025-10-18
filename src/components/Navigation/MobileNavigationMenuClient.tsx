@@ -19,7 +19,7 @@ const MobileNavigationMenuClient = ({ navItems }: Props) => {
     <>
       <div className="flex md:hidden items-center justify-between">
         <Link href="/" className="flex-1 text-start">
-          <Image src="/comedycollectiveLogo.png" alt="Vivreal" width={60} height={60} className="inline-block" />
+          <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={60} height={60} className="inline-block" />
         </Link>
         <button
           className="p-2"

@@ -30,50 +30,50 @@ export const siteData = {
     "name": "The Comedy Collective",
     "shipping": false
   },
-  "domainName": "vivreal.io",
+  "domainName": "comedycollectivechi.com",
   "pages": {
     "landing-hero": "horizontal",
     "landing-carousel": "horizontal"
   },
   "siteMap": [
     {
-      url: 'https://vivreal.io',
+      url: 'https://comedycollectivechi.com',
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
       priority: 1.0,
     },
+    // {
+    //   url: 'https://comedycollectivechi.com/what-we-do',
+    //   lastModified: new Date(),
+    //   changeFrequency: 'monthly' as const,
+    //   priority: 0.9,
+    // },
     {
-      url: 'https://vivreal.io/what-we-do',
-      lastModified: new Date(),
-      changeFrequency: 'monthly' as const,
-      priority: 0.9,
-    },
-    {
-      url: 'https://vivreal.io/about',
+      url: 'https://comedycollectivechi.com/about',
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
       priority: 0.8,
     },
+    // {
+    //   url: 'https://comedycollectivechi.com/media-hub',
+    //   lastModified: new Date(),
+    //   changeFrequency: 'weekly' as const,
+    //   priority: 0.7,
+    // },
     {
-      url: 'https://vivreal.io/media-hub',
-      lastModified: new Date(),
-      changeFrequency: 'weekly' as const,
-      priority: 0.7,
-    },
-    {
-      url: 'https://vivreal.io/contact',
+      url: 'https://comedycollectivechi.com/contact',
       lastModified: new Date(),
       changeFrequency: 'yearly' as const,
       priority: 0.6,
     },
     {
-      url: 'https://vivreal.io/privacy',
+      url: 'https://comedycollectivechi.com/privacy',
       lastModified: new Date(),
       changeFrequency: 'yearly' as const,
       priority: 0.4,
     },
     {
-      url: 'https://vivreal.io/terms',
+      url: 'https://comedycollectivechi.com/terms',
       lastModified: new Date(),
       changeFrequency: 'yearly' as const,
       priority: 0.4,
@@ -240,7 +240,7 @@ export const navigationLinks = [
   },
   {
     "path": "/about",
-    "label": "About",
+    "label": "Our Team",
     "displayOnHeader": true,
   },
 ];
