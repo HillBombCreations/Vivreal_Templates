@@ -12,7 +12,7 @@ export const siteData = {
     "key": "groupObjects/68bfac783bc7c024975c90cb/1757391992521/comedycollectiveLogo.png",
     "type": "image",
     "currentFile": {
-      "source": "/comedycollectiveLogo.png"
+      "source": "https://comedycollectivechi.com/comedycollectiveLogo.png"
     }
   },
   "businessInfo": {

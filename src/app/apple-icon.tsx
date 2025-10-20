@@ -12,7 +12,7 @@ export default async function AppleIcon() {
 
   const primaryColor = siteData?.primary || '#001a4a'
   const logoSrc =
-    siteData?.logo?.currentFile?.source || '/comedycollectiveLogo.png'
+    siteData?.logo?.currentFile?.source || 'https://comedycollectivechi.com/comedycollectiveLogo.png'
 
   return new ImageResponse(
     (
