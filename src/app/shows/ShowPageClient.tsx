@@ -9,14 +9,14 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
+} from "@/components/UI/card";
 import { ShowData } from "@/types/Shows";
 
-interface MediaPageClientProps {
+interface ShowPageClientProps {
   items: ShowData[];
 }
 
-const MediaPageClient = ({ items }: MediaPageClientProps) => {
+const ShowPageClient = ({ items }: ShowPageClientProps) => {
   const siteData = useSiteData();
   const mountedRef = useRef(false);
   const types = ["All", "Article", "Videos", "Podcasts"];
@@ -24,63 +24,29 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
   const [filteredItems, setFilteredItems] = useState<ShowData[]>(items);
   const [loading, setLoading] = useState(false);
 
-  // useEffect(() => {
-  //   if (!mountedRef.current) {
-  //     mountedRef.current = true;
-  //     return;
-  //   }
+  useEffect(() => {
+    if (!mountedRef.current) {
+      mountedRef.current = true;
+      return;
+    }
     
-  //   setLoading(true);
-  //   console.log('Filtering items for type:', activeType);
-  //   const timer = setTimeout(() => {
-  //     const filtered =
-  //       activeType === "All"
-  //         ? items
-  //         : items.filter(
-  //             (item) =>
-  //               item.type?.toLowerCase() === activeType.toLowerCase()
-  //           );
-  //     setFilteredItems(filtered);
-  //     setLoading(false);
-  //   }, 600);
-  //   return () => clearTimeout(timer);
-  // }, [activeType, items]);
-
+    setLoading(true);
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [activeType, items]);
   return (
     <main className="pt-24 md:pt-32 pb-20 md:pb-32">
       <section className="mx-auto max-w-5xl px-6 text-center space-y-6 mb-16">
         <h1 className="text-3xl md:text-5xl font-display font-bold tracking-tight">
-          Welcome to Our <span className="text-primary">Media Hub</span>
+          Our Shows
         </h1>
         <p className="text-gray-700 text-lg md:text-xl max-w-3xl mx-auto">
-          Discover articles, watch videos, and tune into podcasts — all in one
-          place. Stay inspired and informed with stories that matter.
+          Explore our upcoming shows, featuring the best in comedy and entertainment.
         </p>
       </section>
-      <section className="mx-auto max-w-6xl px-6 mb-12">
-        <div className="flex justify-center flex-wrap gap-3 text-sm font-medium">
-          {types.map((type) => (
-            <button
-              key={type}
-              onClick={() => setActiveType(type)}
-              style={{
-                background:
-                  activeType === type
-                    ? siteData?.primary
-                    : siteData?.surface,
-                color:
-                  activeType === type
-                    ? siteData?.["text-inverse"]
-                    : siteData?.["text-primary"],
-              }}
-              className="px-4 py-2 rounded-md transition-all duration-300 cursor-pointer hover:opacity-90"
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-      </section>
-      {/* <section className="mx-auto max-w-6xl px-6">
+      <section className="mx-auto max-w-6xl px-6">
         {loading ? (
           <SkeletonGrid />
         ) : filteredItems?.length > 0 ? (
@@ -91,7 +57,7 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
             {filteredItems.map((item, idx) => (
               <Link
                 key={`media_item_${idx}`}
-                href={`/media-hub/${item.slug}`}
+                href={`/shows/${item.id}`}
                 className="block h-full group focus:outline-none"
               >
                 <Card className="h-full rounded-xl shadow-md overflow-hidden flex flex-col transition-all duration-300 transform group-hover:-translate-y-1 group-hover:shadow-lg">
@@ -107,9 +73,6 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
-                    <span className="absolute top-3 left-3 bg-black/70 text-white text-xs px-2 py-1 rounded-full capitalize">
-                      {item.type || "Article"}
-                    </span>
                   </div>
 
                   <CardHeader>
@@ -141,12 +104,12 @@ const MediaPageClient = ({ items }: MediaPageClientProps) => {
             No {activeType} found.
           </p>
         )}
-      </section> */}
+      </section>
     </main>
   );
 };
 
-export default MediaPageClient;
+export default ShowPageClient;
 
 const SkeletonGrid = () => (
   <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 animate-pulse">

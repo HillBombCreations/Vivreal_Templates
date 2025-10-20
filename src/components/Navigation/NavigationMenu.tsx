@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation"; // ✅ Detects active route
+import { usePathname } from "next/navigation";
 import {
   NavigationMenu,
   NavigationMenuItem,
   NavigationMenuList,
   NavigationMenuLinkTrigger,
   NavigationMenuViewport,
-} from "@/components/ui/navigation-menu";
+} from "@/components/UI/navigation-menu";
 import { NavigationData } from "@/types/Navigation";
 import { siteData } from "@/data/mockData";
 
@@ -17,7 +17,7 @@ interface NavigationMenuProps {
 }
 
 const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
-  const pathname = usePathname(); // current URL path
+  const pathname = usePathname();
 
   return (
     <>

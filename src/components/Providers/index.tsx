@@ -2,10 +2,9 @@
 
 import { ReactNode, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { TooltipProvider } from '@/components/ui/tooltip';
-import { Toaster as AppToaster } from '@/components/ui/toaster';
-import { Toaster as Sonner } from '@/components/ui/sonner';
-import CookieConsent from '@/components/CookieConsent';
+import { TooltipProvider } from '@/components/UI/tooltip';
+import { Toaster as AppToaster } from '@/components/UI/toaster';
+import { Toaster as Sonner } from '@/components/UI/sonner';
 import { useEffect } from 'react';
 import { SiteData } from '@/types/SiteData';
 import '@/styles/globals.css';
@@ -64,7 +63,6 @@ const Providers = ({
         <TooltipProvider>
             <AppToaster />
             <Sonner />
-            <CookieConsent siteData={siteData} onAccept={handleAccept} onReject={handleReject} />
             {children}
         </TooltipProvider>
         </QueryClientProvider>

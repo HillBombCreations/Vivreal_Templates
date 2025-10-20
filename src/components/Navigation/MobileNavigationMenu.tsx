@@ -4,7 +4,7 @@ import React from "react"
 import Link from "next/link";
 import { cn } from "@/lib/utils"
 import { NavItem } from "@/types/Navigation"
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/UI/Button";
 import { Home } from 'lucide-react'
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
@@ -13,7 +13,7 @@ import {
   SheetContent,
   SheetHeader,
   SheetTitle,
-} from "@/components/ui/sheet"
+} from "@/components/UI/sheet"
 
 interface MobileNavigationMenuProps {
   items: NavItem[]
@@ -115,22 +115,6 @@ const renderLinks = (items: NavItem[], depth = 0): React.JSX.Element[] =>
           )
         })}
         <div className="w-full space-y-3">
-          <a
-            href="https://app.vivreal.io/login/"
-            onClick={() => {
-              if (window.gtag) {
-                window.gtag("event", "click", {
-                  event_category: "MobileNavbar",
-                  event_label: "Login",
-                  value: 1,
-                });
-              }
-            }}
-          >
-            <Button size="sm" style={{ background: siteData?.primary, color: siteData?.["text-inverse"] }} className="w-full font-medium mb-3">
-              Log in
-            </Button>
-          </a>
           <a
             href="/contact"
             onClick={() => {

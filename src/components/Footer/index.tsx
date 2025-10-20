@@ -75,7 +75,7 @@ const Footer = async () => {
             className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
           >
             <Image
-              src="/vrLogo.png"
+              src="/vrlogo.png"
               alt="Vivreal Logo"
               width={16}
               height={16}

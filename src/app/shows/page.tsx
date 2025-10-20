@@ -2,7 +2,7 @@ import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import { getShows } from "@/lib/api/shows";
-import MediaPageClient from "./MediaPageClient";
+import ShowPageClient from "./ShowPageClient";
 
 export const MediaPage = async () => {
   const mediaData = await getShows();
@@ -11,7 +11,7 @@ export const MediaPage = async () => {
   return (
     <>
       <Navbar />
-      <MediaPageClient items={items} />
+      <ShowPageClient items={items} />
       <CTASection />
       <Footer />
     </>
