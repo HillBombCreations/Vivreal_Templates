@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/UI/Button';
 import { ArrowRight } from 'lucide-react';
 import { useSiteData } from '@/contexts/SiteDataContext';
 

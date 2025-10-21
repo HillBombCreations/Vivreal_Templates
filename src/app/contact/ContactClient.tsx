@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import axios from "axios";
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/UI/Button";
 import { useSiteData } from "@/contexts/SiteDataContext";
 
 const ContactClient = () => {
