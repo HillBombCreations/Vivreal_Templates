@@ -9,7 +9,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-} from "@/components/UI/card";
+} from "@/components/ui/card";
 import { ShowData } from "@/types/Shows";
 
 interface ShowPageClientProps {
