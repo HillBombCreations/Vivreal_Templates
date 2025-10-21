@@ -6,6 +6,7 @@ import { FeatureGifSection } from './FeatureGifSection';
 import { SolutionsSection } from './SolutionsSection';
 import { FeaturesSection } from './FeaturesSection';
 import { WhatWeDoData } from './WhatWeDoSeciton';
+
 export interface LandingPageProps {
   siteData?: SiteData;
   articleSectionData?: ShowsSectionProps;

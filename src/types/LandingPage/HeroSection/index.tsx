@@ -1,10 +1,5 @@
 import { LucideIcon } from 'lucide-react';
 import { SiteData } from '@/types/SiteData';
-import { TeamSyncData } from '../TeamSync';
-import { FeatureGifSection } from '@/types/LandingPage/FeatureGifSection';
-import { SolutionsSection } from '../SolutionsSection';
-import { FeaturesSection } from '../FeaturesSection';
-import { WhatWeDoData } from '../WhatWeDoSeciton';
 
 export interface HeroSectionData {
   title?: string;
