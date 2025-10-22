@@ -243,9 +243,9 @@ export const navigationLinks = [
     "label": "Our Team",
     "displayOnHeader": true,
   },
-  {
-    "path": "/shows",
-    "label": "Shows",
-    "displayOnHeader": true,
-  },
+  // {
+  //   "path": "/shows",
+  //   "label": "Shows",
+  //   "displayOnHeader": true,
+  // },
 ];

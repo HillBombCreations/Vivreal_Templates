@@ -108,14 +108,13 @@ const AboutClient = () => {
       <section className="mt-24 mx-auto max-w-4xl text-center px-6">
         <div className="space-y-6 bg-secondary/50 px-6 py-12 rounded-xl">
           <h2 className="text-2xl md:text-3xl font-display font-bold">
-            Ready to Learn More?
+            Thanks for taking the time to learn more about our team!
           </h2>
           <p
             className="text-sm max-w-xl mx-auto"
             style={{ color: siteData?.["text-secondary"] }}
           >
-            Every journey starts with a conversation. Reach out today and see
-            how we can work together to bring your ideas to life.
+            We&apos;re excited about the journey ahead and would love to have you with us!
           </p>
         </div>
       </section>

@@ -23,12 +23,6 @@ const HeroSection = () => {
       image: '/posters/hotshots.jpeg',
       ticketsUrl: 'https://thedentheatre.com/performances/2025/11/15/hotshots-the-den-theatre-comedy-club-chicago',
     },
-    {
-      title: "Uncorked & Unfiltered",
-      description: "A Wine and Comedy Experience. Join us for a night of fine wines, laughs, and sophisticated company. Purchase of a ticket includes a wine flight of five wines curated to match each of our hilarious comedians!\n\n 18 October, 2025 | 8:00 PM\n3164 N. Broadway, Chicago, IL 60657",
-      image: '/posters/wine.png',
-      ticketsUrl: 'https://www.eventbrite.com/e/uncorked-unfiltered-a-wine-comedy-experience-tickets-1730710474619',
-    },
   ];
 
   return (
@@ -143,6 +137,7 @@ const HeroSection = () => {
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Past Shows</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-14">
           {[
+            "/posters/wine.png",
             "/posters/IMG_5539.png",
             "/posters/IMG_5850.jpeg",
             "/posters/IMG_6320.png",

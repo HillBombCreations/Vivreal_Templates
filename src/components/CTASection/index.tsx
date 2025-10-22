@@ -47,7 +47,7 @@ const CTASection = () => {
                 }}
                 className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in"
               >
-                Have questions or want to learn more? We&apos;d love to hear from you.
+                Have questions, feedback, or just want to say hello? We&apos;d love to hear from you!
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in" style={{ animationDelay: '200ms' }}>
                 <a
@@ -55,7 +55,7 @@ const CTASection = () => {
                   className="text-primary hover:underline transition-colors"
                 >
                   <Button size="lg" variant="secondary" className="font-medium cursor-pointer bg-white text-primary hover:bg-white/90">
-                    Contact Us
+                    Reach Out
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </a>

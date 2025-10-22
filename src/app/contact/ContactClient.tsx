@@ -75,8 +75,9 @@ const ContactClient = () => {
             Us
           </h1>
           <p className="text-gray-700 text-lg md:text-xl max-w-2xl mx-auto">
-            Have questions or just want to say hello? Fill out the form below
-            and we’ll get back to you shortly.
+            You really enjoy our experience with us, or have some suggestions? We
+            would love to hear from you! Please fill out the form below to get in
+            touch.
           </p>
         </div>
 
@@ -87,15 +88,15 @@ const ContactClient = () => {
         >
           {success && (
             <div className="mb-6 rounded-lg bg-green-100 text-green-800 p-4 text-center">
-              We’ve received your message and will be in touch shortly.
+              We&apos;ve received your message and will be in touch shortly.
             </div>
           )}
 
           {error && (
             <div className="mb-6 rounded-lg bg-red-100 text-red-800 p-4 text-center">
               Something went wrong. Please try again, or reach us directly at{" "}
-              <a href="mailto:hello@thecomedycollective.com" className="underline font-medium">
-                hello@thecomedycollective.com
+              <a href="mailto:hello@comedycollectivechi.com" className="underline font-medium">
+                hello@comedycollectivechi.com
               </a>
               .
             </div>
