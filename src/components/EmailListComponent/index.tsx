@@ -19,8 +19,6 @@ const EmailListComponent = () => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
 
-  const API_URL = process.env.NEXT_PUBLIC_MAIN_API;
-
   // Check popup logic
   useEffect(() => {
     const subscribed = localStorage.getItem(SUBSCRIBE_KEY);

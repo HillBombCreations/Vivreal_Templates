@@ -1,11 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import axios from "axios";
 import { Button } from "@/components/ui/Button";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Star } from "lucide-react";
-
+import { createReview } from "@/lib/api/review";
 const ReviewClient = () => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
@@ -18,8 +17,6 @@ const ReviewClient = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
-
-  const API_URL = process.env.NEXT_PUBLIC_MAIN_API;
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
@@ -59,10 +56,18 @@ const ReviewClient = () => {
     setSuccess(false);
 
     try {
-      // Replace with your backend endpoint for review submission
-      await axios.post(`${API_URL}/api/reviews/submit`, formData);
-      setSuccess(true);
-      setFormData({ name: "", email: "", rating: 0, review: "" });
+      const success = await createReview(
+        formData.email,
+        formData.name,
+        formData.review,
+        formData.rating
+      );
+      if (success) {
+        setSuccess(true);
+        setFormData({ name: "", email: "", rating: 0, review: "" });
+      } else {
+        setError(true);
+      }
     } catch (err) {
       setError(true);
       console.error("Error submitting review:", err);
