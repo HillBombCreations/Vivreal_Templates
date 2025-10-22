@@ -4,7 +4,11 @@ import CTASection from "@/components/CTASection";
 import { getShows } from "@/lib/api/shows";
 import ShowPageClient from "./ShowPageClient";
 
-export const MediaPage = async () => {
+// Force runtime fetching instead of static build
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function MediaPage() {
   const mediaData = await getShows();
   const items = mediaData || [];
 
@@ -18,9 +22,7 @@ export const MediaPage = async () => {
   );
 };
 
-export default MediaPage;
-
-export const generateMetadata = async () => {
+export async function generateMetadata() {
   return {
     title: "Media Hub",
     description:
