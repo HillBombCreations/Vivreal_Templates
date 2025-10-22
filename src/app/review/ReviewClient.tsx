@@ -4,14 +4,15 @@ import React, { useState } from "react";
 import axios from "axios";
 import { Button } from "@/components/ui/Button";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { Star } from "lucide-react";
 
-const ContactClient = () => {
+const ReviewClient = () => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
-    subject: "",
-    message: "",
+    rating: 0,
+    review: "",
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -28,8 +29,8 @@ const ContactClient = () => {
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = "Email is invalid";
     }
-    if (!formData.subject.trim()) newErrors.subject = "Subject is required";
-    if (!formData.message.trim()) newErrors.message = "Message is required";
+    if (formData.rating === 0) newErrors.rating = "Please select a rating";
+    if (!formData.review.trim()) newErrors.review = "Review cannot be empty";
     return newErrors;
   };
 
@@ -40,9 +41,13 @@ const ContactClient = () => {
     setErrors((prev) => ({ ...prev, [e.target.name]: "" }));
   };
 
+  const handleRating = (value: number) => {
+    setFormData((prev) => ({ ...prev, rating: value }));
+    setErrors((prev) => ({ ...prev, rating: "" }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
@@ -54,12 +59,13 @@ const ContactClient = () => {
     setSuccess(false);
 
     try {
-      await axios.post(`${API_URL}/api/sendContactUsEmail`, formData);
+      // Replace with your backend endpoint for review submission
+      await axios.post(`${API_URL}/api/reviews/submit`, formData);
       setSuccess(true);
-      setFormData({ name: "", email: "", subject: "", message: "" });
+      setFormData({ name: "", email: "", rating: 0, review: "" });
     } catch (err) {
       setError(true);
-      console.error("Error sending message:", err);
+      console.error("Error submitting review:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -71,13 +77,13 @@ const ContactClient = () => {
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
-            <span style={{ color: siteData?.["text-primary"] }}>Contact</span>{" "}
-            Us
+            <span style={{ color: siteData?.["text-primary"] }}>
+              Leave a Review
+            </span>
           </h1>
           <p className="text-gray-700 text-lg md:text-xl max-w-2xl mx-auto">
-            You really enjoy our experience with us, or have some suggestions? We
-            would love to hear from you! Please fill out the form below to get in
-            touch.
+            Loved your time with <strong>The Comedy Collective</strong>? Tell us
+            how we did and help others discover the laughter!
           </p>
         </div>
 
@@ -88,14 +94,18 @@ const ContactClient = () => {
         >
           {success && (
             <div className="mb-6 rounded-lg bg-green-100 text-green-800 p-4 text-center">
-              We&apos;ve received your message and will be in touch shortly.
+              Thanks for your review! We appreciate your feedback and support.
             </div>
           )}
 
           {error && (
             <div className="mb-6 rounded-lg bg-red-100 text-red-800 p-4 text-center">
-              Something went wrong. Please try again, or reach us directly at{" "}
-              <a href="mailto:hello@comedycollectivechi.com" className="underline font-medium">
+              Something went wrong. Please try again later or email us directly
+              at{" "}
+              <a
+                href="mailto:hello@comedycollectivechi.com"
+                className="underline font-medium"
+              >
                 hello@comedycollectivechi.com
               </a>
               .
@@ -103,6 +113,7 @@ const ContactClient = () => {
           )}
 
           <form onSubmit={handleSubmit} noValidate className="space-y-6">
+            {/* Name */}
             <div>
               <label htmlFor="name" className="block mb-2 font-semibold">
                 Name
@@ -116,13 +127,14 @@ const ContactClient = () => {
                 className={`w-full rounded-md border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition ${
                   errors.name ? "border-red-700" : "border-gray-300"
                 }`}
-                placeholder="Your full name"
+                placeholder="Your name"
               />
               {errors.name && (
                 <p className="mt-1 text-sm text-red-600">{errors.name}</p>
               )}
             </div>
 
+            {/* Email */}
             <div>
               <label htmlFor="email" className="block mb-2 font-semibold">
                 Email
@@ -143,43 +155,45 @@ const ContactClient = () => {
               )}
             </div>
 
+            {/* Rating */}
             <div>
-              <label htmlFor="subject" className="block mb-2 font-semibold">
-                Subject
-              </label>
-              <input
-                type="text"
-                id="subject"
-                name="subject"
-                value={formData.subject}
-                onChange={handleChange}
-                className={`w-full rounded-md border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                  errors.subject ? "border-red-700" : "border-gray-300"
-                }`}
-                placeholder="Subject of your message"
-              />
-              {errors.subject && (
-                <p className="mt-1 text-sm text-red-600">{errors.subject}</p>
+              <label className="block mb-2 font-semibold">Rating</label>
+              <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <Star
+                    key={star}
+                    className={`h-8 w-8 cursor-pointer transition ${
+                      formData.rating >= star
+                        ? "fill-yellow-400 text-yellow-400"
+                        : "text-gray-300"
+                    }`}
+                    onClick={() => handleRating(star)}
+                  />
+                ))}
+              </div>
+              {errors.rating && (
+                <p className="mt-1 text-sm text-red-600">{errors.rating}</p>
               )}
             </div>
 
+            {/* Review */}
             <div>
-              <label htmlFor="message" className="block mb-2 font-semibold">
-                Message
+              <label htmlFor="review" className="block mb-2 font-semibold">
+                Your Review
               </label>
               <textarea
-                id="message"
-                name="message"
+                id="review"
+                name="review"
                 rows={6}
-                value={formData.message}
+                value={formData.review}
                 onChange={handleChange}
                 className={`w-full rounded-md border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition resize-none ${
-                  errors.message ? "border-red-700" : "border-gray-300"
+                  errors.review ? "border-red-700" : "border-gray-300"
                 }`}
-                placeholder="Write your message here..."
+                placeholder="Share your thoughts about your experience..."
               />
-              {errors.message && (
-                <p className="mt-1 text-sm text-red-600">{errors.message}</p>
+              {errors.review && (
+                <p className="mt-1 text-sm text-red-600">{errors.review}</p>
               )}
             </div>
 
@@ -194,7 +208,7 @@ const ContactClient = () => {
                 size="lg"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? "Sending..." : "Send Message"}
+                {isSubmitting ? "Submitting..." : "Submit Review"}
               </Button>
             </div>
           </form>
@@ -204,4 +218,4 @@ const ContactClient = () => {
   );
 };
 
-export default ContactClient;
+export default ReviewClient;

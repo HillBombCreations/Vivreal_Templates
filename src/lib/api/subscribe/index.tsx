@@ -5,9 +5,10 @@ const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
 export const subscribeUser = async (email: string): Promise<boolean> => {
   try {
     await axios.post(
-      `${API_URL}/tenant/subscribeUser`,
+      `${API_URL}/tenant/definedCollectionObject`,
       {
-          email: email
+          email: email,
+          type: "subscribeUser"
       },
       {
           headers: {

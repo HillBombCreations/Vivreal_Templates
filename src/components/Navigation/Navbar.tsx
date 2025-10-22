@@ -50,14 +50,14 @@ const Navbar = async () => {
 
           {/* Right: Button(s) */}
           <div className="flex items-center space-x-3">
-            <Link href="/contact">
+            <Link href="/review">
               <Button
                 variant="outline"
                 size="sm"
                 style={{ color: siteData?.primary, borderColor: siteData?.primary }}
                 className="font-medium cursor-pointer"
               >
-                Drop A Review
+                Leave A Review
               </Button>
             </Link>
           </div>

@@ -34,7 +34,7 @@ const CTASection = () => {
                 }}
                 className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in"
               >
-                Get in Touch
+                Enjoyed your visit?
               </h2>
               <p
                 style={{
@@ -47,15 +47,22 @@ const CTASection = () => {
                 }}
                 className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in"
               >
-                Have questions, feedback, or just want to say hello? We&apos;d love to hear from you!
+                We’d love to hear what you think! Take a moment to share your experience by leaving us a review.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in" style={{ animationDelay: '200ms' }}>
+              <div
+                className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in"
+                style={{ animationDelay: '200ms' }}
+              >
                 <a
-                  href="/contact"
+                  href="/reviews"
                   className="text-primary hover:underline transition-colors"
                 >
-                  <Button size="lg" variant="secondary" className="font-medium cursor-pointer bg-white text-primary hover:bg-white/90">
-                    Reach Out
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="font-medium cursor-pointer bg-white text-primary hover:bg-white/90"
+                  >
+                    Leave a Review
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </a>

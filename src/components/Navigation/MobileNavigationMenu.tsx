@@ -38,7 +38,6 @@ export default function MobileNavigationMenu({
   open
 }: MobileNavigationMenuProps) {
   const siteData = useSiteData();
-  console.log('MobileNavigationMenu items:', items);
   const groupedItems = items.reduce((acc, item) => {
     const group = item.group || "other"
     if (!acc[group]) acc[group] = []
@@ -116,19 +115,10 @@ const renderLinks = (items: NavItem[], depth = 0): React.JSX.Element[] =>
         })}
         <div className="w-full space-y-3">
           <a
-            href="/contact"
-            onClick={() => {
-              if (window.gtag) {
-                window.gtag("event", "click", {
-                  event_category: "MobileNavbar",
-                  event_label: "Contact",
-                  value: 1,
-                });
-              }
-            }}
+            href="/review"
           >
             <Button style={{ color: siteData?.primary }} variant="outline" size="sm" className="w-full font-medium">
-              Contact Us
+              Leave A Review
             </Button>
           </a>
         </div>
