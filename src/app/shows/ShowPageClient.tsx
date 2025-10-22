@@ -86,14 +86,12 @@ const ShowPageClient = ({ items }: ShowPageClientProps) => {
                             month: "long",
                             day: "numeric",
                           }).format(new Date(item.date))
-                        : null}
+                        : null} {item.time ? `at ${item.time}` : ""}
                     </p>
                   </CardHeader>
 
                   <CardContent className="flex-1">
-                    <p className="text-sm text-gray-600 line-clamp-3">
-                      {item.description}
-                    </p>
+                    <div className="text-sm text-gray-600 line-clamp-3" dangerouslySetInnerHTML={{ __html: item.description }} />
                   </CardContent>
                 </Card>
               </Link>
@@ -101,7 +99,7 @@ const ShowPageClient = ({ items }: ShowPageClientProps) => {
           </div>
         ) : (
           <p className="text-center text-gray-500">
-            No {activeType} found.
+            No shows found.
           </p>
         )}
       </section>

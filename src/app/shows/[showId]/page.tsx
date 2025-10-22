@@ -28,7 +28,7 @@ const ShowPost = async (props: { params: { showId: string } }) => {
           <main className="pt-24 md:pt-32 pb-20 md:pb-32 text-center">
           <h1 className="text-3xl font-bold">Show not found</h1>
           <p className="mt-4 text-gray-800">Sorry, we couldn&apos;t find the show you&apos;re looking for.</p>
-          <Link href="/media-hub" className="inline-flex items-center gap-1 mt-6 text-primary hover:underline">
+          <Link href="/shows" className="inline-flex items-center gap-1 mt-6 text-primary hover:underline">
               <ArrowLeft size={16} /> Back to Shows
           </Link>
           </main>
@@ -42,7 +42,7 @@ const ShowPost = async (props: { params: { showId: string } }) => {
       <Navbar />
 
       <main className="pt-24 md:pt-32 pb-20 md:pb-32 max-w-4xl mx-auto px-4 prose prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary animate-fade-in">
-        <Link href="/media-hub" className="inline-flex items-center gap-1 mb-8 text-purple-700 hover:underline">
+        <Link href="/shows" className="inline-flex items-center gap-1 mb-8 text-purple-700 hover:underline">
           <ArrowLeft size={16} /> Back to Shows
         </Link>
         <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
@@ -55,7 +55,7 @@ const ShowPost = async (props: { params: { showId: string } }) => {
                 month: "long",
                 day: "numeric",
               }).format(new Date(show.date))
-            : null}
+            : null} {show.time ? `at ${show.time}` : ""} {show.location ? `| Location: ${show.location}` : ""} {show.ticketsUrl ? (<>| <a href={show.ticketsUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Get Tickets</a></>) : ""}
         </p>
 
         {show.image && (
@@ -71,7 +71,7 @@ const ShowPost = async (props: { params: { showId: string } }) => {
           </div>
         )}
 
-        <p className="text-lg mb-10">{show.description}</p>
+        <div className="text-lg mb-10" dangerouslySetInnerHTML={{ __html: show.description }} />
         <article className="prose prose-lg md:prose-xl prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary prose-p:mb-6">
           <div dangerouslySetInnerHTML={{ __html: cleanBody ?? "" }} />
         </article>
@@ -101,7 +101,7 @@ export const generateMetadata = async (props: { params: { showId: string } }) =>
     openGraph: {
       title: show.title,
       description: show.description,
-      url: `https://vivreal.io/developers/media-hub/${showId}`,
+      url: `https://comedycollectivechi.com/shows/${showId}`,
       images: show.imageUrl
         ? [
             {
@@ -112,7 +112,7 @@ export const generateMetadata = async (props: { params: { showId: string } }) =>
             },
           ]
         : [],
-      type: "show",
+      type: "article",
     },
     twitter: {
       card: "summary_large_image",

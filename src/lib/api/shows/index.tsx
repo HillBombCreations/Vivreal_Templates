@@ -18,12 +18,15 @@ export const getShows = async (): Promise<ShowData[]> => {
 
     const showData: ShowData[] = data.map((item: CMSShowData) => (
       {
-        title: item.objectValue.Title,
-        description: item.objectValue.Description,
-        date: item.objectValue.createdAt,
-        id: item.objectValue.Id,
-        image: item.objectValue.Image?.currentFile.source,
-        imageUrl: item.objectValue.Image ? `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${item.objectValue.Image.key}` : undefined,
+        title: item.objectValue.title,
+        description: item.objectValue.description,
+        id: item.objectValue._id,
+        date: item.objectValue.date,
+        time: item.objectValue.time,
+        location: item.objectValue.location,
+        ticketsUrl: item.objectValue.tickets_url,
+        image: item.objectValue.poster?.currentFile.source,
+        imageUrl: item.objectValue.poster ? `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${item.objectValue.poster.key}` : undefined,
       }
     ));
 

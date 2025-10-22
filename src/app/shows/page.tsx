@@ -10,6 +10,7 @@ export const revalidate = 0;
 
 export default async function MediaPage() {
   const mediaData = await getShows();
+  console.log("Media Data:", mediaData);
   const items = mediaData || [];
 
   return (
