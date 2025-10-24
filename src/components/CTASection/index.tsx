@@ -54,7 +54,7 @@ const CTASection = () => {
                 style={{ animationDelay: '200ms' }}
               >
                 <a
-                  href="/reviews"
+                  href="/review"
                   className="text-primary hover:underline transition-colors"
                 >
                   <Button

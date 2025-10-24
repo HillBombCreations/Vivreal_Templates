@@ -102,6 +102,11 @@
     font-size: 0.67em;
   }
 
+  .prose p:empty::before {
+    content: "\00a0";
+    display: block;
+  }
+
   .content-grid {
     --padding-inline: 1rem;
     --content-max-width: 1280px;

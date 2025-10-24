@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useSiteData } from "@/contexts/SiteDataContext";
 import {
   Card,
   CardContent,
@@ -17,9 +16,7 @@ interface ShowPageClientProps {
 }
 
 const ShowPageClient = ({ items }: ShowPageClientProps) => {
-  const siteData = useSiteData();
   const mountedRef = useRef(false);
-  const types = ["All", "Article", "Videos", "Podcasts"];
   const [activeType, setActiveType] = useState("All");
   const [filteredItems, setFilteredItems] = useState<ShowData[]>(items);
   const [loading, setLoading] = useState(false);

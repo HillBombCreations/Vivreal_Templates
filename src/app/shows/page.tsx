@@ -9,9 +9,22 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function MediaPage() {
-  const mediaData = await getShows();
-  console.log("Media Data:", mediaData);
-  const items = mediaData || [];
+  const shows = await getShows();
+  
+  let items = shows || [];
+  if (shows && Array.isArray(shows)) {
+    items = shows.filter(show => {
+      if (!show.date) return false;
+      const showDate = new Date(show.date);
+      const today = new Date();
+      return showDate >= today;
+    }).sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+  }
+
 
   return (
     <>

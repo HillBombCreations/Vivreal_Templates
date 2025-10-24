@@ -39,42 +39,11 @@ export default function MobileNavigationMenu({
 }: MobileNavigationMenuProps) {
   const siteData = useSiteData();
   const groupedItems = items.reduce((acc, item) => {
-    const group = item.group || "other"
-    if (!acc[group]) acc[group] = []
-    acc[group].push(item)
-    return acc
-  }, {} as Record<string, NavItem[]>)
-
-const renderLinks = (items: NavItem[], depth = 0): React.JSX.Element[] =>
-  items.map((item) => {
-    const Icon = item.icon;
-    return (
-      <div key={item.path} className="space-y-1">
-        <Link
-          href={item.path}
-          onClick={handleClose}
-          className={cn(
-            "flex items-start gap-2 py-2 px-2 rounded-md transition-colors",
-            "hover:bg-muted hover:text-foreground",
-            depth === 0 ? "font-semibold" : `pl-${depth * 4} pr-2`
-          )}
-        >
-          {Icon && <Icon className={`w-5 h-5 mt-0.5 ${item.iconColor}`} />}
-          <div className="flex flex-col">
-            <span className="text-sm">
-              {item.linklabel?.trim() ||
-                item.path.split("/").pop()?.toUpperCase() ||
-                "Untitled"}
-            </span>
-          </div>
-        </Link>
-
-        {item.url && (
-          <div className="ml-2">{renderLinks(item.url, depth + 1)}</div>
-        )}
-      </div>
-    );
-  });
+      const group = item.group || "other"
+      if (!acc[group]) acc[group] = []
+      acc[group].push(item)
+      return acc
+    }, {} as Record<string, NavItem[]>);
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>

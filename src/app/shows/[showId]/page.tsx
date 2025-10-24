@@ -9,8 +9,8 @@ import { getShowById } from "@/lib/api/shows";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-const ShowPost = async (props: { params: { showId: string } }) => {
-  const { showId } = props.params;
+const ShowPost = async ({ params }: { params: Promise<{ showId: string }> }) => {
+  const { showId } = await params;
   const show = await getShowById(showId || "");
 
   const cleanBody = ("")
@@ -41,40 +41,62 @@ const ShowPost = async (props: { params: { showId: string } }) => {
     <>
       <Navbar />
 
-      <main className="pt-24 md:pt-32 pb-20 md:pb-32 max-w-4xl mx-auto px-4 prose prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary animate-fade-in">
-        <Link href="/shows" className="inline-flex items-center gap-1 mb-8 text-purple-700 hover:underline">
-          <ArrowLeft size={16} /> Back to Shows
+      <main className="pt-24 md:pt-32 pb-20 md:pb-32 max-w-6xl mx-auto px-4 prose prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary animate-fade-in">
+        <Link href="/shows" className="inline-flex items-center gap-1 mb-8 text-primary hover:underline">
+          <ArrowLeft size={16} /> all shows
         </Link>
         <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
           {show.title}
         </h1>
-        <p className="text-gray-800 text-sm mb-4">
-          {show.date
-            ? new Intl.DateTimeFormat("en-US", {
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              }).format(new Date(show.date))
-            : null} {show.time ? `at ${show.time}` : ""} {show.location ? `| Location: ${show.location}` : ""} {show.ticketsUrl ? (<>| <a href={show.ticketsUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">Get Tickets</a></>) : ""}
-        </p>
-
-        {show.image && (
-          <div className="w-full mb-8">
-            <Image
-              src={show.image}
-              alt={show.title}
-              width={800}
-              height={400}
-              priority
-              className="w-full h-auto rounded-2xl object-cover shadow-sm"
-            />
+        <div className="text-gray-800 text-sm mb-4 flex items-center pl-1 pr-1">
+          <div className="flex flex-col">
+            <span>
+              {show.date
+              ? new Intl.DateTimeFormat("en-US", {
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                }).format(new Date(show.date))
+              : null} {show.time ? `at ${show.time}` : ""}
+            </span>
+            <span>{show.location || ""}</span>
           </div>
-        )}
+          {
+            show.ticketsUrl ?
+            <a
+              href={show.ticketsUrl || "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ border: '1px solid #001a4a' }}
+              className="ml-auto px-4 py-2 bg-[#d0f5ff] text-[#001a4a] text-sm font-semibold rounded hover:bg-[#84e5ff] transition w-max self-start"
+            >
+              GET TICKETS
+            </a>
+            : ""
+          }
+        </div>
 
-        <div className="text-lg mb-10" dangerouslySetInnerHTML={{ __html: show.description }} />
-        <article className="prose prose-lg md:prose-xl prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary prose-p:mb-6">
-          <div dangerouslySetInnerHTML={{ __html: cleanBody ?? "" }} />
-        </article>
+        <div className="flex flex-col md:flex-row gap-4 md:gap-8">
+          {show.image && (
+            <div className="w-full mb-4 md:mb-0 md:order-2">
+              <Image
+                src={show.image}
+                alt={show.title}
+                width={800}
+                height={400}
+                priority
+                className="w-full h-auto rounded-2xl object-cover shadow-sm"
+              />
+            </div>
+          )}
+          <div className="text-lg md:mb-0">
+            <div dangerouslySetInnerHTML={{ __html: show.description }} />
+          </div>
+
+          <article className="prose prose-lg md:prose-xl prose-primary prose-headings:font-display prose-headings:font-bold prose-headings:text-primary prose-p:min-h-[1em]">
+            <div dangerouslySetInnerHTML={{ __html: cleanBody ?? "" }} />
+          </article>
+        </div>
       </main>
 
       <CTASection />
@@ -85,9 +107,9 @@ const ShowPost = async (props: { params: { showId: string } }) => {
 
 export default ShowPost;
 
-export const generateMetadata = async (props: { params: { showId: string } }) => {
-  const { showId } = props.params;
-  const show = await getShowById(showId || "");
+export const generateMetadata = async ({ params }: { params: Promise<{ showId: string }> }) => {
+  const { showId } = await params;
+  const show = await getShowById(showId);
   if (!show) {
     return {
       title: "show not found | Vivreal",

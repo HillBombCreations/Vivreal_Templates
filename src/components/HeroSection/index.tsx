@@ -2,11 +2,21 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { getShows } from "@/lib/api/shows";
+import { ShowData } from "@/types/Shows"
+
+// Force runtime fetching instead of static build
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const HeroSection = () => {
   const siteData = useSiteData();
   const [isMobile, setIsMobile] = useState(false);
+  const [upcomingShows, setUpcomingShows] = useState<ShowData[]>([]);
+  const [pastShows, setPastShows] = useState<ShowData[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -16,14 +26,33 @@ const HeroSection = () => {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  const highlights = [
-    {
-      title: "Hotshots",
-      description: "Hotshots! A comedy showcase featuring a blend of Chicago's finest alongside the next generation of household names. This is a must see show.\n\nThe Den Theatre and comedy club is pleased to host Hotshots on November 15, 2025 at 1331 N. Milwaukee Ave. in Chicago's Wicker Park neighborhood.\nTickets are currently available at thedentheatre.com or by calling (773) 697-3830.",
-      image: '/posters/hotshots.jpeg',
-      ticketsUrl: 'https://thedentheatre.com/performances/2025/11/15/hotshots-the-den-theatre-comedy-club-chicago',
-    },
-  ];
+  useEffect(() => {
+    getShows()
+      .then((shows) => {
+        const upcoming = shows.filter(show => {
+          if (!show.date) return false;
+          const showDate = new Date(show.date);
+          const today = new Date();
+          return showDate >= today;
+        }).sort((a, b) => {
+          if (!a.date) return 1;
+          if (!b.date) return -1;
+          return new Date(a.date).getTime() - new Date(b.date).getTime();
+        });
+
+        const past = shows.filter(show => {
+          if (!show.date) return false;
+          const showDate = new Date(show.date);
+          const today = new Date();
+          return showDate < today;
+        });
+        
+        setUpcomingShows(upcoming);
+        setPastShows(past);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <section
@@ -89,13 +118,19 @@ const HeroSection = () => {
           </div>
         </div>
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Upcoming Shows</h2>
-        <div className="flex flex-col gap-4 mt-6">
-          {highlights.map((h, idx) => (
-            <div
+        {loading ? (
+          <p className="mt-6 text-gray-500">Loading upcoming shows...</p>
+        ) : upcomingShows.length === 0 ? (
+          <p className="mt-6 text-gray-500">No upcoming shows at the moment.</p>
+        ) : (
+          <div className="flex flex-col gap-4 mt-6">
+            {upcomingShows.map((show, idx) => (
+            <Link
+              href={`/shows/${show.id}`}
               key={idx}
               className={`
                 flex ${isMobile ? 'flex-col' : 'flex-row'}
-                rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden transition hover:shadow-md
+                rounded-lg border border-gray-200 bg-white shadow-sm overflow-hidden transition hover:shadow-lg
               `}
             >
               <div
@@ -105,8 +140,8 @@ const HeroSection = () => {
                 `}
               >
                 <Image
-                  src={h.image}
-                  alt={h.title}
+                  src={show.image || '/comedycollectivelogo.png'}
+                  alt={show.title}
                   width={0}
                   height={0}
                   sizes={isMobile ? "100vw" : "350px"}
@@ -116,11 +151,13 @@ const HeroSection = () => {
               </div>
               <div className={`${isMobile ? 'p-4 rounded-b-lg flex flex-col items-center text-center' : 'flex-1 p-4 flex flex-col justify-between'}`}>
                 <div>
-                  <h3 className="text-2xl font-semibold">{h.title}</h3>
-                  <p className="text-gray-600 text-sm mt-1 whitespace-pre-line">{h.description}</p>
+                  <h3 className="text-2xl font-semibold">{show.title}</h3>
+                  <article className="prose prose-p:min-h-[.4em]">
+                    <div className="text-gray-600 text-sm mt-1 line-clamp-4" dangerouslySetInnerHTML={{ __html: show.description }} />
+                  </article>
                 </div>
                 <a
-                  href={h.ticketsUrl || "#"}
+                  href={show.ticketsUrl || "#"}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={`
@@ -131,31 +168,32 @@ const HeroSection = () => {
                   TICKETS
                 </a>
               </div>
-            </div>
+            </Link>
           ))}
         </div>
+        )}
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Past Shows</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-14">
-          {[
-            "/posters/wine.png",
-            "/posters/IMG_5539.png",
-            "/posters/IMG_5850.jpeg",
-            "/posters/IMG_6320.png",
-            "/posters/MM Wet January IG (1080 x 1350 px).png",
-          ].map((src, idx) => (
-            <div key={idx} className="relative overflow-hidden rounded-lg shadow-sm hover:shadow-md transition">
-              <Image
-                src={src}
-                alt={`Poster ${idx + 1}`}
-                width={0}
-                height={0}
-                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                className="w-full h-64 object-contain"
-                priority
-              />
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <p className="mt-6 text-gray-500">Loading past shows...</p>
+        ) : pastShows.length === 0 ? (
+          <p className="mt-6 text-gray-500">No past shows yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-14">
+            {pastShows.filter(show => show.image).map((show, idx) => (
+              <div key={idx} className="relative overflow-hidden rounded-lg shadow-sm hover:shadow-md transition">
+                <Image
+                  src={show.image || '/comedycollectivelogo.png'}
+                  alt={`Poster ${idx + 1}`}
+                  width={0}
+                  height={0}
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="w-full h-64 object-contain"
+                  priority
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
