@@ -4,15 +4,19 @@ import type { CMSSiteData, SiteData } from "@/types/SiteData";
 
 const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
 const SITE_ID = process.env.SITE_ID!;
-const API_KEY = process.env.API_KEY!;
+const CMS_API_KEY = process.env.API_KEY!;
 
 
 export const getSiteData = async (): Promise<SiteData> => {
+  console.log('====================API_URL:', API_URL);
+  console.log('====================SITE_ID:', SITE_ID);
+  console.log('====================CMS_API_KEY:', CMS_API_KEY);
+  
   const res = await fetch(
     `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
     {
       headers: {
-        Authorization: API_KEY!,
+        Authorization: CMS_API_KEY!,
         "Content-Type": "application/json"
       },
       // Choose ONE strategy:
@@ -33,7 +37,7 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const res = await fetch(
     `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
     {
-      headers: { Authorization: API_KEY!, "Content-Type": "application/json" },
+      headers: { Authorization: CMS_API_KEY!, "Content-Type": "application/json" },
       // Choose ONE strategy:
       cache: "no-store",
       // next: { revalidate: 3600 }, // 1h ISR for sitemap
