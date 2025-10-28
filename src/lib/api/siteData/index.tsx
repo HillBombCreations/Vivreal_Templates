@@ -8,10 +8,10 @@ const CMS_API_KEY = process.env.API_KEY!;
 
 
 export const getSiteData = async (): Promise<SiteData> => {
-  console.log('====================API_URL:', API_URL);
-  console.log('====================SITE_ID:', SITE_ID);
-  console.log('====================CMS_API_KEY:', CMS_API_KEY);
-  
+  console.log('====================GET SITE DATA - API_URL:', API_URL);
+  console.log('====================GET SITE DATA - SITE_ID:', SITE_ID);
+  console.log('====================GET SITE DATA - CMS_API_KEY:', CMS_API_KEY);
+
   const res = await fetch(
     `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
     {
