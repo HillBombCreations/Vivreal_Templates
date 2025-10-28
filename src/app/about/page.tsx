@@ -2,12 +2,13 @@ import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import AboutClient from "./AboutClient";
-
+import { getTeamMembers } from "@/lib/api/team";
 const AboutPage = async () => {
+  const teamMembers = await getTeamMembers();
   return (
     <>
       <Navbar />
-      <AboutClient />   
+      <AboutClient teamMembers={teamMembers} />
       <CTASection />
       <Footer />
     </>

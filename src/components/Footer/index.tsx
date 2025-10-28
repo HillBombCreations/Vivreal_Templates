@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from 'next/image';
 import { NavigationData } from "@/types/Navigation";
 import { getHeroSectionData } from "@/lib/api/navigation";
-import { getSiteData } from "@/lib/api/landing";
+import { getSiteData } from "@/lib/api/siteData";
 
 const InstagramIcon = () => (
   <Image

@@ -14,6 +14,7 @@ export interface Businessinfo {
     name?: string,
     shipping?: boolean
 }
+
 export interface SiteData {
     primary?: string;
     domainName?: string;
@@ -37,3 +38,15 @@ export interface SiteData {
         }
     },
 }
+
+export type CMSSiteData = {
+    _id: string;
+    name: string;
+    domainName: string;
+    groupID: string;
+    siteDetails: {
+        schema: object;
+        values: SiteData;
+    }
+    businessInfo: Businessinfo;
+};

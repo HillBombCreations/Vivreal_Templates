@@ -5,7 +5,6 @@ import Providers from '@/components/Providers';
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   const siteData = await getSiteData();
-
   return (
     <html lang="en">
         <body>

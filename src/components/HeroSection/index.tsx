@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useSiteData } from "@/contexts/SiteDataContext";
-import { getShows } from "@/lib/api/shows";
 import { ShowData } from "@/types/Shows"
+import { useSiteData } from "@/contexts/SiteDataContext";
+import { ShowSkeletonCard, PastShowSkeleton } from "./skeletonLoader";
 
 // Force runtime fetching instead of static build
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const HeroSection = () => {
+const HeroSection = ({ shows }: { shows: ShowData[] }) => {
   const siteData = useSiteData();
   const [isMobile, setIsMobile] = useState(false);
   const [upcomingShows, setUpcomingShows] = useState<ShowData[]>([]);
@@ -27,32 +27,31 @@ const HeroSection = () => {
   }, []);
 
   useEffect(() => {
-    getShows()
-      .then((shows) => {
-        const upcoming = shows.filter(show => {
-          if (!show.date) return false;
-          const showDate = new Date(show.date);
-          const today = new Date();
-          return showDate >= today;
-        }).sort((a, b) => {
-          if (!a.date) return 1;
-          if (!b.date) return -1;
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        });
+    if (shows.length > 0) {
+      setLoading(true);
+      const upcoming = shows.filter(show => {
+        if (!show.date) return false;
+        const showDate = new Date(show.date);
+        const today = new Date();
+        return showDate >= today;
+      }).sort((a, b) => {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      });
 
-        const past = shows.filter(show => {
-          if (!show.date) return false;
-          const showDate = new Date(show.date);
-          const today = new Date();
-          return showDate < today;
-        });
-        
-        setUpcomingShows(upcoming);
-        setPastShows(past);
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+      const past = shows.filter(show => {
+        if (!show.date) return false;
+        const showDate = new Date(show.date);
+        const today = new Date();
+        return showDate < today;
+      });
+      
+      setUpcomingShows(upcoming);
+      setPastShows(past);
+      setLoading(false);
+    }
+  }, [shows]);
 
   return (
     <section
@@ -119,7 +118,11 @@ const HeroSection = () => {
         </div>
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Upcoming Shows</h2>
         {loading ? (
-          <p className="mt-6 text-gray-500">Loading upcoming shows...</p>
+          <div className="flex flex-col gap-4 mt-6" aria-busy="true">
+            {[...Array(5)].map((_, i) => (
+              <ShowSkeletonCard key={i} isMobile={isMobile} />
+            ))}
+          </div>
         ) : upcomingShows.length === 0 ? (
           <p className="mt-6 text-gray-500">No upcoming shows at the moment.</p>
         ) : (
@@ -156,17 +159,23 @@ const HeroSection = () => {
                     <div className="text-gray-600 text-sm mt-1 line-clamp-4" dangerouslySetInnerHTML={{ __html: show.description }} />
                   </article>
                 </div>
-                <a
-                  href={show.ticketsUrl || "#"}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (show.ticketsUrl) {
+                      window.open(show.ticketsUrl, "_blank", "noopener,noreferrer");
+                    }
+                  }}
                   className={`
-                    mt-4 px-4 py-2 bg-[#001a4a] text-white text-sm font-semibold rounded hover:bg-[#003366] transition
+                    mt-4 px-4 py-2 cursor-pointer bg-[#001a4a] text-white text-sm font-semibold rounded hover:bg-[#003366] transition
                     ${isMobile ? 'w-full max-w-xs' : 'w-max self-start'}
                   `}
+                  aria-label="Open tickets in a new tab"
                 >
                   TICKETS
-                </a>
+                </button>
               </div>
             </Link>
           ))}
@@ -174,7 +183,11 @@ const HeroSection = () => {
         )}
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">Past Shows</h2>
         {loading ? (
-          <p className="mt-6 text-gray-500">Loading past shows...</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-14" aria-busy="true">
+            {[...Array(10)].map((_, i) => (
+              <PastShowSkeleton key={i} />
+            ))}
+          </div>
         ) : pastShows.length === 0 ? (
           <p className="mt-6 text-gray-500">No past shows yet.</p>
         ) : (
