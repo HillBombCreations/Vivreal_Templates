@@ -45,3 +45,8 @@ export async function getShows(): Promise<ShowData[]> {
 
   return shows;
 }
+
+export const getShowById = async(id: string): Promise<ShowData | null> => {
+  const allShows = (await getShows());
+  return allShows.find(show => show.id === id) || null;
+};
