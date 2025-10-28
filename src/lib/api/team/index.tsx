@@ -5,11 +5,13 @@ import type { TeamData } from "@/types/Team";
 const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID;
 const API_KEY = process.env.API_KEY;
+const BUCKET_NAME = process.env.BUCKET_NAME!;
 
 const assertEnv = () => {
   if (!API_URL) throw new Error("Missing NEXT_PUBLIC_CLIENT_API");
   if (!TEAMMEMBERS_ID) throw new Error("Missing TEAMMEMBERS_ID");
   if (!API_KEY) throw new Error("Missing API_KEY");
+  if (!BUCKET_NAME) throw new Error("Missing BUCKET_NAME");
 };
 /** Fetch team members directly from CMS (server-side only) */
 export async function getTeamMembers(): Promise<TeamData[]> {
@@ -43,7 +45,7 @@ export async function getTeamMembers(): Promise<TeamData[]> {
       description: item.objectValue.description,
       id: item.objectValue._id,
       image: item.objectValue.headshot?.currentFile.source,
-      imageUrl: item.objectValue.headshot?.currentFile.source,
+      imageUrl: item.objectValue.headshot ? `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${item.objectValue.headshot.key}` : undefined,
     }));
 
     return teamData;

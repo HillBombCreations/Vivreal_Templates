@@ -31,7 +31,7 @@ const Index = async () => {
 export default Index;
 
 export const generateMetadata = async () => {
-  const siteData = await getSiteData();
+  // const siteData = await getSiteData();
   return {
     title: "The Comedy Collective",
     description: "The Comedy Collective is a place for discovering and enjoying the best in comedy.",
@@ -41,7 +41,7 @@ export const generateMetadata = async () => {
       url: "https://comedycollectivechi.com/",
       images:  [
         {
-            url: new URL(siteData?.logo.currentFile.source),
+            url: new URL("/heroImage.png", "https://comedycollectivechi.com"),
             width: 1200,
             height: 630,
             alt: "The Comedy Collective Logo",
@@ -53,7 +53,7 @@ export const generateMetadata = async () => {
       card: "summary_large_image",
       title: "The Comedy Collective",
       description: "The Comedy Collective is a place for discovering and enjoying the best in comedy.",
-      images: [new URL(siteData?.logo.currentFile.source)]
+      images: [new URL("/heroImage.png", "https://comedycollectivechi.com")]
     },
   };
 }

@@ -5,7 +5,7 @@ import type { ShowData, CMSShowData } from "@/types/Shows";
 const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
 const SHOWS_ID = process.env.SHOWS_ID!;
 const CMS_API_KEY = process.env.API_KEY!;
-
+const BUCKET_NAME = process.env.BUCKET_NAME!;
 export async function getShows(): Promise<ShowData[]> {
   const res = await fetch(
     `${API_URL}/tenant/collectionObjects?collectionId=${encodeURIComponent(SHOWS_ID)}`,
@@ -36,7 +36,7 @@ export async function getShows(): Promise<ShowData[]> {
     location: item.objectValue.location,
     ticketsUrl: item.objectValue.tickets_url,
     image: item.objectValue.poster?.currentFile.source,
-    imageUrl: item.objectValue.poster?.currentFile.source,
+    imageUrl: item.objectValue.poster ? `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${item.objectValue.poster.key}` : undefined,
   }));
 
   shows.sort(
