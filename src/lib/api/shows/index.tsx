@@ -7,6 +7,10 @@ const SHOWS_ID = process.env.SHOWS_ID!;
 const CMS_API_KEY = process.env.API_KEY!;
 const BUCKET_NAME = process.env.BUCKET_NAME!;
 export async function getShows(): Promise<ShowData[]> {
+  console.log('====================GET SHOWS - API_URL:', API_URL);
+  console.log('====================GET SHOWS - SHOWS_ID:', SHOWS_ID);
+  console.log('====================GET SHOWS - CMS_API_KEY:', CMS_API_KEY);
+  console.log('====================GET SHOWS - BUCKET_NAME:', BUCKET_NAME);
   const res = await fetch(
     `${API_URL}/tenant/collectionObjects?collectionId=${encodeURIComponent(SHOWS_ID)}`,
     {
