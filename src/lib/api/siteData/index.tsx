@@ -2,22 +2,19 @@ import "server-only";
 import type { MetadataRoute } from "next";
 import type { CMSSiteData, SiteData } from "@/types/SiteData";
 
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
-const SITE_ID = process.env.SITE_ID;
-const API_KEY = process.env.API_KEY;
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
+const SITE_ID = process.env.SITE_ID!;
+const API_KEY = process.env.API_KEY!;
 
-function assertEnv() {
-  if (!API_URL) throw new Error("Missing NEXT_PUBLIC_CLIENT_API");
-  if (!SITE_ID) throw new Error("Missing SITE_ID");
-  if (!API_KEY) throw new Error("Missing API_KEY");
-}
 
 export const getSiteData = async (): Promise<SiteData> => {
-  assertEnv();
   const res = await fetch(
-    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID!)}`,
+    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
     {
-      headers: { Authorization: API_KEY!, "Content-Type": "application/json" },
+      headers: {
+        Authorization: API_KEY!,
+        "Content-Type": "application/json"
+      },
       // Choose ONE strategy:
       cache: "no-store",
       // next: { revalidate: 300 }, // e.g., ISR every 5 minutes
@@ -33,10 +30,8 @@ export const getSiteData = async (): Promise<SiteData> => {
 };
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
-  assertEnv();
-
   const res = await fetch(
-    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID!)}`,
+    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
     {
       headers: { Authorization: API_KEY!, "Content-Type": "application/json" },
       // Choose ONE strategy:

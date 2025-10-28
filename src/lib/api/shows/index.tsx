@@ -1,4 +1,4 @@
-// lib/api/shows-server.ts
+// lib/api/shows.ts
 import "server-only";
 import type { ShowData, CMSShowData } from "@/types/Shows";
 

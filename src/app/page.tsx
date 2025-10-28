@@ -5,9 +5,9 @@ import {
 } from '@/lib/api/siteData';
 import CTASection from '@/components/CTASection';
 import Footer from '@/components/Footer';
-export const dynamic = "force-dynamic"
 import EmailListComponent from '@/components/EmailListComponent';
 import HeroSectionServer from './(site)/_components/HeroSectionServer';
+export const dynamic = "force-dynamic"
 
 const Index = async () => {
     const [siteData] = await Promise.all([getSiteData()]);
