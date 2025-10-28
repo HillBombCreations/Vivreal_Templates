@@ -1,25 +1,30 @@
-import axios from 'axios';
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+import "server-only";
 
-export const subscribeUser = async (email: string): Promise<boolean> => {
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
+const CMS_API_KEY = process.env.API_KEY!;
+
+export async function subscribeUser(email: string): Promise<boolean> {
   try {
-    await axios.post(
-      `${API_URL}/tenant/definedCollectionObject`,
-      {
-          email: email,
-          type: "subscribeUser"
+    const res = await fetch(`${API_URL}/tenant/definedCollectionObject`, {
+      method: "POST",
+      headers: {
+        Authorization: CMS_API_KEY,
+        "Content-Type": "application/json",
       },
-      {
-          headers: {
-              Authorization: API_KEY,
-              "Content-Type": "application/json",
-          },
-      }
-    );
+      body: JSON.stringify({
+        email,
+        type: "subscribeUser",
+      }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      console.error("[subscribeUserOnCMS] CMS error:", res.status, res.statusText);
+      return false;
+    }
     return true;
-  } catch (error) {
-    console.error("Error fetching shows:", error);
+  } catch (err) {
+    console.error("[subscribeUserOnCMS] Exception:", err);
     return false;
   }
-};
+}

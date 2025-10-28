@@ -4,6 +4,7 @@ import Footer from '@/components/Footer';
 import ReviewClient from './ReviewClient';
 
 const ReviewPage = () => {
+
   return (
     <>
       <Head>

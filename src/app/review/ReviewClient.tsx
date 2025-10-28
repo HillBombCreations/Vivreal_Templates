@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Star } from "lucide-react";
-import { createReview } from "@/lib/api/review";
+import { createReview } from "@/lib/api/review/client"
 const ReviewClient = () => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
@@ -56,12 +56,7 @@ const ReviewClient = () => {
     setSuccess(false);
 
     try {
-      const success = await createReview(
-        formData.email,
-        formData.name,
-        formData.review,
-        formData.rating
-      );
+      const success = await createReview(formData);
       if (success) {
         setSuccess(true);
         setFormData({ name: "", email: "", rating: 0, review: "" });

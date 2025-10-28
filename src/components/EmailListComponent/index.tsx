@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Button } from "@/components/ui/Button";
-import { subscribeUser } from "@/lib/api/subscribe";
+import { subscribeUser } from "@/lib/api/subscribe/client";
 // Keys for localStorage
 const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
@@ -13,6 +13,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EmailListComponent = () => {
   const siteData = useSiteData();
+  console.log('SITE DATA', siteData);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,19 +88,16 @@ const EmailListComponent = () => {
             transition={{ duration: 0.4 }}
             className="w-[90%] max-w-lg rounded-2xl shadow-2xl border p-8 relative"
             style={{
-              background: siteData?.surface,
+              backgroundColor: siteData?.surface || "#FFFFF",
               borderColor: siteData?.primary,
             }}
           >
-            {/* Close Button */}
             <button
               onClick={handleClose}
               className="absolute top-4 cursor-pointer right-4 p-1 rounded-full hover:bg-gray-100 transition"
             >
               <X className="w-5 h-5 text-gray-600" />
             </button>
-
-            {/* Content */}
             <div className="text-center mb-8">
               <h2
                 className="text-3xl font-bold mb-3"

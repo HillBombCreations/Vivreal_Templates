@@ -1,11 +1,11 @@
 import type { MetadataRoute } from 'next';
-import { getSiteData } from '@/lib/api/siteData';
+import { getSiteMap } from '@/lib/api/siteData';
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const siteData = await getSiteData();
+  const siteMap = await getSiteMap();
 
-  if (Array.isArray(siteData?.siteMap)) {
-    return siteData.siteMap;
+  if (Array.isArray(siteMap)) {
+    return siteMap;
   }
 
   return [];

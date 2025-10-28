@@ -5,13 +5,13 @@ import {
 } from '@/lib/api/siteData';
 import CTASection from '@/components/CTASection';
 import Footer from '@/components/Footer';
+export const dynamic = "force-dynamic"
 import EmailListComponent from '@/components/EmailListComponent';
-import HeroSection from '@/components/HeroSection';
-import { getShows } from '@/lib/api/shows';
+import HeroSectionServer from './(site)/_components/HeroSectionServer';
 
 const Index = async () => {
-    const siteData = await getSiteData();
-    const showData = await getShows();
+    const [siteData] = await Promise.all([getSiteData()]);
+
     return (
         <div className='min-h-screen overflow-x-hidden' style={{ backgroundColor: siteData?.surface }}>
             <Head>
@@ -21,7 +21,7 @@ const Index = async () => {
             </Head>
             <Navbar />
             <EmailListComponent />
-            <HeroSection shows={showData} />
+            <HeroSectionServer />
             <CTASection />
             <Footer />
         </div>

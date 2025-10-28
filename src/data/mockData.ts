@@ -42,26 +42,14 @@ export const siteData = {
       changeFrequency: 'monthly' as const,
       priority: 1.0,
     },
-    // {
-    //   url: 'https://comedycollectivechi.com/what-we-do',
-    //   lastModified: new Date(),
-    //   changeFrequency: 'monthly' as const,
-    //   priority: 0.9,
-    // },
     {
       url: 'https://comedycollectivechi.com/about',
       lastModified: new Date(),
       changeFrequency: 'monthly' as const,
       priority: 0.8,
     },
-    // {
-    //   url: 'https://comedycollectivechi.com/media-hub',
-    //   lastModified: new Date(),
-    //   changeFrequency: 'weekly' as const,
-    //   priority: 0.7,
-    // },
     {
-      url: 'https://comedycollectivechi.com/contact',
+      url: 'https://comedycollectivechi.com/review',
       lastModified: new Date(),
       changeFrequency: 'yearly' as const,
       priority: 0.6,
@@ -239,7 +227,7 @@ export const navigationLinks = [
     "displayOnHeader": true,
   },
   {
-    "path": "/about",
+    "path": "/team",
     "label": "Our Team",
     "displayOnHeader": true,
   },

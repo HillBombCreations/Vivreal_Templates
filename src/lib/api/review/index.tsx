@@ -1,28 +1,35 @@
-import axios from 'axios';
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API;
-const API_KEY = process.env.NEXT_PUBLIC_API_KEY;
+import "server-only";
+import type { ReviewData } from "@/types/Reviews";
 
-export const createReview = async (email: string, name: string, review: string, rating: number): Promise<boolean> => {
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
+const CMS_API_KEY = process.env.API_KEY!;
+
+export async function createReview(data: ReviewData): Promise<boolean> {
   try {
-    await axios.post(
-      `${API_URL}/tenant/definedCollectionObject`,
-      {
-          email: email,
-          name: name,
-          review: review,
-          rating: rating,
-          type: "createReview"
+    const res = await fetch(`${API_URL}/tenant/definedCollectionObject`, {
+      method: "POST",
+      headers: {
+        Authorization: CMS_API_KEY,
+        "Content-Type": "application/json",
       },
-      {
-          headers: {
-              Authorization: API_KEY,
-              "Content-Type": "application/json",
-          },
-      }
-    );
+      body: JSON.stringify({
+        email: data.email,
+        name: data.name,
+        review: data.review,
+        rating: data.rating,
+        type: "createReview",
+      }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      console.error("[createReviewOnCMS] CMS error:", res.status, res.statusText);
+      return false;
+    }
+
     return true;
   } catch (error) {
-    console.error("Error fetching shows:", error);
+    console.error("[createReviewOnCMS] Exception:", error);
     return false;
   }
-};
+}

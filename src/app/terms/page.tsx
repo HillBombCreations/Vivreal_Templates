@@ -51,7 +51,6 @@ const TermsOfService = () => {
       <main className="pt-24 pb-20">
         <section className="pt-10 pb-16">
           <div className="content-grid space-y-8 max-w-4xl mx-auto">
-            {/* Intro */}
             <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
               Terms of Service
             </h1>
@@ -61,8 +60,6 @@ const TermsOfService = () => {
               If you do not agree with these terms, please discontinue use of
               the site.
             </p>
-
-            {/* Site Access */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Access & Use of the Site
@@ -74,8 +71,6 @@ const TermsOfService = () => {
                 operation.
               </p>
             </div>
-
-            {/* Restrictions */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Restrictions
@@ -87,8 +82,6 @@ const TermsOfService = () => {
                 access.
               </p>
             </div>
-
-            {/* Third Parties */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Third-Party Links & Content
@@ -99,8 +92,6 @@ const TermsOfService = () => {
                 websites, and you access them at your own risk.
               </p>
             </div>
-
-            {/* Disclaimer & Liability */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Disclaimer & Limitation of Liability
@@ -112,8 +103,6 @@ const TermsOfService = () => {
                 limitations, so these may not apply to you.
               </p>
             </div>
-
-            {/* Governing Law */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Governing Law
@@ -124,8 +113,6 @@ const TermsOfService = () => {
                 handled in the appropriate courts of that jurisdiction.
               </p>
             </div>
-
-            {/* Contact */}
             <div>
               <h2 className="text-2xl font-display font-bold mb-3">
                 Contact Information

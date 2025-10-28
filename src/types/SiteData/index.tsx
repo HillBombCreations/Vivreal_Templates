@@ -39,11 +39,17 @@ export interface SiteData {
     },
 }
 
+export type Pages = {
+    name: string;
+    format: string;
+}
+
 export type CMSSiteData = {
     _id: string;
     name: string;
     domainName: string;
     groupID: string;
+    pages: [Pages];
     siteDetails: {
         schema: object;
         values: SiteData;
