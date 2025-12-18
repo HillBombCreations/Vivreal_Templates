@@ -1,60 +1,53 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { Button } from "@/components/ui/Button";
 import NavigationMenuComponent from './NavigationMenu';
 import MobileNavigationMenuClient from './MobileNavigationMenuClient';
-import { NavigationData } from "@/types/Navigation";
-import { getHeroSectionData } from "@/lib/api/navigation";
-import { siteData } from '@/data/mockData';
+import { SiteData } from '@/types/SiteData';
 
-async function fetchNavItems(): Promise<NavigationData[]> {
-  try {
-    const data = await getHeroSectionData();
-    const headerItems = data.filter((item) => item.displayOnHeader);
-    return headerItems;
-  } catch (err) {
-    console.error("Error fetching navigation items:", err);
-    return [];
-  }
-}
 
-const Navbar = async () => {
-  const navItems = await fetchNavItems();
+const Navbar = ({ siteData }: {siteData: SiteData}) => {
+  const navItems = [
+    {
+      "path": "/",
+      "label": "Home",
+      "displayOnHeader": true,
+    },
+    {
+      "path": "/products",
+      "label": "Products",
+      "displayOnHeader": true,
+    }
+  ]
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out pt-4 pb-1 md:pt-5 bg-white/90 backdrop-blur-sm">
       <div className="w-full px-4">
-        <MobileNavigationMenuClient navItems={navItems} />
-
-        {/* Desktop navbar layout */}
+        <MobileNavigationMenuClient navItems={navItems} siteData={siteData}/>
         <div className="hidden md:flex items-center relative justify-between">
-          {/* Left: Logo + Text */}
           <div className="flex items-center space-x-3">
             <Link href="/" className="flex items-center space-x-3">
-              <Image
-                src="/comedycollectiveLogo.png"
-                alt="The Comedy Collective Logo"
+              <img
+                src={siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png"}
+                alt={`${siteData?.name || "Site"} Logo`}
                 width={70}
                 height={70}
               />
               <span className="text-2xl font-semibold text-gray-900 font-brand leading-none">
-                The Comedy Collective
+                {siteData?.name}
               </span>
             </Link>
           </div>
 
-          {/* Center: Navigation (absolutely centered) */}
           <nav className="absolute left-1/2 transform -translate-x-1/2 flex items-center">
-            <NavigationMenuComponent items={navItems} />
+            <NavigationMenuComponent items={navItems} siteData={siteData} />
           </nav>
 
-          {/* Right: Button(s) */}
           <div className="flex items-center space-x-3">
             <Link href="/review">
               <Button
                 variant="outline"
                 size="sm"
-                style={{ color: siteData?.primary, borderColor: siteData?.primary }}
+                style={{ color: siteData?.siteDetails?.primary, borderColor: siteData?.siteDetails?.primary }}
                 className="font-medium cursor-pointer"
               >
                 Leave A Review

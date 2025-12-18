@@ -2,11 +2,9 @@
 
 import React from "react"
 import Link from "next/link";
-import { cn } from "@/lib/utils"
 import { NavItem } from "@/types/Navigation"
 import { Button } from "@/components/ui/Button";
 import { Home } from 'lucide-react'
-import { useSiteData } from "@/contexts/SiteDataContext";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden"
 import {
   Sheet,
@@ -14,10 +12,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { SiteData } from "@/types/SiteData";
 
 interface MobileNavigationMenuProps {
   items: NavItem[]
-  open: boolean
+  open: boolean,
+  siteData: SiteData,
   handleClose: () => void
 }
 
@@ -35,9 +35,9 @@ const groupDisplayNames: Record<string, string> = {
 export default function MobileNavigationMenu({
   items,
   handleClose,
-  open
+  open,
+  siteData
 }: MobileNavigationMenuProps) {
-  const siteData = useSiteData();
   const groupedItems = items.reduce((acc, item) => {
       const group = item.group || "other"
       if (!acc[group]) acc[group] = []
@@ -47,7 +47,7 @@ export default function MobileNavigationMenu({
 
   return (
     <Sheet open={open} onOpenChange={(isOpen) => !isOpen && handleClose()}>
-      <SheetContent style={{ background: siteData?.surface, overflowY: "auto" }} side="left" className="p-4">
+      <SheetContent style={{ background: siteData?.siteDetails?.surface, overflowY: "auto" }} side="left" className="p-4">
         <SheetHeader>
           <SheetTitle>
             <VisuallyHidden>Mobile navigation menu</VisuallyHidden>
@@ -55,7 +55,7 @@ export default function MobileNavigationMenu({
         </SheetHeader>
         <div className="mt-2">
           <Link href="/" onClick={handleClose} className="inline-flex items-center">
-            <Home style={{ color: siteData?.primary }} className="w-6 h-6" />
+            <Home style={{ color: siteData?.siteDetails?.primary }} className="w-6 h-6" />
           </Link>
         </div>
         {Object.entries(groupedItems).map(([group, groupItems]) => {
@@ -63,7 +63,7 @@ export default function MobileNavigationMenu({
 
           return (
             <div key={group} className="mb-6">
-              <h3 style={{ color: siteData?.["text-primary"] }} className="text-sm font-semibold mb-2">
+              <h3 style={{ color: siteData?.siteDetails?.["text-primary"] }} className="text-sm font-semibold mb-2">
                 {displayName !== "Other" && displayName}
               </h3>
               <div>
@@ -73,7 +73,7 @@ export default function MobileNavigationMenu({
                     href={item.path}
                     onClick={handleClose}
                     className="block py-2 px-2 rounded-md hover:bg-muted hover:text-foreground"
-                    style={{ color: siteData?.primary }}
+                    style={{ color: siteData?.siteDetails?.primary }}
                   >
                     {item.label || "Untitled"}
                   </Link>
@@ -86,7 +86,7 @@ export default function MobileNavigationMenu({
           <a
             href="/review"
           >
-            <Button style={{ color: siteData?.primary }} variant="outline" size="sm" className="w-full font-medium">
+            <Button style={{ color: siteData?.siteDetails?.primary }} variant="outline" size="sm" className="w-full font-medium">
               Leave A Review
             </Button>
           </a>

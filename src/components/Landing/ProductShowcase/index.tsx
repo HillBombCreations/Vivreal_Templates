@@ -24,8 +24,8 @@ export default function ProductShowcaseComponent({
   const router = useRouter();
   const siteData = useSiteData();
 
-  const primary = siteData?.primary ?? "var(--primary,#365b99)";
-  const surface = siteData?.surface ?? "var(--surface,#ffffff)";
+  const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
+  const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dir, setDir] = useState<"left" | "right">("right");
@@ -139,13 +139,12 @@ export default function ProductShowcaseComponent({
                         background: `linear-gradient(135deg, ${primary}22 0%, transparent 55%)`,
                       }}
                     />
-                    <Image
+                    <img
                       src={current.imageUrl || "/heroImage.png"}
                       alt={current.title}
                       width={900}
                       height={700}
                       className="relative h-full w-full object-contain"
-                      priority={currentIndex === 0}
                     />
                   </div>
 

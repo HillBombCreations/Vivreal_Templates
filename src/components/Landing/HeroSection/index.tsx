@@ -12,10 +12,10 @@ const HeroSection = (
   { heroSection: Record<string, any> }
 ) => {
   const siteData = useSiteData();
-  const primary = siteData?.primary ?? "#365b99";
-  const surface = siteData?.surface ?? "#ffffff";
-  const textPrimary = siteData?.["text-primary"] ?? "#0b1220";
-  const textMuted = siteData?.["text-secondary"] ?? "#5b6475";
+  const primary = siteData?.siteDetails?.primary ?? "#365b99";
+  const surface = siteData?.siteDetails?.surface ?? "#ffffff";
+  const textPrimary = siteData?.siteDetails?.["text-primary"] ?? "#0b1220";
+  const textMuted = siteData?.siteDetails?.["text-secondary"] ?? "#5b6475";
 
   const title = heroSection?.title ?? "Your Store";
   const subtitle = heroSection?.subtitle ?? "Discover best-sellers, new arrivals, and everyday essentials—delivered fast.";
@@ -127,16 +127,15 @@ const HeroSection = (
               <div
                 className="pointer-events-none absolute inset-0 rounded-3xl opacity-30"
                 style={{
-                  background: `linear-gradient(135deg, ${siteData.primary}33 0%, transparent 55%)`,
+                  background: `linear-gradient(135deg, ${siteData.siteDetails?.primary}33 0%, transparent 55%)`,
                 }}
               />
-              <Image
+              <img
                 src={imageSrc}
                 alt="Hero illustration"
                 width={900}
                 height={700}
                 className="relative w-full h-auto object-contain"
-                priority
               />
             </div>
 

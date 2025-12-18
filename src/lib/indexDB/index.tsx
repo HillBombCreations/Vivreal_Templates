@@ -1,10 +1,13 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+'use client';
+
 import { openDB } from 'idb';
 
 const DB_NAME = 'VR_Ecommerce_DB';
 
 export async function initDB(storeName: string) {
-  return openDB(DB_NAME, 1, {
+
+  return openDB(DB_NAME, 2, {
     upgrade(db) {
       if (!db.objectStoreNames.contains(storeName)) {
         db.createObjectStore(storeName);

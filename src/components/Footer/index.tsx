@@ -1,11 +1,9 @@
 import Link from "next/link";
 import Image from 'next/image';
-import { NavigationData } from "@/types/Navigation";
-import { getHeroSectionData } from "@/lib/api/navigation";
-import { getSiteData } from "@/lib/api/siteData";
+import { SiteData } from '@/types/SiteData';
 
 const InstagramIcon = () => (
-  <Image
+  <img
     src="/instagramLogo.png"
     alt="Instagram Logo"
     width={20}
@@ -14,19 +12,20 @@ const InstagramIcon = () => (
   />
 );
 
-async function fetchNavigationDatas(): Promise<NavigationData[]> {
-  try {
-    const data = await getHeroSectionData();
-    return data;
-  } catch (err) {
-    console.error("Error fetching navigation items:", err);
-    return [];
-  }
-};
 
-const Footer = async () => {
-  const navItems = await fetchNavigationDatas();
-  const siteData = await getSiteData();
+const Footer = ({ siteData }: {siteData: SiteData}) => {
+  const navItems = [
+    {
+      "path": "/",
+      "label": "Home",
+      "displayOnHeader": true,
+    },
+    {
+      "path": "/products",
+      "label": "Products",
+      "displayOnHeader": true,
+    }
+  ]
   const currentYear = new Date().getFullYear();
 
   return (
@@ -35,7 +34,7 @@ const Footer = async () => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={175} height={175} />
+              <img src={siteData?.siteDetails?.logo?.imageUrl} alt={siteData?.name} width={175} height={175} />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
              The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!

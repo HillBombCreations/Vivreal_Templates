@@ -12,21 +12,21 @@ const CTASection = () => {
       <div className="content-grid">
         <div
           style={{
-            background: 'url("/headsImage.png")',
+            background: siteData?.siteDetails?.["surface-alt"],
             backgroundSize: 'cover',
             backgroundRepeat: 'repeat',
             backgroundPosition: 'center',
           }}
           className="rounded-2xl overflow-hidden relative"
         >
-          <div style={{ color: siteData?.['text-inverse'] }} className="absolute inset-0 bg-gradient-to-br"></div>
+          <div style={{ color: siteData?.siteDetails?.['text-inverse'] }} className="absolute inset-0 bg-gradient-to-br"></div>
           
           <div className="relative z-10 p-10 md:p-16 text-center">
             <div className="max-w-4xl mx-auto">
               <h2
                 style={{
-                  color: siteData?.['surface-alt'],
-                  backgroundColor: '#001a4a96',
+                  color: siteData?.siteDetails?.['surface-alt'],
+                  backgroundColor: siteData?.siteDetails?.primary,
                   backdropFilter: 'blur(10px)',
                   borderRadius: '8px',
                   display: 'inline-block',
@@ -38,8 +38,8 @@ const CTASection = () => {
               </h2>
               <p
                 style={{
-                  color: siteData?.['surface-alt'],
-                  backgroundColor: '#001a4a96',
+                  color: siteData?.siteDetails?.['surface-alt'],
+                  backgroundColor: siteData?.siteDetails?.primary,
                   backdropFilter: 'blur(10px)',
                   borderRadius: '8px',
                   padding: '10px 25px',

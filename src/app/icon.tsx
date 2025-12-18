@@ -1,5 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { getSiteData } from '@/lib/api/siteData'
+import { SITE_DATA_API } from '@/types/SiteData'
+import { headers } from 'next/headers'
 
 // Image metadata
 export const size = {
@@ -8,13 +10,23 @@ export const size = {
 }
 export const contentType = 'image/png'
 
+const handleBuildUrl = async (type: string) => {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host")!;
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const base = `${proto}://${host}`;
+  const url = new URL(`${base}/api/${type}`);
+  return url;
+};
+
 // Dynamic icon generation
 export default async function Icon() {
-  const siteData = await getSiteData()
+  const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
+  const siteData = await getSiteData(siteDataUrl.toString());
 
-  const primaryColor = siteData?.primary || '#001a4a'
+  const primaryColor = siteData?.siteDetails?.primary || '#001a4a'
   const logoSrc =
-    siteData?.logo?.currentFile?.source || 'https://comedycollectivechi.com/comedycollectiveLogo.png'
+    siteData?.siteDetails?.logo?.imageUrl || 'https://comedycollectivechi.com/comedycollectiveLogo.png'
 
   return new ImageResponse(
     (

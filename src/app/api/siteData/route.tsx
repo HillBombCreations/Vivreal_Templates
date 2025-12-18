@@ -9,7 +9,8 @@ import { createServerFetchEdge } from '@/lib/server-fetch';
 import { noStore } from '@/lib/proxyUtils'
 import { edgeLogger } from '@/lib/edge-logger';
 import {
-  CMSSiteData
+  CMSSiteData,
+  SiteData
 } from "@/types/SiteData";
 
 export async function GET(req: NextRequest) {
@@ -19,6 +20,7 @@ export async function GET(req: NextRequest) {
 
   const API_KEY = process.env.API_KEY;
   const SITE_ID = process.env.SITE_ID!;
+  const BUCKET_NAME = process.env.BUCKET_NAME;
 
   const params = new URLSearchParams(req.nextUrl.search);
   const allow = new Set(['page', 'limit', 'search', 'sort', 'sort[field]', 'sort[direction]']);
@@ -39,7 +41,7 @@ export async function GET(req: NextRequest) {
     const res = await serverFetch(upstreamPath, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `${API_KEY}`,
         'x-request-id': requestId,
         'x-forwarded-host': req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '',
         'x-forwarded-proto': req.headers.get('x-forwarded-proto') ?? 'https',
@@ -60,15 +62,17 @@ export async function GET(req: NextRequest) {
     }
 
     const upstreamJson = (await res.json()) as CMSSiteData;
-    edgeLogger.info('collectionGroups(edge): UPSTREAM JSON', { requestId, upstreamJson: upstreamJson });
 
     const siteObj = {
       businessInfo: upstreamJson.businessInfo,
       name: upstreamJson.name,
       domainName: upstreamJson.domainName,
       siteDetails: upstreamJson.siteDetails.values
-    }
+    } as SiteData;
+    
+    const imageKey = siteObj?.siteDetails?.logo?.key;
 
+    if (typeof imageKey === "string" && imageKey.length > 0) siteObj.siteDetails.logo.imageUrl = `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${imageKey}`;
     const out = NextResponse.json(siteObj, {
       status: res.status,
       headers: noStore({ "x-request-id": requestId }),

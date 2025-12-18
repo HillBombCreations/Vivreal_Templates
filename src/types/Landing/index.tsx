@@ -8,7 +8,7 @@ export type LandingSectionData = {
   objectValue: {
     title: string;
     subtitle: string;
-    id: string;
+    _id: string;
     buttonLabel?: string;
     image?: Image;
     sectionName?: string;
@@ -24,7 +24,7 @@ export type Image = {
 export type LandingSection = {
   title: string;
   subtitle: string;
-  id: string;
+  _id: string;
   buttonLabel?: string;
   imageUrl?: string;
   sectionName?: string;
@@ -32,7 +32,7 @@ export type LandingSection = {
 
 export type ProductShowcaseData = {
   objectValue: {
-    id: string;
+    _id: string;
     title: string;
     description: string;
     link?: string;
@@ -43,7 +43,7 @@ export type ProductShowcaseData = {
 };
 
 export type ProductShowcase = {
-  id: string;
+  _id: string;
   title: string;
   description: string;
   link?: string;
@@ -54,7 +54,7 @@ export type ProductShowcase = {
 
 export type OurOfferingsData = {
   objectValue: {
-    id: string;
+    _id: string;
     title: string;
     description: string;
     icon?: string;
@@ -63,7 +63,7 @@ export type OurOfferingsData = {
 };
 
 export type OurOfferings = {
-  id: string;
+  _id: string;
   title: string;
   description: string;
   icon?: string;

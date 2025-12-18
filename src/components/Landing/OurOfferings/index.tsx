@@ -21,8 +21,8 @@ export default function OurOfferingsComponent({
   ourOfferings,
 }: OurOfferingsProps) {
   const siteData = useSiteData();
-  const primary = siteData?.primary ?? "var(--primary,#365b99)";
-  const surfaceAlt = siteData?.["surface-alt"] ?? "var(--surface-alt,#f7f8fb)";
+  const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
+  const surfaceAlt = siteData?.siteDetails?.["surface-alt"] ?? "var(--surface-alt,#f7f8fb)";
 
   const [selected, setSelected] = useState<OurOfferings>(ourOfferings[0]);
 
@@ -43,11 +43,11 @@ export default function OurOfferingsComponent({
           <div className="lg:col-span-5">
             <div className="flex flex-col gap-3">
               {ourOfferings.map((card) => {
-                const isSelected = card.id === selected.id;
+                const isSelected = card._id === selected._id;
                 const icon = card.icon as FeatureIcon;
                 return (
                   <button
-                    key={card.id}
+                    key={card._id}
                     onClick={() => setSelected(card)}
                     className={[
                       "group w-full rounded-2xl border p-4 text-left transition",
@@ -88,7 +88,7 @@ export default function OurOfferingsComponent({
 
           <div className="lg:col-span-7">
             <div
-              key={selected.id}
+              key={selected._id}
               className="relative rounded-3xl border bg-white/70 p-6 shadow-sm backdrop-blur animate-fadeSlideIn"
               style={{ borderColor: "rgba(0,0,0,0.08)" }}
             >
@@ -100,13 +100,12 @@ export default function OurOfferingsComponent({
               />
 
               <div className="relative flex items-center justify-center min-h-[260px] md:min-h-[360px]">
-                <Image
+                <img
                   src={selected.imageUrl || "heroImage.png"}
                   alt={selected.title}
                   width={800}
                   height={600}
                   className="h-full w-full object-contain"
-                  priority
                 />
               </div>
             </div>

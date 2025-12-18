@@ -1,6 +1,6 @@
 'use client';
 
-import { ReactNode } from 'react';
+import { ReactNode, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster as AppToaster } from '@/components/ui/toaster';
@@ -11,7 +11,6 @@ import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
 import { ProductsProvider } from '@/contexts/ProductsContext';
-const queryClient = new QueryClient();
 
 const Providers = ({
     children,
@@ -20,9 +19,11 @@ const Providers = ({
     children: ReactNode;
     siteData: SiteData;
 }) => {
+    const [queryClient] = useState(() => new QueryClient());
+    
     useEffect(() => {
-        if (siteData?.primary) {
-            Object.entries(siteData).forEach(([key, value]) => {
+        if (siteData?.siteDetails?.primary) {
+            Object.entries(siteData.siteDetails).forEach(([key, value]) => {
                 if (typeof value === 'string') {
                     document.documentElement.style.setProperty(`--${key}`, value);
                 }

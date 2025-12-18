@@ -5,26 +5,31 @@ import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Menu } from "lucide-react";
-import { useSiteData } from "@/contexts/SiteDataContext";
 import { NavigationData } from "@/types/Navigation";
 import MobileNavigationMenu from "./MobileNavigationMenu";
+import { SiteData } from "@/types/SiteData";
 
 interface Props {
   navItems: NavigationData[];
+  siteData: SiteData
 }
 
-const MobileNavigationMenuClient = ({ navItems }: Props) => {
-  const siteData = useSiteData();
-
+const MobileNavigationMenuClient = ({ navItems, siteData }: Props) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <>
       <div className="flex md:hidden items-center justify-between">
         <Link href="/" className="flex-1 text-start items-center inline-flex space-x-2">
-          <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={60} height={60} className="inline-block" />
-          <span style={{ color: siteData?.["text-primary"] }} className="text-2xl font-semibold font-brand leading-none">
-            The Comedy Collective
+          <img
+            src={siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png"}
+            alt={siteData?.name || "ecommerce site"}
+            width={60}
+            height={60}
+            className="inline-block"
+          />
+          <span style={{ color: siteData?.siteDetails?.["text-primary"] }} className="text-2xl font-semibold font-brand leading-none">
+            {siteData?.name}
           </span>
         </Link>
         <button
@@ -41,6 +46,7 @@ const MobileNavigationMenuClient = ({ navItems }: Props) => {
         <MobileNavigationMenu
           items={navItems}
           open={mobileMenuOpen}
+          siteData={siteData}
           handleClose={() => setMobileMenuOpen(false)}
         />
       )}

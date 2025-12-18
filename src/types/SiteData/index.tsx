@@ -1,4 +1,3 @@
-import type { MetadataRoute } from 'next';
 export interface Businessinfo {
     address?: {
         street1?: string,
@@ -15,53 +14,34 @@ export interface Businessinfo {
     shipping?: boolean
 }
 
-export interface SiteData {
-    primary?: string;
-    domainName?: string;
-    businessInfo?: Businessinfo;
-    secondary?: string;
-    hover?: string;
-    surface?: string;
-    pages: Record<string, string>;
-    siteMap: MetadataRoute.Sitemap;
-    ["surface-alt"]?: string;
-    ["text-primary"]?: string;
-    ["text-secondary"]?: string;
-    ["text-inverse"]?: string;
-    border?: string;
-    logo: {
-        name?: string,
-        key: string,
-        type: string,
-        currentFile: {
-            source: string
-        }
-    },
-}
+export const SITE_DATA_API = "siteData";
 
 export type SiteDetails = {
     primary?: string;
-    domainName?: string;
-    businessInfo?: Businessinfo;
     secondary?: string;
     hover?: string;
     surface?: string;
-    pages: Record<string, string>;
-    siteMap: MetadataRoute.Sitemap;
     ["surface-alt"]?: string;
     ["text-primary"]?: string;
     ["text-secondary"]?: string;
     ["text-inverse"]?: string;
-    border?: string;
     logo: {
         name?: string,
-        key: string,
-        type: string,
-        currentFile: {
-            source: string
-        }
-    },
+        key?: string,
+        type?: string,
+        imageUrl?: string,
+    }
 }
+
+export interface SiteData {
+    businessInfo?: Businessinfo;
+    name?: string;
+    domainName?: string;
+    siteDetails: SiteDetails
+    pages?: Record<string, string>;
+}
+
+
 
 export type Pages = {
     name: string;
@@ -76,7 +56,7 @@ export type CMSSiteData = {
     pages: [Pages];
     siteDetails: {
         schema: object;
-        values: SiteData;
+        values: SiteDetails;
     }
     businessInfo: Businessinfo;
 };

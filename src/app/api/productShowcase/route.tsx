@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
     const res = await serverFetch(upstreamPath, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `${API_KEY}`,
         'x-request-id': requestId,
         'x-forwarded-host': req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '',
         'x-forwarded-proto': req.headers.get('x-forwarded-proto') ?? 'https',

@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
     const res = await serverFetch(upstreamPath, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${API_KEY}`,
+        Authorization: `${API_KEY}`,
         "content-type": "application/json",
         "x-request-id": requestId,
         "x-forwarded-host":

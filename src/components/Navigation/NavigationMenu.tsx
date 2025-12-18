@@ -10,13 +10,14 @@ import {
   NavigationMenuViewport,
 } from "@/components/ui/navigation-menu";
 import { NavigationData } from "@/types/Navigation";
-import { siteData } from "@/data/mockData";
+import { SiteData } from "@/types/SiteData";
 
 interface NavigationMenuProps {
   items: NavigationData[];
+  siteData: SiteData
 }
 
-const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
+const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items, siteData }) => {
   const pathname = usePathname();
 
   return (
@@ -35,7 +36,7 @@ const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
           left: 0;
           width: 0%;
           height: 2px;
-          background-color: ${siteData.primary};
+          background-color: ${siteData.siteDetails?.primary};
           transition: width 0.3s ease;
         }
 
@@ -44,13 +45,13 @@ const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
         }
 
         .nav-link:hover {
-          color: ${siteData.primary};
+          color: ${siteData.siteDetails?.primary};
           transform: translateY(-1px);
         }
 
         /* --- Active state --- */
         .nav-link.active {
-          color: ${siteData.primary};
+          color: ${siteData.siteDetails?.primary};
           font-weight: 600;
         }
 

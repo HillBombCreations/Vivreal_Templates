@@ -24,8 +24,8 @@ type ToastState =
 
 export default function ContactSection({ contactSection }: ContactSectionProps) {
   const siteData = useSiteData();
-  const primary = siteData?.primary ?? "var(--primary,#365b99)";
-  const surfaceAlt = siteData?.["surface-alt"] ?? "var(--surface-alt,#f7f8fb)";
+  const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
+  const surfaceAlt = siteData?.siteDetails?.["surface-alt"] ?? "var(--surface-alt,#f7f8fb)";
 
   const [form, setForm] = useState({ fullName: "", email: "", message: "" });
   const [loading, setLoading] = useState(false);
