@@ -1,7 +1,7 @@
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
-import { getShows } from "@/lib/api/shows";
+import { getShows } from "@/lib/api/Landing";
 import ShowPageClient from "./ShowPageClient";
 
 // Force runtime fetching instead of static build

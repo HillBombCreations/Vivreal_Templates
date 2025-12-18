@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { ShowData } from "@/types/Shows";
+import { ShowData } from "@/types/Landing";
 
 interface ShowPageClientProps {
   items: ShowData[];

@@ -1,5 +1,5 @@
 import { SiteData } from '../SiteData';
-import { ShowsSectionProps } from '@/types/Shows';
+import { ShowsSectionProps } from '@/types/Landing';
 import { HeroSectionData } from './HeroSection';
 import { TeamSyncData } from './TeamSync';
 import { FeatureGifSection } from './FeatureGifSection';

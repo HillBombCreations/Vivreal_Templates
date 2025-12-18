@@ -1,29 +1,23 @@
-import "server-only";
-import type { MetadataRoute } from "next";
 import type { CMSSiteData, SiteData } from "@/types/SiteData";
+import { headers } from "next/headers";
 
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
-const SITE_ID = process.env.SITE_ID!;
-const CMS_API_KEY = process.env.API_KEY!;
+const SITE_DATA_API = "siteData";
 
+const handleBuildUrl = async (type: string) => {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host")!;
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  const base = `${proto}://${host}`;
+  const url = new URL(`${base}/api/${type}`);
+  return url;
+};
 
 export const getSiteData = async (): Promise<SiteData> => {
-  console.log('====================GET SITE DATA - API_URL:', API_URL);
-  console.log('====================GET SITE DATA - SITE_ID:', SITE_ID);
-  console.log('====================GET SITE DATA - CMS_API_KEY:', CMS_API_KEY);
-
-  const res = await fetch(
-    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
-    {
-      headers: {
-        Authorization: CMS_API_KEY!,
-        "Content-Type": "application/json"
-      },
-      // Choose ONE strategy:
-      cache: "no-store",
-      // next: { revalidate: 300 }, // e.g., ISR every 5 minutes
-    }
-  );
+  const url = await handleBuildUrl(SITE_DATA_API);
+  
+  const res = await fetch(url.toString(), {
+    cache: "no-store"
+  });
 
   if (!res.ok) {
     throw new Error(`getSiteData failed: ${res.status} ${res.statusText}`);
@@ -31,48 +25,4 @@ export const getSiteData = async (): Promise<SiteData> => {
 
   const data: CMSSiteData = await res.json();
   return data.siteDetails.values;
-};
-
-export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
-  const res = await fetch(
-    `${API_URL}/tenant/baseSite?siteId=${encodeURIComponent(SITE_ID)}`,
-    {
-      headers: { Authorization: CMS_API_KEY!, "Content-Type": "application/json" },
-      // Choose ONE strategy:
-      cache: "no-store",
-      // next: { revalidate: 3600 }, // 1h ISR for sitemap
-    }
-  );
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch site data: ${res.status} ${res.statusText}`);
-  }
-
-  const data: CMSSiteData = await res.json();
-  const domainName = data.domainName ?? "";
-  if (!domainName) throw new Error("domainName missing from CMS response");
-
-  const totalPages = data?.pages?.length || 1;
-
-  const siteMap: MetadataRoute.Sitemap = [
-    {
-      url: `https://${domainName}`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 1.0,
-    },
-  ];
-
-  data?.pages.forEach((slug, idx) => {
-    const page = String(slug).replace(/^\/+/, "");
-    const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / totalPages));
-    siteMap.push({
-      url: `https://${domainName}/${page}`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: Number(priority.toFixed(2)),
-    });
-  });
-
-  return siteMap;
 };

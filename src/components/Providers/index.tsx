@@ -9,7 +9,8 @@ import { useEffect } from 'react';
 import { SiteData } from '@/types/SiteData';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
-
+import { CartProvider } from '@/contexts/CartContext';
+import { ProductsProvider } from '@/contexts/ProductsContext';
 const queryClient = new QueryClient();
 
 const Providers = ({
@@ -19,7 +20,6 @@ const Providers = ({
     children: ReactNode;
     siteData: SiteData;
 }) => {
-
     useEffect(() => {
         if (siteData?.primary) {
             Object.entries(siteData).forEach(([key, value]) => {
@@ -32,13 +32,17 @@ const Providers = ({
 
     return (
     <SiteDataProvider siteData={siteData}>
-        <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-            <AppToaster />
-            <Sonner />
-            {children}
-        </TooltipProvider>
-        </QueryClientProvider>
+        <CartProvider>
+            <ProductsProvider>
+                <QueryClientProvider client={queryClient}>
+                    <TooltipProvider>
+                        <AppToaster />
+                        <Sonner />
+                        {children}
+                    </TooltipProvider>
+                </QueryClientProvider>
+            </ProductsProvider>
+        </CartProvider>
     </SiteDataProvider>
     );
 };
