@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface Businessinfo {
     address?: {
         street1?: string,
@@ -35,6 +36,7 @@ export type SiteDetails = {
 
 export interface SiteData {
     businessInfo?: Businessinfo;
+    integrationInfo?: Record<string, any>;
     name?: string;
     domainName?: string;
     siteDetails: SiteDetails

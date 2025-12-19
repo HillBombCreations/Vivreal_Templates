@@ -22,8 +22,6 @@ const HeroSection = (
   const imageSrc = heroSection?.imageUrl || "/heroImage.png";
 
   const ctaLabel = heroSection?.buttonLabel ?? "Shop new arrivals";
-  const secondaryLabel = heroSection?.secondaryCtaLabel ?? "Browse all";
-  const secondaryHref = heroSection?.secondaryCtaHref ?? "#collections";
 
   return (
     <section
@@ -47,24 +45,13 @@ const HeroSection = (
       <div className="mx-5 md:mx-20 lg:mx-40">
         <div className="grid items-center gap-10 md:gap-14 lg:gap-16 md:grid-cols-2">
           <div className="order-2 md:order-1 text-center md:text-left">
-            {heroSection?.badge ? (
-              <div className="mb-4 flex justify-center md:justify-start">
-                <span
-                  className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold"
-                  style={{ borderColor: "rgba(0,0,0,0.08)", color: textPrimary }}
-                >
-                  {heroSection.badge}
-                </span>
-              </div>
-            ) : null}
-
             <h1
               id="hero-heading"
               className="text-[42px] leading-[1.05] md:text-6xl font-semibold tracking-tight"
               style={{ color: textPrimary }}
             >
               <span className="block text-[12px] font-semibold tracking-[0.2em] uppercase opacity-70">
-                Welcome to
+                Welcome
               </span>
               <span className="block mt-3">
                 <span style={{ color: primary }}>{title}</span>
@@ -86,24 +73,12 @@ const HeroSection = (
               >
                 {ctaLabel}
               </a>
-
-              <a
-                href={secondaryHref}
-                className="h-11 px-5 inline-flex items-center justify-center rounded-xl text-sm font-semibold border transition active:scale-[0.99]"
-                style={{
-                  borderColor: "rgba(0,0,0,0.10)",
-                  color: textPrimary,
-                  background: "rgba(255,255,255,0.6)",
-                }}
-              >
-                {secondaryLabel}
-              </a>
             </div>
 
             <div className="mt-8 grid grid-cols-3 gap-2 max-w-xl mx-auto md:mx-0">
               {[
-                "Free shipping $50+",
-                "30-day returns",
+                "Freshly made to order",
+                "High-quality ingredients",
                 "Secure checkout",
               ].map((t) => (
                 <div
@@ -141,17 +116,6 @@ const HeroSection = (
 
             <div className="mt-4 flex items-center justify-center md:justify-end gap-2 text-[11px] font-semibold opacity-80">
               <span style={{ color: textMuted }}>Trusted by shoppers</span>
-              <span className="inline-flex -space-x-2">
-                {["A", "B", "C"].map((x) => (
-                  <span
-                    key={x}
-                    className="h-7 w-7 rounded-full border flex items-center justify-center text-[10px]"
-                    style={{ borderColor: "rgba(0,0,0,0.12)", background: "white", color: textPrimary }}
-                  >
-                    {x}
-                  </span>
-                ))}
-              </span>
             </div>
           </div>
         </div>

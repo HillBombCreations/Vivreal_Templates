@@ -49,7 +49,8 @@ export default function ProductShowcaseComponent({
   };
 
   const prevCard = () => {
-    const prev = (currentIndex - 1 + productShowcase.length) % productShowcase.length;
+    const prev =
+      (currentIndex - 1 + productShowcase.length) % productShowcase.length;
     goTo(prev, "left");
   };
 
@@ -93,7 +94,8 @@ export default function ProductShowcaseComponent({
                   className="h-2.5 rounded-full transition-all"
                   style={{
                     width: i === currentIndex ? 18 : 8,
-                    background: i === currentIndex ? primary : "rgba(0,0,0,0.12)",
+                    background:
+                      i === currentIndex ? primary : "rgba(0,0,0,0.12)",
                   }}
                 />
               ))}
@@ -101,25 +103,15 @@ export default function ProductShowcaseComponent({
           </div>
 
           <div className="order-1 lg:order-2 lg:col-span-7">
-            <div className="relative">
+            <div className="hidden md:grid grid-cols-[44px_1fr_44px] items-center gap-4">
               <button
                 type="button"
                 onClick={prevCard}
-                className="hidden md:inline-flex absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 h-10 w-10 items-center justify-center rounded-full border bg-white/70 shadow-sm backdrop-blur transition active:scale-[0.99]"
+                className="h-11 w-11 cursor-pointer flex items-center justify-center rounded-full border bg-white/70 shadow-sm backdrop-blur transition active:scale-[0.99]"
                 style={{ borderColor: "rgba(0,0,0,0.10)" }}
                 aria-label="Previous"
               >
                 <ChevronLeft className="h-5 w-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={nextCard}
-                className="hidden md:inline-flex absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 h-10 w-10 items-center justify-center rounded-full border bg-white/70 shadow-sm backdrop-blur transition active:scale-[0.99]"
-                style={{ borderColor: "rgba(0,0,0,0.10)" }}
-                aria-label="Next"
-              >
-                <ChevronRight className="h-5 w-5" />
               </button>
 
               <div
@@ -160,61 +152,107 @@ export default function ProductShowcaseComponent({
                       <button
                         type="button"
                         onClick={onShop}
-                        className="h-11 px-5 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99]"
+                        className="h-11 px-5 cursor-pointer rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99]"
                         style={{ background: primary, color: "white" }}
                       >
                         {current.buttonLabel}
                         <ArrowRight className="h-4 w-4" />
                       </button>
-
-                      <div className="md:hidden grid grid-cols-2 gap-3">
-                        <button
-                          type="button"
-                          onClick={prevCard}
-                          className="h-11 rounded-xl border bg-white/70 text-sm font-semibold shadow-sm"
-                          style={{ borderColor: "rgba(0,0,0,0.10)" }}
-                        >
-                          Prev
-                        </button>
-                        <button
-                          type="button"
-                          onClick={nextCard}
-                          className="h-11 rounded-xl border bg-white/70 text-sm font-semibold shadow-sm"
-                          style={{ borderColor: "rgba(0,0,0,0.10)" }}
-                        >
-                          Next
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      {["Free shipping $50+", "30-day returns", "Secure checkout"].map((t) => (
-                        <span
-                          key={t}
-                          className="inline-flex items-center rounded-full border px-3 py-1 text-[11px] font-semibold"
-                          style={{ borderColor: "rgba(0,0,0,0.10)" }}
-                        >
-                          {t}
-                        </span>
-                      ))}
                     </div>
                   </div>
                 </div>
               </div>
 
-              <style jsx>{`
-                @keyframes slideInRight {
-                  from { opacity: 0; transform: translateX(20px); }
-                  to { opacity: 1; transform: translateX(0); }
-                }
-                @keyframes slideInLeft {
-                  from { opacity: 0; transform: translateX(-20px); }
-                  to { opacity: 1; transform: translateX(0); }
-                }
-                .animate-slideInRight { animation: slideInRight 260ms ease-out; }
-                .animate-slideInLeft { animation: slideInLeft 260ms ease-out; }
-              `}</style>
+              <button
+                type="button"
+                onClick={nextCard}
+                className="h-11 w-11 cursor-pointer flex items-center justify-center rounded-full border bg-white/70 shadow-sm backdrop-blur transition active:scale-[0.99]"
+                style={{ borderColor: "rgba(0,0,0,0.10)" }}
+                aria-label="Next"
+              >
+                <ChevronRight className="h-5 w-5" />
+              </button>
             </div>
+
+            <div className="md:hidden">
+              <div
+                key={animKey}
+                className={[
+                  "rounded-3xl border bg-white/70 backdrop-blur shadow-sm overflow-hidden",
+                  "transition-transform duration-300 ease-out",
+                  dir === "right" ? "animate-slideInRight" : "animate-slideInLeft",
+                ].join(" ")}
+                style={{ borderColor: "rgba(0,0,0,0.10)" }}
+              >
+                <div className="grid md:grid-cols-2 gap-0">
+                  <div className="relative aspect-[4/3] p-5 flex items-center justify-center">
+                    <div
+                      className="pointer-events-none absolute inset-0 opacity-30"
+                      style={{
+                        background: `linear-gradient(135deg, ${primary}22 0%, transparent 55%)`,
+                      }}
+                    />
+                    <img
+                      src={current.imageUrl || "/heroImage.png"}
+                      alt={current.title}
+                      width={900}
+                      height={700}
+                      className="relative h-full w-full object-contain"
+                    />
+                  </div>
+
+                  <div className="p-5 flex flex-col justify-center">
+                    <h3 className="text-xl font-semibold tracking-tight">
+                      {current.title}
+                    </h3>
+                    <p className="mt-2 text-sm leading-relaxed text-black/60">
+                      {current.description}
+                    </p>
+
+                    <div className="mt-5 flex flex-col gap-3">
+                      <button
+                        type="button"
+                        onClick={onShop}
+                        className="h-11 px-5 cursor-pointer rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 shadow-sm transition active:scale-[0.99]"
+                        style={{ background: primary, color: "white" }}
+                      >
+                        {current.buttonLabel}
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <style jsx>{`
+              @keyframes slideInRight {
+                from {
+                  opacity: 0;
+                  transform: translateX(20px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateX(0);
+                }
+              }
+              @keyframes slideInLeft {
+                from {
+                  opacity: 0;
+                  transform: translateX(-20px);
+                }
+                to {
+                  opacity: 1;
+                  transform: translateX(0);
+                }
+              }
+              .animate-slideInRight {
+                animation: slideInRight 260ms ease-out;
+              }
+              .animate-slideInLeft {
+                animation: slideInLeft 260ms ease-out;
+              }
+            `}</style>
           </div>
         </div>
       </div>

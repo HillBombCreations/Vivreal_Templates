@@ -13,16 +13,16 @@ import {
   PRODUCT_SHOWCASE_API
 } from '@/types/Landing';
 import { headers } from "next/headers";
-import LandingSkeleton from "./loader";
+import LandingSkeleton from "./loading";
 import LandingWrapper from '@/components/Landing';
 export const dynamic = "force-dynamic"
 
 export default async function Index() {    
     return (
-    <Suspense fallback={<LandingSkeleton />}>
-      <Resolved />
-    </Suspense>
-  );
+      <Suspense fallback={<LandingSkeleton />}>
+        <Resolved />
+      </Suspense>
+    );
 };
 
 const handleBuildUrl = async (type: string) => {

@@ -1,77 +1,59 @@
 "use client";
 
-import { Button } from '@/components/ui/Button';
-import { ArrowRight } from 'lucide-react';
-import { useSiteData } from '@/contexts/SiteDataContext';
+import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { ArrowRight } from "lucide-react";
+import { useSiteData } from "@/contexts/SiteDataContext";
 
 const CTASection = () => {
   const siteData = useSiteData();
 
+  const primary = siteData?.siteDetails?.primary;
+  const surfaceAlt = siteData?.siteDetails?.["surface-alt"];
+  const textInverse = siteData?.siteDetails?.["text-inverse"];
+
   return (
-    <section className="py-10 md:py-16 relative overflow-hidden">
+    <section className="py-12 md:py-20">
       <div className="content-grid">
         <div
-          style={{
-            background: siteData?.siteDetails?.["surface-alt"],
-            backgroundSize: 'cover',
-            backgroundRepeat: 'repeat',
-            backgroundPosition: 'center',
-          }}
-          className="rounded-2xl overflow-hidden relative"
+          className="rounded-3xl"
+          style={{ background: primary }}
         >
-          <div style={{ color: siteData?.siteDetails?.['text-inverse'] }} className="absolute inset-0 bg-gradient-to-br"></div>
-          
-          <div className="relative z-10 p-10 md:p-16 text-center">
-            <div className="max-w-4xl mx-auto">
+          <div className="px-6 py-12 md:px-16 md:py-16 text-center">
+            <div className="mx-auto max-w-3xl">
               <h2
-                style={{
-                  color: siteData?.siteDetails?.['surface-alt'],
-                  backgroundColor: siteData?.siteDetails?.primary,
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: '8px',
-                  display: 'inline-block',
-                  padding: '10px 25px'
-                }}
-                className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in"
+                className="text-3xl md:text-4xl font-semibold tracking-tight"
+                style={{ color: textInverse }}
               >
-                Enjoyed your visit?
+                Shop our full collection
               </h2>
+
               <p
-                style={{
-                  color: siteData?.siteDetails?.['surface-alt'],
-                  backgroundColor: siteData?.siteDetails?.primary,
-                  backdropFilter: 'blur(10px)',
-                  borderRadius: '8px',
-                  padding: '10px 25px',
-                  animationDelay: '100ms'
-                }}
-                className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in"
+                className="mt-4 text-sm md:text-lg leading-relaxed opacity-90"
+                style={{ color: textInverse }}
               >
-                We’d love to hear what you think! Take a moment to share your experience by leaving us a review.
+                Discover our complete lineup of handcrafted products, made with
+                care and meant to be enjoyed. From everyday favorites to special
+                treats, it’s all here.
               </p>
-              <div
-                className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in"
-                style={{ animationDelay: '200ms' }}
-              >
-                <a
-                  href="/review"
-                  className="text-primary hover:underline transition-colors"
-                >
+
+              <div className="mt-8 flex justify-center">
+                <Link href="/products">
                   <Button
                     size="lg"
-                    variant="secondary"
-                    className="font-medium cursor-pointer bg-white text-primary hover:bg-white/90"
+                    className="h-12 px-6 cursor-pointer text-sm font-semibold inline-flex items-center gap-2 shadow-md transition active:scale-[0.97]"
+                    style={{
+                      background: surfaceAlt || "#ffffff",
+                      color: primary,
+                    }}
                   >
-                    Leave a Review
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                    Browse products
+                    <ArrowRight className="h-4 w-4" />
                   </Button>
-                </a>
+                </Link>
               </div>
             </div>
           </div>
-
-          <div className="absolute -bottom-10 -right-10 h-40 w-40 bg-white/10 rounded-full blur-2xl"></div>
-          <div className="absolute -top-10 -left-10 h-40 w-40 bg-white/10 rounded-full blur-2xl"></div>
         </div>
       </div>
     </section>

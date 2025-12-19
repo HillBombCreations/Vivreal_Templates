@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   createContext,
   useEffect,
+  useContext,
   useMemo,
   useState,
   type Dispatch,
@@ -11,7 +13,7 @@ import { setToDB, removeFromDB } from "@/lib/indexDB";
 
 const STORE_NAME = "products";
 
-export type Products = Record<string, unknown>;
+export type Products = Record<string, any>[];
 
 export type ProductContextValue = {
   products: Products;
@@ -19,16 +21,15 @@ export type ProductContextValue = {
 };
 
 const ProductsContext = createContext<ProductContextValue>({
-  products: {},
+  products: [],
   setProducts: () => {
-    /* noop */
   },
 });
 
 export default ProductsContext;
 
 export const ProductsProvider = ({ children }: { children: ReactNode }) => {
-  const [products, setProducts] = useState<Products>({});
+  const [products, setProducts] = useState<Products>([]);
 
   useEffect(() => {
     if (Object.keys(products).length > 0) {
@@ -49,3 +50,11 @@ export const ProductsProvider = ({ children }: { children: ReactNode }) => {
     </ProductsContext.Provider>
   );
 }
+
+export const useProductsContext = () => {
+  const context = useContext(ProductsContext);
+  if (!context) {
+    throw new Error('useSiteData must be used within a SiteDataProvider');
+  }
+  return context;
+};

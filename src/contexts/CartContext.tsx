@@ -1,6 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   createContext,
   useEffect,
+  useContext,
   useMemo,
   useState,
   type Dispatch,
@@ -13,7 +15,7 @@ const CART_EXPIRATION_HOURS = 24;
 const MILLISECONDS_IN_HOUR = 60 * 60 * 1000;
 const STORE_NAME = 'cart';
 
-export type CartItems = Record<string, unknown>;
+export type CartItems = Record<string, any>;
 
 export type CartContextValue = {
   cartItems: CartItems;
@@ -115,3 +117,11 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }
+
+export const useCartContext = () => {
+  const context = useContext(CartContext);
+  if (!context) {
+    throw new Error('useSiteData must be used within a SiteDataProvider');
+  }
+  return context;
+};

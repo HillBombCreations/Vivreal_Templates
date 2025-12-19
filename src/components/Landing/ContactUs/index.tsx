@@ -133,7 +133,7 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
                   label="Full name"
                   value={form.fullName}
                   onChange={onChange("fullName")}
-                  placeholder="Justin Ceccarelli"
+                  placeholder="Your Name"
                 />
 
                 <LabelInput
