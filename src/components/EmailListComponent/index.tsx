@@ -88,8 +88,8 @@ const EmailListComponent = () => {
             transition={{ duration: 0.4 }}
             className="w-[90%] max-w-lg rounded-2xl shadow-2xl border p-8 relative"
             style={{
-              backgroundColor: siteData?.surface || "#FFFFF",
-              borderColor: siteData?.primary,
+              backgroundColor: siteData?.siteDetails?.surface || "#FFFFF",
+              borderColor: siteData?.siteDetails?.primary,
             }}
           >
             <button
@@ -101,7 +101,7 @@ const EmailListComponent = () => {
             <div className="text-center mb-8">
               <h2
                 className="text-3xl font-bold mb-3"
-                style={{ color: siteData?.primary }}
+                style={{ color: siteData?.siteDetails?.primary }}
               >
                 Stay Updated
               </h2>
@@ -146,8 +146,8 @@ const EmailListComponent = () => {
                   size="lg"
                   disabled={isSubmitting}
                   style={{
-                    background: siteData?.primary,
-                    color: siteData?.["text-inverse"],
+                    background: siteData?.siteDetails?.primary,
+                    color: siteData?.siteDetails?.["text-inverse"],
                     cursor: "pointer",
                     minWidth: "180px",
                   }}

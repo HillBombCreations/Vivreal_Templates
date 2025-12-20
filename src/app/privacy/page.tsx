@@ -46,8 +46,6 @@ const PrivacyPolicy = () => {
         <link rel="canonical" href={"/privacy"} />
       </Head>
 
-      <Navbar />
-
       <main className="pt-24 pb-20">
         <section className="pt-10 pb-16">
           <div className="content-grid space-y-8 max-w-4xl mx-auto">
@@ -124,8 +122,6 @@ const PrivacyPolicy = () => {
 
         <CTASection />
       </main>
-
-      <Footer />
     </>
   );
 };

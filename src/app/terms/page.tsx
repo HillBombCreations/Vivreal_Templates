@@ -1,6 +1,4 @@
 import Head from "next/head";
-import Navbar from "@/components/Navigation/Navbar";
-import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 
 export const metadata = {
@@ -45,8 +43,6 @@ const TermsOfService = () => {
         />
         <link rel="canonical" href={"/terms"} />
       </Head>
-
-      <Navbar />
 
       <main className="pt-24 pb-20">
         <section className="pt-10 pb-16">
@@ -127,8 +123,6 @@ const TermsOfService = () => {
 
         <CTASection />
       </main>
-
-      <Footer />
     </>
   );
 };
