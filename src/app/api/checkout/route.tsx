@@ -108,6 +108,7 @@ export async function POST(req: NextRequest) {
         businessName: body.businessName,
         contactEmail: body.contactEmail,
         requiresShipping: body.requiresShipping,
+        updatedTemplate: true
       }),
     });
 
