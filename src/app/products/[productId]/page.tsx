@@ -94,7 +94,7 @@ export const generateMetadata = async ({
     title: `${title} | ${siteData?.name}`,
     description: description,
     openGraph: {
-      title: title,
+      title: `${title} | ${siteData?.name}`,
       description: description,
       url: `https://${siteData.domainName}/products/${productId}`,
       images: imageUrl
@@ -111,7 +111,7 @@ export const generateMetadata = async ({
     },
     twitter: {
       card: "summary_large_image",
-      title: title,
+      title: `${title} | ${siteData?.name}`,
       description: description,
       images: imageUrl ? [imageUrl] : [],
     },
