@@ -12,9 +12,10 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 
 type ProductPageClientProps = {
   product: Products | null;
+  originUrl: string;
 };
 
-export default function ProductPageClient({ product }: ProductPageClientProps) {
+export default function ProductPageClient({ product, originUrl }: ProductPageClientProps) {
   const router = useRouter();
 
   const siteData = useSiteData();
@@ -108,6 +109,7 @@ export default function ProductPageClient({ product }: ProductPageClientProps) {
           businessName: businessInfo?.name,
           contactEmail: businessInfo?.contactInfo?.email,
           requiresShipping: !!businessInfo?.shipping,
+          originUrl: originUrl,
         }),
       });
 

@@ -10,7 +10,7 @@ import { useCartContext } from "@/contexts/CartContext";
 import CartDialog from "./CartDialog";
 import { ShoppingCart } from "lucide-react";
 
-const Navbar = ({ siteData }: { siteData: SiteData }) => {
+const Navbar = ({ siteData, originUrl }: { siteData: SiteData, originUrl: string }) => {
   const { cartItems, openCartMenu, setOpenCartMenu } = useCartContext();
   const navItems = useMemo(
     () => [
@@ -81,7 +81,7 @@ const Navbar = ({ siteData }: { siteData: SiteData }) => {
           </div>
         </div>
       </header>
-      <CartDialog open={openCartMenu} onClose={() => setOpenCartMenu(false)} siteData={siteData} />
+      <CartDialog open={openCartMenu} originUrl={originUrl} onClose={() => setOpenCartMenu(false)} siteData={siteData} />
     </>
   );
 };

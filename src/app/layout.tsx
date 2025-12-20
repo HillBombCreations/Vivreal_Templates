@@ -13,17 +13,17 @@ const handleBuildUrl = async (type: string) => {
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
   const url = new URL(`${base}/api/${type}`);
-  return url;
+  return {base: base, apiUrl: url};
 };
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
-  const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
-  const siteData = await getSiteData(siteDataUrl.toString());
+  const { base, apiUrl } = await handleBuildUrl(SITE_DATA_API);
+  const siteData = await getSiteData(apiUrl.toString());
   return (
     <html lang="en">
         <body>
             <Providers siteData={siteData}>
-                <Navbar siteData={siteData}/>
+                <Navbar originUrl={base} siteData={siteData}/>
                 {children}
                 <Footer siteData={siteData} />
             </Providers>

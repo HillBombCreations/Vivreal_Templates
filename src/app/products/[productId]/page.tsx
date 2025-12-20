@@ -32,7 +32,8 @@ const handleBuildUrl = async (type: string) => {
   const host = h.get("x-forwarded-host") ?? h.get("host")!;
   const proto = h.get("x-forwarded-proto") ?? "https";
   const base = `${proto}://${host}`;
-  return new URL(`${base}/api/${type}`);
+  const apiUrl = new URL(`${base}/api/${type}`);
+  return { base, apiUrl }
 };
 
 async function Resolved({
@@ -40,10 +41,11 @@ async function Resolved({
 }: {
   productId: string
 }) {
-  const productsUrl = await handleBuildUrl(PRODUCTS_API);
-  const product = await getProductById(productsUrl.toString(), productId);
+  const { base, apiUrl } = await handleBuildUrl(PRODUCTS_API);
+  const product = await getProductById(apiUrl.toString(), productId);
+  
   return (
-    <ClientWrapper product={product} />
+    <ClientWrapper originUrl={base} product={product} />
   );
 }
 
@@ -75,8 +77,8 @@ export const generateMetadata = async ({
   const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
   const productsUrl = await handleBuildUrl(PRODUCTS_API);
 
-  const product = await getProductById(productsUrl.toString(), productId);
-  const siteData = await getSiteData(siteDataUrl.toString());
+  const product = await getProductById(productsUrl.apiUrl.toString(), productId);
+  const siteData = await getSiteData(siteDataUrl.apiUrl.toString());
   const title = getSafeFieldValue(product, 'name');
   const description = getSafeFieldValue(product, 'description');
   const imageUrl = getSafeFieldValue(product, 'imageUrl');

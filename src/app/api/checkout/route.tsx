@@ -19,6 +19,7 @@ type CheckoutPayload = {
   businessName: string;
   contactEmail: string;
   requiresShipping: boolean;
+  originUrl: string;
 };
 
 function isNonEmptyString(v: unknown): v is string {
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
         businessName: body.businessName,
         contactEmail: body.contactEmail,
         requiresShipping: body.requiresShipping,
+        originUrl: body.originUrl,
         updatedTemplate: true
       }),
     });

@@ -2,7 +2,6 @@
 "use client";
 
 import { useContext, useMemo, useState } from "react";
-import axios from "axios";
 import CartContext from "@/contexts/CartContext";
 import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { SiteData } from "@/types/SiteData";
@@ -10,23 +9,19 @@ import { SiteData } from "@/types/SiteData";
 type CartDialogProps = {
   open: boolean;
   onClose?: () => void;
-  siteData: SiteData
+  siteData: SiteData;
+  originUrl: string;
 };
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 
-export default function CartDialog({ open, onClose, siteData }: CartDialogProps) {
-  const { cartItems, setCartItems } = useContext(CartContext) as any;
+export default function CartDialog({ open, onClose, siteData, originUrl }: CartDialogProps) {
+  const { cartItems, setCartItems, setOpenCartMenu } = useContext(CartContext) as any;
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl;
   const businessInfo = siteData?.businessInfo;
-  const integrationInfo = siteData?.integrationInfo;
 
   const [loadingCheckout, setLoadingCheckout] = useState(false);
-
-  const key =
-    process.env.NEXT_PUBLIC_CLIENT_KEY ||
-    (typeof window !== "undefined" ? (window as any)?.__VIVREAL_CLIENT_KEY : undefined);
 
   const itemsArray = useMemo(() => {
     const entries = cartItems ? Object.entries(cartItems) : [];
@@ -81,6 +76,7 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
           businessName: businessInfo?.name,
           contactEmail: businessInfo?.contactInfo?.email,
           requiresShipping: !!businessInfo?.shipping,
+          originUrl: originUrl
         }),
       });
 
@@ -91,8 +87,8 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
       const data = await res.json();
 
       if (data && !(data?.status && data.status === 400)) {
-        console.log('DATA', data);
-        // window.location.replace(data);
+        setOpenCartMenu(false);
+        window.location.replace(data);
       }
     } catch (e) {
       console.error("[CartDialog] checkout error:", e);
