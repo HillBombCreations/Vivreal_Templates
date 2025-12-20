@@ -4,7 +4,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import NavigationMenuComponent from "./NavigationMenu";
-import MobileNavigationMenuClient from "./MobileNavigationMenuClient";
 import { SiteData } from "@/types/SiteData";
 
 import { useCartContext } from "@/contexts/CartContext";
@@ -39,11 +38,9 @@ const Navbar = ({ siteData }: { siteData: SiteData }) => {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out pt-4 pb-1 md:pt-5 bg-white/90 backdrop-blur-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out pt-4 pb-4 bg-white/90 backdrop-blur-sm">
         <div className="w-full px-4">
-          <MobileNavigationMenuClient navItems={navItems} siteData={siteData} />
-
-          <div className="hidden md:flex items-center relative justify-between">
+          <div className="flex items-center relative justify-between">
             <div className="flex items-center space-x-3">
               <Link href="/" className="flex items-center space-x-3">
                 <img
@@ -54,7 +51,7 @@ const Navbar = ({ siteData }: { siteData: SiteData }) => {
                 />
                 <span
                   style={{ color: primary }}
-                  className="text-2xl font-semibold text-gray-900 font-brand leading-none"
+                  className="hidden md:flex text-2xl font-semibold text-gray-900 font-brand leading-none"
                 >
                   {siteData?.name}
                 </span>

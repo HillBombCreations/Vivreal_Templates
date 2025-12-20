@@ -85,20 +85,21 @@ export default function ProductsPageClient({
 
     const cartKey = `${key}_${selectedVariant || "default"}`;
     const next = { ...(cartItems || {}) };
-
+    const itemAdded = {
+      quantity: 1,
+      name: selectedVariant
+        ? `${resolveField("name", product, selectedVariant)} (${selectedVariant})`
+        : resolveField("name", product),
+      price: resolveField("price", product, selectedVariant),
+      priceID: resolveField("default_price", product, selectedVariant),
+      imageUrl: resolveField("imageUrl", product, selectedVariant) || siteLogo,
+      variant: selectedVariant,
+    };
+    console.log('ITEM ADDED', itemAdded);
     if (next[cartKey]) {
       next[cartKey].quantity += 1;
     } else {
-      next[cartKey] = {
-        quantity: 1,
-        name: selectedVariant
-          ? `${resolveField("name", product, selectedVariant)} (${selectedVariant})`
-          : resolveField("name", product),
-        price: resolveField("price", product, selectedVariant),
-        priceID: resolveField("default_price", product, selectedVariant),
-        imageSrc: resolveField("productImage", product, selectedVariant)?.currentFile?.source || siteLogo,
-        variant: selectedVariant,
-      };
+      next[cartKey] = itemAdded;
     }
 
     setCartItems(next);

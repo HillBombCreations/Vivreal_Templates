@@ -26,7 +26,7 @@ const HeroSection = (
   return (
     <section
       style={{ background: surface }}
-      className="relative overflow-hidden pt-20 md:pt-28 pb-16 md:pb-24"
+      className="relative min-h-[100svh] overflow-hidden pt-20 md:pt-28 pb-16 md:pb-24"
       aria-labelledby="hero-heading"
     >
       <div
@@ -42,9 +42,9 @@ const HeroSection = (
         }}
       />
 
-      <div className="mx-5 md:mx-20 lg:mx-40">
-        <div className="grid items-center gap-10 md:gap-14 lg:gap-16 md:grid-cols-2">
-          <div className="order-2 md:order-1 text-center md:text-left">
+      <div className="mx-5 md:mx-20 lg:mx-40 min-h-[calc(100svh-6rem)] flex items-center">
+        <div className="grid w-full items-center gap-10 md:gap-14 lg:gap-16 md:grid-cols-2">
+          <div className="order-1 text-center md:text-left">
             <h1
               id="hero-heading"
               className="text-[42px] leading-[1.05] md:text-6xl font-semibold tracking-tight"
@@ -91,9 +91,9 @@ const HeroSection = (
               ))}
             </div>
           </div>
-          <div className="order-1 md:order-2">
+          <div className="order-2">
             <div
-              className="relative rounded-3xl border p-4 md:p-6 shadow-sm"
+              className="relative rounded-3xl border shadow-sm"
               style={{
                 borderColor: "rgba(0,0,0,0.08)",
                 background: "rgba(255,255,255,0.6)",
@@ -105,13 +105,14 @@ const HeroSection = (
                   background: `linear-gradient(135deg, ${siteData.siteDetails?.primary}33 0%, transparent 55%)`,
                 }}
               />
-              <img
-                src={imageSrc}
-                alt="Hero illustration"
-                width={900}
-                height={700}
-                className="relative w-full h-auto object-contain"
-              />
+              <div className="relative w-full h-[320px] sm:h-[380px] md:h-[520px] lg:h-[620px] flex items-center justify-center">
+                <img
+                  src={imageSrc}
+                  alt="Hero illustration"
+                  className="max-h-full max-w-full object-contain"
+                  draggable={false}
+                />
+              </div>
             </div>
 
             <div className="mt-4 flex items-center justify-center md:justify-end gap-2 text-[11px] font-semibold opacity-80">

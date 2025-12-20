@@ -81,8 +81,6 @@ export const generateMetadata = async ({
   const description = getSafeFieldValue(product, 'description');
   const imageUrl = getSafeFieldValue(product, 'imageUrl');
 
-  console.log('TITLE', title);
-  console.log('DESCRIPTION', description);
   if (!product) {
     return {
       title: `Product not found | ${siteData?.name}`,

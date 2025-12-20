@@ -39,35 +39,45 @@ export default function FloatingCartDialog({
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [disableButtons, setDisableButtons] = useState(false);
 
-  const safeName = useMemo(() => {
-    if (!product) return "";
-    const base =
-      typeof product?.name === "object" && variant ? product?.name?.[variant] : product?.name;
-    if (variant && base && typeof base === "string" && !base.includes(`(${variant})`)) {
-      return `${base} (${variant})`;
+  const getSafeFieldValue = (key: string) => {
+    if (!product) return null;
+
+    if (typeof (product as any)?.[key] === "object" && variant) {
+      const obj = (product as any)[key];
+      if (obj && typeof obj === "object" && variant in obj) return obj[variant];
     }
-    return base || "";
+
+    if (key === "name") {
+      const base = (product as any)?.name;
+      if (variant && typeof base === "string" && !base.includes(`(${variant})`)) {
+        return `${base} (${variant})`;
+      }
+
+      return base ?? "";
+    }
+
+    return (product as any)?.[key];
+  };
+
+  const safeName = useMemo(() => {
+    return (getSafeFieldValue("name") as string) || "";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant]);
 
   const safePrice = useMemo(() => {
-    if (!product) return 0;
-    const v = variant || null;
-    const raw =
-      typeof product?.price === "object" && v ? product?.price?.[v] : product?.price;
+    const raw = getSafeFieldValue("price");
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant]);
 
   const safeImg = useMemo(() => {
     if (!product) return siteLogo;
-    const v = variant || null;
 
-    const imgObj =
-      typeof product?.productImage === "object" && v
-        ? product?.productImage?.[v]
-        : product?.productImage;
+    const fromImageUrl = (product as any)?.imageUrl;
 
-    return imgObj?.currentFile?.source || siteLogo;
+    return fromImageUrl || siteLogo;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant, siteLogo]);
 
   const handleOpenCart = () => {
@@ -146,7 +156,7 @@ export default function FloatingCartDialog({
                 type="button"
                 onClick={onClose}
                 disabled={loadingCheckout}
-                className="h-8 w-8 rounded-full grid place-items-center hover:bg-black/5 transition disabled:opacity-60"
+                className="h-8 w-8 cursor-pointer rounded-full grid place-items-center hover:bg-black/5 transition disabled:opacity-60"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
@@ -175,7 +185,7 @@ export default function FloatingCartDialog({
                 type="button"
                 onClick={handleOpenCart}
                 disabled={disableButtons}
-                className="h-10 rounded-xl border bg-white text-sm font-semibold shadow-sm transition disabled:opacity-60"
+                className="h-10 rounded-xl cursor-pointer border bg-white text-sm font-semibold shadow-sm transition disabled:opacity-60"
                 style={{ borderColor: "rgba(0,0,0,0.10)" }}
               >
                 View bag ({cartCount})
@@ -243,7 +253,7 @@ export default function FloatingCartDialog({
               type="button"
               onClick={handleOpenCart}
               disabled={disableButtons}
-              className="h-11 rounded-xl border bg-white text-sm font-semibold shadow-sm transition disabled:opacity-60"
+              className="h-11 rounded-xl cursor-pointer border bg-white text-sm font-semibold shadow-sm transition disabled:opacity-60"
               style={{ borderColor: "rgba(0,0,0,0.10)" }}
             >
               View bag ({cartCount})

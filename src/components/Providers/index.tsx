@@ -10,7 +10,6 @@ import { SiteData } from '@/types/SiteData';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
-import { ProductsProvider } from '@/contexts/ProductsContext';
 
 const Providers = ({
     children,
@@ -34,15 +33,13 @@ const Providers = ({
     return (
     <SiteDataProvider siteData={siteData}>
         <CartProvider>
-            <ProductsProvider>
-                <QueryClientProvider client={queryClient}>
-                    <TooltipProvider>
-                        <AppToaster />
-                        <Sonner />
-                        {children}
-                    </TooltipProvider>
-                </QueryClientProvider>
-            </ProductsProvider>
+            <QueryClientProvider client={queryClient}>
+                <TooltipProvider>
+                    <AppToaster />
+                    <Sonner />
+                    {children}
+                </TooltipProvider>
+            </QueryClientProvider>
         </CartProvider>
     </SiteDataProvider>
     );

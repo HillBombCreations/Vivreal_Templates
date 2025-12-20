@@ -1,55 +1,85 @@
 const ProductsSkeleton = () => {
   return (
-    <section className="pt-24 md:pt-32 pb-20 md:pb-32 bg-white">
-      <div className="mx-5 md:mx-20 lg:mx-40 animate-pulse">
-        <div className="grid items-center gap-12 sm:grid-cols-2">
-          <div className="h-80 bg-gray-200 rounded-lg" />
-          <div className="space-y-5">
-            <div className="h-10 w-1/3 bg-gray-200 rounded" />
-            <div className="h-8 w-2/3 bg-gray-200 rounded" />
-            <div className="h-4 w-5/6 bg-gray-200 rounded" />
-            <div className="h-4 w-3/4 bg-gray-200 rounded" />
-            <div className="h-4 w-2/3 bg-gray-200 rounded" />
-            <div className="h-10 w-40 bg-gray-200 rounded mt-6" />
+    <div className="min-h-[100dvh] bg-[var(--surface,#ffffff)]">
+      <div className="mx-4 md:mx-10 lg:mx-20 animate-pulse">
+        <div className="mt-6 rounded-2xl border px-4 py-3 bg-white/70"
+             style={{ borderColor: "rgba(0,0,0,0.08)" }}>
+          <div className="h-4 w-2/3 rounded bg-gray-200" />
+        </div>
+
+        <div className="mt-8 flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <div className="h-8 w-44 rounded bg-gray-200" />
+            <div className="mt-2 h-4 w-80 max-w-full rounded bg-gray-200" />
           </div>
+
+          <div className="h-10 w-36 rounded-xl bg-gray-200" />
         </div>
 
-        <div className="flex flex-wrap justify-center gap-6 mt-14">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="w-32 h-16 bg-gray-200 rounded-lg" />
-          ))}
-        </div>
-
-        <div className="mt-20">
-          <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
-          <div className="flex flex-col gap-4">
-            {[...Array(3)].map((_, i) => (
+        <div className="mt-8 pb-16">
+          <div className="grid gap-6 lg:grid-cols-12">
+            <aside className="lg:col-span-3">
               <div
-                key={i}
-                className="flex flex-col sm:flex-row rounded-lg border border-gray-100 bg-gray-100 shadow-sm overflow-hidden"
+                className="rounded-2xl border bg-white/70 backdrop-blur p-4"
+                style={{ borderColor: "rgba(0,0,0,0.08)" }}
               >
-                <div className="w-full sm:w-40 h-48 bg-gray-300" />
-                <div className="flex-1 p-4 space-y-3">
-                  <div className="h-6 w-2/3 bg-gray-300 rounded" />
-                  <div className="h-4 w-5/6 bg-gray-300 rounded" />
-                  <div className="h-4 w-4/6 bg-gray-300 rounded" />
-                  <div className="h-8 w-24 bg-gray-300 rounded mt-3" />
+                <div className="flex items-center justify-between">
+                  <div className="h-4 w-16 rounded bg-gray-200" />
+                </div>
+
+                <div className="mt-4 flex flex-col gap-2">
+                  {[...Array(6)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-10 w-full rounded-xl bg-gray-200"
+                    />
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="mt-20">
-          <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="h-64 bg-gray-200 rounded-lg" />
-            ))}
+            </aside>
+
+            <main className="lg:col-span-9">
+              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                {[...Array(9)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl border bg-white shadow-sm overflow-hidden flex flex-col h-[420px]"
+                    style={{ borderColor: "rgba(0,0,0,0.08)" }}
+                  >
+                    <div
+                      className="border-b bg-white"
+                      style={{ borderColor: "rgba(0,0,0,0.06)" }}
+                    >
+                      <div className="h-[190px] w-full bg-gray-200" />
+                    </div>
+
+                    <div className="p-4 flex flex-col flex-1 min-h-0">
+                      <div className="h-8 mb-3 rounded bg-gray-200" />
+
+                      <div className="space-y-2">
+                        <div className="h-5 w-[85%] rounded bg-gray-200" />
+                        <div className="h-5 w-[65%] rounded bg-gray-200" />
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        <div className="h-4 w-full rounded bg-gray-200" />
+                        <div className="h-4 w-[85%] rounded bg-gray-200" />
+                      </div>
+
+                      <div className="mt-auto pt-3 flex items-center justify-between gap-3">
+                        <div className="h-6 w-16 rounded bg-gray-200" />
+                        <div className="h-10 w-24 rounded-xl bg-gray-200" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </main>
           </div>
         </div>
       </div>
-    </section>
+    </div>
   );
-}
+};
 
 export default ProductsSkeleton;

@@ -110,18 +110,14 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
       <section
         role="dialog"
         aria-modal="true"
-        className="
-          absolute inset-x-0 bottom-0
-          h-[85svh]
-          rounded-t-3xl
-          bg-[var(--surface,#fff)]
-          text-[var(--text-primary,#0b1220)]
-          shadow-2xl
+        className={`
+          absolute inset-x-0 bottom-0 h-[85svh]
+          rounded-t-3xl bg-[var(--surface,#fff)]
+          text-[var(--text-primary,#0b1220)] shadow-2xl
           md:inset-y-0 md:right-0 md:left-auto md:h-full md:w-[420px] md:rounded-none
           flex flex-col
-        "
+        `}
       >
-        {/* Header */}
         <div className="sticky top-0 z-10 border-b border-black/10 bg-[var(--surface,#fff)] px-4 pt-4 pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -156,7 +152,6 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
           </div>
         </div>
 
-        {/* Items */}
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {itemsArray.length === 0 ? (
             <div className="mt-10 text-center">
@@ -178,17 +173,16 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
               {itemsArray.map((item: any) => {
                 const priceEach = Number(resolvePrice(item)) || 0;
                 const line = priceEach * (item.quantity || 0);
-
                 return (
                   <div
-                    key={item.id}
+                    key={item.priceID}
                     className="rounded-2xl border border-black/10 bg-white/70 p-3 shadow-sm"
                   >
                     <div className="flex gap-3">
                       <div className="h-16 w-16 rounded-xl bg-black/5 overflow-hidden flex-shrink-0">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={item?.imageSrc || siteLogo || "/heroImage.png"}
+                          src={item?.imageUrl || siteLogo}
                           alt={item?.name || "Cart item"}
                           className="h-full w-full object-cover"
                         />
@@ -234,7 +228,7 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
 
                             <button
                               type="button"
-                              className="h-7 w-7 rounded-full hover:bg-black/5 disabled:opacity-40"
+                              className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={loadingCheckout}
                               onClick={() => setQty(item.id, (item.quantity || 0) + 1)}
                               aria-label="Increase quantity"
@@ -266,8 +260,8 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
             type="button"
             onClick={handleCheckout}
             disabled={!itemsArray.length || loadingCheckout}
-            className="
-              mt-3 h-11 w-full rounded-2xl font-semibold
+            className={`
+              mt-3 h-11 w-full rounded-2xl cursor-pointer font-semibold
               disabled:opacity-60 disabled:cursor-not-allowed
               text-[var(--text-inverse,#fff)]
               bg-[var(--primary,#365b99)]
@@ -275,7 +269,7 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
               active:scale-[0.99]
               transition
               flex items-center justify-center gap-2
-            "
+            `}
           >
             {loadingCheckout ? (
               <>

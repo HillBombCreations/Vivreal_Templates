@@ -1,55 +1,48 @@
 const HeroSkeleton = () => {
   return (
-    <section className="pt-24 md:pt-32 pb-20 md:pb-32 bg-white">
-      <div className="mx-5 md:mx-20 lg:mx-40 animate-pulse">
-        <div className="grid items-center gap-12 sm:grid-cols-2">
-          <div className="h-80 bg-gray-200 rounded-lg" />
-          <div className="space-y-5">
-            <div className="h-10 w-1/3 bg-gray-200 rounded" />
-            <div className="h-8 w-2/3 bg-gray-200 rounded" />
-            <div className="h-4 w-5/6 bg-gray-200 rounded" />
-            <div className="h-4 w-3/4 bg-gray-200 rounded" />
-            <div className="h-4 w-2/3 bg-gray-200 rounded" />
-            <div className="h-10 w-40 bg-gray-200 rounded mt-6" />
+    <section className="relative min-h-[100svh] overflow-hidden bg-white pt-20 md:pt-28 pb-16 md:pb-24">
+      <div className="mx-5 md:mx-20 lg:mx-40 min-h-[calc(100svh-6rem)] flex items-center">
+        <div className="grid w-full items-center gap-10 md:gap-14 lg:gap-16 md:grid-cols-2 animate-pulse">
+          <div className="order-1 text-center md:text-left">
+            <div className="h-3 w-24 mx-auto md:mx-0 rounded bg-gray-200" />
+
+            <div className="mt-4 space-y-3">
+              <div className="h-10 md:h-14 w-[85%] mx-auto md:mx-0 rounded bg-gray-200" />
+              <div className="h-10 md:h-14 w-[70%] mx-auto md:mx-0 rounded bg-gray-200" />
+            </div>
+
+            <div className="mt-5 space-y-2 max-w-xl mx-auto md:mx-0">
+              <div className="h-4 w-full rounded bg-gray-200" />
+              <div className="h-4 w-[92%] rounded bg-gray-200" />
+              <div className="h-4 w-[75%] rounded bg-gray-200" />
+            </div>
+
+            <div className="mt-7 flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center md:justify-start">
+              <div className="h-11 w-44 rounded-xl bg-gray-200" />
+            </div>
+
+            <div className="mt-8 grid grid-cols-3 gap-2 max-w-xl mx-auto md:mx-0">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-10 rounded-xl bg-gray-200" />
+              ))}
+            </div>
           </div>
-        </div>
 
-        <div className="flex flex-wrap justify-center gap-6 mt-14">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="w-32 h-16 bg-gray-200 rounded-lg" />
-          ))}
-        </div>
-
-        <div className="mt-20">
-          <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
-          <div className="flex flex-col gap-4">
-            {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="flex flex-col sm:flex-row rounded-lg border border-gray-100 bg-gray-100 shadow-sm overflow-hidden"
-              >
-                <div className="w-full sm:w-40 h-48 bg-gray-300" />
-                <div className="flex-1 p-4 space-y-3">
-                  <div className="h-6 w-2/3 bg-gray-300 rounded" />
-                  <div className="h-4 w-5/6 bg-gray-300 rounded" />
-                  <div className="h-4 w-4/6 bg-gray-300 rounded" />
-                  <div className="h-8 w-24 bg-gray-300 rounded mt-3" />
-                </div>
+          <div className="order-2">
+            <div className="relative rounded-3xl border shadow-sm bg-white/60 border-black/10">
+              <div className="relative w-full h-[320px] sm:h-[380px] md:h-[520px] lg:h-[620px] flex items-center justify-center">
+                <div className="h-full w-full rounded-2xl bg-gray-200" />
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="mt-20">
-          <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="h-64 bg-gray-200 rounded-lg" />
-            ))}
+            </div>
+
+            <div className="mt-4 flex items-center justify-center md:justify-end gap-2">
+              <div className="h-3 w-32 rounded bg-gray-200 opacity-80" />
+            </div>
           </div>
         </div>
       </div>
     </section>
   );
-}
+};
 
 export default HeroSkeleton;

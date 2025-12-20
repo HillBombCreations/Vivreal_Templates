@@ -2,17 +2,6 @@ import Link from "next/link";
 import Image from 'next/image';
 import { SiteData } from '@/types/SiteData';
 
-const InstagramIcon = () => (
-  <img
-    src="/instagramLogo.png"
-    alt="Instagram Logo"
-    width={20}
-    height={20}
-    className="h-[20px] w-[20px]"
-  />
-);
-
-
 const Footer = ({ siteData }: {siteData: SiteData}) => {
   const navItems = [
     {
@@ -37,13 +26,8 @@ const Footer = ({ siteData }: {siteData: SiteData}) => {
               <img src={siteData?.siteDetails?.logo?.imageUrl} alt={siteData?.name} width={175} height={175} />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
-             The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
+             {siteData?.name} is an online store that is powered through Vivreal.
             </p>
-            <div className="flex space-x-4">
-              <a href="https://www.instagram.com/comedycollective1" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
-                <InstagramIcon />
-              </a>
-            </div>
           </div>
           <div className="col-span-full md:col-span-3">
             <div className="flex flex-wrap gap-x-6 gap-y-2">

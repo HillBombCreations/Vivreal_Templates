@@ -5,7 +5,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import axios from "axios";
+import FloatingCartDialog from "./FloatinCartDialog";
 import { Products } from "@/types/Products";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
@@ -25,12 +25,12 @@ export default function ProductPageClient({ product }: ProductPageClientProps) {
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
   const businessInfo = (siteData as any)?.businessInfo;
-  const integrationInfo = (siteData as any)?.integrationInfo;
 
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [addedOpen, setAddedOpen] = useState(false);
+  const [lastAdded, setLastAdded] = useState<any>(null);
 
   useMemo(() => {
     if (!product) return;
@@ -63,26 +63,24 @@ export default function ProductPageClient({ product }: ProductPageClientProps) {
 
     const variant = resolveVariant();
     const cartKey = `${product.id}_${variant || "default"}`;
-
+    const name = getSafeFieldValue("name");
     const next = { ...(cartItems || {}) };
+    const itemAdded = {
+      quantity,
+      name: variant ? `${name} (${variant})` : name,
+      price: getSafeFieldValue("price"),
+      priceID:
+        typeof product?.default_price === "object" && variant
+          ? product.default_price?.[variant]
+          : product?.default_price,
+      imageUrl: getSafeFieldValue("imageUrl") || siteLogo,
+      variant,
+    };
 
-    if (next[cartKey]) {
-      next[cartKey].quantity += quantity;
-    } else {
-      const name = getSafeFieldValue("name");
-      next[cartKey] = {
-        quantity,
-        name: variant ? `${name} (${variant})` : name,
-        price: getSafeFieldValue("price"),
-        priceID:
-          typeof product?.default_price === "object" && variant
-            ? product.default_price?.[variant]
-            : product?.default_price,
-        imageUrl: getSafeFieldValue("imageUrl") || siteLogo,
-        variant,
-      };
-    }
+    if (next[cartKey]) next[cartKey].quantity += quantity;
+    else next[cartKey] = itemAdded;
 
+    setLastAdded(itemAdded);
     setCartItems(next);
     setAddedOpen(true);
   };
@@ -316,45 +314,14 @@ export default function ProductPageClient({ product }: ProductPageClientProps) {
         </div>
       </div>
 
-      {addedOpen ? (
-        <div className="fixed inset-0 z-50">
-          <button
-            type="button"
-            className="absolute inset-0 bg-black/40"
-            onClick={() => setAddedOpen(false)}
-            aria-label="Close"
-          />
-          <div className="absolute bottom-0 left-0 right-0 mx-auto max-w-xl rounded-t-3xl bg-white p-5 shadow-2xl">
-            <div className="text-sm font-semibold">Added to cart</div>
-            <div className="mt-1 text-sm text-black/60">
-              {quantity} × {name}
-              {resolveVariant() ? ` (${resolveVariant()})` : ""}
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                className="h-11 rounded-xl border bg-white text-sm font-semibold"
-                style={{ borderColor: "rgba(0,0,0,0.10)" }}
-                onClick={() => setAddedOpen(false)}
-              >
-                Keep shopping
-              </button>
-              <button
-                type="button"
-                className="h-11 rounded-xl text-sm font-semibold"
-                style={{ background: primary, color: "white" }}
-                onClick={() => {
-                  setAddedOpen(false);
-                  router.push("/products");
-                }}
-              >
-                View cart
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <FloatingCartDialog
+        open={addedOpen}
+        onClose={() => setAddedOpen(false)}
+        product={lastAdded}
+        quantity={quantity}
+        cartCount={cartCount}
+        variant={resolveVariant()}
+      />
     </div>
   );
 }
