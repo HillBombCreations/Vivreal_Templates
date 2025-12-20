@@ -70,25 +70,29 @@ export default function CartDialog({ open, onClose, siteData }: CartDialogProps)
         name: item.name,
       }));
 
-      const { data } = await axios.post(
-        "https://client.vivreal.io/tenant/createCheckoutSession",
-        {
-          products,
-          stripeKey: integrationInfo?.stripe?.secretKey,
+     const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({
+          products: products,
           businessName: businessInfo?.name,
           contactEmail: businessInfo?.contactInfo?.email,
-          requiresShipping: businessInfo?.shipping,
-        },
-        {
-          headers: {
-            Authorization: key,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+          requiresShipping: !!businessInfo?.shipping,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to create checkout session");
+      }
+
+      const data = await res.json();
 
       if (data && !(data?.status && data.status === 400)) {
-        window.location.replace(data);
+        console.log('DATA', data);
+        // window.location.replace(data);
       }
     } catch (e) {
       console.error("[CartDialog] checkout error:", e);
