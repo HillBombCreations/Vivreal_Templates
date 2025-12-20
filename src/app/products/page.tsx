@@ -5,6 +5,8 @@ import ProductsPageClient from "@/components/Products";
 import { headers } from "next/headers";
 import { getProducts } from "@/lib/api/Products";
 import { PRODUCTS_API, Products } from "@/types/Products";
+import { SITE_DATA_API } from "@/types/SiteData";
+import { getSiteData } from "@/lib/api/siteData";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -60,4 +62,38 @@ async function Resolved({ filter }: { filter: string }) {
       initialSelectedVariants={variantDefaults}
     />
   );
-}
+};
+
+export const generateMetadata = async () => {
+  const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
+  const siteData = await getSiteData(siteDataUrl.toString());
+  
+  const description = `Browse our full collection of products from ${siteData?.name}. Find everything you need to shop with confidence.`;
+
+  return {
+    title: `Products | ${siteData?.name}`,
+    description: description,
+    openGraph: {
+      title: `Products | ${siteData?.name}`,
+      description: description,
+      url: `https://${siteData.domainName}/products`,
+      images: siteData?.siteDetails?.logo?.imageUrl
+        ? [
+            {
+              url: siteData?.siteDetails?.logo?.imageUrl,
+              width: 1200,
+              height: 630,
+              alt: `Products | ${siteData?.name}`,
+            },
+          ]
+        : [],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `Products | ${siteData?.name}`,
+      description: description,
+      images: siteData?.siteDetails?.logo?.imageUrl ? [siteData?.siteDetails?.logo?.imageUrl] : [],
+    },
+  };
+};

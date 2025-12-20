@@ -13,6 +13,8 @@ import {
   PRODUCT_SHOWCASE_API
 } from '@/types/Landing';
 import { headers } from "next/headers";
+import { SITE_DATA_API } from '@/types/SiteData';
+import { getSiteData } from '@/lib/api/siteData';
 import LandingSkeleton from "./loading";
 import LandingWrapper from '@/components/Landing';
 export const dynamic = "force-dynamic"
@@ -45,31 +47,37 @@ async function Resolved() {
   return <LandingWrapper landingSections={landingSections} productShowcase={productShowcase} ourOfferings={ourOfferings} />;
 }
 
-// TODO: fix image url to be from cms data
-// export const generateMetadata = async () => {
-//   const siteData = await getSiteData();
-//   return {
-//     title: siteData?.businessInfo?.name,
-//     description: "The Comedy Collective is a place for discovering and enjoying the best in comedy.",
-//     openGraph: {
-//       title: siteData?.businessInfo?.name,
-//       description: "The Comedy Collective is a place for discovering and enjoying the best in comedy.",
-//       url: siteData?.domainName,
-//       images:  [
-//         {
-//             url: new URL("/heroImage.png", "https://comedycollectivechi.com"),
-//             width: 1200,
-//             height: 630,
-//             alt: "The Comedy Collective Logo",
-//         },
-//       ],
-//       type: "article",
-//     },
-//     twitter: {
-//       card: "summary_large_image",
-//       title: siteData?.businessInfo?.name,
-//       description: "The Comedy Collective is a place for discovering and enjoying the best in comedy.",
-//       images: [new URL("/heroImage.png", "https://comedycollectivechi.com")]
-//     },
-//   };
-// }
+export const generateMetadata = async () => {
+  const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
+  const siteData = await getSiteData(siteDataUrl.toString());
+  
+  const description = `Explore ${siteData?.name}, where quality products meet a modern shopping experience.`;
+
+
+  return {
+    title: siteData?.name,
+    description: description,
+    openGraph: {
+      title: siteData?.name,
+      description: description,
+      url: `https://${siteData.domainName}`,
+      images: siteData?.siteDetails?.logo?.imageUrl
+        ? [
+            {
+              url: siteData?.siteDetails?.logo?.imageUrl,
+              width: 1200,
+              height: 630,
+              alt: siteData?.name,
+            },
+          ]
+        : [],
+      type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: siteData?.name,
+      description: description,
+      images: siteData?.siteDetails?.logo?.imageUrl ? [siteData?.siteDetails?.logo?.imageUrl] : [],
+    },
+  };
+};
