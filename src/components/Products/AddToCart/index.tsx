@@ -3,12 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { AddedToCartToastProps } from "@/types/Cart";
+
 const AUTO_HIDE_DURATION = 2500;
 
-type AddedToCartToastProps = {
-  itemAdded: boolean;
-  setItemAdded?: (v: boolean) => void;
-};
 
 export default function AddedToCartToast({ itemAdded, setItemAdded }: AddedToCartToastProps) {
   const { toast } = useToast();

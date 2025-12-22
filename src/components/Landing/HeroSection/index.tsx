@@ -1,16 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import Image from "next/image";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { HeroSectionProps } from "@/types/Landing";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const HeroSection = (
-  { heroSection }:
-  { heroSection: Record<string, any> }
-) => {
+const HeroSection = ({ heroSection }: HeroSectionProps) => {
   const siteData = useSiteData();
   const primary = siteData?.siteDetails?.primary ?? "#365b99";
   const surface = siteData?.siteDetails?.surface ?? "#ffffff";

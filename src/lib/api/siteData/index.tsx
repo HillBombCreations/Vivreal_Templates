@@ -1,6 +1,5 @@
 import type { SiteData } from "@/types/SiteData";
 
-
 export const getSiteData = async (url: string): Promise<SiteData> => {
   const res = await fetch(url, { cache: "no-store" });
 

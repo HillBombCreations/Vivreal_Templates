@@ -1,9 +1,8 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  Products
+  Product
 } from "@/types/Products";
 
-export async function getProducts(url: string): Promise<Products[]> {
+export async function getProducts(url: string): Promise<Product[]> {
   const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
@@ -14,7 +13,7 @@ export async function getProducts(url: string): Promise<Products[]> {
   return await res.json();
 }
 
-export async function getProductById(url: string, productId: string): Promise<Products | null> {
+export async function getProductById(url: string, productId: string): Promise<Product | null> {
   const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
@@ -22,7 +21,7 @@ export async function getProductById(url: string, productId: string): Promise<Pr
     return null;
   }
 
-  const products = await res.json() as any;
-  const product = (products || []).find((p: any) => String(p?._id) === String(productId)) || null;
+  const products = await res.json() as Product[];
+  const product = (products || []).find((p: Product) => String(p?._id) === String(productId)) || null;
   return product;
 }

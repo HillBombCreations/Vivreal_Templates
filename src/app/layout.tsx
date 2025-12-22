@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import '@/styles/globals.css';
-import { getSiteData } from '@/lib/api/siteData';
+import { getSiteData } from '@/lib/api/SiteData';
 import { SITE_DATA_API } from '@/types/SiteData'
 import Providers from '@/components/Providers';
 import Navbar from '@/components/Navigation/Navbar';

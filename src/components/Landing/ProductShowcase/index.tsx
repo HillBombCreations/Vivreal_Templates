@@ -4,17 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, ArrowRight } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { ProductShowcase } from "@/types/Landing";
-
-type ProductShowcaseSection = {
-  title: string;
-  subtitle: string;
-};
-
-type ProductShowcaseProps = {
-  productShowcase: ProductShowcase[];
-  productShowcaseSection: ProductShowcaseSection;
-};
+import { ProductShowcaseProps } from "@/types/Landing";
 
 export default function ProductShowcaseComponent({
   productShowcase,
@@ -115,10 +105,10 @@ export default function ProductShowcaseComponent({
         >
           <div className="order-2 lg:order-1 lg:col-span-5 text-center lg:text-left">
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">
-              {productShowcaseSection.title}
+              {productShowcaseSection?.title}
             </h2>
             <p className="mt-3 text-sm md:text-base leading-relaxed text-black/60 max-w-lg mx-auto lg:mx-0">
-              {productShowcaseSection.subtitle}
+              {productShowcaseSection?.subtitle}
             </p>
           </div>
 

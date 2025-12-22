@@ -1,45 +1,40 @@
 "use client";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShoppingCart, X } from "lucide-react";
-import { Products } from "@/types/Products";
-import AddedToCartToast from "./AddToCart";
-import VariantRow from "./VariantRow";
+import { ProductsPageProps, Product } from "@/types/Products";
+import { getProductKey, getSafeFieldValue } from "@/lib/variantUtils"
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { handleAddToCart } from "@/lib/cartUtils";
+import AddedToCartToast from "./AddToCart";
+import VariantRow from "./VariantRow";
 
-type Props = {
-  products: Products[];
-  initialFilter: string;
-  filters: string[];
-  initialSelectedVariants: Record<string, string>;
-};
+
 
 export default function ProductsPageClient({
   products,
   initialFilter,
   filters,
   initialSelectedVariants,
-}: Props) {
+}: ProductsPageProps) {
   const router = useRouter();
   const siteData = useSiteData();
-  const { cartItems, setCartItems } = useCartContext();
+  const { cart, setCart } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
-  const businessInfo = (siteData as any)?.businessInfo;
+  const businessInfo = siteData?.businessInfo;
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;
 
   const [filterType, setFilterType] = useState<string>(initialFilter || "");
+  const [itemAdded, setItemAdded] = useState(false);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(
     initialSelectedVariants || {}
   );
-  const [itemAdded, setItemAdded] = useState(false);
 
   useEffect(() => {
     setFilterType(initialFilter || "");
@@ -48,63 +43,6 @@ export default function ProductsPageClient({
   useEffect(() => {
     setSelectedVariants((prev) => ({ ...(initialSelectedVariants || {}), ...prev }));
   }, [initialSelectedVariants]);
-
-  const resolveField = (field: string, product: any, selectedVariant?: string) => {
-    const v = selectedVariant;
-    if (typeof product?.[field] === "object" && v && product?.[field]?.[v]) {
-      return product[field][v];
-    }
-    return product?.[field];
-  };
-
-  const getProductKey = (p: any) => p?._id;
-
-  const getSafeFieldValue = (obj: any, field: string) => {
-    const key = getProductKey(obj);
-    const selected = selectedVariants?.[key];
-
-    if (!obj?.usingVariant?.name || !selected) return obj?.[field];
-
-    if (
-      typeof obj?.[field] === "object" &&
-      obj?.[field] !== null &&
-      Array.isArray(obj?.usingVariant?.values) &&
-      obj.usingVariant.values.some((val: string) =>
-        Object.keys(obj?.[field] || {}).includes(val)
-      )
-    ) {
-      return obj[field][selected];
-    }
-
-    return obj?.[field];
-  };
-
-  const handleAddToCart = (product: any) => {
-    const key = getProductKey(product);
-    const selectedVariant = selectedVariants[key] || product.usingVariant?.values?.[0];
-
-    const cartKey = `${key}_${selectedVariant || "default"}`;
-    const next = { ...(cartItems || {}) };
-    const itemAdded = {
-      quantity: 1,
-      name: selectedVariant
-        ? `${resolveField("name", product, selectedVariant)} (${selectedVariant})`
-        : resolveField("name", product),
-      price: resolveField("price", product, selectedVariant),
-      priceID: resolveField("default_price", product, selectedVariant),
-      imageUrl: resolveField("imageUrl", product, selectedVariant) || siteLogo,
-      variant: selectedVariant,
-    };
-    console.log('ITEM ADDED', itemAdded);
-    if (next[cartKey]) {
-      next[cartKey].quantity += 1;
-    } else {
-      next[cartKey] = itemAdded;
-    }
-
-    setCartItems(next);
-    setItemAdded(true);
-  };
 
   const applyFilter = (value: string) => {
     setFilterType(value);
@@ -211,13 +149,13 @@ export default function ProductsPageClient({
               </div>
             ) : (
               <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {products.map((product: any) => {
+                {products.map((product: Product) => {
                   const key = getProductKey(product);
-
-                  const img = getSafeFieldValue(product, "imageUrl") || siteLogo;
-                  const name = getSafeFieldValue(product, "name");
-                  const desc = getSafeFieldValue(product, "description");
-                  const price = getSafeFieldValue(product, "price");
+                  const selectedVariant = selectedVariants[key] || product.usingVariant?.values?.[0];
+                  const img = getSafeFieldValue(product, "imageUrl", selectedVariant) || siteLogo;
+                  const name = getSafeFieldValue(product, "name", selectedVariant);
+                  const desc = getSafeFieldValue(product, "description", selectedVariant);
+                  const price = getSafeFieldValue(product, "price", selectedVariant);
 
                   return (
                     <div
@@ -284,7 +222,7 @@ export default function ProductsPageClient({
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleAddToCart(product);
+                              handleAddToCart({ product, selectedVariant, quantity: 1, cart, setCart, setAddedOpen: setItemAdded });
                             }}
                             className={[
                               "h-10 px-3 cursor-pointer rounded-xl text-sm font-semibold inline-flex items-center gap-2",

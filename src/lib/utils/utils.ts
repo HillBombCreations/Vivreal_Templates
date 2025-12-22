@@ -70,10 +70,8 @@ export function xmlToJSON(xml: string): SitemapEntry[] {
 }
 
 export const hexToRgba = (hex: string, alpha: number): string => {
-  // Remove leading "#" if present
   hex = hex.replace("#", "");
 
-  // Expand shorthand hex (#abc → #aabbcc)
   if (hex.length === 3) {
       hex = hex.split("").map(c => c + c).join("");
   }

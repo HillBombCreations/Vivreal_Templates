@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Suspense } from "react";
-import { headers, cookies } from "next/headers";
+import { headers } from "next/headers";
 import { getProductById } from "@/lib/api/Products";
-import { PRODUCTS_API } from "@/types/Products"
-import { SITE_DATA_API } from "@/types/SiteData"
-import { getSiteData } from "@/lib/api/siteData";
+import { Product, PRODUCTS_API } from "@/types/Products"
+import { SITE_DATA_API, SiteData } from "@/types/SiteData"
+import { getSiteData } from "@/lib/api/SiteData";
+import { getSafeFieldValue } from "@/lib/variantUtils";
 import ProductPageSkeleton from "./loading";
 import ClientWrapper from "@/components/Products/ProductPage";
 
@@ -57,31 +57,17 @@ export const generateMetadata = async ({
   params: Promise<{ productId: string }>;
 }) => {
   const { productId } = await params;
-  const getSafeFieldValue = (obj: any, field: string) => {
-    const selected = obj?.usingVariant?.values?.length > 0 ? obj.usingVariant.values[0] : null;
-
-    if (
-      typeof obj?.[field] === "object" &&
-      obj?.[field] !== null &&
-      Array.isArray(obj?.usingVariant?.values) &&
-      obj.usingVariant.values.some((val: string) =>
-        Object.keys(obj?.[field] || {}).includes(val)
-      )
-    ) {
-      return obj[field][selected];
-    }
-
-    return obj?.[field];
-  };
 
   const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
   const productsUrl = await handleBuildUrl(PRODUCTS_API);
 
-  const product = await getProductById(productsUrl.apiUrl.toString(), productId);
-  const siteData = await getSiteData(siteDataUrl.apiUrl.toString());
-  const title = getSafeFieldValue(product, 'name');
-  const description = getSafeFieldValue(product, 'description');
-  const imageUrl = getSafeFieldValue(product, 'imageUrl');
+  const product = await getProductById(productsUrl.apiUrl.toString(), productId) as Product;
+
+  const siteData = await getSiteData(siteDataUrl.apiUrl.toString()) as SiteData;
+  
+  const title = getSafeFieldValue(product, 'name', null);
+  const description = getSafeFieldValue(product, 'description', null);
+  const imageUrl = getSafeFieldValue(product, 'imageUrl', null);
 
   if (!product) {
     return {

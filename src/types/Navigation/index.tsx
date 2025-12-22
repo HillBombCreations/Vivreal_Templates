@@ -1,4 +1,5 @@
 import { ElementType } from "react";
+import { SiteData } from "../SiteData";
 
 export type NavigationData = {
   path: string,
@@ -12,6 +13,11 @@ export type CardComponent = {
   link: string;
   buttonText: string;
   image: React.FC<React.SVGProps<SVGSVGElement>>;
+};
+
+export interface NavigationMenuProps {
+  items: NavigationData[];
+  siteData: SiteData
 };
 
 export type NavItem = {

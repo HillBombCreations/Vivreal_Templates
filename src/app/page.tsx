@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   getLandingSections,
   getOurOfferings,
@@ -14,7 +13,7 @@ import {
 } from '@/types/Landing';
 import { headers } from "next/headers";
 import { SITE_DATA_API } from '@/types/SiteData';
-import { getSiteData } from '@/lib/api/siteData';
+import { getSiteData } from '@/lib/api/SiteData';
 import LandingSkeleton from "./loading";
 import LandingWrapper from '@/components/Landing';
 export const dynamic = "force-dynamic"
@@ -40,9 +39,9 @@ async function Resolved() {
   const landingSectionUrl = await handleBuildUrl(LANDING_SECTION_API);
   const productShowcaseUrl = await handleBuildUrl(PRODUCT_SHOWCASE_API);
   const ourOfferingsUrl = await handleBuildUrl(OUR_OFFERINGS_API);
-  const landingSections = await getLandingSections(landingSectionUrl.toString()) as Record<string, any>;
-  const productShowcase = await getProductShowcase(productShowcaseUrl.toString()) as ProductShowcase[];
-  const ourOfferings = await getOurOfferings(ourOfferingsUrl.toString()) as OurOfferings[];
+  const landingSections = await getLandingSections(landingSectionUrl.toString());
+  const productShowcase = await getProductShowcase(productShowcaseUrl.toString());
+  const ourOfferings = await getOurOfferings(ourOfferingsUrl.toString());
 
   return <LandingWrapper landingSections={landingSections} productShowcase={productShowcase} ourOfferings={ourOfferings} />;
 }

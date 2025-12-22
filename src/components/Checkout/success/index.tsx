@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import { useEffect } from "react";
@@ -10,7 +9,7 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 export default function CheckoutSuccessClient() {
   const router = useRouter();
   const siteData = useSiteData();
-  const { setOpenCartMenu, setCartItems } = useCartContext();
+  const { setOpenCartMenu, setCart } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
@@ -18,13 +17,13 @@ export default function CheckoutSuccessClient() {
   const textMuted =
     siteData?.siteDetails?.["text-secondary"] ?? "rgba(0,0,0,0.60)";
 
-  const businessInfo = (siteData as any)?.businessInfo;
+  const businessInfo = siteData?.businessInfo;
   const businessName = businessInfo?.name ?? "our shop";
 
   useEffect(() => {
     setOpenCartMenu?.(false);
-    setCartItems?.({});
-  }, [setOpenCartMenu, setCartItems]);
+    setCart?.({});
+  }, [setOpenCartMenu, setCart]);
 
   return (
     <main

@@ -1,17 +1,15 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import NavigationMenuComponent from "./NavigationMenu";
 import { SiteData } from "@/types/SiteData";
-
 import { useCartContext } from "@/contexts/CartContext";
 import CartDialog from "./CartDialog";
 import { ShoppingCart } from "lucide-react";
 
 const Navbar = ({ siteData, originUrl }: { siteData: SiteData, originUrl: string }) => {
-  const { cartItems, openCartMenu, setOpenCartMenu } = useCartContext();
+  const { cart, openCartMenu, setOpenCartMenu } = useCartContext();
   const navItems = useMemo(
     () => [
       { path: "/", label: "Home", displayOnHeader: true },
@@ -25,14 +23,14 @@ const Navbar = ({ siteData, originUrl }: { siteData: SiteData, originUrl: string
   useEffect(() => {
     let quantity = 0;
 
-    if (cartItems && Object.keys(cartItems).length > 0) {
-      Object.entries(cartItems).forEach(([, value]: any) => {
-        quantity += value?.quantity ?? 0;
-      });
+    if (cart) {
+      for (const [, item] of Object.entries(cart)) {
+        quantity += item.quantity ?? 0;
+      }
     }
 
     setCartCount(quantity);
-  }, [cartItems]);
+  }, [cart]);
 
   const primary = siteData?.siteDetails?.primary;
 

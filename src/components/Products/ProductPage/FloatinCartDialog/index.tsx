@@ -1,21 +1,12 @@
 "use client";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useEffect, useMemo, useState } from "react";
-import axios from "axios";
 import { CheckCircle2, X, Loader2 } from "lucide-react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
-
-type FloatingCartDialogProps = {
-  open: boolean;
-  onClose: () => void;
-  product?: any;
-  quantity: number;
-  cartCount: number;
-  variant?: string | null;
-};
+import { FloatingCartDialogProps } from "@/types/Products";
+import { getSafeFieldValue } from "@/lib/variantUtils";
+import { CartItem } from "@/types/Cart";
 
 export default function FloatingCartDialog({
   open,
@@ -24,48 +15,26 @@ export default function FloatingCartDialog({
   quantity,
   cartCount,
   variant,
+  originUrl,
 }: FloatingCartDialogProps) {
   const siteData = useSiteData();
-  const { cartItems, setOpenCartMenu } = useCartContext();
+  const { cart, setOpenCartMenu } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
-  const businessInfo = (siteData as any)?.businessInfo;
-  const integrationInfo = (siteData as any)?.integrationInfo;
-
-  const key = process.env.NEXT_PUBLIC_CLIENT_KEY;
+  const businessInfo = siteData?.businessInfo;
 
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [disableButtons, setDisableButtons] = useState(false);
 
-  const getSafeFieldValue = (key: string) => {
-    if (!product) return null;
-
-    if (typeof (product as any)?.[key] === "object" && variant) {
-      const obj = (product as any)[key];
-      if (obj && typeof obj === "object" && variant in obj) return obj[variant];
-    }
-
-    if (key === "name") {
-      const base = (product as any)?.name;
-      if (variant && typeof base === "string" && !base.includes(`(${variant})`)) {
-        return `${base} (${variant})`;
-      }
-
-      return base ?? "";
-    }
-
-    return (product as any)?.[key];
-  };
-
   const safeName = useMemo(() => {
-    return (getSafeFieldValue("name") as string) || "";
+    return getSafeFieldValue(product, "name", variant) || "";
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant]);
 
   const safePrice = useMemo(() => {
-    const raw = getSafeFieldValue("price");
+    const raw = getSafeFieldValue(product, "price", variant);
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -74,9 +43,8 @@ export default function FloatingCartDialog({
   const safeImg = useMemo(() => {
     if (!product) return siteLogo;
 
-    const fromImageUrl = (product as any)?.imageUrl;
+    return getSafeFieldValue(product, "imageUrl", variant) || siteLogo;
 
-    return fromImageUrl || siteLogo;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant, siteLogo]);
 
@@ -90,32 +58,36 @@ export default function FloatingCartDialog({
     setDisableButtons(true);
 
     try {
-      const items = Object.values(cartItems || {}).map((item: any) => ({
+      const items = Object.values(cart || {}).map((item: CartItem) => ({
         price:
           typeof item.priceID === "object" && item.variant ? item.priceID[item.variant] : item.priceID,
         quantity: item.quantity,
       }));
 
-      const { data } = await axios.post(
-        "https://client.vivreal.io/tenant/createCheckoutSession",
-        {
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        body: JSON.stringify({
           products: items,
-          stripeKey: integrationInfo?.stripe?.secretKey,
           businessName: businessInfo?.name,
           contactEmail: businessInfo?.contactInfo?.email,
           requiresShipping: !!businessInfo?.shipping,
-        },
-        {
-          headers: {
-            Authorization: key,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+          originUrl: originUrl
+        }),
+      });
 
-      if (data && !(data.status && data.status === 400)) {
+      if (!res.ok) {
+        throw new Error("Failed to create checkout session");
+      }
+
+      const data = await res.json();
+
+      if (data && !(data?.status && data.status === 400)) {
+        setOpenCartMenu(false);
         window.location.replace(data);
-        return;
       }
 
       console.error("Error creating checkout session:", data);

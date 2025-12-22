@@ -1,14 +1,8 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useLayoutEffect, useRef, useState } from "react";
 import { useSiteData } from "@/contexts/SiteDataContext";
-
-type VariantRowProps = {
-  product: any;
-  selectedVariants: Record<string, string>;
-  setSelectedVariants: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-};
+import { VariantRowProps } from "@/types/Products";
 
 export default function VariantRow({
   product,

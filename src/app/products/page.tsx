@@ -1,12 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Suspense } from "react";
 import ProductsSkeleton from "./loading";
 import ProductsPageClient from "@/components/Products";
 import { headers } from "next/headers";
 import { getProducts } from "@/lib/api/Products";
-import { PRODUCTS_API, Products } from "@/types/Products";
+import { PRODUCTS_API, Product } from "@/types/Products";
 import { SITE_DATA_API } from "@/types/SiteData";
-import { getSiteData } from "@/lib/api/siteData";
+import { getSiteData } from "@/lib/api/SiteData";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -39,13 +38,13 @@ async function Resolved({ filter }: { filter: string }) {
   const url = new URL(productsUrl.toString());
   if (filter) url.searchParams.set("filter", filter);
 
-  const products = (await getProducts(url.toString())) as Products[];
+  const products = (await getProducts(url.toString())) as Product[];
 
   const filterSet = new Set<string>();
   const variantDefaults: Record<string, string> = {};
 
-  (products || []).forEach((p: any) => {
-    const ft = p?.["filter-type"] || p?.filterType || p?.objectValue?.["filter-type"];
+  (products || []).forEach((p: Product) => {
+    const ft = p?.["filter-type"];
     if (typeof ft === "string" && ft.length) filterSet.add(ft);
 
     const values = p?.usingVariant?.values;

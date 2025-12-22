@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Button } from "@/components/ui/Button";
-import { subscribeUser } from "@/lib/api/subscribe/client";
+import { subscribeUser } from "@/lib/api/Subscribe";
 // Keys for localStorage
 const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
@@ -13,14 +13,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EmailListComponent = () => {
   const siteData = useSiteData();
-  console.log('SITE DATA', siteData);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
 
-  // Check popup logic
   useEffect(() => {
     const subscribed = localStorage.getItem(SUBSCRIBE_KEY);
     const lastDismissed = localStorage.getItem(DISMISS_KEY);
@@ -28,7 +26,6 @@ const EmailListComponent = () => {
 
     if (!subscribed) {
       if (!lastDismissed || now - parseInt(lastDismissed, 10) > DAY_MS) {
-        // Show popup after a short delay
         const timer = setTimeout(() => setOpen(true), 3000);
         return () => clearTimeout(timer);
       }

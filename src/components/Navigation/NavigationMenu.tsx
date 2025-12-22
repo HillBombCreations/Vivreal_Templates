@@ -9,13 +9,7 @@ import {
   NavigationMenuLinkTrigger,
   NavigationMenuViewport,
 } from "@/components/ui/navigation-menu";
-import { NavigationData } from "@/types/Navigation";
-import { SiteData } from "@/types/SiteData";
-
-interface NavigationMenuProps {
-  items: NavigationData[];
-  siteData: SiteData
-}
+import { NavigationMenuProps } from "@/types/Navigation";
 
 const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items, siteData }) => {
   const pathname = usePathname();

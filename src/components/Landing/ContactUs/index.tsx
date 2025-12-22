@@ -2,25 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useSiteData } from "@/contexts/SiteDataContext";
-
-type ContactSectionContent = {
-  title: string;
-  subtitle: string;
-  buttonLabel: string;
-};
-
-type BusinessInfo = {
-  name: string;
-  contactInfo: { email: string };
-};
-
-type ContactSectionProps = {
-  contactSection: ContactSectionContent;
-};
-
-type ToastState =
-  | { open: false }
-  | { open: true; type: "success" | "error"; message: string };
+import { ContactSectionProps, ToastState } from "@/types/Landing";
 
 export default function ContactSection({ contactSection }: ContactSectionProps) {
   const siteData = useSiteData();
@@ -89,7 +71,7 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
         <div className="w-full grid gap-10 lg:grid-cols-12 items-center min-h-[calc(100svh-5rem)] md:min-h-[calc(100svh-8rem)]">
           <div className="lg:col-span-5 text-center lg:text-left">
             <h2 className="text-3xl md:text-5xl font-semibold tracking-tight">
-              {contactSection.title}
+              {contactSection?.title}
             </h2>
             <div className="mt-4 flex flex-wrap items-center justify-center lg:justify-start gap-2">
               <span
@@ -112,7 +94,7 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
               </span>
             </div>
             <p className="mt-4 text-sm md:text-base leading-relaxed text-black/60 max-w-lg mx-auto lg:mx-0">
-              {contactSection.subtitle}
+              {contactSection?.subtitle}
             </p>
 
             <p className="mt-4 text-[12px] text-black/50">
@@ -164,7 +146,7 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
                     `}
                     style={{ background: primary, color: "white" }}
                   >
-                    {loading ? <Spinner /> : contactSection.buttonLabel}
+                    {loading ? <Spinner /> : contactSection?.buttonLabel}
                   </button>
 
                   <p className="text-[11px] text-black/50 leading-relaxed">

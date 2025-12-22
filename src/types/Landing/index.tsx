@@ -1,4 +1,6 @@
 import { SiteData } from "../SiteData";
+import { Lightbulb, Target, Handshake } from "lucide-react";
+import { JSX } from 'react';
 
 export const LANDING_SECTION_API = "landingSections";
 export const OUR_OFFERINGS_API = "ourOfferings";
@@ -72,4 +74,59 @@ export type OurOfferings = {
 
 export type ShowsSectionProps = {
   siteData?: SiteData;
+};
+
+export type ContactSectionContent = {
+  title: string;
+  subtitle: string;
+  buttonLabel: string;
+};
+
+export type ContactSectionProps = {
+  contactSection: ContactSectionContent | null;
+};
+
+export type ToastState =
+  | { open: false }
+  | { open: true; type: "success" | "error"; message: string };
+
+
+export type FeatureIcon = "lightBulb" | "target" | "heart";
+  
+export type OurOfferingsProps = {
+  ourOfferings: OurOfferings[];
+};
+  
+export const IconMap: Record<FeatureIcon, JSX.Element> = {
+  lightBulb: <Lightbulb className="h-4 w-4" />,
+  target: <Target className="h-4 w-4" />,
+  heart: <Handshake className="h-4 w-4" />,
+};
+
+type ProductShowcaseSection = {
+  title: string;
+  subtitle: string;
+};
+
+export type ProductShowcaseProps = {
+  productShowcase: ProductShowcase[];
+  productShowcaseSection: ProductShowcaseSection | null;
+};
+
+export type HeroSectionProps = {
+  heroSection: LandingSection | null;
+}
+
+export type LandingSections = {
+  heroSection: LandingSection;
+  productShowcase: LandingSection;
+  contactUs: ContactSectionContent;
+  aboutUs: LandingSection;
+  sectionName: string;
+};
+
+export type LandingWrapperProps = {
+  landingSections: LandingSections | null;
+  productShowcase: ProductShowcase[];
+  ourOfferings: OurOfferings[];
 };

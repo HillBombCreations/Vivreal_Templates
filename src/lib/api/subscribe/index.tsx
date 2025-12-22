@@ -1,30 +1,15 @@
-import "server-only";
-
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
-const CMS_API_KEY = process.env.API_KEY!;
-
 export async function subscribeUser(email: string): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/tenant/definedCollectionObject`, {
+    const res = await fetch("/api/subscribe", {
       method: "POST",
-      headers: {
-        Authorization: CMS_API_KEY,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        type: "subscribeUser",
-      }),
-      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
     });
-
-    if (!res.ok) {
-      console.error("[subscribeUserOnCMS] CMS error:", res.status, res.statusText);
-      return false;
-    }
-    return true;
+    if (!res.ok) return false;
+    const json = await res.json();
+    return Boolean(json?.success);
   } catch (err) {
-    console.error("[subscribeUserOnCMS] Exception:", err);
+    console.error("[subscribeUser] Error:", err);
     return false;
   }
 }

@@ -1,39 +1,29 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useContext, useMemo, useState } from "react";
-import CartContext from "@/contexts/CartContext";
+import { useMemo, useState } from "react";
+import { useCartContext } from "@/contexts/CartContext";
 import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
-import { SiteData } from "@/types/SiteData";
+import { CartDialogProps, CartItem } from "@/types/Cart";
+import { handleCheckout } from "@/lib/cartUtils";
 
-type CartDialogProps = {
-  open: boolean;
-  onClose?: () => void;
-  siteData: SiteData;
-  originUrl: string;
-};
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
 
 export default function CartDialog({ open, onClose, siteData, originUrl }: CartDialogProps) {
-  const { cartItems, setCartItems, setOpenCartMenu } = useContext(CartContext) as any;
+  const { cart, setCart, setOpenCartMenu } = useCartContext();
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl;
-  const businessInfo = siteData?.businessInfo;
+  const businessInfo = siteData?.businessInfo || null;
 
   const [loadingCheckout, setLoadingCheckout] = useState(false);
 
   const itemsArray = useMemo(() => {
-    const entries = cartItems ? Object.entries(cartItems) : [];
-    return entries.map(([id, item]: any) => ({ id, ...item }));
-  }, [cartItems]);
+    const entries = cart ? Object.entries(cart) : [];
+    return entries.map(([id, item]) => ({ id, ...item }));
+  }, [cart]);
 
-  const resolvePrice = (item: any) => {
+  const resolvePrice = (item: CartItem) => {
     return typeof item?.price === "object" && item?.variant ? item.price[item.variant] : item?.price;
-  };
-
-  const resolvePriceId = (item: any) => {
-    return typeof item?.priceID === "object" && item?.variant ? item.priceID[item.variant] : item?.priceID;
   };
 
   const subtotal = useMemo(() => {
@@ -45,56 +35,13 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
   }, [itemsArray]);
 
   const setQty = (productId: string, nextQty: number) => {
-    const next = { ...(cartItems || {}) };
+    const next = { ...(cart || {}) };
     if (nextQty <= 0) {
       delete next[productId];
     } else if (next[productId]) {
       next[productId] = { ...next[productId], quantity: nextQty };
     }
-    setCartItems(next);
-  };
-
-  const handleCheckout = async () => {
-    if (!itemsArray.length) return;
-
-    setLoadingCheckout(true);
-    try {
-      const products = itemsArray.map((item: any) => ({
-        price: resolvePriceId(item),
-        quantity: item.quantity,
-        name: item.name,
-      }));
-
-     const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          products: products,
-          businessName: businessInfo?.name,
-          contactEmail: businessInfo?.contactInfo?.email,
-          requiresShipping: !!businessInfo?.shipping,
-          originUrl: originUrl
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to create checkout session");
-      }
-
-      const data = await res.json();
-
-      if (data && !(data?.status && data.status === 400)) {
-        setOpenCartMenu(false);
-        window.location.replace(data);
-      }
-    } catch (e) {
-      console.error("[CartDialog] checkout error:", e);
-    } finally {
-      setLoadingCheckout(false);
-    }
+    setCart(next);
   };
 
   if (!open) return null;
@@ -170,7 +117,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
             </div>
           ) : (
             <div className="space-y-3">
-              {itemsArray.map((item: any) => {
+              {itemsArray.map((item: CartItem) => {
                 const priceEach = Number(resolvePrice(item)) || 0;
                 const line = priceEach * (item.quantity || 0);
                 return (
@@ -204,7 +151,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                           <button
                             type="button"
                             className="h-8 w-8 cursor-pointer rounded-xl border border-black/10 bg-white hover:bg-black/5"
-                            onClick={() => setQty(item.id, 0)}
+                            onClick={() => setQty(item._id, 0)}
                             aria-label="Remove item"
                           >
                             <Trash2 className="mx-auto h-4 w-4" />
@@ -216,7 +163,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={loadingCheckout}
-                              onClick={() => setQty(item.id, (item.quantity || 0) - 1)}
+                              onClick={() => setQty(item._id, (item.quantity || 0) - 1)}
                               aria-label="Decrease quantity"
                             >
                               <Minus className="mx-auto h-4 w-4" />
@@ -230,7 +177,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={loadingCheckout}
-                              onClick={() => setQty(item.id, (item.quantity || 0) + 1)}
+                              onClick={() => setQty(item._id, (item.quantity || 0) + 1)}
                               aria-label="Increase quantity"
                             >
                               <Plus className="mx-auto h-4 w-4" />
@@ -258,7 +205,13 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
 
           <button
             type="button"
-            onClick={handleCheckout}
+            onClick={() => handleCheckout({
+              itemsArray,
+              businessInfo,
+              originUrl,
+              setOpenCartMenu,
+              setLoadingCheckout
+            })}
             disabled={!itemsArray.length || loadingCheckout}
             className={`
               mt-3 h-11 w-full rounded-2xl cursor-pointer font-semibold

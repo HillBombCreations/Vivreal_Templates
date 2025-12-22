@@ -1,23 +1,22 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import {
   LandingSection,
   ProductShowcase,
   OurOfferings,
-  LANDING_SECTION_API,
-  OUR_OFFERINGS_API,
-  PRODUCT_SHOWCASE_API
+  LandingSections,
+  ContactSectionContent
 } from "@/types/Landing";
 
-export async function getLandingSections(url: string): Promise<Record<string, any>> {
+export async function getLandingSections(url: string): Promise<LandingSections | null> {
   const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
     console.error("[getLandingSections] upstream error:", res.status, res.statusText);
-    return [];
+    return null;
   }
 
   const data: LandingSection[] = await res.json();
-  const landingSectionObj = {} as Record<string, any>;
+  const landingSectionObj = {} as LandingSections;
 
   data.forEach((section) => {
     switch (section.sectionName) {
@@ -28,10 +27,10 @@ export async function getLandingSections(url: string): Promise<Record<string, an
         landingSectionObj.productShowcase = section;
         break;
       case 'thirdSection':
-        landingSectionObj.ourOfferings = section;
+        landingSectionObj.aboutUs = section;
         break;
       case 'fourthSection':
-        landingSectionObj.contactUs = section;
+        landingSectionObj.contactUs = section as ContactSectionContent;
         break;
     }
   });

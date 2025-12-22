@@ -1,37 +1,33 @@
 "use client";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import FloatingCartDialog from "./FloatinCartDialog";
-import { Products } from "@/types/Products";
+import { ProductPageClientProps } from "@/types/Products";
+import { getSafeFieldValue, resolveVariant } from "@/lib/variantUtils";
+import { handleAddToCart, handleCheckout } from "@/lib/cartUtils";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 
-type ProductPageClientProps = {
-  product: Products | null;
-  originUrl: string;
-};
+
 
 export default function ProductPageClient({ product, originUrl }: ProductPageClientProps) {
   const router = useRouter();
 
   const siteData = useSiteData();
-  const { cartItems, setCartItems } = useCartContext();
+  const { cart, setCart, setOpenCartMenu } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
-  const businessInfo = (siteData as any)?.businessInfo;
+  const businessInfo = siteData?.businessInfo || null;
 
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [addedOpen, setAddedOpen] = useState(false);
-  const [lastAdded, setLastAdded] = useState<any>(null);
 
   useMemo(() => {
     if (!product) return;
@@ -39,95 +35,10 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
     if (first && !selectedVariant) setSelectedVariant(first);
   }, [product, selectedVariant]);
 
-  const getSafeFieldValue = (key: string) => {
-    if (
-      typeof product?.[key] === "object" &&
-      selectedVariant &&
-      Array.isArray(product?.usingVariant?.values) &&
-      product.usingVariant.values.includes(selectedVariant)
-    ) {
-      return product?.[key]?.[selectedVariant];
-    }
-    return product?.[key];
-  };
-
-  const resolveVariant = () =>
-    selectedVariant || product?.usingVariant?.values?.[0] || null;
-
   const cartCount = useMemo(() => {
-    const items = cartItems || {};
+    const items = cart || {};
     return Object.keys(items).reduce((total, k) => total + (items[k]?.quantity || 0), 0);
-  }, [cartItems]);
-
-  const handleAddToCart = () => {
-    if (!product) return;
-
-    const variant = resolveVariant();
-    const cartKey = `${product.id}_${variant || "default"}`;
-    const name = getSafeFieldValue("name");
-    const next = { ...(cartItems || {}) };
-    const itemAdded = {
-      quantity,
-      name: variant ? `${name} (${variant})` : name,
-      price: getSafeFieldValue("price"),
-      priceID:
-        typeof product?.default_price === "object" && variant
-          ? product.default_price?.[variant]
-          : product?.default_price,
-      imageUrl: getSafeFieldValue("imageUrl") || siteLogo,
-      variant,
-    };
-
-    if (next[cartKey]) next[cartKey].quantity += quantity;
-    else next[cartKey] = itemAdded;
-
-    setLastAdded(itemAdded);
-    setCartItems(next);
-    setAddedOpen(true);
-  };
-
-  const handleCheckout = async () => {
-    if (!product) return;
-    setLoadingCheckout(true);
-
-    try {
-      const variant = resolveVariant();
-
-      const priceId =
-        typeof product?.default_price === "object" && variant
-          ? product.default_price?.[variant]
-          : product?.default_price;
-
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          products: [{ price: priceId, quantity }],
-          businessName: businessInfo?.name,
-          contactEmail: businessInfo?.contactInfo?.email,
-          requiresShipping: !!businessInfo?.shipping,
-          originUrl: originUrl,
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error("Failed to create checkout session");
-      }
-
-      const data = await res.json();
-
-      if (typeof data === "string") {
-        window.location.replace(data);
-      }
-    } catch (err) {
-      console.error("[checkout] failed:", err);
-    } finally {
-      setLoadingCheckout(false);
-    }
-  };
+  }, [cart]);
 
   if (!product) {
     return (
@@ -147,28 +58,20 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
     );
   }
 
-  const hasNoShipping = businessInfo && businessInfo?.shipping === false;
+  const img = getSafeFieldValue(product, "imageUrl", selectedVariant) || siteLogo;
+  const name = getSafeFieldValue(product, "name", selectedVariant);
+  const desc = getSafeFieldValue(product, "description", selectedVariant);
+  const price = getSafeFieldValue(product, "price", selectedVariant);
 
-  const img = getSafeFieldValue("imageUrl") || siteLogo;
-
-  const name = getSafeFieldValue("name");
-  const desc = getSafeFieldValue("description");
-  const price = getSafeFieldValue("price");
+  const priceId =
+    typeof product?.default_price === "object" && selectedVariant ?
+    product.default_price?.[selectedVariant] :
+    product?.default_price as string;
 
   const variants: string[] = product?.usingVariant?.values || [];
 
   return (
     <div className="min-h-[100dvh]" style={{ background: surface }}>
-      {hasNoShipping && (
-        <div
-          className="mx-4 md:mx-10 lg:mx-20 mt-6 rounded-2xl border px-4 py-3 text-sm"
-          style={{ borderColor: "rgba(0,0,0,0.08)", background: "rgba(255,255,255,0.7)" }}
-        >
-          <span className="font-semibold">Pickup only:</span>{" "}
-          We’re currently not offering shipping.
-        </div>
-      )}
-
       <div className="mx-4 md:mx-10 lg:mx-20 pt-8 pb-14">
         <button
           type="button"
@@ -283,7 +186,7 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
               <div className="mt-6 grid gap-3">
                 <button
                   type="button"
-                  onClick={handleAddToCart}
+                  onClick={() => handleAddToCart({ product, selectedVariant, quantity, cart, setCart, setAddedOpen })}
                   className="h-11 rounded-xl cursor-pointer text-sm font-semibold shadow-sm transition active:scale-[0.98]"
                   style={{ background: primary, color: "white" }}
                 >
@@ -292,7 +195,22 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
 
                 <button
                   type="button"
-                  onClick={handleCheckout}
+                  onClick={() => handleCheckout({
+                    itemsArray: [
+                    { 
+                      price: priceId,
+                      name: getSafeFieldValue(product, "name", selectedVariant) as string,
+                      quantity,
+                      _id: product._id,
+                      priceID: priceId,
+                      imageUrl: getSafeFieldValue(product, "imageUrl", selectedVariant) as string,
+                      variant: selectedVariant
+                    }],
+                    businessInfo,
+                    originUrl,
+                    setOpenCartMenu,
+                    setLoadingCheckout
+                  })}
                   disabled={loadingCheckout}
                   className="h-11 rounded-xl cursor-pointer text-sm font-semibold border bg-white/70 shadow-sm transition active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
                   style={{ borderColor: "rgba(0,0,0,0.10)" }}
@@ -319,10 +237,11 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
       <FloatingCartDialog
         open={addedOpen}
         onClose={() => setAddedOpen(false)}
-        product={lastAdded}
+        product={product}
+        originUrl={originUrl}
         quantity={quantity}
         cartCount={cartCount}
-        variant={resolveVariant()}
+        variant={resolveVariant(selectedVariant, product)}
       />
     </div>
   );

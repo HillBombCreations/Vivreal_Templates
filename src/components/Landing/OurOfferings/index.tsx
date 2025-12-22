@@ -1,22 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useMemo, useState, JSX } from "react";
+import { useMemo, useState } from "react";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { Lightbulb, Target, Handshake } from "lucide-react";
-import { OurOfferings } from "@/types/Landing";
+import { OurOfferings, OurOfferingsProps, FeatureIcon, IconMap } from "@/types/Landing";
+import DesktopDetailCard from "./DesktopDetailCard";
+import MobileDetailCard from "./MobileDetailCard";
 
-type FeatureIcon = "lightBulb" | "target" | "heart";
 
-type OurOfferingsProps = {
-  ourOfferings: OurOfferings[];
-};
-
-const iconMap: Record<FeatureIcon, JSX.Element> = {
-  lightBulb: <Lightbulb className="h-4 w-4" />,
-  target: <Target className="h-4 w-4" />,
-  heart: <Handshake className="h-4 w-4" />,
-};
 
 export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProps) {
   const siteData = useSiteData();
@@ -71,7 +61,7 @@ export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProp
                         color: isSelected ? textInverse : "rgba(0,0,0,0.70)",
                       }}
                     >
-                      {iconMap[icon]}
+                      {IconMap[icon]}
                     </span>
 
                     <span className="truncate max-w-[38vw]">{card.title}</span>
@@ -85,7 +75,6 @@ export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProp
             <MobileDetailCard
               selected={selected}
               primary={primary}
-              textPrimary={textPrimary}
               textInverse={textInverse}
             />
           </div>
@@ -118,7 +107,7 @@ export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProp
                       color: isSelected ? textInverse : "rgba(0,0,0,0.70)",
                     }}
                   >
-                    <span className="[&>svg]:h-5 [&>svg]:w-5">{iconMap[icon]}</span>
+                    <span className="[&>svg]:h-5 [&>svg]:w-5">{IconMap[icon]}</span>
                   </div>
 
                   <div className="min-w-0">
@@ -135,7 +124,7 @@ export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProp
           </div>
 
           <div className="col-span-7 h-full min-h-0">
-            <DesktopDetailCard selected={selected} primary={primary} textPrimary={textPrimary} />
+            <DesktopDetailCard selected={selected} textPrimary={textPrimary} />
           </div>
         </div>
       </div>
@@ -143,85 +132,5 @@ export default function OurOfferingsComponent({ ourOfferings }: OurOfferingsProp
   );
 }
 
-function MobileDetailCard({
-  selected,
-  primary,
-  textPrimary,
-  textInverse,
-}: {
-  selected: any;
-  primary: string;
-  textPrimary: string;
-  textInverse: string;
-}) {
-  return (
-    <div
-      className="h-full min-h-0 rounded-3xl border bg-white shadow-sm overflow-hidden flex flex-col"
-      style={{ borderColor: "rgba(0,0,0,0.08)" }}
-    >
-      <div className="shrink-0 px-5 py-4" style={{ background: primary, color: textInverse }}>
-        <div className="text-sm font-semibold truncate">{selected.title}</div>
-        <div className="mt-1 text-xs opacity-90 line-clamp-2">{selected.description}</div>
-      </div>
 
-      <div className="flex-1 min-h-0 p-4">
-        <div
-          className="h-full w-full rounded-2xl border bg-black/5 overflow-hidden"
-          style={{ borderColor: "rgba(0,0,0,0.08)" }}
-        >
 
-          <div className="h-full w-full flex items-center justify-center p-3">
-            <img
-              src={selected.imageUrl || "/heroImage.png"}
-              alt={selected.title}
-              draggable={false}
-              className="h-full w-full object-contain"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DesktopDetailCard({
-  selected,
-  primary,
-  textPrimary,
-}: {
-  selected: any;
-  primary: string;
-  textPrimary: string;
-}) {
-  return (
-    <div
-      className="h-full min-h-0 rounded-3xl border bg-white shadow-sm overflow-hidden flex flex-col"
-      style={{ borderColor: "rgba(0,0,0,0.08)" }}
-    >
-      <div className="p-6">
-        <div className="text-xl font-semibold tracking-tight" style={{ color: textPrimary }}>
-          {selected.title}
-        </div>
-        <div className="mt-2 text-sm leading-relaxed text-black/60 max-w-2xl">
-          {selected.description}
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-0 px-6 pb-6">
-        <div
-          className="h-full w-full rounded-2xl border bg-black/5 overflow-hidden"
-          style={{ borderColor: "rgba(0,0,0,0.08)" }}
-        >
-          <div className="h-full w-full flex items-center justify-center p-6">
-            <img
-              src={selected.imageUrl || "/heroImage.png"}
-              alt={selected.title}
-              draggable={false}
-              className="h-full w-full object-contain"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
