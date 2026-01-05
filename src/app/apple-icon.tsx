@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og'
-import { getSiteData } from '@/lib/api/SiteData/index'
+import { getSiteData } from '@/lib/api/SiteData'
 import { SITE_DATA_API } from '@/types/SiteData'
 import { headers } from 'next/headers'
 
