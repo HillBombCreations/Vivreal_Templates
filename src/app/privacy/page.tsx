@@ -1,6 +1,4 @@
 import Head from "next/head";
-import Navbar from "@/components/Navigation/Navbar";
-import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 
 export const metadata = {

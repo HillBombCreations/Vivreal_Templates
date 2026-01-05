@@ -1,4 +1,3 @@
-import { CartItem } from "../Cart";
 export const PRODUCTS_API = "products";
 
 export type Image = {

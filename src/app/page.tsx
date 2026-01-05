@@ -5,8 +5,6 @@ import {
 } from '@/lib/api/Landing';
 import { Suspense } from "react";
 import {
-  OurOfferings,
-  ProductShowcase,
   LANDING_SECTION_API,
   OUR_OFFERINGS_API,
   PRODUCT_SHOWCASE_API

@@ -30,14 +30,12 @@ export default function FloatingCartDialog({
 
   const safeName = useMemo(() => {
     return getSafeFieldValue(product, "name", variant) || "";
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant]);
 
   const safePrice = useMemo(() => {
     const raw = getSafeFieldValue(product, "price", variant);
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant]);
 
   const safeImg = useMemo(() => {
@@ -45,7 +43,6 @@ export default function FloatingCartDialog({
 
     return getSafeFieldValue(product, "imageUrl", variant) || siteLogo;
 
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, variant, siteLogo]);
 
   const handleOpenCart = () => {
