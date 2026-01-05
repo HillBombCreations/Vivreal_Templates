@@ -1,7 +1,8 @@
 import { ImageResponse } from 'next/og'
-import { getSiteData } from '@/lib/api/SiteData'
+import { getSiteData } from '@/lib/api/SiteData/index'
 import { SITE_DATA_API } from '@/types/SiteData'
 import { headers } from 'next/headers'
+
 export const size = {
   width: 180,
   height: 180,
