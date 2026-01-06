@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Product } from "@/types/Products";
 import { useRouter } from "next/navigation";
-import { ShoppingCart } from "lucide-react";
+import { ShoppingCart, Plus, Minus } from "lucide-react";
 import { ProductsTableProps } from "@/types/Products";
 import { useCartContext } from "@/contexts/CartContext";
 import { getProductKey, getSafeFieldValue } from "@/lib/variantUtils"
@@ -21,6 +21,17 @@ export default function ProductsTable({
   const router = useRouter();
   const { cart, setCart } = useCartContext();
   const [addTick, setAddTick] = useState(0);
+
+  const setQty = (productId: string, nextQty: number) => {
+    const next = { ...(cart || {}) };
+
+    if (nextQty <= 0) {
+      delete next[productId];
+    } else if (next[productId]) {
+      next[productId] = { ...next[productId], quantity: nextQty };
+    }
+    setCart(next);
+  };
 
   return (
     <main className="lg:col-span-9">
@@ -41,6 +52,10 @@ export default function ProductsTable({
                 const name = getSafeFieldValue(product, "name", selectedVariant);
                 const desc = getSafeFieldValue(product, "description", selectedVariant);
                 const price = getSafeFieldValue(product, "price", selectedVariant);
+                const safeVariant = selectedVariant ?? "default";
+                const cartKey = `${product._id}_${safeVariant}`;
+                const qtyInCart = cart?.[cartKey]?.quantity || 0;
+                const inCart = qtyInCart > 0;
 
                 return (
                   <div
@@ -103,6 +118,33 @@ export default function ProductsTable({
                           ${price}
                         </div>
 
+                        {inCart ? (
+                        <div
+                          className="inline-flex items-center gap-1 rounded-full border border-black/10 bg-white px-2 py-1"
+                          style={{ background: 'var(--primary)', color: "var(--text-inverse)"}}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
+                            onClick={() => setQty(cartKey, qtyInCart - 1)}
+                            aria-label="Decrease quantity"
+                          >
+                            <Minus className="mx-auto h-4 w-4" />
+                          </button>
+
+                          <div className="w-8 text-center text-sm font-semibold">{qtyInCart}</div>
+
+                          <button
+                            type="button"
+                            className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
+                            onClick={() => setQty(cartKey, qtyInCart + 1)}
+                            aria-label="Increase quantity"
+                          >
+                            <Plus className="mx-auto h-4 w-4" />
+                          </button>
+                        </div>
+                      ) : (
                         <button
                           type="button"
                           onClick={(e) => {
@@ -113,7 +155,7 @@ export default function ProductsTable({
                               quantity: 1,
                               cart,
                               setCart,
-                              setAddedOpen: () => setAddTick((n) => n + 1)
+                              setAddedOpen: () => setAddTick((n) => n + 1),
                             });
                           }}
                           className={[
@@ -126,6 +168,7 @@ export default function ProductsTable({
                           <ShoppingCart className="h-4 w-4" />
                           Add
                         </button>
+                      )}
                       </div>
                     </div>
                   </div>
@@ -139,7 +182,11 @@ export default function ProductsTable({
           {[...Array(9)].map((_, i) => (
             <div
               key={i}
-              className="rounded-2xl border bg-white shadow-sm overflow-hidden flex flex-col h-[420px]"
+              className={[
+                "group text-left rounded-2xl border bg-white shadow-sm overflow-hidden",
+                "hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-black/10",
+                "flex flex-col h-[420px]",
+              ].join(" ")}
               style={{ borderColor: "rgba(0,0,0,0.08)" }}
             >
               <div

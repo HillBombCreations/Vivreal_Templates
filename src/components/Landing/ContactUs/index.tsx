@@ -205,7 +205,8 @@ function LabelInput(props: {
         placeholder={props.placeholder}
         type={props.type ?? "text"}
         className={`
-          h-12 w-full rounded-2xl border bg-white/80 px-4 text-sm
+          h-12 w-full rounded-2xl border bg-white/80 px-4
+          text-base md:text-sm
           outline-none transition
           focus:ring-2 focus:ring-black/10
           focus:border-black/20
@@ -233,7 +234,7 @@ function LabelTextarea(props: {
         placeholder={props.placeholder}
         rows={props.rows ?? 4}
         className={`
-          w-full rounded-2xl border bg-white/80 px-4 py-3 text-sm
+          w-full rounded-2xl border bg-white/80 px-4 py-3 text-base md:text-sm
           outline-none transition
           focus:ring-2 focus:ring-black/10
           focus:border-black/20

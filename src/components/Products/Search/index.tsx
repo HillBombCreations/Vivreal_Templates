@@ -1,36 +1,14 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
 import { Search, X } from "lucide-react";
 import { ProductSearchProps } from "@/types/Products";
 
-const DEBOUNCE_MS = 350;
-
 export default function ProductSearch({
-  initialValue = "",
+  search = "",
   loading = false,
   onSearch,
+  setSearch
 }: ProductSearchProps) {
-    const [value, setValue] = useState(initialValue);
-    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    useEffect(() => {
-        setValue(initialValue);
-    }, [initialValue]);
-
-    useEffect(() => {
-        return () => {
-        if (timerRef.current) clearTimeout(timerRef.current);
-        };
-    }, []);
-
-    const triggerSearch = (val: string) => {
-        if (timerRef.current) clearTimeout(timerRef.current);
-
-        timerRef.current = setTimeout(() => {
-        onSearch(val);
-        }, DEBOUNCE_MS);
-    };
   return (
     <div
       className="mt-4 rounded-2xl border bg-white/70 backdrop-blur px-3 py-2"
@@ -40,23 +18,21 @@ export default function ProductSearch({
         <Search className="h-4 w-4 text-black/50" />
 
         <input
-          value={value}
+          value={search}
           onChange={(e) => {
             const next = e.target.value;
-            setValue(next);
-            triggerSearch(next);
+            setSearch(next);
           }}
           disabled={loading}
           placeholder="Search products…"
-          className="w-full bg-transparent text-sm outline-none placeholder:text-black/40 disabled:opacity-60"
+          className="w-full bg-transparent text-base md:text-sm outline-none placeholder:text-black/40 disabled:opacity-60"
         />
 
-        {value?.length ? (
+        {search?.length ? (
           <button
             type="button"
             disabled={loading}
             onClick={() => {
-              setValue("");
               onSearch("");
             }}
             className="h-8 w-8 inline-flex cursor-pointer items-center justify-center rounded-xl transition hover:bg-black/5 disabled:opacity-60 disabled:cursor-not-allowed"

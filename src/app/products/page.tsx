@@ -43,7 +43,6 @@ async function Resolved({ filter, filterType, search, sort }: { filter: string, 
 
   const products = (await getProducts(productsUrl.toString())) as Product[];
   const filters = (await getCollection(filtersUrl.toString()) as Filter[]);
-
   const variantDefaults: Record<string, string> = {};
 
   (products || []).forEach((p: Product) => {

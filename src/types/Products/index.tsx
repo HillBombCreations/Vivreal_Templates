@@ -40,9 +40,10 @@ export type ProductsTableProps = {
 };
 
 export type ProductSearchProps = {
-  initialValue?: string;
+  search?: string;
   loading?: boolean;
   onSearch: (value: string) => void;
+  setSearch: (value: string) => void;
 };
 
 
@@ -58,11 +59,33 @@ export type ProductSortProps = {
   onChange: (key: string) => void;
 };
 
+export type MobileFilterSortSheetProps = {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+
+  sortKey: string;
+  filterType: string;
+  filterGroupType: string;
+
+  groups: Filter[];
+  sortOptions: SortOption[];
+
+  onApply: (next: {
+    filterValue: string;
+    filterGroupType: string;
+    sortKey: string;
+  }) => void;
+
+  onClear: () => void;
+  loading?: boolean;
+};
+
 export type ProductFiltersProps = {
   title: string;
   groups: Filter[];
   filterType?: string;
   loading: boolean;
+  isFilterPending: boolean;
   applyFilter: (val: string, type: string) => void;
 };
 

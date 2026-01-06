@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { useRouter} from "next/navigation";
+import { useRouter } from "next/navigation";
 import { ProductsPageProps, SortOption } from "@/types/Products";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { capitalizeString } from "@/lib/utils/utils";
 import ProductFilters from "./Filters";
 import ProductsTable from "./ProductTable";
 import ProductSearch from "./Search";
 import ProductSort from "./Sort";
+import { SlidersHorizontal } from "lucide-react";
+import MobileFilterSortSheet from "./MobileFilterSortSheet";
+
+const DEBOUNCE_MS = 500;
 
 export default function ProductsPageClient({
   products,
@@ -15,10 +20,11 @@ export default function ProductsPageClient({
   filters,
   search,
   sort,
-  initialSelectedVariants
+  initialSelectedVariants,
 }: ProductsPageProps) {
   const router = useRouter();
   const siteData = useSiteData();
+
   const SORT_OPTIONS: SortOption[] = [
     { key: "featured", label: "Featured" },
     { key: "newest", label: "Newest" },
@@ -26,14 +32,23 @@ export default function ProductsPageClient({
     { key: "priceDesc", label: "Price: High → Low" },
     { key: "nameAsc", label: "Name: A → Z" },
   ];
+
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
   const businessInfo = siteData?.businessInfo;
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;
+
   const onMountedRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isFilterPending, startFilterTransition] = useTransition();
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [filterType, setFilterType] = useState<string>(initialFilter || "");
+  const [filterGroupType, setFilterGroupType] = useState<string>(
+    filters?.[0]?.key ?? ""
+  );
+
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(
     initialSelectedVariants || {}
   );
@@ -42,35 +57,96 @@ export default function ProductsPageClient({
 
   useEffect(() => {
     setFilterType(initialFilter || "");
+    if (!filterGroupType && filters?.[0]?.key) setFilterGroupType(filters[0].key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFilter]);
 
   useEffect(() => {
     setSelectedVariants((prev) => ({ ...(initialSelectedVariants || {}), ...prev }));
   }, [initialSelectedVariants]);
 
-  const applyFilter = (value: string, type: string) => {
-    setFilterType(value);
-    const url = value ? `/products?filter=${encodeURIComponent(value)}&filterType=${encodeURIComponent(type)}` : "/products";
+  const replaceProductsQuery = (next: {
+    filter?: string;
+    filterType?: string;
+    sort?: string;
+    search?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (next.filter && next.filter.trim() && next.filterType && next.filterType.trim()) {
+      params.set("filter", next.filter.trim());
+      params.set("filterType", next.filterType.trim());
+      const qs = params.toString();
+      const url = `/products?${qs}`;
+      startFilterTransition(() => {
+        router.replace(url);
+      });
+
+      return;
+    }
+
+    if (next.search && next.search.trim()) params.set("search", next.search.trim());
+    if (next.sort && next.sort !== "featured") params.set("sort", next.sort);
+    
+    const qs = params.toString();
+    const url = qs ? `/products?${qs}` : "/products";
+
     startTransition(() => {
       router.replace(url);
+    });
+  };
+
+  const applyFilter = (value: string, groupKey: string) => {
+    setFilterType(value);
+    setFilterGroupType(groupKey);
+    setLocalSearch("");
+    replaceProductsQuery({
+      search: localSearch,
+      sort: sortKey,
+      filter: value,
+      filterType: groupKey,
     });
   };
 
   const applySort = (value: string) => {
     setSortKey(value);
-    const url = value ? `/products?sort=${encodeURIComponent(value)}` : "/products";
-    startTransition(() => {
-      router.replace(url);
+
+    replaceProductsQuery({
+      search: localSearch,
+      sort: value,
+      filter: filterType,
+      filterType: filterGroupType,
     });
   };
-  
+
+  useEffect(() => {
+    if (!onMountedRef.current) {
+      onMountedRef.current = true;
+      return;
+    }
+
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    timerRef.current = setTimeout(() => {
+      onSearch(localSearch);
+    }, DEBOUNCE_MS);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [localSearch]);
 
   const onSearch = (val: string) => {
     setLocalSearch(val);
-    const url = val.trim() ? `/products?search=${encodeURIComponent(val)}` : "/products";
 
-    startTransition(() => {
-      router.replace(url);
+    replaceProductsQuery({
+      search: val,
+      sort: sortKey,
+      filter: filterType,
+      filterType: filterGroupType,
     });
   };
 
@@ -88,15 +164,23 @@ export default function ProductsPageClient({
     }
   }, [sort, sortKey]);
 
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const hasActiveFilter = !!filterType?.trim();
+  const hasActiveSort = sortKey !== "featured";
+  const hasActiveBlade = hasActiveFilter || hasActiveSort;
   const loading = isPending;
+
   return (
     <div className="min-h-[100dvh]" style={{ background: surface }}>
       <div className="mx-4 md:mx-10 lg:mx-20 pt-20 md:pt-24 mt-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
-              Products
-            </h1>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Products</h1>
             <p className="mt-1 text-sm text-black/60">
               Browse our collection and add your favorites to the cart.
             </p>
@@ -111,52 +195,123 @@ export default function ProductsPageClient({
               }}
             >
               <span className="font-semibold">Pickup only</span>
-              <span className="hidden sm:inline">
-                Shipping is not available
-              </span>
+              <span className="hidden sm:inline">Shipping is not available</span>
             </div>
           )}
         </div>
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
-            <ProductSearch
-              initialValue={localSearch}
+            <ProductSearch search={localSearch} loading={loading || isFilterPending} setSearch={(v) => setLocalSearch(v)} onSearch={(v) => onSearch(v)} />
+          </div>
+
+          <div className="hidden md:flex justify-end">
+            <ProductSort value={sortKey} options={SORT_OPTIONS} loading={loading || isFilterPending} onChange={(k) => applySort(k)} />
+          </div>
+
+          <div className="md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileSheetOpen(true)}
+              className={`
+                h-11 w-full rounded-2xl border bg-white/70 backdrop-blur
+                px-4 text-sm font-semibold shadow-sm
+                transition active:scale-[0.99]
+              `}
+              style={{
+                borderColor: hasActiveBlade ? "rgba(0,0,0,0.18)" : "rgba(0,0,0,0.10)",
+                background: hasActiveBlade ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.70)",
+                color: "rgba(0,0,0,0.78)",
+              }}
+            >
+              <span className="inline-flex w-full items-center justify-center gap-2">
+                <SlidersHorizontal className="h-4 w-4" />
+                <span>Filters & Sort</span>
+                {hasActiveBlade ? (
+                  <span className="ml-1 inline-flex items-center gap-1.5">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: "var(--primary)" }}
+                    />
+                    <span className="text-[12px] font-semibold text-black/60">
+                      {hasActiveFilter && hasActiveSort ? "Active" : hasActiveFilter ? "Filtered" : "Sorted"}
+                    </span>
+                  </span>
+                ) : null}
+              </span>
+            </button>
+
+            {hasActiveBlade ? (
+              <p className="mt-2 text-[11px] text-black/55">
+                {hasActiveFilter ? `Filter: ${capitalizeString(filterType)}` : null}
+                {hasActiveFilter && hasActiveSort ? " • " : null}
+                {hasActiveSort ? `Sort: ${SORT_OPTIONS.find(o => o.key === sortKey)?.label ?? sortKey}` : null}
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-4 md:mx-10 lg:mx-20 pt-20 md:pt-10 pb-10">
+        <div className="grid gap-6 lg:grid-cols-12 items-start">
+          <div className="hidden lg:block lg:col-span-2">
+            <ProductFilters
+              title="Types"
+              isFilterPending={isFilterPending}
+              groups={filters}
+              filterType={filterType}
               loading={loading}
-              onSearch={(v) => onSearch(v)}
+              applyFilter={applyFilter}
             />
           </div>
 
-          <div className="flex justify-end">
-            <ProductSort
-              value={sortKey}
-              options={SORT_OPTIONS}
-              loading={loading}
-              onChange={(k) => applySort(k)}
+          <div className="lg:col-span-10 min-w-0">
+            <ProductsTable
+              products={products}
+              selectedVariants={selectedVariants}
+              setSelectedVariants={setSelectedVariants}
+              siteLogo={siteLogo}
+              loading={loading || isFilterPending}
             />
           </div>
         </div>
       </div>
 
-      <div className="mx-4 md:mx-10 lg:mx-20 mt-8 pb-16">
-        <div className="grid gap-6 lg:grid-cols-12">
-          <ProductFilters
-            title="Types"
-            groups={filters}
-            filterType={filterType}
-            loading={loading}
-            applyFilter={applyFilter}
-          />
+      <MobileFilterSortSheet
+        open={mobileSheetOpen}
+        onOpenChange={setMobileSheetOpen}
+        sortKey={sortKey}
+        filterType={filterType}
+        filterGroupType={filterGroupType}
+        groups={filters}
+        sortOptions={SORT_OPTIONS}
+        loading={loading}
+        onApply={({ filterValue, filterGroupType, sortKey }) => {
+          setSortKey(sortKey);
+          setFilterType(filterValue);
+          setFilterGroupType(filterGroupType);
 
-          <ProductsTable
-            products={products}
-            selectedVariants={selectedVariants}
-            setSelectedVariants={setSelectedVariants}
-            siteLogo={siteLogo}
-            loading={loading}
-          />
-        </div>
-      </div>
+          replaceProductsQuery({
+            search: localSearch,
+            sort: sortKey,
+            filter: filterValue,
+            filterType: filterGroupType,
+          });
+        }}
+        onClear={() => {
+          const firstGroupKey = filters?.[0]?.key ?? "";
+          setSortKey("featured");
+          setFilterType("");
+          setFilterGroupType(firstGroupKey);
+
+          replaceProductsQuery({
+            search: localSearch,
+            sort: "featured",
+            filter: "",
+            filterType: firstGroupKey,
+          });
+        }}
+      />
     </div>
   );
 }

@@ -33,7 +33,7 @@ export const handleAddToCart = (props: FloatingCartDialog) => {
     const itemAdded: CartItem = {
       _id: product._id,
       quantity,
-      name: variant ? `${name} (${variant})` : name,
+      name,
       price,
       priceID,
       imageUrl,

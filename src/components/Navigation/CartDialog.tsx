@@ -5,7 +5,7 @@ import { useCartContext } from "@/contexts/CartContext";
 import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { CartDialogProps, CartItem } from "@/types/Cart";
 import { handleCheckout } from "@/lib/cartUtils";
-import { resolveVariant } from "@/lib/variantUtils";
+import { capitalizeString } from "@/lib/utils/utils";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
@@ -140,8 +140,8 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="truncate text-sm font-semibold">{item?.name}</div>
-                            {!!item?.variant && (
-                              <div className="mt-0.5 text-xs text-black/55">Variant: {item.variant}</div>
+                            {!!item?.variant && item.variant !== "default" && (
+                              <div className="mt-0.5 text-xs text-black/55">{capitalizeString(item.variant)}</div>
                             )}
                             <div className="mt-1 text-xs text-black/60">
                               {currency(priceEach)} <span className="text-black/35">•</span>{" "}

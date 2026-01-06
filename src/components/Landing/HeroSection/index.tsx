@@ -38,7 +38,7 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
         }}
       />
 
-      <div className="mx-5 md:mx-20 lg:mx-40 min-h-[calc(100svh-6rem)] flex items-center">
+      <div className="mx-5 mt-10 sm:mt-0 md:mx-20 lg:mx-40 min-h-[calc(100svh-6rem)] flex items-center">
         <div className="grid w-full items-center gap-10 md:gap-14 lg:gap-16 md:grid-cols-2">
           <div className="order-1 text-center md:text-left">
             <h1
@@ -47,7 +47,7 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
               style={{ color: textPrimary }}
             >
               <span className="block text-[12px] font-semibold tracking-[0.2em] uppercase opacity-70">
-                Welcome
+                Welcome To
               </span>
               <span className="block mt-3">
                 <span style={{ color: primary }}>{title}</span>
@@ -79,8 +79,12 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
               ].map((t) => (
                 <div
                   key={t}
-                  className="rounded-xl border px-3 py-2 text-[11px] font-semibold text-center"
-                  style={{ borderColor: "rgba(0,0,0,0.08)", color: textPrimary }}
+                  className="
+                    flex items-center justify-center
+                    rounded-xl border px-3 py-2
+                    text-[11px] font-semibold text-center
+                  "
+                  style={{ borderColor: primary, color: textPrimary }}
                 >
                   {t}
                 </div>
@@ -91,8 +95,8 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
             <div
               className="relative rounded-3xl border shadow-sm"
               style={{
-                borderColor: "rgba(0,0,0,0.08)",
-                background: "rgba(255,255,255,0.6)",
+                borderColor: textPrimary,
+                background: "var(--surface-alt)",
               }}
             >
               <div
