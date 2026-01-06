@@ -15,31 +15,10 @@ export async function GET(req: NextRequest) {
     (crypto.randomUUID?.() ?? Math.random().toString(36).slice(2));
 
   const API_KEY = process.env.API_KEY;
-  const BUCKET_NAME = process.env.BUCKET_NAME;
-  const params = new URLSearchParams(req.nextUrl.search);
-
-  const allow = new Set([
-    "type",
-    "filterKey",
-    "filterVal",
-    "searchVal",
-    "sortVal"
-  ]);
-
-  for (const [k] of [...params]) if (!allow.has(k)) params.delete(k);
-
-  const type = params.get("type") || "stripe";
-  const filterKey = params.get("filterKey") || "";
-  const filterVal = params.get("filterVal") || "";
-  const searchVal = params.get("searchVal") || "";
-  const sortVal = params.get("sortVal") || "";
+  const PRODUCT_COLLECTION_ID = process.env.PRODUCT_COLLECTION_ID || "";
 
   const upstreamParams = new URLSearchParams();
-  upstreamParams.set("type", type);
-  upstreamParams.set("filterVal", filterVal);
-  upstreamParams.set("filterKey", filterKey);
-  upstreamParams.set("searchVal", searchVal);
-  upstreamParams.set("sortVal", sortVal);
+  upstreamParams.set("cid", PRODUCT_COLLECTION_ID);
 
   const serverFetch = createServerFetchEdge({
     req,
@@ -49,7 +28,7 @@ export async function GET(req: NextRequest) {
     logger: (msg, meta) => edgeLogger?.info?.(msg, meta),
   });
 
-  const upstreamPath = `/tenant/integrationObjects?${upstreamParams.toString()}`;
+  const upstreamPath = `/tenant/collection?${upstreamParams.toString()}`;
 
   try {
     const res = await serverFetch(upstreamPath, {
@@ -78,40 +57,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const upstreamJson = await res.json();
-    const toImageUrl = (key?: string) => {
-      if (!key || typeof key !== "string") return "";
-      return `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${key}`;
-    };
+    const upstreamJson = (await res.json())[0] as any;
 
-    const flattened = (Array.isArray(upstreamJson) ? upstreamJson : []).map((item: any) => {
-      const objectValue = item?.objectValue ?? {};
-      const productImage = objectValue?.productImage;
-      let imageUrl: any = "";
-
-      if (productImage && typeof productImage === "object" && !Array.isArray(productImage)) {
-        const keys = Object.keys(productImage);
-
-        if (typeof (productImage as any).key === "string") {
-          imageUrl = toImageUrl((productImage as any).key);
-        } else {
-          const mapped: Record<string, string> = {};
-          for (const v of keys) {
-            const k = productImage?.[v]?.key;
-            mapped[v] = toImageUrl(k);
-          }
-          imageUrl = mapped;
-        }
-      }
-
-      return {
-        usingVariant: item?.usingVariant,
-        ...objectValue,
-        imageUrl,
-      };
-    });
-
-    const out = NextResponse.json(flattened, {
+    const filterGroups = upstreamJson?.schema?.filterGroups || [];
+    const out = NextResponse.json(filterGroups, {
       status: res.status,
       headers: noStore({ "x-request-id": requestId }),
     });

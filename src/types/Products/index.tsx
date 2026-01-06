@@ -1,4 +1,5 @@
 export const PRODUCTS_API = "products";
+export const COLLECTIONS_API = "collection"
 
 export type Image = {
   name?: string;
@@ -23,9 +24,46 @@ export type ProductPageClientProps = {
 
 export type ProductsPageProps = {
   products: Product[];
+  search: string;
+  sort: string;
   initialFilter: string;
-  filters: string[];
+  filters: Filter[];
   initialSelectedVariants: Record<string, string>;
+};
+
+export type ProductsTableProps = {
+  products: Product[];
+  selectedVariants: Record<string, string>;
+  siteLogo: string;
+  loading: boolean;
+  setSelectedVariants: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+};
+
+export type ProductSearchProps = {
+  initialValue?: string;
+  loading?: boolean;
+  onSearch: (value: string) => void;
+};
+
+
+export type SortOption = {
+  key: string;
+  label: string;
+};
+
+export type ProductSortProps = {
+  value: string;
+  options: SortOption[];
+  loading?: boolean;
+  onChange: (key: string) => void;
+};
+
+export type ProductFiltersProps = {
+  title: string;
+  groups: Filter[];
+  filterType?: string;
+  loading: boolean;
+  applyFilter: (val: string, type: string) => void;
 };
 
 export type VariantRowProps = {
@@ -56,6 +94,12 @@ type VariantableStringKeys<T> = {
 }[keyof T];
 
 export type ProductVariantKey = VariantableStringKeys<Product>;
+
+export type Filter = {
+  title: string;
+  filters?: string[];
+  key: string;
+};
 
 export type Product = {
   _id: string;

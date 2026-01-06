@@ -3,10 +3,10 @@ import ProductsSkeleton from "./loading";
 import ProductsPageClient from "@/components/Products";
 import { headers } from "next/headers";
 import { getProducts } from "@/lib/api/Products";
-import { PRODUCTS_API, Product } from "@/types/Products";
+import { PRODUCTS_API, COLLECTIONS_API, Product, Filter } from "@/types/Products";
 import { SITE_DATA_API } from "@/types/SiteData";
 import { getSiteData } from "@/lib/api/SiteData";
-
+import { getCollection } from "@/lib/api/Collection";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -21,32 +21,32 @@ const handleBuildUrl = async (type: string) => {
 export default async function ProductPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filter?: string }>;
+  searchParams: Promise<{ filter?: string, filterType?: string, search?: string, sort?: string }>;
 }) {
-  const { filter } = await searchParams;
+  const { filter, filterType, search, sort } = await searchParams;
 
   return (
     <Suspense fallback={<ProductsSkeleton />}>
-      <Resolved filter={filter ?? ""} />
+      <Resolved filter={filter ?? ""} filterType={filterType ?? ""} search={search ?? ""} sort={sort ?? ""} />
     </Suspense>
   );
 }
 
-async function Resolved({ filter }: { filter: string }) {
+async function Resolved({ filter, filterType, search, sort }: { filter: string, filterType: string, search: string, sort: string }) {
   const productsUrl = await handleBuildUrl(PRODUCTS_API);
+  const filtersUrl = await handleBuildUrl(COLLECTIONS_API);
+  
+  if (sort) productsUrl.searchParams.set("sortVal", sort);
+  if (search) productsUrl.searchParams.set("searchVal", search);
+  if (filter) productsUrl.searchParams.set("filterVal", filter);
+  if (filterType) productsUrl.searchParams.set("filterKey", filterType);
 
-  const url = new URL(productsUrl.toString());
-  if (filter) url.searchParams.set("filter", filter);
+  const products = (await getProducts(productsUrl.toString())) as Product[];
+  const filters = (await getCollection(filtersUrl.toString()) as Filter[]);
 
-  const products = (await getProducts(url.toString())) as Product[];
-
-  const filterSet = new Set<string>();
   const variantDefaults: Record<string, string> = {};
 
   (products || []).forEach((p: Product) => {
-    const ft = p?.["filter-type"];
-    if (typeof ft === "string" && ft.length) filterSet.add(ft);
-
     const values = p?.usingVariant?.values;
     if (Array.isArray(values) && values.length) {
       variantDefaults[p._id] = values[0];
@@ -57,7 +57,9 @@ async function Resolved({ filter }: { filter: string }) {
     <ProductsPageClient
       products={products}
       initialFilter={filter}
-      filters={Array.from(filterSet)}
+      search={search}
+      sort={sort}
+      filters={filters}
       initialSelectedVariants={variantDefaults}
     />
   );

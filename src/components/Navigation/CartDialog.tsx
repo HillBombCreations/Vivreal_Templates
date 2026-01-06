@@ -5,7 +5,7 @@ import { useCartContext } from "@/contexts/CartContext";
 import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { CartDialogProps, CartItem } from "@/types/Cart";
 import { handleCheckout } from "@/lib/cartUtils";
-
+import { resolveVariant } from "@/lib/variantUtils";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n || 0);
@@ -36,6 +36,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
 
   const setQty = (productId: string, nextQty: number) => {
     const next = { ...(cart || {}) };
+    
     if (nextQty <= 0) {
       delete next[productId];
     } else if (next[productId]) {
@@ -151,7 +152,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                           <button
                             type="button"
                             className="h-8 w-8 cursor-pointer rounded-xl border border-black/10 bg-white hover:bg-black/5"
-                            onClick={() => setQty(item._id, 0)}
+                            onClick={() => setQty(`${item._id}_${item.variant}`, 0)}
                             aria-label="Remove item"
                           >
                             <Trash2 className="mx-auto h-4 w-4" />
@@ -163,7 +164,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={loadingCheckout}
-                              onClick={() => setQty(item._id, (item.quantity || 0) - 1)}
+                              onClick={() => setQty(`${item._id}_${item.variant}`, (item.quantity || 0) - 1)}
                               aria-label="Decrease quantity"
                             >
                               <Minus className="mx-auto h-4 w-4" />
@@ -177,7 +178,7 @@ export default function CartDialog({ open, onClose, siteData, originUrl }: CartD
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={loadingCheckout}
-                              onClick={() => setQty(item._id, (item.quantity || 0) + 1)}
+                              onClick={() => setQty(`${item._id}_${item.variant}`, (item.quantity || 0) + 1)}
                               aria-label="Increase quantity"
                             >
                               <Plus className="mx-auto h-4 w-4" />

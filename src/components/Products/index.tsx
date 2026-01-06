@@ -1,40 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { ShoppingCart, X } from "lucide-react";
-import { ProductsPageProps, Product } from "@/types/Products";
-import { getProductKey, getSafeFieldValue } from "@/lib/variantUtils"
-import { useCartContext } from "@/contexts/CartContext";
+import { useEffect, useRef, useState, useTransition } from "react";
+import { useRouter} from "next/navigation";
+import { ProductsPageProps, SortOption } from "@/types/Products";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { handleAddToCart } from "@/lib/cartUtils";
-import AddedToCartToast from "./AddToCart";
-import VariantRow from "./VariantRow";
-
-
+import ProductFilters from "./Filters";
+import ProductsTable from "./ProductTable";
+import ProductSearch from "./Search";
+import ProductSort from "./Sort";
 
 export default function ProductsPageClient({
   products,
   initialFilter,
   filters,
-  initialSelectedVariants,
+  search,
+  sort,
+  initialSelectedVariants
 }: ProductsPageProps) {
   const router = useRouter();
   const siteData = useSiteData();
-  const { cart, setCart } = useCartContext();
-
-  const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
+  const SORT_OPTIONS: SortOption[] = [
+    { key: "featured", label: "Featured" },
+    { key: "newest", label: "Newest" },
+    { key: "priceAsc", label: "Price: Low → High" },
+    { key: "priceDesc", label: "Price: High → Low" },
+    { key: "nameAsc", label: "Name: A → Z" },
+  ];
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
   const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
 
   const businessInfo = siteData?.businessInfo;
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;
-
+  const onMountedRef = useRef(false);
+  const [isPending, startTransition] = useTransition();
   const [filterType, setFilterType] = useState<string>(initialFilter || "");
-  const [itemAdded, setItemAdded] = useState(false);
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>(
     initialSelectedVariants || {}
   );
+  const [sortKey, setSortKey] = useState("featured");
+  const [localSearch, setLocalSearch] = useState("");
 
   useEffect(() => {
     setFilterType(initialFilter || "");
@@ -44,206 +48,113 @@ export default function ProductsPageClient({
     setSelectedVariants((prev) => ({ ...(initialSelectedVariants || {}), ...prev }));
   }, [initialSelectedVariants]);
 
-  const applyFilter = (value: string) => {
+  const applyFilter = (value: string, type: string) => {
     setFilterType(value);
-    const url = value ? `/products?filter=${encodeURIComponent(value)}` : "/products";
-    router.replace(url);
+    const url = value ? `/products?filter=${encodeURIComponent(value)}&filterType=${encodeURIComponent(type)}` : "/products";
+    startTransition(() => {
+      router.replace(url);
+    });
   };
 
-  const clearFilter = () => applyFilter("");
+  const applySort = (value: string) => {
+    setSortKey(value);
+    const url = value ? `/products?sort=${encodeURIComponent(value)}` : "/products";
+    startTransition(() => {
+      router.replace(url);
+    });
+  };
+  
 
+  const onSearch = (val: string) => {
+    setLocalSearch(val);
+    const url = val.trim() ? `/products?search=${encodeURIComponent(val)}` : "/products";
+
+    startTransition(() => {
+      router.replace(url);
+    });
+  };
+
+  useEffect(() => {
+    if (!localSearch && !onMountedRef.current && search) {
+      onMountedRef.current = true;
+      setLocalSearch(search);
+    }
+  }, [search, localSearch]);
+
+  useEffect(() => {
+    if (!onMountedRef.current && sort) {
+      onMountedRef.current = true;
+      setSortKey(sort);
+    }
+  }, [sort, sortKey]);
+
+  const loading = isPending;
   return (
     <div className="min-h-[100dvh]" style={{ background: surface }}>
-      {hasNoShipping && (
-        <div
-          className="mx-4 md:mx-10 lg:mx-20 mt-6 rounded-2xl border px-4 py-3 text-sm"
-          style={{
-            borderColor: "rgba(0,0,0,0.08)",
-            background: "rgba(255,255,255,0.7)",
-          }}
-        >
-          <span className="font-semibold">Pickup only:</span> We’re currently not offering shipping.
-        </div>
-      )}
-
-      <div className="mx-4 md:mx-10 lg:mx-20 mt-8">
-        <div className="flex items-end justify-between gap-4">
+      <div className="mx-4 md:mx-10 lg:mx-20 pt-20 md:pt-24 mt-8">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">Products</h1>
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">
+              Products
+            </h1>
             <p className="mt-1 text-sm text-black/60">
               Browse our collection and add your favorites to the cart.
             </p>
           </div>
 
-          {filterType ? (
-            <button
-              type="button"
-              onClick={clearFilter}
-              className="inline-flex items-center gap-2 rounded-xl border bg-white/70 px-3 py-2 text-sm font-semibold shadow-sm hover:bg-white transition"
-              style={{ borderColor: "rgba(0,0,0,0.10)" }}
+          {hasNoShipping && (
+            <div
+              className="inline-flex shrink-0 items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium"
+              style={{
+                background: "var(--primary)",
+                color: "var(--text-inverse)",
+              }}
             >
-              <X className="h-4 w-4" />
-              Clear filter
-            </button>
-          ) : null}
+              <span className="font-semibold">Pickup only</span>
+              <span className="hidden sm:inline">
+                Shipping is not available
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex-1">
+            <ProductSearch
+              initialValue={localSearch}
+              loading={loading}
+              onSearch={(v) => onSearch(v)}
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <ProductSort
+              value={sortKey}
+              options={SORT_OPTIONS}
+              loading={loading}
+              onChange={(k) => applySort(k)}
+            />
+          </div>
         </div>
       </div>
 
       <div className="mx-4 md:mx-10 lg:mx-20 mt-8 pb-16">
         <div className="grid gap-6 lg:grid-cols-12">
-          <aside className="lg:col-span-3">
-            <div
-              className="rounded-2xl border bg-white/70 backdrop-blur p-4"
-              style={{ borderColor: "rgba(0,0,0,0.08)" }}
-            >
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Types</div>
-              </div>
+          <ProductFilters
+            title="Types"
+            groups={filters}
+            filterType={filterType}
+            loading={loading}
+            applyFilter={applyFilter}
+          />
 
-              {filters?.length ? (
-                <div className="mt-3 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    onClick={() => applyFilter("")}
-                    className={[
-                      "text-left rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                      !filterType ? "bg-white shadow-sm" : "bg-white/40 hover:bg-white",
-                    ].join(" ")}
-                    style={{ borderColor: "rgba(0,0,0,0.08)" }}
-                  >
-                    All
-                  </button>
-
-                  {filters.map((t) => {
-                    const active = t === filterType;
-                    return (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => applyFilter(t)}
-                        className={[
-                          "text-left rounded-xl border px-3 py-2 text-sm font-semibold transition",
-                          active ? "bg-white shadow-sm" : "bg-white/40 hover:bg-white",
-                        ].join(" ")}
-                        style={{
-                          borderColor: "rgba(0,0,0,0.08)",
-                          color: active ? "black" : "rgba(0,0,0,0.75)",
-                        }}
-                      >
-                        {t}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="mt-3 text-sm text-black/50">No filters</div>
-              )}
-            </div>
-          </aside>
-
-          <main className="lg:col-span-9">
-            {!products?.length ? (
-              <div className="rounded-2xl border bg-white p-6" style={{ borderColor: "rgba(0,0,0,0.08)" }}>
-                <div className="text-sm font-semibold">No products found</div>
-                <div className="mt-1 text-sm text-black/60">Try a different filter.</div>
-              </div>
-            ) : (
-              <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {products.map((product: Product) => {
-                  const key = getProductKey(product);
-                  const selectedVariant = selectedVariants[key] || product.usingVariant?.values?.[0];
-                  const img = getSafeFieldValue(product, "imageUrl", selectedVariant) || siteLogo;
-                  const name = getSafeFieldValue(product, "name", selectedVariant);
-                  const desc = getSafeFieldValue(product, "description", selectedVariant);
-                  const price = getSafeFieldValue(product, "price", selectedVariant);
-
-                  return (
-                    <div
-                      key={key}
-                      role="link"
-                      tabIndex={0}
-                      onClick={() => router.push(`/products/${encodeURIComponent(String(key))}`)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          router.push(`/products/${encodeURIComponent(String(key))}`);
-                        }
-                      }}
-                      className={[
-                        "group text-left rounded-2xl border bg-white shadow-sm overflow-hidden",
-                        "hover:shadow-md transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-black/10",
-                        "flex flex-col h-[420px]",
-                      ].join(" ")}
-                      style={{ borderColor: "rgba(0,0,0,0.08)" }}
-                    >
-                      <div
-                        className="border-b bg-white"
-                        style={{ borderColor: "rgba(0,0,0,0.06)" }}
-                      >
-                        <div className="h-[190px] w-full relative overflow-hidden bg-white">
-                          <div className="absolute inset-0 p-4">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={img}
-                              alt={name || "Product image"}
-                              className="w-full h-full object-contain block"
-                              draggable={false}
-                              loading="lazy"
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="p-4 flex flex-col flex-1 min-h-0">
-                        {Array.isArray(product?.usingVariant?.values) && product.usingVariant.values.length > 0 ? (
-                          <div className="mb-3">
-                            <VariantRow
-                              product={product}
-                              selectedVariants={selectedVariants}
-                              setSelectedVariants={setSelectedVariants}
-                            />
-                          </div>
-                        ) : (
-                          <div className="h-8 mb-3" />
-                        )}
-
-                        <div className="font-semibold leading-snug line-clamp-2">
-                          {name}
-                        </div>
-                        <div className="mt-1 text-sm text-black/60 line-clamp-2">
-                          {desc}
-                        </div>
-                        <div className="mt-auto pt-3 flex items-center justify-between gap-3">
-                          <div className="text-base font-semibold" style={{ color: primary }}>
-                            ${price}
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleAddToCart({ product, selectedVariant, quantity: 1, cart, setCart, setAddedOpen: setItemAdded });
-                            }}
-                            className={[
-                              "h-10 px-3 cursor-pointer rounded-xl text-sm font-semibold inline-flex items-center gap-2",
-                              "shadow-sm transition active:scale-[0.98]",
-                              "group-hover:shadow",
-                            ].join(" ")}
-                            style={{ background: primary, color: "white" }}
-                          >
-                            <ShoppingCart className="h-4 w-4" />
-                            Add
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            <AddedToCartToast itemAdded={itemAdded} setItemAdded={setItemAdded} />
-          </main>
+          <ProductsTable
+            products={products}
+            selectedVariants={selectedVariants}
+            setSelectedVariants={setSelectedVariants}
+            siteLogo={siteLogo}
+            loading={loading}
+          />
         </div>
       </div>
     </div>

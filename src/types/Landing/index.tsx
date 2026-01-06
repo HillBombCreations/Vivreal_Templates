@@ -49,7 +49,7 @@ export type ProductShowcase = {
   title: string;
   description: string;
   link?: string;
-  productType?: string;
+  "product-type"?: string;
   imageUrl?: string;
   buttonLabel?: string;
 };

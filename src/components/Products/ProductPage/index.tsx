@@ -72,7 +72,7 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
 
   return (
     <div className="min-h-[100dvh]" style={{ background: surface }}>
-      <div className="mx-4 md:mx-10 lg:mx-20 pt-8 pb-14">
+      <div className="mx-4 md:mx-10 lg:mx-20 pt-20 md:pt-24 pb-14">
         <button
           type="button"
           onClick={() => router.push("/products")}

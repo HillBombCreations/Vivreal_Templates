@@ -107,3 +107,16 @@ export function recordPopupSeen() {
 export function recordSubscription() {
   localStorage.setItem(EMAIL_SUBSCRIBED_KEY, "true");
 }
+
+export function capitalizeString(input: string): string {
+  if (!input) return input;
+
+  return input
+    .trim()
+    .split(/\s+/) 
+    .map(word => {
+      if (!word) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(" ");
+}

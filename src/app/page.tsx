@@ -16,10 +16,10 @@ import LandingSkeleton from "./loading";
 import LandingWrapper from '@/components/Landing';
 export const dynamic = "force-dynamic"
 
-export default async function Index() {    
+export default async function Index() {
     return (
       <Suspense fallback={<LandingSkeleton />}>
-        <Resolved />
+        <Resolved />filter-type
       </Suspense>
     );
 };

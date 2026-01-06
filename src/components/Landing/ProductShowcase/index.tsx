@@ -69,7 +69,7 @@ export default function ProductShowcaseComponent({
   };
 
   const onShop = () => {
-    const productType = current?.productType ?? "";
+    const productType = current?.["product-type"] ?? "";
     router.push(`/products?filter=${encodeURIComponent(productType)}`);
   };
 
