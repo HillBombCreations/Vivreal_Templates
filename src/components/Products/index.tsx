@@ -101,6 +101,21 @@ export default function ProductsPageClient({
     });
   };
 
+  const applyMobileFilterSort = ({ filterValue, filterGroupType, sortKey }: { filterValue: string, filterGroupType: string, sortKey: string }) => {
+    setSortKey(sortKey);
+    setFilterType(filterValue);
+    setFilterGroupType(filterGroupType);
+    setLocalSearch("");
+    skipNextSearchEffectRef.current = true;
+    replaceProductsQuery({
+      search: "",
+      sort: sortKey,
+      filter: filterValue,
+      filterType: filterGroupType,
+    });
+  };
+
+
   const applySort = (value: string) => {
     setSortKey(value);
     setLocalSearch("");
@@ -296,31 +311,8 @@ export default function ProductsPageClient({
         groups={filters}
         sortOptions={SORT_OPTIONS}
         loading={loading}
-        onApply={({ filterValue, filterGroupType, sortKey }) => {
-          setSortKey(sortKey);
-          setFilterType(filterValue);
-          setFilterGroupType(filterGroupType);
-
-          replaceProductsQuery({
-            search: localSearch,
-            sort: sortKey,
-            filter: filterValue,
-            filterType: filterGroupType,
-          });
-        }}
-        onClear={() => {
-          const firstGroupKey = filters?.[0]?.key ?? "";
-          setSortKey("featured");
-          setFilterType("");
-          setFilterGroupType(firstGroupKey);
-
-          replaceProductsQuery({
-            search: localSearch,
-            sort: "featured",
-            filter: "",
-            filterType: firstGroupKey,
-          });
-        }}
+        onApply={(obj) => applyMobileFilterSort(obj)}
+        onClear={() => applyMobileFilterSort({ filterValue: "", filterGroupType: filters?.[0]?.key, sortKey: "featured" })}
       />
     </div>
   );
