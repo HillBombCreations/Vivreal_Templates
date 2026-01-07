@@ -109,7 +109,7 @@ export default function ProductsPageClient({
 
   const applySort = (value: string) => {
     setSortKey(value);
-
+    setLocalSearch("");
     replaceProductsQuery({
       search: localSearch,
       sort: value,

@@ -98,11 +98,11 @@ export default function ProductShowcaseComponent({
       <div className="mx-5 md:mx-20 lg:mx-40 w-full">
         <div
           className={`
-              grid items-center gap-2 lg:grid-cols-12
+              grid items-center gap-10 lg:grid-cols-12
               min-h-[calc(100svh-5rem)] md:min-h-[calc(100svh-8rem)]
             `}
         >
-          <div className="order-1 lg:col-span-5 text-center lg:text-left">
+          <div className="order-1 lg:col-span-4 text-center lg:text-left">
             <h2 className="text-3xl md:text-4xl font-semibold tracking-tight">
               {productShowcaseSection?.title}
             </h2>
@@ -111,8 +111,8 @@ export default function ProductShowcaseComponent({
             </p>
           </div>
 
-          <div className="order-2 lg:col-span-7">
-            <div className="hidden md:grid grid-cols-[44px_1fr_44px] items-center gap-4">
+          <div className="order-2 lg:col-span-8">
+            <div className="hidden md:grid grid-cols-[44px_1fr_44px] items-center gap-2">
               <button
                 type="button"
                 onClick={prevCard}
@@ -128,7 +128,6 @@ export default function ProductShowcaseComponent({
                 className={[
                   "rounded-3xl border bg-white/70 backdrop-blur shadow-sm overflow-hidden",
                   "transition-transform duration-300 ease-out",
-                  "h-[420px] md:h-[480px] lg:h-[520px]",
                   dir === "right" ? "animate-slideInRight" : "animate-slideInLeft",
                 ].join(" ")}
                 style={{ borderColor: "rgba(0,0,0,0.10)" }}

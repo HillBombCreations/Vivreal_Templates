@@ -92,30 +92,16 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
             </div>
           </div>
           <div className="order-2">
-            <div
-              className="relative rounded-3xl border shadow-sm"
-              style={{
-                borderColor: textPrimary,
-                background: "var(--surface-alt)",
-              }}
-            >
-              <div
-                className="pointer-events-none absolute inset-0 rounded-3xl opacity-30"
-                style={{
-                  background: `linear-gradient(135deg, ${siteData.siteDetails?.primary}33 0%, transparent 55%)`,
-                }}
+            <div className="w-full h-[320px] sm:h-[380px] md:h-[520px] lg:h-[620px] flex items-center justify-center">
+              <img
+                src={imageSrc}
+                alt="Hero illustration"
+                className="flex w-full h-full object-contain"
+                draggable={false}
               />
-              <div className="relative w-full h-[320px] sm:h-[380px] md:h-[520px] lg:h-[620px] flex items-center justify-center">
-                <img
-                  src={imageSrc}
-                  alt="Hero illustration"
-                  className="max-h-full max-w-full object-contain"
-                  draggable={false}
-                />
-              </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-center md:justify-end gap-2 text-[11px] font-semibold opacity-80">
+            <div className="flex items-start justify-center md:justify-end text-[11px] font-semibold opacity-80">
               <span style={{ color: textMuted }}>Trusted by shoppers</span>
             </div>
           </div>
