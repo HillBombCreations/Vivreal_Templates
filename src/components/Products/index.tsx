@@ -40,9 +40,10 @@ export default function ProductsPageClient({
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;
 
   const onMountedRef = useRef(false);
+  const handleSearchRef = useRef(false);
+  const skipNextSearchEffectRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [isFilterPending, startFilterTransition] = useTransition();
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [filterType, setFilterType] = useState<string>(initialFilter || "");
   const [filterGroupType, setFilterGroupType] = useState<string>(
@@ -72,35 +73,28 @@ export default function ProductsPageClient({
     search?: string;
   }) => {
     const params = new URLSearchParams();
-    if (next.filter && next.filter.trim() && next.filterType && next.filterType.trim()) {
+
+    if (next.filter?.trim() && next.filterType?.trim()) {
       params.set("filter", next.filter.trim());
       params.set("filterType", next.filterType.trim());
-      const qs = params.toString();
-      const url = `/products?${qs}`;
-      startFilterTransition(() => {
-        router.replace(url);
-      });
-
-      return;
     }
 
-    if (next.search && next.search.trim()) params.set("search", next.search.trim());
+    if (next.search?.trim()) params.set("search", next.search.trim());
     if (next.sort && next.sort !== "featured") params.set("sort", next.sort);
-    
+
     const qs = params.toString();
     const url = qs ? `/products?${qs}` : "/products";
 
-    startTransition(() => {
-      router.replace(url);
-    });
+    startTransition(() => router.replace(url));
   };
 
   const applyFilter = (value: string, groupKey: string) => {
     setFilterType(value);
     setFilterGroupType(groupKey);
     setLocalSearch("");
+    skipNextSearchEffectRef.current = true;
     replaceProductsQuery({
-      search: localSearch,
+      search: "",
       sort: sortKey,
       filter: value,
       filterType: groupKey,
@@ -118,9 +112,22 @@ export default function ProductsPageClient({
     });
   };
 
+  const onSearch = (val: string) => {
+    setLocalSearch(val);
+    setFilterGroupType(filters?.[0]?.key);
+    setFilterType("");
+    replaceProductsQuery({
+      search: val,
+      sort: sortKey,
+      filter: "",
+      filterType: filters?.[0]?.key,
+    });
+  };
+
   useEffect(() => {
-    if (!onMountedRef.current) {
-      onMountedRef.current = true;
+    console.log('INSIDE SEARCH USE EFFECT');
+    if (skipNextSearchEffectRef.current) {
+      skipNextSearchEffectRef.current = false;
       return;
     }
 
@@ -128,9 +135,21 @@ export default function ProductsPageClient({
       clearTimeout(timerRef.current);
     }
 
-    timerRef.current = setTimeout(() => {
-      onSearch(localSearch);
-    }, DEBOUNCE_MS);
+    if (!handleSearchRef.current && !!localSearch) {
+      timerRef.current = setTimeout(() => {
+        onSearch(localSearch);
+      }, DEBOUNCE_MS);
+      handleSearchRef.current = true;
+      return;
+    }
+
+    if (handleSearchRef.current) {
+      timerRef.current = setTimeout(() => {
+        onSearch(localSearch);
+      }, DEBOUNCE_MS);
+      handleSearchRef.current = true;
+      return;
+    }
 
     return () => {
       if (timerRef.current) {
@@ -139,23 +158,15 @@ export default function ProductsPageClient({
     };
   }, [localSearch]);
 
-  const onSearch = (val: string) => {
-    setLocalSearch(val);
-
-    replaceProductsQuery({
-      search: val,
-      sort: sortKey,
-      filter: filterType,
-      filterType: filterGroupType,
-    });
-  };
+  
 
   useEffect(() => {
-    if (!localSearch && !onMountedRef.current && search) {
+    if (!onMountedRef.current && search != null) {
       onMountedRef.current = true;
+      skipNextSearchEffectRef.current = true;
       setLocalSearch(search);
     }
-  }, [search, localSearch]);
+  }, [search]);
 
   useEffect(() => {
     if (!onMountedRef.current && sort) {
@@ -202,11 +213,11 @@ export default function ProductsPageClient({
 
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
-            <ProductSearch search={localSearch} loading={loading || isFilterPending} setSearch={(v) => setLocalSearch(v)} onSearch={(v) => onSearch(v)} />
+            <ProductSearch search={localSearch} loading={loading} setSearch={(v) => setLocalSearch(v)} onSearch={(v) => onSearch(v)} />
           </div>
 
           <div className="hidden md:flex justify-end">
-            <ProductSort value={sortKey} options={SORT_OPTIONS} loading={loading || isFilterPending} onChange={(k) => applySort(k)} />
+            <ProductSort value={sortKey} options={SORT_OPTIONS} loading={loading} onChange={(k) => applySort(k)} />
           </div>
 
           <div className="md:hidden">
@@ -257,7 +268,6 @@ export default function ProductsPageClient({
           <div className="hidden lg:block lg:col-span-2">
             <ProductFilters
               title="Types"
-              isFilterPending={isFilterPending}
               groups={filters}
               filterType={filterType}
               loading={loading}
@@ -271,7 +281,7 @@ export default function ProductsPageClient({
               selectedVariants={selectedVariants}
               setSelectedVariants={setSelectedVariants}
               siteLogo={siteLogo}
-              loading={loading || isFilterPending}
+              loading={loading}
             />
           </div>
         </div>

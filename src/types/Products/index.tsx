@@ -85,7 +85,6 @@ export type ProductFiltersProps = {
   groups: Filter[];
   filterType?: string;
   loading: boolean;
-  isFilterPending: boolean;
   applyFilter: (val: string, type: string) => void;
 };
 

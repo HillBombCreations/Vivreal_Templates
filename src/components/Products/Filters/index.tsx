@@ -4,14 +4,13 @@
 import React, { useEffect, useState } from "react";
 import { capitalizeString } from "@/lib/utils/utils";
 import { ProductFiltersProps } from "@/types/Products";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 
 export default function ProductFilters({
   groups,
   filterType,
   applyFilter,
-  loading = false,
-  isFilterPending = false,
+  loading,
 }: ProductFiltersProps) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
@@ -38,7 +37,7 @@ export default function ProductFilters({
             >
               <button
                 type="button"
-                disabled={loading || isFilterPending}
+                disabled={loading}
                 onClick={() =>
                   setOpenGroups((prev) => ({
                     ...prev,
@@ -69,7 +68,7 @@ export default function ProductFilters({
                       <button
                         type="button"
                         onClick={() => applyFilter("", group.key)}
-                        disabled={loading || isFilterPending}
+                        disabled={loading}
                         className={[
                           "text-left rounded-xl px-3 py-2 cursor-pointer text-sm font-semibold transition",
                           "inline-flex items-center gap-2",
@@ -80,14 +79,7 @@ export default function ProductFilters({
                           background: !filterType ? "var(--primary)" : "var(--surface)",
                         }}
                       >
-                        {isFilterPending && filterType === "" ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                            All
-                          </>
-                        ) : (
-                          "All"
-                        )}
+                        All
                       </button>
 
                       {group.filters.map((t) => {
@@ -97,7 +89,7 @@ export default function ProductFilters({
                           <button
                             key={`${group.key}-${t}`}
                             type="button"
-                            disabled={loading || isFilterPending}
+                            disabled={loading}
                             onClick={() => applyFilter(t, group.key)}
                             className={[
                               "text-left rounded-xl px-3 py-2 cursor-pointer text-sm font-semibold transition",
@@ -109,14 +101,7 @@ export default function ProductFilters({
                               background: active ? "var(--primary)" : "var(--surface)",
                             }}
                           >
-                            {isFilterPending && active ? (
-                              <>
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                                {capitalizeString(t)}
-                              </>
-                            ) : (
-                              capitalizeString(t)
-                            )}
+                            { capitalizeString(t) }
                           </button>
                         );
                       })}
