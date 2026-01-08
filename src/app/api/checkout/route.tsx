@@ -16,8 +16,6 @@ type CheckoutItem = {
 
 type CheckoutPayload = {
   products: CheckoutItem[];
-  businessName: string;
-  contactEmail: string;
   requiresShipping: boolean;
   originUrl: string;
 };
@@ -77,8 +75,6 @@ export async function POST(req: NextRequest) {
     !Array.isArray(body?.products) ||
     body.products.length === 0 ||
     !body.products.every(isCheckoutItem) ||
-    !isNonEmptyString(body?.businessName) ||
-    !isNonEmptyString(body?.contactEmail) ||
     typeof body?.requiresShipping !== "boolean"
   ) {
     return NextResponse.json(
@@ -106,47 +102,31 @@ export async function POST(req: NextRequest) {
       body: JSON.stringify({
         products: body.products,
         stripeKey: process.env.STRIPE_SECRET_KEY,
-        businessName: body.businessName,
-        contactEmail: body.contactEmail,
         requiresShipping: body.requiresShipping,
-        originUrl: body.originUrl,
-        updatedTemplate: true
+        originUrl: body.originUrl
       }),
     });
 
-    const contentType = res.headers.get("content-type") || "application/json";
+    const contentType = res.headers.get("content-type") ?? "";
 
-    if (!contentType.includes("application/json")) {
-      const text = await res.text();
-      return new NextResponse(text, {
+    if (contentType.includes("application/json")) {
+      const data = await res.json();
+
+      return NextResponse.json(data, {
         status: res.status,
-        headers: {
-          ...noStore({ "x-request-id": requestId }),
-          "content-type": contentType,
-        },
+        headers: noStore({ "x-request-id": requestId }),
       });
     }
 
-    const upstreamJson = await res.json().catch(() => null);
-
-    const out = NextResponse.json(upstreamJson ?? { ok: res.ok }, {
+    const text = await res.text();
+    return new NextResponse(text, {
       status: res.status,
-      headers: noStore({ "x-request-id": requestId }),
+      headers: {
+        ...noStore({ "x-request-id": requestId }),
+        "content-type": contentType,
+      },
     });
 
-    if (!res.ok) {
-      edgeLogger.warn("checkout(edge): upstream non-OK", {
-        requestId,
-        status: res.status,
-      });
-    } else {
-      edgeLogger.info("checkout(edge): upstream OK", {
-        requestId,
-        status: res.status,
-      });
-    }
-
-    return out;
   } catch (err: any) {
     const kind =
       err?.name === "AbortError" ? "Timeout/AbortError" : String(err?.message || err);

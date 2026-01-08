@@ -58,7 +58,7 @@ export const handleCheckout = async ({ itemsArray, businessInfo, originUrl, setO
         name: item.name,
       }));
 
-     const res = await fetch("/api/checkout", {
+      const res = await fetch("/api/checkout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -66,8 +66,6 @@ export const handleCheckout = async ({ itemsArray, businessInfo, originUrl, setO
         cache: "no-store",
         body: JSON.stringify({
           products: products,
-          businessName: businessInfo?.name,
-          contactEmail: businessInfo?.contactInfo?.email,
           requiresShipping: !!businessInfo?.shipping,
           originUrl: originUrl
         }),
@@ -78,10 +76,9 @@ export const handleCheckout = async ({ itemsArray, businessInfo, originUrl, setO
       }
 
       const data = await res.json();
-
       if (data && !(data?.status && data.status === 400)) {
         setOpenCartMenu(false);
-        window.location.replace(data);
+        window.location.replace(data.url);
       }
     } catch (e) {
       console.error("[CartDialog] checkout error:", e);

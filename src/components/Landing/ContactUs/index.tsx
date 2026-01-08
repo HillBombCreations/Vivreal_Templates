@@ -37,12 +37,14 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: form.fullName,
-          email: form.email,
+          customerEmail: form.email,
           message: form.message,
           siteName: siteData?.businessInfo?.name || '',
-          to: siteData?.businessInfo?.contactInfo.email,
+          contactEmail: 'justinceccarelli@gmail.com',
         }),
       });
+
+      // siteData?.businessInfo?.contactInfo.email,
 
       if (!res.ok) {
         showToast({ open: true, type: "error", message: "Error sending message. Please try again." });

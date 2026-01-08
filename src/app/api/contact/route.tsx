@@ -11,10 +11,10 @@ import { edgeLogger } from "@/lib/edge-logger";
 
 type ContactPayload = {
   name: string;
-  email: string;
+  contactEmail: string;
+  customerEmail: string;
   message: string;
   siteName: string;
-  to: string;
 };
 
 function isNonEmptyString(v: unknown): v is string {
@@ -57,10 +57,10 @@ export async function POST(req: NextRequest) {
 
   if (
     !isNonEmptyString(body?.name) ||
-    !isNonEmptyString(body?.email) ||
+    !isNonEmptyString(body?.contactEmail) ||
     !isNonEmptyString(body?.message) ||
     !isNonEmptyString(body?.siteName) ||
-    !isNonEmptyString(body?.to)
+    !isNonEmptyString(body?.customerEmail)
   ) {
     return NextResponse.json(
       { error: "Missing required fields" },
@@ -69,13 +69,6 @@ export async function POST(req: NextRequest) {
   }
 
   const upstreamPath = "/tenant/sendContactEmail";
-
-  const htmlInfo = {
-    title: `${body.siteName} Reachout`,
-    subtitle: "Someone has contacted you,",
-    whiteBoxText: `Name: ${body.name}, Email: ${body.email} <br><br> ${body.message}`,
-    signature: "Thanks for choosing Vivreal.",
-  };
 
   try {
     const res = await serverFetch(upstreamPath, {
@@ -95,8 +88,8 @@ export async function POST(req: NextRequest) {
         name: body.name,
         message: body.message,
         siteName: body.siteName,
-        to: body.to,
-        htmlInfo,
+        contactEmail: body.contactEmail,
+        customerEmail: body.customerEmail
       }),
     });
 

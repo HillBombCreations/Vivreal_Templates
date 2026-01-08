@@ -2,28 +2,47 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { CheckCircle2, ArrowRight } from "lucide-react";
-import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 
-export default function CheckoutSuccessClient() {
+export default function CheckoutSuccessPage() {
+  const sp = useSearchParams();
+  const sessionId = sp.get("session_id");
   const router = useRouter();
   const siteData = useSiteData();
-  const { setOpenCartMenu, setCart } = useCartContext();
-
-  const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
-  const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
-  const textPrimary = siteData?.siteDetails?.["text-primary"] ?? "#0b1220";
-  const textMuted =
-    siteData?.siteDetails?.["text-secondary"] ?? "rgba(0,0,0,0.60)";
-
-  const businessInfo = siteData?.businessInfo;
-  const businessName = businessInfo?.name ?? "our shop";
 
   useEffect(() => {
-    setOpenCartMenu?.(false);
-    setCart?.({});
-  }, [setOpenCartMenu, setCart]);
+    if (!sessionId) {
+      return;
+    }
+
+    (async () => {
+      try {
+        const res = await fetch("/api/checkout/confirm", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sessionId,
+            businessName: siteData?.businessInfo?.name,
+            contactEmail: siteData?.businessInfo?.contactInfo?.email
+          }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) throw new Error(data?.error || "Failed");
+      } catch {
+      }
+    })();
+  }, [sessionId]);
+
+  const surface = siteData?.siteDetails?.surface;
+  const primary = siteData?.siteDetails?.primary;
+  const textPrimary = siteData?.siteDetails?.["text-primary"];
+  const businessName = siteData?.businessInfo?.name;
+  const textMuted =
+    siteData?.siteDetails?.["text-secondary"] ?? "rgba(0,0,0,0.60)";
 
   return (
     <main

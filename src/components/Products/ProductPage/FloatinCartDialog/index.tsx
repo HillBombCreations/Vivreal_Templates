@@ -7,7 +7,7 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 import { FloatingCartDialogProps } from "@/types/Products";
 import { getSafeFieldValue } from "@/lib/variantUtils";
 import { CartItem } from "@/types/Cart";
-
+import { handleCheckout } from "@/lib/cartUtils"
 export default function FloatingCartDialog({
   open,
   onClose,
@@ -69,8 +69,6 @@ export default function FloatingCartDialog({
         cache: "no-store",
         body: JSON.stringify({
           products: items,
-          businessName: businessInfo?.name,
-          contactEmail: businessInfo?.contactInfo?.email,
           requiresShipping: !!businessInfo?.shipping,
           originUrl: originUrl
         }),
@@ -84,7 +82,7 @@ export default function FloatingCartDialog({
 
       if (data && !(data?.status && data.status === 400)) {
         setOpenCartMenu(false);
-        window.location.replace(data);
+        window.location.replace(data.url);
       }
 
       console.error("Error creating checkout session:", data);
