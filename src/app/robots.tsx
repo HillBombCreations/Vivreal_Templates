@@ -1,27 +1,22 @@
 import type { MetadataRoute } from 'next'
-import { getSiteData } from '@/lib/api/SiteData'
-import { SITE_DATA_API } from '@/types/SiteData'
 import { headers } from 'next/headers'
 
-const handleBuildUrl = async (type: string) => {
+const handleBuildUrl = async () => {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host")!;
   const proto = h.get("x-forwarded-proto") ?? "https";
-  const base = `${proto}://${host}`;
-  const url = new URL(`${base}/api/${type}`);
-  return url;
+  return `${proto}://${host}`;
 };
 
 export default async function robots(): Promise<MetadataRoute.Robots> {
-    const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
-    const siteData = await getSiteData(siteDataUrl.toString());
+    const base = await handleBuildUrl();
 
     return {
         rules: {
             userAgent: '*',
             allow: '/',
-            disallow: '/private/',
+            disallow: ["/private", "/api"],
         },
-        sitemap: `https://${siteData.domainName}/sitemap.xml`,
+        sitemap: `${base}/sitemap.xml`,
     }
 }

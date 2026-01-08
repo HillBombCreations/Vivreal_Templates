@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useCartContext } from "@/contexts/CartContext";
 import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
 import { CartDialogProps, CartItem } from "@/types/Cart";
-import { handleCheckout } from "@/lib/cartUtils";
+import { handleCheckout } from "@/lib/utils/cartUtils";
 import { capitalizeString } from "@/lib/utils/utils";
 
 const currency = (n: number) =>

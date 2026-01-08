@@ -82,6 +82,16 @@ export type ContactSectionContent = {
   buttonLabel: string;
 };
 
+export type CallToActionContent = {
+  title: string;
+  subtitle: string;
+  buttonLabel: string;
+};
+
+export type CallToActionProps = {
+  ctaSection: CallToActionContent | null;
+};
+
 export type ContactSectionProps = {
   contactSection: ContactSectionContent | null;
 };
@@ -123,6 +133,7 @@ export type LandingSections = {
   contactUs: ContactSectionContent;
   aboutUs: LandingSection;
   sectionName: string;
+  ctaSection: CallToActionContent;
 };
 
 export type LandingWrapperProps = {

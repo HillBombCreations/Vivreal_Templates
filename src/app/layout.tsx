@@ -19,6 +19,7 @@ const handleBuildUrl = async (type: string) => {
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   const { base, apiUrl } = await handleBuildUrl(SITE_DATA_API);
   const siteData = await getSiteData(apiUrl.toString());
+
   return (
     <html lang="en">
         <body>

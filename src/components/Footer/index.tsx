@@ -14,7 +14,17 @@ const Footer = ({ siteData }: {siteData: SiteData}) => {
       "label": "Products",
       "displayOnHeader": true,
     }
-  ]
+  ];
+
+  const SOCIAL_ICON_MAP: Record<string, string> = {
+    instagram: "/social/instagram.png",
+    facebook: "/social/facebook.png",
+    x: "/social/x.png",
+    linkedin: "/social/linkedin.png",
+    youtube: "/social/youtube.png",
+    pinterest: "/social/pinterest.png",
+  };
+
   const currentYear = new Date().getFullYear();
 
   return (
@@ -43,6 +53,32 @@ const Footer = ({ siteData }: {siteData: SiteData}) => {
             </div>
           </div>
         </div>
+        {siteData?.socialLinks?.length > 0 && (
+          <div className="flex items-center justify-center gap-4 mb-6">
+            {siteData.socialLinks.map((social) => {
+              const iconSrc = SOCIAL_ICON_MAP[social.type.toLowerCase()];
+              if (!iconSrc || !social.link) return null;
+
+              return (
+                <a
+                  key={social.type}
+                  href={social.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="opacity-80 hover:opacity-100 transition-opacity"
+                  aria-label={social.type}
+                >
+                  <Image
+                    src={iconSrc}
+                    alt={`${social.type} icon`}
+                    width={20}
+                    height={20}
+                  />
+                </a>
+              );
+            })}
+          </div>
+        )}
         <div className="border-t border-border pt-8 pb-8">
           <p className="text-sm text-gray-800 text-center">
             © {currentYear} {siteData?.businessInfo?.name}. All rights reserved.{' '}

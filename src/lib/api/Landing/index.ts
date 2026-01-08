@@ -4,7 +4,8 @@ import {
   ProductShowcase,
   OurOfferings,
   LandingSections,
-  ContactSectionContent
+  ContactSectionContent,
+  CallToActionContent
 } from "@/types/Landing";
 
 export async function getLandingSections(url: string): Promise<LandingSections | null> {
@@ -20,17 +21,20 @@ export async function getLandingSections(url: string): Promise<LandingSections |
 
   data.forEach((section) => {
     switch (section.sectionName) {
-      case 'firstSection':
+      case 'heroSection':
         landingSectionObj.heroSection = section;
         break;
-      case 'secondSection':
+      case 'productShowcase':
         landingSectionObj.productShowcase = section;
         break;
-      case 'thirdSection':
+      case 'aboutUs':
         landingSectionObj.aboutUs = section;
         break;
-      case 'fourthSection':
+      case 'contactSection':
         landingSectionObj.contactUs = section as ContactSectionContent;
+        break;
+      case 'ctaSection':
+        landingSectionObj.ctaSection = section as CallToActionContent;
         break;
     }
   });

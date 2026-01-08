@@ -3,7 +3,6 @@ import { getSiteData } from '@/lib/api/SiteData'
 import { SITE_DATA_API } from '@/types/SiteData'
 import { headers } from 'next/headers'
 
-// Image metadata
 export const size = {
   width: 32,
   height: 32,
@@ -19,14 +18,13 @@ const handleBuildUrl = async (type: string) => {
   return url;
 };
 
-// Dynamic icon generation
 export default async function Icon() {
   const siteDataUrl = await handleBuildUrl(SITE_DATA_API);
   const siteData = await getSiteData(siteDataUrl.toString());
 
   const primaryColor = siteData?.siteDetails?.primary || '#001a4a'
   const logoSrc =
-    siteData?.siteDetails?.logo?.imageUrl || 'https://comedycollectivechi.com/comedycollectiveLogo.png'
+    siteData?.siteDetails?.logo?.imageUrl || 'https://vivreal.io/vrlogo.svg'
 
   return new ImageResponse(
     (

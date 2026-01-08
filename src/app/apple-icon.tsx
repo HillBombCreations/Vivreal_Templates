@@ -24,7 +24,7 @@ export default async function AppleIcon() {
 
   const primaryColor = siteData?.siteDetails?.primary || '#001a4a'
   const logoSrc =
-    siteData?.siteDetails?.logo?.imageUrl || 'heroImage.png'
+    siteData?.siteDetails?.logo?.imageUrl || 'vrLogo.png'
 
   return new ImageResponse(
     (

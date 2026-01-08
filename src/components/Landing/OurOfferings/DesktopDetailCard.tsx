@@ -30,7 +30,7 @@ export default function DesktopDetailCard({
         >
           <div className="h-full w-full flex items-center justify-center p-6">
             <img
-              src={selected.imageUrl || "/heroImage.png"}
+              src={selected.imageUrl || "/vrLogo.png"}
               alt={selected.title}
               draggable={false}
               className="h-full w-full object-contain"

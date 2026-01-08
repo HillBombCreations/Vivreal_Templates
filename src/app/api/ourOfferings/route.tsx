@@ -6,7 +6,7 @@ export const fetchCache = 'force-no-store';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerFetchEdge } from '@/lib/server-fetch';
-import { noStore } from '@/lib/proxyUtils'
+import { noStore } from '@/lib/utils/proxyUtils'
 import { edgeLogger } from '@/lib/edge-logger';
 import {
   OurOfferings,

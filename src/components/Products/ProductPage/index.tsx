@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import FloatingCartDialog from "./FloatinCartDialog";
 import { ProductPageClientProps } from "@/types/Products";
-import { getSafeFieldValue, resolveVariant } from "@/lib/variantUtils";
-import { handleAddToCart, handleCheckout } from "@/lib/cartUtils";
+import { getSafeFieldValue, resolveVariant } from "@/lib/utils/variantUtils";
+import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 
@@ -20,7 +20,7 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
-  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
+  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png";
 
   const businessInfo = siteData?.businessInfo || null;
 

@@ -6,8 +6,8 @@ import { useRouter } from "next/navigation";
 import { ShoppingCart, Plus, Minus } from "lucide-react";
 import { ProductsTableProps } from "@/types/Products";
 import { useCartContext } from "@/contexts/CartContext";
-import { getProductKey, getSafeFieldValue } from "@/lib/variantUtils"
-import { handleAddToCart } from "@/lib/cartUtils";
+import { getProductKey, getSafeFieldValue } from "@/lib/utils/variantUtils"
+import { handleAddToCart } from "@/lib/utils/cartUtils";
 import VariantRow from "../VariantRow";
 import AddedToCartToast from "../AddToCart";
 

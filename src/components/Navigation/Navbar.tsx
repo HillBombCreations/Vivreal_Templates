@@ -42,7 +42,7 @@ const Navbar = ({ siteData, originUrl }: { siteData: SiteData, originUrl: string
             <div className="flex items-center space-x-3">
               <Link href="/" className="flex items-center space-x-3">
                 <img
-                  src={siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png"}
+                  src={siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png"}
                   alt={`${siteData?.name || "Site"} Logo`}
                   width={40}
                   height={40}

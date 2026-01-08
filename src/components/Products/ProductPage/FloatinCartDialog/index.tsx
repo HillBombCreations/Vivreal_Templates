@@ -5,9 +5,8 @@ import { CheckCircle2, X, Loader2 } from "lucide-react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { FloatingCartDialogProps } from "@/types/Products";
-import { getSafeFieldValue } from "@/lib/variantUtils";
+import { getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { CartItem } from "@/types/Cart";
-import { handleCheckout } from "@/lib/cartUtils"
 export default function FloatingCartDialog({
   open,
   onClose,
@@ -21,7 +20,7 @@ export default function FloatingCartDialog({
   const { cart, setOpenCartMenu } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
-  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
+  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png";
 
   const businessInfo = siteData?.businessInfo;
 

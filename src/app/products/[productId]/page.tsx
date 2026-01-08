@@ -4,7 +4,7 @@ import { getProductById } from "@/lib/api/Products";
 import { Product, PRODUCTS_API } from "@/types/Products"
 import { SITE_DATA_API, SiteData } from "@/types/SiteData"
 import { getSiteData } from "@/lib/api/SiteData";
-import { getSafeFieldValue } from "@/lib/variantUtils";
+import { getSafeFieldValue } from "@/lib/utils/variantUtils";
 import ProductPageSkeleton from "./loading";
 import ClientWrapper from "@/components/Products/ProductPage";
 

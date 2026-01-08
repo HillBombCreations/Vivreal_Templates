@@ -15,7 +15,7 @@ const HeroSection = ({ heroSection }: HeroSectionProps) => {
 
   const title = heroSection?.title ?? "Your Store";
   const subtitle = heroSection?.subtitle ?? "Discover best-sellers, new arrivals, and everyday essentials—delivered fast.";
-  const imageSrc = heroSection?.imageUrl || "/heroImage.png";
+  const imageSrc = heroSection?.imageUrl || "/vrLogo.png";
 
   const ctaLabel = heroSection?.buttonLabel ?? "Shop new arrivals";
 

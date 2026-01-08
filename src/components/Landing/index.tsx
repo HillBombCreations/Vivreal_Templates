@@ -4,7 +4,7 @@ import Head from 'next/head';
 import { useSiteData } from '@/contexts/SiteDataContext';
 import { LandingWrapperProps } from '@/types/Landing';
 
-import CTASection from '@/components/CTASection';
+import CTASection from '@/components/Landing/CTASection';
 import HeroSection from '@/components/Landing/HeroSection';
 import ProductShowcaseComponent from '@/components/Landing/ProductShowcase';
 import OurOfferingsComponent from '@/components/Landing/OurOfferings';
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic"
 
 
 
-const LandingWrapper = ({ landingSections, productShowcase, ourOfferings}: LandingWrapperProps) => {
+const LandingWrapper = ({ landingSections, productShowcase, ourOfferings }: LandingWrapperProps) => {
     const siteData = useSiteData();
 
     return (
@@ -28,7 +28,7 @@ const LandingWrapper = ({ landingSections, productShowcase, ourOfferings}: Landi
             <ProductShowcaseComponent productShowcase={productShowcase} productShowcaseSection={landingSections?.productShowcase || null}/>
             <OurOfferingsComponent ourOfferings={ourOfferings} />
             <ContactSection contactSection={landingSections?.contactUs || null}/>
-            <CTASection />
+            <CTASection ctaSection={landingSections?.ctaSection || null} />
         </div>
     );
 };

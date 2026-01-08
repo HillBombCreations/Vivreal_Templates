@@ -141,7 +141,7 @@ export default function ProductShowcaseComponent({
                       }}
                     />
                     <img
-                      src={current.imageUrl || "/heroImage.png"}
+                      src={current.imageUrl || "/vrLogo.png"}
                       alt={current.title}
                       width={900}
                       height={700}
@@ -204,7 +204,7 @@ export default function ProductShowcaseComponent({
                   />
                   <div className="absolute inset-0 p-3 flex items-center justify-center">
                     <img
-                      src={current.imageUrl || "/heroImage.png"}
+                      src={current.imageUrl || "/vrLogo.png"}
                       alt={current.title}
                       width={900}
                       height={700}

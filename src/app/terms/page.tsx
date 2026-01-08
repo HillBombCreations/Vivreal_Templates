@@ -1,5 +1,4 @@
 import Head from "next/head";
-import CTASection from "@/components/CTASection";
 
 export const metadata = {
   title: "Terms of Service",
@@ -120,8 +119,6 @@ const TermsOfService = () => {
             </div>
           </div>
         </section>
-
-        <CTASection />
       </main>
     </>
   );

@@ -34,7 +34,7 @@ export default function ProductsPageClient({
   ];
 
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
-  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/heroImage.png";
+  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png";
 
   const businessInfo = siteData?.businessInfo;
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;

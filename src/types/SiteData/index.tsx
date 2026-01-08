@@ -33,10 +33,16 @@ export type SiteDetails = {
     }
 }
 
+export interface SocialLinks {
+    type: string;
+    link: string;
+}
+
 export interface SiteData {
     businessInfo?: Businessinfo;
     name?: string;
     domainName?: string;
+    socialLinks: SocialLinks[];
     siteDetails: SiteDetails
     pages?: Record<string, string>;
 }
@@ -53,6 +59,7 @@ export type CMSSiteData = {
     name: string;
     domainName: string;
     groupID: string;
+    socialLinks: SocialLinks[];
     pages: [Pages];
     siteDetails: {
         schema: object;
