@@ -40,11 +40,9 @@ export default function ContactSection({ contactSection }: ContactSectionProps) 
           customerEmail: form.email,
           message: form.message,
           siteName: siteData?.businessInfo?.name || '',
-          contactEmail: 'justinceccarelli@gmail.com',
+          contactEmail: siteData?.businessInfo?.contactInfo?.email
         }),
       });
-
-      // siteData?.businessInfo?.contactInfo.email,
 
       if (!res.ok) {
         showToast({ open: true, type: "error", message: "Error sending message. Please try again." });
