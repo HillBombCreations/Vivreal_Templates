@@ -20,7 +20,7 @@ export default function FloatingCartDialog({
   const { cart, setOpenCartMenu } = useCartContext();
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
-  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png";
+  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrlogo.png";
 
   const businessInfo = siteData?.businessInfo;
 

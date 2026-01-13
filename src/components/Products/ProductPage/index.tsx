@@ -20,7 +20,7 @@ export default function ProductPageClient({ product, originUrl }: ProductPageCli
 
   const primary = siteData?.siteDetails?.primary ?? "var(--primary,#365b99)";
   const surface = siteData?.siteDetails?.surface ?? "var(--surface,#ffffff)";
-  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrLogo.png";
+  const siteLogo = siteData?.siteDetails?.logo?.imageUrl || "/vrlogo.png";
 
   const businessInfo = siteData?.businessInfo || null;
 

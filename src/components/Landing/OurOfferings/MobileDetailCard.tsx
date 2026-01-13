@@ -29,7 +29,7 @@ export default function MobileDetailCard({
 
           <div className="h-full w-full flex items-center justify-center p-3">
             <img
-              src={selected.imageUrl || "/vrLogo.png"}
+              src={selected.imageUrl || "/vrlogo.png"}
               alt={selected.title}
               draggable={false}
               className="h-full w-full object-contain"

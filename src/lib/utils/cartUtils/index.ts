@@ -19,7 +19,7 @@ export const handleAddToCart = (props: FloatingCartDialog) => {
     const variant = resolveVariant(selectedVariant, product);
     const safeVariant = variant ?? "default";
     const cartKey = `${product._id}_${safeVariant}`;
-    const siteLogo = "/vrLogo.png"
+    const siteLogo = "/vrlogo.png"
     const name = resolveVariantableString(product.name, variant) ?? product._id;
 
     const price = resolveVariantableString(product.price, variant) ?? "";
