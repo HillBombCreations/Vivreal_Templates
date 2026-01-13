@@ -69,7 +69,7 @@ jobs:
             fi
           done
 
-          echo "Matched-branches: ${matches[*]:-<none>}"
+          echo "Matched branches: ${matches[*]:-<none>}"
 
           if [[ ${#matches[@]} -eq 0 ]]; then
             echo "No branches to update."
