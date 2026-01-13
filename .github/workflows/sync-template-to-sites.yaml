@@ -1,4 +1,4 @@
-name: Sync template changes to site branches
+name: Sync template changes directly to site branches
 
 on:
   push:
@@ -6,102 +6,68 @@ on:
       - ecommerce
 
 permissions:
-  contents: read
-  pull-requests: write
+  contents: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-
     steps:
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Set template ref
-        id: vars
-        run: |
-          echo "template_ref=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Find matching branches and open PRs
+      - name: Merge template into matching branches
         env:
-          GH_TOKEN: ${{ secrets.TOKEN_FOR_GITHUIB }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OWNER: ${{ github.repository_owner }}
           REPO: ${{ github.event.repository.name }}
-          TEMPLATE_REF: ${{ steps.vars.outputs.template_ref }}
+          TEMPLATE_REF: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-
           echo "Template updated: ${TEMPLATE_REF}"
 
-          # 1) List all branches (paginate)
-          branches=$(gh api --paginate \
-            -H "Accept: application/vnd.github+json" \
-            "/repos/${OWNER}/${REPO}/branches?per_page=100" \
-            | jq -r '.[].name')
+          branches=$(gh api --paginate "/repos/${OWNER}/${REPO}/branches?per_page=100" | jq -r '.[].name')
 
           matches=()
-
-          # 2) Find branches that have marker file pointing at TEMPLATE_REF
           for b in $branches; do
-            # Skip the template branch itself
-            if [[ "$b" == "$TEMPLATE_REF" ]]; then
-              continue
-            fi
+            [[ "$b" == "$TEMPLATE_REF" ]] && continue
 
-            # Read marker file from that branch (skip if missing)
-            marker_b64=$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${OWNER}/${REPO}/contents/.vivreal-template.json?ref=${b}" 2>/dev/null \
+            marker_b64=$(gh api "/repos/${OWNER}/${REPO}/contents/.vivreal-template.json?ref=${b}" 2>/dev/null \
               | jq -r '.content' || true)
-
-            if [[ -z "${marker_b64}" || "${marker_b64}" == "null" ]]; then
-              continue
-            fi
+            [[ -z "${marker_b64}" || "${marker_b64}" == "null" ]] && continue
 
             marker_json=$(echo "$marker_b64" | base64 -d 2>/dev/null || true)
-            if [[ -z "$marker_json" ]]; then
-              continue
-            fi
+            [[ -z "$marker_json" ]] && continue
 
             marker_template_branch=$(echo "$marker_json" | jq -r '.templateBranch // empty')
-            if [[ "$marker_template_branch" == "$TEMPLATE_REF" ]]; then
-              matches+=("$b")
-            fi
+            [[ "$marker_template_branch" == "$TEMPLATE_REF" ]] && matches+=("$b")
           done
 
           echo "Matched branches: ${matches[*]:-<none>}"
+          [[ ${#matches[@]} -eq 0 ]] && exit 0
 
-          if [[ ${#matches[@]} -eq 0 ]]; then
-            echo "No branches to update."
-            exit 0
-          fi
-
-          # 3) Create PR for each matched branch:
-          #    base = site branch, head = template branch
           for site_branch in "${matches[@]}"; do
-            title="chore: sync ${TEMPLATE_REF} into ${site_branch}"
-            body="Automated PR to sync changes from \`${TEMPLATE_REF}\` into \`${site_branch}\`."
+            echo "Merging ${TEMPLATE_REF} -> ${site_branch}"
 
-            # Avoid duplicate PRs
-            existing=$(gh pr list \
-              --repo "${OWNER}/${REPO}" \
-              --state open \
-              --base "${site_branch}" \
-              --head "${TEMPLATE_REF}" \
-              --json number \
-              --jq '.[0].number' || true)
+            # GitHub merge API:
+            # POST /repos/{owner}/{repo}/merges
+            # base = target branch (site)
+            # head = source branch (template)
+            # This creates a merge commit on the target branch.
+            resp=$(gh api "/repos/${OWNER}/${REPO}/merges" -X POST \
+              -f base="${site_branch}" \
+              -f head="${TEMPLATE_REF}" \
+              -f commit_message="chore: sync ${TEMPLATE_REF} into ${site_branch}" \
+              2>&1) || true
 
-            if [[ -n "$existing" && "$existing" != "null" ]]; then
-              echo "PR already exists (#${existing}) for ${site_branch}, skipping."
+            if echo "$resp" | grep -qi "Merge conflict"; then
+              echo "⚠️ Conflict merging into ${site_branch}. Skipping."
               continue
             fi
 
-            echo "Creating PR for ${site_branch}..."
-            gh pr create \
-              --repo "${OWNER}/${REPO}" \
-              --title "$title" \
-              --body "$body" \
-              --base "${site_branch}" \
-              --head "${TEMPLATE_REF}" \
-              || echo "Failed to create PR for ${site_branch} (no diff or conflict)."
+            if echo "$resp" | grep -qi "No commits between"; then
+              echo "No changes for ${site_branch}."
+              continue
+            fi
+
+            echo "✅ Merged into ${site_branch}"
           done

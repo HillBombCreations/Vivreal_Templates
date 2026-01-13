@@ -50,7 +50,7 @@ const CTASection = ({ ctaSection }: CallToActionProps) => {
                       color: primary,
                     }}
                   >
-                    { ctaSection?.buttonLabel ?? 'Check out our products' }
+                    { ctaSection?.buttonLabel ?? 'View our products' }
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
