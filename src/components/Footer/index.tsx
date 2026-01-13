@@ -33,7 +33,7 @@ const Footer = ({ siteData }: {siteData: SiteData}) => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <img src={siteData?.siteDetails?.logo?.imageUrl} alt={siteData?.name} width={175} height={175} />
+              <img src={siteData?.siteDetails?.logo?.imageUrl ?? '/vrlogo.png'} alt='site logo' width={175} height={175} />
             </Link>
             <p className="text-sm text-gray-800 mb-6 max-w-xs">
              {siteData?.name} is an online store that is powered through Vivreal.
