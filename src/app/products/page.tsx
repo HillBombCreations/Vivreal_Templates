@@ -76,7 +76,7 @@ export const generateMetadata = async () => {
     openGraph: {
       title: `Products | ${siteData?.name}`,
       description: description,
-      url: `https://${siteData.domainName}/products`,
+      url: `${siteData?.domainInformation?.live_url}/products`,
       images: siteData?.siteDetails?.logo?.imageUrl
         ? [
             {

@@ -21,7 +21,7 @@ const LandingWrapper = ({ landingSections, productShowcase, ourOfferings }: Land
             <Head>
                 <title>{siteData?.businessInfo?.name}</title>
                 <meta name='description' content={siteData?.businessInfo?.name} />
-                <link rel='canonical' href={siteData?.domainName} />
+                <link rel='canonical' href={siteData?.domainInformation?.live_url} />
             </Head>
             
             <HeroSection heroSection={landingSections?.heroSection || null} />

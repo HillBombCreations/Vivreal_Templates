@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     const siteObj = {
       businessInfo: upstreamJson.businessInfo,
       name: upstreamJson.name,
-      domainName: upstreamJson.domainName,
+      domainInformation: upstreamJson.domainInformation,
       siteDetails: upstreamJson.siteDetails.values,
       socialLinks: upstreamJson.socialLinks
     } as SiteData;

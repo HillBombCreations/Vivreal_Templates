@@ -24,10 +24,10 @@ export async function getLandingSections(url: string): Promise<LandingSections |
       case 'heroSection':
         landingSectionObj.heroSection = section;
         break;
-      case 'productShowcase':
+      case 'productSection':
         landingSectionObj.productShowcase = section;
         break;
-      case 'aboutUs':
+      case 'aboutUsSection':
         landingSectionObj.aboutUs = section;
         break;
       case 'contactSection':

@@ -41,7 +41,11 @@ export interface SocialLinks {
 export interface SiteData {
     businessInfo?: Businessinfo;
     name?: string;
-    domainName?: string;
+    domainInformation: {
+        domain?: string;
+        subdomain?: string;
+        live_url?: string;
+    }
     socialLinks: SocialLinks[];
     siteDetails: SiteDetails
     pages?: Record<string, string>;
@@ -57,7 +61,11 @@ export type Pages = {
 export type CMSSiteData = {
     _id: string;
     name: string;
-    domainName: string;
+    domainInformation: {
+        domain?: string;
+        subdomain?: string;
+        live_url?: string;
+    }
     groupID: string;
     socialLinks: SocialLinks[];
     pages: [Pages];
