@@ -26,18 +26,18 @@ const CTASection = ({ ctaSection }: CallToActionProps) => {
                 className="text-3xl md:text-4xl font-semibold tracking-tight"
                 style={{ color: textInverse }}
               >
-                { ctaSection?.title }
-                Shop our full collection
+                { ctaSection?.title ?? 'Shop our full collection' }
+                
               </h2>
 
               <p
                 className="mt-4 text-sm md:text-lg leading-relaxed opacity-90"
                 style={{ color: textInverse }}
               >
-                { ctaSection?.subtitle }
-                Discover our complete lineup of handcrafted products, made with
+                { ctaSection?.subtitle ?? `Discover our complete lineup of handcrafted products, made with
                 care and meant to be enjoyed. From everyday favorites to special
-                treats, it’s all here.
+                treats, it’s all here.` }
+                
               </p>
 
               <div className="mt-8 flex justify-center">
@@ -50,8 +50,7 @@ const CTASection = ({ ctaSection }: CallToActionProps) => {
                       color: primary,
                     }}
                   >
-                    { ctaSection?.buttonLabel }
-                    Browse products
+                    { ctaSection?.buttonLabel ?? 'Browse products' }
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </Link>
