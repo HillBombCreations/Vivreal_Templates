@@ -2,7 +2,7 @@
 import "server-only";
 import type { ShowData, CMSShowData } from "@/types/Shows";
 
-const API_URL = process.env.CLIENT_API!;
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
 const SHOWS_ID = process.env.SHOWS_ID!;
 const CMS_API_KEY = process.env.API_KEY!;
 const BUCKET_NAME = process.env.BUCKET_NAME!;

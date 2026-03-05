@@ -2,7 +2,7 @@ import "server-only";
 import type { MetadataRoute } from "next";
 import type { CMSSiteData, SiteData } from "@/types/SiteData";
 
-const API_URL = process.env.CLIENT_API!;
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
 const SITE_ID = process.env.SITE_ID!;
 const CMS_API_KEY = process.env.API_KEY!;
 

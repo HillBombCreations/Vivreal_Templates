@@ -1,6 +1,6 @@
 import "server-only";
 
-const API_URL = process.env.CLIENT_API!;
+const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
 const CMS_API_KEY = process.env.API_KEY!;
 
 export async function subscribeUser(email: string): Promise<boolean> {
