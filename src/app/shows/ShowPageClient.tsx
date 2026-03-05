@@ -12,13 +12,13 @@ import {
 import { ShowData } from "@/types/Shows";
 
 interface ShowPageClientProps {
-  items: ShowData[];
+  upcomingShows: ShowData[];
+  pastShows: ShowData[];
 }
 
-const ShowPageClient = ({ items }: ShowPageClientProps) => {
+const ShowPageClient = ({ upcomingShows, pastShows }: ShowPageClientProps) => {
   const mountedRef = useRef(false);
   const [activeType, setActiveType] = useState("All");
-  const [filteredItems, setFilteredItems] = useState<ShowData[]>(items);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -32,7 +32,7 @@ const ShowPageClient = ({ items }: ShowPageClientProps) => {
       setLoading(false);
     }, 600);
     return () => clearTimeout(timer);
-  }, [activeType, items]);
+  }, [activeType, upcomingShows]);
   return (
     <main className="pt-24 md:pt-32 pb-20 md:pb-32">
       <section className="mx-auto max-w-5xl px-6 text-center space-y-6 mb-16">
@@ -43,32 +43,33 @@ const ShowPageClient = ({ items }: ShowPageClientProps) => {
           Explore our upcoming shows, featuring the best in comedy and entertainment.
         </p>
       </section>
+      
+      {/* Upcoming Shows Section */}
       <section className="mx-auto max-w-6xl px-6">
+        <h2 className="text-2xl lg:text-3xl font-display font-bold mb-8 tracking-tight">Upcoming Shows</h2>
         {loading ? (
           <SkeletonGrid />
-        ) : filteredItems?.length > 0 ? (
+        ) : upcomingShows?.length > 0 ? (
           <div
             key={activeType}
             className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 transition-opacity duration-500 animate-fade-in"
           >
-            {filteredItems.map((item, idx) => (
+            {upcomingShows.map((item, idx) => (
               <Link
-                key={`media_item_${idx}`}
+                key={`upcoming_${idx}`}
                 href={`/shows/${item.id}`}
                 className="block h-full group focus:outline-none"
               >
                 <Card className="h-full rounded-xl shadow-md overflow-hidden flex flex-col transition-all duration-300 transform group-hover:-translate-y-1 group-hover:shadow-lg">
                   <div className="relative h-48 w-full overflow-hidden">
                     <Image
-                      src={
-                        item.image ||
-                        `https://picsum.photos/seed/${idx}/600/400`
-                      }
-                      alt={item.title}
+                      src={item.imageUrl || item.image || '/comedycollectivelogo.png'}
+                      alt={item.title || 'Show poster'}
                       width={600}
                       height={400}
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
+                      onError={(e) => { e.currentTarget.src = '/comedycollectivelogo.png'; }}
                     />
                   </div>
 
@@ -96,7 +97,37 @@ const ShowPageClient = ({ items }: ShowPageClientProps) => {
           </div>
         ) : (
           <p className="text-center text-gray-500">
-            No shows found.
+            No upcoming shows at the moment.
+          </p>
+        )}
+      </section>
+
+      {/* Past Shows Section */}
+      <section className="mx-auto max-w-6xl px-6 mt-16">
+        <h2 className="text-2xl lg:text-3xl font-display font-bold mb-8 tracking-tight">Past Shows</h2>
+        {pastShows?.length > 0 ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            {pastShows.filter(show => show.imageUrl || show.image).map((show, idx) => (
+              <Link
+                key={`past_${idx}`}
+                href={`/shows/${show.id}`}
+                className="relative overflow-hidden rounded-lg shadow-sm hover:shadow-md transition"
+              >
+                <Image
+                  src={show.imageUrl || show.image || '/comedycollectivelogo.png'}
+                  alt={show.title || `Past show ${idx + 1}`}
+                  width={300}
+                  height={400}
+                  className="w-full h-64 object-contain"
+                  loading="lazy"
+                  onError={(e) => { e.currentTarget.src = '/comedycollectivelogo.png'; }}
+                />
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="text-center text-gray-500">
+            No past shows yet.
           </p>
         )}
       </section>

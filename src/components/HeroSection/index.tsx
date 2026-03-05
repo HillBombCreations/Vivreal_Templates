@@ -27,30 +27,36 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
   }, []);
 
   useEffect(() => {
-    if (shows.length > 0) {
-      setLoading(true);
-      const upcoming = shows.filter(show => {
-        if (!show.date) return false;
-        const showDate = new Date(show.date);
-        const today = new Date();
-        return showDate >= today;
-      }).sort((a, b) => {
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return new Date(a.date).getTime() - new Date(b.date).getTime();
-      });
-
-      const past = shows.filter(show => {
-        if (!show.date) return false;
-        const showDate = new Date(show.date);
-        const today = new Date();
-        return showDate < today;
-      });
-      
-      setUpcomingShows(upcoming);
-      setPastShows(past);
+    setLoading(true);
+    
+    if (shows.length === 0) {
+      setUpcomingShows([]);
+      setPastShows([]);
       setLoading(false);
+      return;
     }
+    
+    const upcoming = shows.filter(show => {
+      if (!show.date) return false;
+      const showDate = new Date(show.date);
+      const today = new Date();
+      return showDate >= today;
+    }).sort((a, b) => {
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+
+    const past = shows.filter(show => {
+      if (!show.date) return false;
+      const showDate = new Date(show.date);
+      const today = new Date();
+      return showDate < today;
+    });
+    
+    setUpcomingShows(upcoming);
+    setPastShows(past);
+    setLoading(false);
   }, [shows]);
 
   return (
@@ -143,13 +149,14 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
                 `}
               >
                 <Image
-                  src={show.image || '/comedycollectivelogo.png'}
-                  alt={show.title}
+                  src={show.imageUrl || show.image || '/comedycollectivelogo.png'}
+                  alt={show.title || 'Show poster'}
                   width={0}
                   height={0}
                   sizes={isMobile ? "100vw" : "350px"}
                   className="w-full h-full object-contain"
                   priority
+                  onError={(e) => { e.currentTarget.src = '/comedycollectivelogo.png'; }}
                 />
               </div>
               <div className={`${isMobile ? 'p-4 rounded-b-lg flex flex-col items-center text-center' : 'flex-1 p-4 flex flex-col justify-between'}`}>
@@ -192,16 +199,17 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
           <p className="mt-6 text-gray-500">No past shows yet.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-14">
-            {pastShows.filter(show => show.image).map((show, idx) => (
+            {pastShows.filter(show => show.imageUrl || show.image).map((show, idx) => (
               <div key={idx} className="relative overflow-hidden rounded-lg shadow-sm hover:shadow-md transition">
                 <Image
-                  src={show.image || '/comedycollectivelogo.png'}
-                  alt={`Poster ${idx + 1}`}
+                  src={show.imageUrl || show.image || '/comedycollectivelogo.png'}
+                  alt={show.title || `Poster ${idx + 1}`}
                   width={0}
                   height={0}
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   className="w-full h-64 object-contain"
                   priority
+                  onError={(e) => { e.currentTarget.src = '/comedycollectivelogo.png'; }}
                 />
               </div>
             ))}

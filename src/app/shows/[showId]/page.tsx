@@ -77,11 +77,11 @@ const ShowPost = async ({ params }: { params: Promise<{ showId: string }> }) => 
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 md:gap-8">
-          {show.image && (
+          {(show.imageUrl || show.image) && (
             <div className="w-full mb-4 md:mb-0 md:order-2">
               <Image
-                src={show.image}
-                alt={show.title}
+                src={show.imageUrl || show.image || '/comedycollectivelogo.png'}
+                alt={show.title || 'Show poster'}
                 width={800}
                 height={400}
                 priority

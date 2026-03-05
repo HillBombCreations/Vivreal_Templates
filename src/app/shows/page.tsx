@@ -11,17 +11,30 @@ export const revalidate = 0;
 export default async function MediaPage() {
   const shows = await getShows();
   
-  let items = shows || [];
+  let upcomingShows: typeof shows = [];
+  let pastShows: typeof shows = [];
+  
   if (shows && Array.isArray(shows)) {
-    items = shows.filter(show => {
+    const today = new Date();
+    
+    upcomingShows = shows.filter(show => {
       if (!show.date) return false;
       const showDate = new Date(show.date);
-      const today = new Date();
       return showDate >= today;
     }).sort((a, b) => {
       if (!a.date) return 1;
       if (!b.date) return -1;
       return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+    
+    pastShows = shows.filter(show => {
+      if (!show.date) return false;
+      const showDate = new Date(show.date);
+      return showDate < today;
+    }).sort((a, b) => {
+      if (!a.date) return -1;
+      if (!b.date) return 1;
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
   }
 
@@ -29,7 +42,7 @@ export default async function MediaPage() {
   return (
     <>
       <Navbar />
-      <ShowPageClient items={items} />
+      <ShowPageClient upcomingShows={upcomingShows} pastShows={pastShows} />
       <CTASection />
       <Footer />
     </>

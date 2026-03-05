@@ -41,7 +41,7 @@ const Footer = async () => {
              The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
             </p>
             <div className="flex space-x-4">
-              <a href="https://www.instagram.com/comedycollective1" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
+              <a href="https://www.instagram.com/comedycollectivechi" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
                 <InstagramIcon />
               </a>
             </div>

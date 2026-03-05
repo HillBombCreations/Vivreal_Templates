@@ -31,9 +31,8 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
   const siteData = useSiteData();
 
   useEffect(() => {
-    if (teamMembers.length > 0) {
-      setLoading(false);
-    }
+    // Always set loading to false after initial render
+    setLoading(false);
   }, [teamMembers]);
 
   return (
@@ -56,6 +55,8 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
               <SkeletonCard key={idx} />
             ))}
           </div>
+        ) : teamMembers.length === 0 ? (
+          <p className="text-center text-gray-500">No team members to display at the moment.</p>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-10">
             {teamMembers.map((member, idx) => (
