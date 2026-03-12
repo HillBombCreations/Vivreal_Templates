@@ -1,7 +1,7 @@
 import 'server-only';
 import type { ShowData, CMSShowData } from '@/types/Shows';
 import { clientFetchSafe } from '@/lib/api/client';
-import { mediaCdnUrl } from '@/lib/api/media';
+import { getSignedUrl } from '@/lib/api/media';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 
@@ -24,8 +24,8 @@ export async function getShows(): Promise<ShowData[]> {
     time: item.objectValue.time,
     location: item.objectValue.location,
     ticketsUrl: item.objectValue.tickets_url,
-    image: item.objectValue.poster?.currentFile?.source,
-    imageUrl: item.objectValue.poster?.currentFile?.source || mediaCdnUrl(item.objectValue.poster?.key),
+    image: getSignedUrl(item.objectValue.poster),
+    imageUrl: getSignedUrl(item.objectValue.poster),
   }));
 
   shows.sort(

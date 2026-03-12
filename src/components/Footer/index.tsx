@@ -3,7 +3,7 @@ import Image from 'next/image';
 import { NavigationData } from "@/types/Navigation";
 import { getNavigationData } from "@/lib/api/navigation";
 import { getSiteData } from "@/lib/api/siteData";
-import { mediaCdnUrl } from "@/lib/api/media";
+import { getSignedUrl } from "@/lib/api/media";
 
 async function fetchNavigationData(): Promise<NavigationData[]> {
   try {
@@ -20,7 +20,7 @@ const Footer = async () => {
   const currentYear = new Date().getFullYear();
 
   const siteName = siteData?.businessInfo?.name || siteData?.name || '';
-  const logoUrl = siteData?.logo?.currentFile?.source || mediaCdnUrl(siteData?.logo?.key) || '/logo.png';
+  const logoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
   const socialLinks = siteData?.socialLinks ?? [];
 
   return (

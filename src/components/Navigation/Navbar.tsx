@@ -6,7 +6,7 @@ import MobileNavigationMenuClient from './MobileNavigationMenuClient';
 import { NavigationData } from '@/types/Navigation';
 import { getNavigationData } from '@/lib/api/navigation';
 import { getSiteData } from '@/lib/api/siteData';
-import { mediaCdnUrl } from '@/lib/api/media';
+import { getSignedUrl } from '@/lib/api/media';
 
 async function fetchNavItems(): Promise<NavigationData[]> {
   try {
@@ -23,7 +23,7 @@ const Navbar = async () => {
   const siteData = await getSiteData();
 
   const siteName = siteData?.businessInfo?.name || siteData?.name || '';
-  const logoUrl = siteData?.logo?.currentFile?.source || mediaCdnUrl(siteData?.logo?.key) || '/logo.png';
+  const logoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 transition-all duration-300 ease-in-out pt-4 pb-1 md:pt-5 bg-white/90 backdrop-blur-sm">

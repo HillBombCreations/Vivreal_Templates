@@ -1,21 +1,21 @@
 /**
- * CDN media URL resolution.
+ * Media URL utilities — resolves signed CloudFront URLs from API responses.
  *
- * All user-uploaded media is served through the Vivreal CDN
- * (Lambda@Edge → S3 origin). This module builds the public URL
- * from a bucket name + object key.
+ * CloudFront requires signed URLs. VR_Client_API generates these via
+ * `signCloudFrontUrl.js` and returns them in `currentFile.source` on any
+ * media field that has `mediaFields` configured. Templates should ALWAYS
+ * use `currentFile.source` — unsigned URLs will 403.
  */
-
-const CDN_BASE_URL = (process.env.CDN_BASE_URL || 'https://media.vivreal.io').replace(/\/+$/, '');
-const BUCKET_NAME = process.env.BUCKET_NAME || '';
 
 /**
- * Build a CDN URL for a media object.
- * Returns empty string if bucket or key is missing.
+ * Extract signed URL from a media field object.
+ *
+ * @param field - A media field object (e.g., image, logo, headshot, poster)
+ *   Expected shape: { key, name, type, currentFile?: { source: string } }
+ * @returns The signed CDN URL, or empty string if unavailable
  */
-export function mediaCdnUrl(key: string | undefined, bucket?: string): string {
-  const b = (bucket || BUCKET_NAME).trim();
-  const k = (key || '').trim().replace(/^\/+/, '');
-  if (!b || !k) return '';
-  return `${CDN_BASE_URL}/${b}/${k}`;
+export function getSignedUrl(field: unknown): string {
+  if (!field || typeof field !== 'object') return '';
+  const f = field as Record<string, unknown>;
+  return (f.currentFile as Record<string, string>)?.source || '';
 }

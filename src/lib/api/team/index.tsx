@@ -1,7 +1,7 @@
 import 'server-only';
 import type { TeamData, CMSTeamData } from '@/types/Team';
 import { clientFetchSafe } from '@/lib/api/client';
-import { mediaCdnUrl } from '@/lib/api/media';
+import { getSignedUrl } from '@/lib/api/media';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
 
@@ -20,7 +20,7 @@ export async function getTeamMembers(): Promise<TeamData[]> {
     name: item.objectValue.name,
     description: item.objectValue.description,
     id: item.objectValue._id,
-    image: item.objectValue.headshot?.currentFile?.source,
-    imageUrl: item.objectValue.headshot?.currentFile?.source || mediaCdnUrl(item.objectValue.headshot?.key),
+    image: getSignedUrl(item.objectValue.headshot),
+    imageUrl: getSignedUrl(item.objectValue.headshot),
   }));
 }

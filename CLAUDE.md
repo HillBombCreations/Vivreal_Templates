@@ -74,7 +74,7 @@ src/
 ├── lib/
 │   ├── api/
 │   │   ├── client.ts               # Centralized VR_Client_API fetch with envelope unwrapping
-│   │   ├── media.ts                # CDN URL builder (media.vivreal.io)
+│   │   ├── media.ts                # getSignedUrl() — signed CloudFront URLs from API
 │   │   ├── siteData/index.tsx      # getSiteData(), getSiteMap()
 │   │   ├── shows/index.tsx         # getShows(), getShowById()
 │   │   ├── team/index.tsx          # getTeamMembers()
@@ -84,7 +84,6 @@ src/
 │   │   ├── subscribe/index.tsx     # subscribeUser() — server-side
 │   │   └── subscribe/client.tsx    # subscribeUser() — client-side (calls /api/subscribe)
 │   └── utils/
-│       └── mediaUrl.ts             # Legacy media URL builder (unused, kept for reference)
 ├── types/
 │   ├── SiteData/index.tsx          # SiteData, CMSSiteData, Businessinfo, SocialLink
 │   ├── Shows/index.tsx             # ShowData, CMSShowData
@@ -120,17 +119,15 @@ Collection endpoints return paginated data inside `data`:
 { "items": [...], "totalCount": 5 }
 ```
 
-### Media URLs
+### Media URLs — CloudFront Signed Only
 
-All user media is served through CloudFront CDN: `https://media.vivreal.io/{bucketName}/{key}`
+All media is served via CloudFront CDN (`media.vivreal.io`) with **signed URLs**. Unsigned URLs return 403.
 
-**Signed URLs**: The VR_Client_API returns media URLs with CloudFront signed URL query params (`Expires`, `Signature`, `Key-Pair-Id`) in `currentFile.source`. Always prefer `currentFile.source` over building URLs manually.
+VR_Client_API generates signed URLs for any media field listed in `objectValue.mediaFields` (or `siteDetails.values.mediaFields` for site data). The signed URL is returned in `currentFile.source`.
 
-The `mediaCdnUrl(key)` helper in `src/lib/api/media.ts` builds **unsigned** CDN URLs — use only as a fallback when the API doesn't provide `currentFile.source`.
+**Pattern**: `getSignedUrl(item.objectValue.poster)` — extracts `currentFile.source` from any media field.
 
-**Pattern**: `item.currentFile?.source || mediaCdnUrl(item.key)` — signed first, unsigned fallback.
-
-Never construct direct S3 URLs.
+**Key rule**: Never build CDN URLs manually. Always use `currentFile.source` via `getSignedUrl()`.
 
 ---
 
@@ -155,7 +152,7 @@ All env vars are injected by the EventHandler during Amplify deployment — they
 ### All Branding is Data-Driven
 
 - **Colors**: Come from `siteData` (primary, secondary, surface, etc.) — injected as CSS variables at runtime via `Providers`
-- **Logo**: Prefer `siteData.logo.currentFile.source` (signed URL) → fallback to `mediaCdnUrl(siteData.logo.key)`
+- **Logo**: `getSignedUrl(siteData.logo)` — signed CloudFront URL from API
 - **Site name**: From `siteData.businessInfo.name` or `siteData.name`
 - **Social links**: From `siteData.socialLinks[]`
 - **Contact email**: From `siteData.businessInfo.contactInfo.email`
