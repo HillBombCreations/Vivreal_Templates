@@ -1,4 +1,3 @@
-import Head from "next/head";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
@@ -37,15 +36,6 @@ export const metadata = {
 const TermsOfService = () => {
   return (
     <>
-      <Head>
-        <title>Terms of Service | Template</title>
-        <meta
-          name="description"
-          content="Review our terms of service for details on website usage, user responsibilities, and your rights when using this site."
-        />
-        <link rel="canonical" href={"/terms"} />
-      </Head>
-
       <Navbar />
 
       <main className="pt-24 pb-20">
@@ -119,7 +109,7 @@ const TermsOfService = () => {
               </h2>
               <p className="text-gray-700">
                 If you have any questions about these Terms, please contact us
-                at: <a href="mailto:hello@comedycollectivechi.com" className="underline">hello@comedycollectivechi.com</a>
+                using the contact information on our website.
               </p>
             </div>
           </div>

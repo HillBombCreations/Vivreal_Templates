@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useState } from "react";
 import { TeamData } from "@/types/Team";
 import { useSiteData } from "@/contexts/SiteDataContext";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -15,14 +16,10 @@ const SkeletonCard = () => (
       rounded-2xl shadow-md
     "
   >
-    <div
-      className="
-        w-40 h-40 mb-6 rounded-full bg-gray-200 dark:bg-gray-700
-      "
-    ></div>
-    <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-3"></div>
-    <div className="h-3 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-1"></div>
-    <div className="h-3 w-40 bg-gray-200 dark:bg-gray-700 rounded"></div>
+    <div className="w-40 h-40 mb-6 rounded-full bg-gray-200 dark:bg-gray-700" />
+    <div className="h-5 w-32 bg-gray-200 dark:bg-gray-700 rounded mb-3" />
+    <div className="h-3 w-48 bg-gray-200 dark:bg-gray-700 rounded mb-1" />
+    <div className="h-3 w-40 bg-gray-200 dark:bg-gray-700 rounded" />
   </div>
 );
 
@@ -31,9 +28,10 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
   const siteData = useSiteData();
 
   useEffect(() => {
-    // Always set loading to false after initial render
     setLoading(false);
   }, [teamMembers]);
+
+  const siteName = siteData?.businessInfo?.name || siteData?.name || 'our team';
 
   return (
     <main className="pt-24 md:pt-32">
@@ -45,7 +43,7 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
           className="text-center max-w-2xl mx-auto mb-12"
           style={{ color: siteData?.["text-primary"] }}
         >
-          Behind every product is a passionate team. Here&apos;s a glimpse of the
+          Behind every great experience is a passionate team. Here&apos;s a glimpse of the
           people who make it possible.
         </p>
 
@@ -77,7 +75,7 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
                   "
                 >
                   <Image
-                    src={member.image || "/comedycollectiveLogo.png"}
+                    src={member.imageUrl || member.image || "/logo.png"}
                     alt={member.name}
                     width={200}
                     height={200}
@@ -104,7 +102,7 @@ const AboutClient = ({ teamMembers }: { teamMembers: TeamData[] }) => {
       <section className="mt-24 mx-auto max-w-4xl text-center px-6">
         <div className="space-y-6 bg-secondary/50 px-6 py-12 rounded-xl">
           <h2 className="text-2xl md:text-3xl font-display font-bold">
-            Thanks for taking the time to learn more about our team!
+            Thanks for taking the time to learn more about {siteName}!
           </h2>
           <p
             className="text-sm max-w-xl mx-auto"

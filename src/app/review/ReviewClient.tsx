@@ -4,7 +4,8 @@ import React, { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Star } from "lucide-react";
-import { createReview } from "@/lib/api/review/client"
+import { createReview } from "@/lib/api/review/client";
+
 const ReviewClient = () => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
@@ -17,6 +18,9 @@ const ReviewClient = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
+
+  const siteName = siteData?.businessInfo?.name || siteData?.name || 'us';
+  const contactEmail = siteData?.businessInfo?.contactInfo?.email || '';
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
@@ -56,8 +60,8 @@ const ReviewClient = () => {
     setSuccess(false);
 
     try {
-      const success = await createReview(formData);
-      if (success) {
+      const ok = await createReview(formData);
+      if (ok) {
         setSuccess(true);
         setFormData({ name: "", email: "", rating: 0, review: "" });
       } else {
@@ -74,7 +78,6 @@ const ReviewClient = () => {
   return (
     <main className="pt-24 md:pt-32 pb-20 md:pb-32">
       <section className="max-w-3xl mx-auto px-6">
-        {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
             <span style={{ color: siteData?.["text-primary"] }}>
@@ -82,12 +85,11 @@ const ReviewClient = () => {
             </span>
           </h1>
           <p className="text-gray-700 text-lg md:text-xl max-w-2xl mx-auto">
-            Loved your time with <strong>The Comedy Collective</strong>? Tell us
-            how we did and help others discover the laughter!
+            Had a great experience with <strong>{siteName}</strong>? Tell us
+            how we did and help others discover us!
           </p>
         </div>
 
-        {/* Form */}
         <div
           style={{ background: siteData?.surface }}
           className="p-8 rounded-xl shadow-lg animate-fade-in"
@@ -100,24 +102,22 @@ const ReviewClient = () => {
 
           {error && (
             <div className="mb-6 rounded-lg bg-red-100 text-red-800 p-4 text-center">
-              Something went wrong. Please try again later or email us directly
-              at{" "}
-              <a
-                href="mailto:hello@comedycollectivechi.com"
-                className="underline font-medium"
-              >
-                hello@comedycollectivechi.com
-              </a>
+              Something went wrong. Please try again later
+              {contactEmail && (
+                <>
+                  {" "}or email us at{" "}
+                  <a href={`mailto:${contactEmail}`} className="underline font-medium">
+                    {contactEmail}
+                  </a>
+                </>
+              )}
               .
             </div>
           )}
 
           <form onSubmit={handleSubmit} noValidate className="space-y-6">
-            {/* Name */}
             <div>
-              <label htmlFor="name" className="block mb-2 font-semibold">
-                Name
-              </label>
+              <label htmlFor="name" className="block mb-2 font-semibold">Name</label>
               <input
                 type="text"
                 id="name"
@@ -129,16 +129,11 @@ const ReviewClient = () => {
                 }`}
                 placeholder="Your name"
               />
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600">{errors.name}</p>
-              )}
+              {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
             </div>
 
-            {/* Email */}
             <div>
-              <label htmlFor="email" className="block mb-2 font-semibold">
-                Email
-              </label>
+              <label htmlFor="email" className="block mb-2 font-semibold">Email</label>
               <input
                 type="email"
                 id="email"
@@ -150,12 +145,9 @@ const ReviewClient = () => {
                 }`}
                 placeholder="your.email@example.com"
               />
-              {errors.email && (
-                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
-              )}
+              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
             </div>
 
-            {/* Rating */}
             <div>
               <label className="block mb-2 font-semibold">Rating</label>
               <div className="flex items-center gap-2">
@@ -171,16 +163,11 @@ const ReviewClient = () => {
                   />
                 ))}
               </div>
-              {errors.rating && (
-                <p className="mt-1 text-sm text-red-600">{errors.rating}</p>
-              )}
+              {errors.rating && <p className="mt-1 text-sm text-red-600">{errors.rating}</p>}
             </div>
 
-            {/* Review */}
             <div>
-              <label htmlFor="review" className="block mb-2 font-semibold">
-                Your Review
-              </label>
+              <label htmlFor="review" className="block mb-2 font-semibold">Your Review</label>
               <textarea
                 id="review"
                 name="review"
@@ -192,9 +179,7 @@ const ReviewClient = () => {
                 }`}
                 placeholder="Share your thoughts about your experience..."
               />
-              {errors.review && (
-                <p className="mt-1 text-sm text-red-600">{errors.review}</p>
-              )}
+              {errors.review && <p className="mt-1 text-sm text-red-600">{errors.review}</p>}
             </div>
 
             <div className="text-center">

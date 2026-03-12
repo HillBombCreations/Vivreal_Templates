@@ -10,7 +10,7 @@ import {
   NavigationMenuViewport,
 } from "@/components/ui/navigation-menu";
 import { NavigationData } from "@/types/Navigation";
-import { siteData } from "@/data/mockData";
+import { useSiteData } from "@/contexts/SiteDataContext";
 
 interface NavigationMenuProps {
   items: NavigationData[];
@@ -18,16 +18,16 @@ interface NavigationMenuProps {
 
 const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
   const pathname = usePathname();
+  const siteData = useSiteData();
+  const primaryColor = siteData?.primary || '#000000';
 
   return (
     <>
       <style jsx global>{`
-        /* --- Hover underline animation --- */
         .nav-link {
           position: relative;
           transition: color 0.3s ease, transform 0.3s ease;
         }
-
         .nav-link::after {
           content: "";
           position: absolute;
@@ -35,25 +35,20 @@ const NavigationMenuComponent: React.FC<NavigationMenuProps> = ({ items }) => {
           left: 0;
           width: 0%;
           height: 2px;
-          background-color: ${siteData.primary};
+          background-color: ${primaryColor};
           transition: width 0.3s ease;
         }
-
         .nav-link:hover::after {
           width: 100%;
         }
-
         .nav-link:hover {
-          color: ${siteData.primary};
+          color: ${primaryColor};
           transform: translateY(-1px);
         }
-
-        /* --- Active state --- */
         .nav-link.active {
-          color: ${siteData.primary};
+          color: ${primaryColor};
           font-weight: 600;
         }
-
         .nav-link.active::after {
           width: 100%;
         }

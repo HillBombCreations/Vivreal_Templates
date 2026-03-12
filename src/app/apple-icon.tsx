@@ -1,6 +1,8 @@
 import { ImageResponse } from 'next/og'
 import { getSiteData } from '@/lib/api/siteData'
 
+export const dynamic = 'force-dynamic'
+
 export const size = {
   width: 180,
   height: 180,
@@ -10,9 +12,9 @@ export const contentType = 'image/png'
 export default async function AppleIcon() {
   const siteData = await getSiteData()
 
-  const primaryColor = siteData?.primary || '#001a4a'
-  const logoSrc =
-    siteData?.logo?.currentFile?.source || 'https://comedycollectivechi.com/comedycollectiveLogo.png'
+  const primaryColor = siteData?.primary || '#333333'
+  const logoSrc = siteData?.logo?.currentFile?.source || ''
+  const hasAbsoluteLogo = logoSrc.startsWith('http')
 
   return new ImageResponse(
     (
@@ -28,16 +30,25 @@ export default async function AppleIcon() {
           overflow: 'hidden',
         }}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={logoSrc}
-          alt="Apple Icon"
-          width="60%"
-          height="60%"
-          style={{
-            objectFit: 'contain',
-          }}
-        />
+        {hasAbsoluteLogo ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={logoSrc}
+            alt="Apple Icon"
+            width="60%"
+            height="60%"
+            style={{ objectFit: 'contain' }}
+          />
+        ) : (
+          <div
+            style={{
+              width: '60%',
+              height: '60%',
+              borderRadius: '50%',
+              background: 'rgba(255,255,255,0.3)',
+            }}
+          />
+        )}
       </div>
     ),
     { ...size }

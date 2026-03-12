@@ -4,7 +4,9 @@ export type TeamData = {
   id: string;
   image?: string;
   imageUrl?: string;
-  
+};
+
+export type CMSTeamData = {
   objectValue: {
     headshot?: {
       key: string;

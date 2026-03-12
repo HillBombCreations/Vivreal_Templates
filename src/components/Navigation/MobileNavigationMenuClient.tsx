@@ -1,4 +1,3 @@
-// app/components/MobileNavigationMenuClient.tsx
 "use client";
 
 import { useState } from "react";
@@ -11,21 +10,24 @@ import MobileNavigationMenu from "./MobileNavigationMenu";
 
 interface Props {
   navItems: NavigationData[];
+  logoUrl: string;
+  siteName: string;
 }
 
-const MobileNavigationMenuClient = ({ navItems }: Props) => {
+const MobileNavigationMenuClient = ({ navItems, logoUrl, siteName }: Props) => {
   const siteData = useSiteData();
-
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
     <>
       <div className="flex md:hidden items-center justify-between">
         <Link href="/" className="flex-1 text-start items-center inline-flex space-x-2">
-          <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={60} height={60} className="inline-block" />
-          <span style={{ color: siteData?.["text-primary"] }} className="text-2xl font-semibold font-brand leading-none">
-            The Comedy Collective
-          </span>
+          <Image src={logoUrl} alt={siteName || 'Logo'} width={60} height={60} className="inline-block object-contain" />
+          {siteName && (
+            <span style={{ color: siteData?.["text-primary"] }} className="text-2xl font-semibold font-brand leading-none">
+              {siteName}
+            </span>
+          )}
         </Link>
         <button
           className="p-2"

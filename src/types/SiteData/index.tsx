@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+
 export interface Businessinfo {
     address?: {
         street1?: string,
@@ -15,10 +16,17 @@ export interface Businessinfo {
     shipping?: boolean
 }
 
+export interface SocialLink {
+    platform: string;
+    url: string;
+}
+
 export interface SiteData {
     primary?: string;
     domainName?: string;
+    name?: string;
     businessInfo?: Businessinfo;
+    socialLinks?: SocialLink[];
     secondary?: string;
     hover?: string;
     surface?: string;
@@ -55,4 +63,5 @@ export type CMSSiteData = {
         values: SiteData;
     }
     businessInfo: Businessinfo;
-};
+    socialLinks?: SocialLink[];
+}

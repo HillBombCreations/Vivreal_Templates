@@ -1,35 +1,22 @@
-import "server-only";
-import type { ReviewData } from "@/types/Reviews";
-
-const API_URL = process.env.NEXT_PUBLIC_CLIENT_API!;
-const CMS_API_KEY = process.env.API_KEY!;
+import 'server-only';
+import type { ReviewData } from '@/types/Reviews';
+import { clientFetch } from '@/lib/api/client';
 
 export async function createReview(data: ReviewData): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/tenant/definedCollectionObject`, {
-      method: "POST",
-      headers: {
-        Authorization: CMS_API_KEY,
-        "Content-Type": "application/json",
-      },
+    await clientFetch<unknown>('/tenant/definedCollectionObject', {
+      method: 'POST',
       body: JSON.stringify({
         email: data.email,
         name: data.name,
         review: data.review,
         rating: data.rating,
-        type: "createReview",
+        type: 'createReview',
       }),
-      cache: "no-store",
     });
-
-    if (!res.ok) {
-      console.error("[createReviewOnCMS] CMS error:", res.status, res.statusText);
-      return false;
-    }
-
     return true;
   } catch (error) {
-    console.error("[createReviewOnCMS] Exception:", error);
+    console.error('[createReview] error:', error);
     return false;
   }
 }

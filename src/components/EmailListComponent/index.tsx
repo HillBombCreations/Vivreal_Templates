@@ -6,21 +6,19 @@ import { X } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { Button } from "@/components/ui/Button";
 import { subscribeUser } from "@/lib/api/subscribe/client";
-// Keys for localStorage
+
 const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const EmailListComponent = () => {
   const siteData = useSiteData();
-  console.log('SITE DATA', siteData);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
 
-  // Check popup logic
   useEffect(() => {
     const subscribed = localStorage.getItem(SUBSCRIBE_KEY);
     const lastDismissed = localStorage.getItem(DISMISS_KEY);
@@ -28,7 +26,6 @@ const EmailListComponent = () => {
 
     if (!subscribed) {
       if (!lastDismissed || now - parseInt(lastDismissed, 10) > DAY_MS) {
-        // Show popup after a short delay
         const timer = setTimeout(() => setOpen(true), 3000);
         return () => clearTimeout(timer);
       }
@@ -48,8 +45,8 @@ const EmailListComponent = () => {
     setSuccess(false);
 
     try {
-      const success = await subscribeUser(email);
-      if (success) {
+      const ok = await subscribeUser(email);
+      if (ok) {
         localStorage.setItem(SUBSCRIBE_KEY, "true");
         setSuccess(true);
         setEmail("");
@@ -70,6 +67,8 @@ const EmailListComponent = () => {
     localStorage.setItem(DISMISS_KEY, Date.now().toString());
   };
 
+  const siteName = siteData?.businessInfo?.name || siteData?.name || 'us';
+
   return (
     <AnimatePresence>
       {open && (
@@ -88,7 +87,7 @@ const EmailListComponent = () => {
             transition={{ duration: 0.4 }}
             className="w-[90%] max-w-lg rounded-2xl shadow-2xl border p-8 relative"
             style={{
-              backgroundColor: siteData?.surface || "#FFFFF",
+              backgroundColor: siteData?.surface || "#FFFFFF",
               borderColor: siteData?.primary,
             }}
           >
@@ -112,7 +111,7 @@ const EmailListComponent = () => {
 
             {success ? (
               <div className="rounded-lg bg-green-100 text-green-800 p-4 text-center font-medium">
-                You’re now subscribed! 🎉
+                You&apos;re now subscribed!
               </div>
             ) : (
               <form
@@ -133,8 +132,6 @@ const EmailListComponent = () => {
                   placeholder="Enter your email address"
                 />
 
-               
-
                 {error && (
                   <p className="text-sm text-red-600 -mt-3">
                     Please enter a valid email address.
@@ -154,12 +151,12 @@ const EmailListComponent = () => {
                 >
                   {isSubmitting ? "Subscribing..." : "Subscribe"}
                 </Button>
-                 <p className="text-center text-xs text-gray-500">
-                    By subscribing, you agree to receive updates from The Comedy Collective. 
-                    You can unsubscribe anytime. See our{" "}
-                    <a href="/privacy" className="underline">
-                        Privacy Policy
-                    </a>.
+                <p className="text-center text-xs text-gray-500">
+                  By subscribing, you agree to receive updates from {siteName}.
+                  You can unsubscribe anytime. See our{" "}
+                  <a href="/privacy" className="underline">
+                    Privacy Policy
+                  </a>.
                 </p>
               </form>
             )}

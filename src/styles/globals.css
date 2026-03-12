@@ -3,7 +3,7 @@
 
 @layer base {
   :root {
-    --background: #001a4a;
+    --background: 0 0% 100%;
     --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
@@ -12,8 +12,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: #001a4a;
-    --primary-foreground: #001a4a;
+    --primary: 220 14% 20%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 210 40% 96%;
     --secondary-foreground: 222 47% 11%;
@@ -25,11 +25,11 @@
     --accent-foreground: 222 47% 11%;
 
     --destructive: 0 84% 60%;
-    --destructive-foreground: #001a4a;
+    --destructive-foreground: 0 0% 100%;
 
     --border: 214 32% 91%;
     --input: 214 32% 91%;
-    --ring: #001a4a;
+    --ring: 220 14% 20%;
 
     --radius: 0.75rem;
 
@@ -43,7 +43,6 @@
     --sidebar-ring: 217 91% 60%;
   }
 
-  /* Instead of applying 'border-border' utility, explicitly set border-color */
   * {
     border-color: hsl(var(--border));
   }
@@ -134,7 +133,6 @@
     grid-column: full;
   }
 
-  /* Smooth transitions for theme toggling */
   html.light body {
     transition: background-color 0.3s ease, color 0.3s ease;
   }
@@ -156,7 +154,6 @@
       0 4px 6px -4px rgba(0, 0, 0, 0.1);
   }
 
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -167,12 +164,12 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background-color: rgba(104, 112, 118, 0.3); /* Approx muted-foreground/30 */
+    background-color: rgba(104, 112, 118, 0.3);
     border-radius: 9999px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(104, 112, 118, 0.5); /* Approx muted-foreground/50 */
+    background-color: rgba(104, 112, 118, 0.5);
   }
 
   @keyframes fade-in {

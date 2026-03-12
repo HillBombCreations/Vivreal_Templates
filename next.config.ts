@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'vivreal-thecomedycollective.s3.us-east-1.amazonaws.com',
+        hostname: 'media.vivreal.io',
         pathname: '/**',
       },
       {
@@ -18,7 +18,6 @@ const nextConfig: NextConfig = {
     ],
   },
   webpack: (config) => {
-    // Explicitly add the alias for `@/`
     config.resolve.alias["@"] = path.resolve(__dirname, "src");
     return config;
   },

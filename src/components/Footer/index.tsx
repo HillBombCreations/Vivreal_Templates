@@ -1,33 +1,27 @@
 import Link from "next/link";
 import Image from 'next/image';
 import { NavigationData } from "@/types/Navigation";
-import { getHeroSectionData } from "@/lib/api/navigation";
+import { getNavigationData } from "@/lib/api/navigation";
 import { getSiteData } from "@/lib/api/siteData";
+import { mediaCdnUrl } from "@/lib/api/media";
 
-const InstagramIcon = () => (
-  <Image
-    src="/instagramLogo.png"
-    alt="Instagram Logo"
-    width={20}
-    height={20}
-    className="h-[20px] w-[20px]"
-  />
-);
-
-async function fetchNavigationDatas(): Promise<NavigationData[]> {
+async function fetchNavigationData(): Promise<NavigationData[]> {
   try {
-    const data = await getHeroSectionData();
-    return data;
+    return await getNavigationData();
   } catch (err) {
     console.error("Error fetching navigation items:", err);
     return [];
   }
-};
+}
 
 const Footer = async () => {
-  const navItems = await fetchNavigationDatas();
+  const navItems = await fetchNavigationData();
   const siteData = await getSiteData();
   const currentYear = new Date().getFullYear();
+
+  const siteName = siteData?.businessInfo?.name || siteData?.name || '';
+  const logoUrl = siteData?.logo?.currentFile?.source || mediaCdnUrl(siteData?.logo?.key) || '/logo.png';
+  const socialLinks = siteData?.socialLinks ?? [];
 
   return (
     <footer className="py-12 md:py-16 bg-secondary/50">
@@ -35,16 +29,30 @@ const Footer = async () => {
         <div className="grid md:grid-cols-5 gap-8 mb-12">
           <div className="col-span-full md:col-span-2">
             <Link href="/" className="flex items-center mb-4">
-              <Image src="/comedycollectiveLogo.png" alt="The Comedy Collective" width={175} height={175} />
+              <Image src={logoUrl} alt={siteName || 'Logo'} width={175} height={175} className="object-contain" />
             </Link>
-            <p className="text-sm text-gray-800 mb-6 max-w-xs">
-             The Comedy Collective is Chicago&apos;s newest and hungriest comedy company. Monthly shows at the Den Theatre and more to come!
-            </p>
-            <div className="flex space-x-4">
-              <a href="https://www.instagram.com/comedycollectivechi" target="_blank" rel="noopener noreferrer" className="text-gray-800 hover:text-foreground pt-1 transition-colors">
-                <InstagramIcon />
-              </a>
-            </div>
+            {siteData?.businessInfo?.contactInfo?.email && (
+              <p className="text-sm text-gray-800 mb-6 max-w-xs">
+                <a href={`mailto:${siteData.businessInfo.contactInfo.email}`} className="hover:underline">
+                  {siteData.businessInfo.contactInfo.email}
+                </a>
+              </p>
+            )}
+            {socialLinks.length > 0 && (
+              <div className="flex space-x-4">
+                {socialLinks.map((link, idx) => (
+                  <a
+                    key={idx}
+                    href={link.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-800 hover:text-foreground transition-colors text-sm font-medium"
+                  >
+                    {link.platform}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div className="col-span-full md:col-span-3">
             <div className="flex flex-wrap gap-x-6 gap-y-2">
@@ -62,7 +70,7 @@ const Footer = async () => {
         </div>
         <div className="border-t border-border pt-8 pb-8">
           <p className="text-sm text-gray-800 text-center">
-            © {currentYear} {siteData?.businessInfo?.name}. All rights reserved.{' '}
+            &copy; {currentYear} {siteName}. All rights reserved.{' '}
             <a href="/privacy" className="underline hover:text-blue-600">Privacy Policy</a>{' | '}
             <a href="/terms" className="underline hover:text-blue-600">Terms of Use</a>
           </p>

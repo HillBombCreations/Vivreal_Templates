@@ -3,6 +3,8 @@ import Footer from "@/components/Footer";
 import CTASection from "@/components/CTASection";
 import AboutClient from "./AboutClient";
 import { getTeamMembers } from "@/lib/api/team";
+import { getSiteData } from "@/lib/api/siteData";
+
 const AboutPage = async () => {
   const teamMembers = await getTeamMembers();
   return (
@@ -18,30 +20,11 @@ const AboutPage = async () => {
 export default AboutPage;
 
 export const generateMetadata = async () => {
-    return {
-    title: "The Comedy Collective Team",
-    description: "Meet the team behind The Comedy Collective. We're dedicated to bringing you the best in comedy through our platform and community.",
-    openGraph: {
-      title: "The Comedy Collective Team",
-      description: "Meet the team behind The Comedy Collective. We're dedicated to bringing you the best in comedy through our platform and community.",
-      url: "https://comedycollectivechi.com/solutions",
-      images: [
-        {
-          url: new URL("/meetTheTeamThumbnail.png", "https://comedycollectivechi.com"),
-          width: 1200,
-          height: 630,
-          alt: "The Comedy Collective Team",
-        },
-      ],
-      type: "website",
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: "The Comedy Collective Team",
-      description: "Meet the team behind The Comedy Collective. We're dedicated to bringing you the best in comedy through our platform and community.",
-      images: [
-        new URL("/meetTheTeamThumbnail.png", "https://comedycollectivechi.com"),
-      ],
-    },
-  }
+  const siteData = await getSiteData();
+  const siteName = siteData?.businessInfo?.name || siteData?.name || '';
+
+  return {
+    title: `Our Team | ${siteName}`,
+    description: `Meet the team behind ${siteName}. We're dedicated to delivering the best experience.`,
+  };
 };
