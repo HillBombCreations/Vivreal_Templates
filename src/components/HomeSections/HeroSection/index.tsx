@@ -3,26 +3,23 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ShowData } from "@/types/Shows";
-import { SiteData } from "@/types/SiteData";
+import type { ShowData } from "@/types/Shows";
+import type { PartnerData } from "@/lib/api/partners";
+import type { HomeSectionProps } from "../index";
 import { ShowSkeletonCard, PastShowSkeleton } from "./skeletonLoader";
 import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
-import type { PartnerData } from "@/lib/api/partners";
-
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 const SCROLL_SPEED = 0.3; // pixels per frame
 
-interface HeroSectionProps {
-  shows: ShowData[];
-  siteData: SiteData;
-  labels: { upcoming: string; past: string };
-  partners?: PartnerData[];
-  showsSlug?: string;
-}
+const HeroSection = ({ config, siteData, prefetchedData }: HomeSectionProps) => {
+  const shows = (prefetchedData?.shows as ShowData[]) || [];
+  const partners = (prefetchedData?.partners as PartnerData[]) || [];
+  const labels = (prefetchedData?.labels as { upcoming: string; past: string }) || {
+    upcoming: config.upcomingLabel as string || "Upcoming",
+    past: config.pastLabel as string || "Past",
+  };
+  const showsSlug = (prefetchedData?.showsSlug as string) || "shows";
 
-const HeroSection = ({ shows, siteData, labels, partners = [], showsSlug = "shows" }: HeroSectionProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [upcomingShows, setUpcomingShows] = useState<ShowData[]>([]);
   const [pastShows, setPastShows] = useState<ShowData[]>([]);
@@ -136,85 +133,18 @@ const HeroSection = ({ shows, siteData, labels, partners = [], showsSlug = "show
         ) : (
           <div className="flex flex-col gap-4 mt-6">
             {upcomingShows.map((show, idx) => (
-              <Link
-                href={`/${showsSlug}/${show.id}`}
+              <UpcomingShowCard
                 key={idx}
-                className={`
-                  flex ${isMobile ? 'flex-col' : 'flex-row'}
-                  rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden
-                  transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5
-                `}
-              >
-                <div
-                  className={`
-                    ${isMobile ? 'w-full h-48 rounded-t-xl' : 'flex-shrink-0 w-44 h-auto rounded-l-xl'}
-                    overflow-hidden bg-gray-100
-                  `}
-                >
-                  <Image
-                    src={show.imageUrl || show.image || '/logo.png'}
-                    alt={show.title || 'Content image'}
-                    width={0}
-                    height={0}
-                    sizes={isMobile ? "100vw" : "350px"}
-                    className="w-full h-full object-contain"
-                    priority
-                  />
-                </div>
-                <div className={`${isMobile ? 'p-5 rounded-b-xl flex flex-col items-center text-center' : 'flex-1 p-5 flex flex-col justify-between'}`}>
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-900">{show.title}</h3>
-                    <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-500">
-                      {show.date && (
-                        <span className="inline-flex items-center gap-1">
-                          <Calendar size={14} />
-                          {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(show.date))}
-                          {show.time ? ` at ${show.time}` : ''}
-                        </span>
-                      )}
-                      {show.location && (
-                        <span className="inline-flex items-center gap-1">
-                          <MapPin size={14} />
-                          {show.location}
-                        </span>
-                      )}
-                    </div>
-                    <article className="prose prose-p:min-h-[.4em]">
-                      <div className="text-gray-600 text-sm mt-2 line-clamp-3" dangerouslySetInnerHTML={{ __html: show.description }} />
-                    </article>
-                  </div>
-                  {show.ticketsUrl ? (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.open(show.ticketsUrl, "_blank", "noopener,noreferrer");
-                      }}
-                      className={`
-                        mt-4 inline-flex items-center gap-2 px-5 py-2.5 cursor-pointer text-white text-sm font-semibold rounded-lg transition-colors
-                        ${isMobile ? 'w-full max-w-xs justify-center' : 'w-max self-start'}
-                      `}
-                      style={{ backgroundColor: primary }}
-                      aria-label="Open tickets in a new tab"
-                    >
-                      Get Tickets <ArrowRight size={14} />
-                    </button>
-                  ) : (
-                    <span
-                      className={`mt-4 inline-flex items-center gap-1 text-sm font-medium ${isMobile ? '' : 'self-start'}`}
-                      style={{ color: primary }}
-                    >
-                      View Details <ArrowRight size={14} />
-                    </span>
-                  )}
-                </div>
-              </Link>
+                show={show}
+                isMobile={isMobile}
+                primary={primary}
+                showsSlug={showsSlug}
+              />
             ))}
           </div>
         )}
 
-        {/* Past content — auto-scrolling carousel */}
+        {/* Past content -- auto-scrolling carousel */}
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">
           {pastLabel}
         </h2>
@@ -241,12 +171,113 @@ const HeroSection = ({ shows, siteData, labels, partners = [], showsSlug = "show
 };
 
 /**
+ * Card for an upcoming show. Extracted so the description HTML rendering
+ * (which comes from the CMS rich-text editor, already sanitized server-side)
+ * is isolated in its own component.
+ */
+function UpcomingShowCard({ show, isMobile, primary, showsSlug }: {
+  show: ShowData;
+  isMobile: boolean;
+  primary: string;
+  showsSlug: string;
+}) {
+  return (
+    <Link
+      href={`/${showsSlug}/${show.id}`}
+      className={`
+        flex ${isMobile ? 'flex-col' : 'flex-row'}
+        rounded-xl border border-gray-200 bg-white shadow-sm overflow-hidden
+        transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5
+      `}
+    >
+      <div
+        className={`
+          ${isMobile ? 'w-full h-48 rounded-t-xl' : 'flex-shrink-0 w-44 h-auto rounded-l-xl'}
+          overflow-hidden bg-gray-100
+        `}
+      >
+        <Image
+          src={show.imageUrl || show.image || '/logo.png'}
+          alt={show.title || 'Content image'}
+          width={0}
+          height={0}
+          sizes={isMobile ? "100vw" : "350px"}
+          className="w-full h-full object-contain"
+          priority
+        />
+      </div>
+      <div className={`${isMobile ? 'p-5 rounded-b-xl flex flex-col items-center text-center' : 'flex-1 p-5 flex flex-col justify-between'}`}>
+        <div>
+          <h3 className="text-xl font-semibold text-gray-900">{show.title}</h3>
+          <div className="flex flex-wrap gap-3 mt-2 text-sm text-gray-500">
+            {show.date && (
+              <span className="inline-flex items-center gap-1">
+                <Calendar size={14} />
+                {new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(show.date))}
+                {show.time ? ` at ${show.time}` : ''}
+              </span>
+            )}
+            {show.location && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin size={14} />
+                {show.location}
+              </span>
+            )}
+          </div>
+          <ShowDescription html={show.description} />
+        </div>
+        {show.ticketsUrl ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.open(show.ticketsUrl, "_blank", "noopener,noreferrer");
+            }}
+            className={`
+              mt-4 inline-flex items-center gap-2 px-5 py-2.5 cursor-pointer text-white text-sm font-semibold rounded-lg transition-colors
+              ${isMobile ? 'w-full max-w-xs justify-center' : 'w-max self-start'}
+            `}
+            style={{ backgroundColor: primary }}
+            aria-label="Open tickets in a new tab"
+          >
+            Get Tickets <ArrowRight size={14} />
+          </button>
+        ) : (
+          <span
+            className={`mt-4 inline-flex items-center gap-1 text-sm font-medium ${isMobile ? '' : 'self-start'}`}
+            style={{ color: primary }}
+          >
+            View Details <ArrowRight size={14} />
+          </span>
+        )}
+      </div>
+    </Link>
+  );
+}
+
+/**
+ * Renders CMS rich-text description HTML.
+ * Content is sanitized server-side by the CMS before storage.
+ */
+function ShowDescription({ html }: { html: string }) {
+  // eslint-disable-next-line react/no-danger -- CMS content, sanitized server-side
+  return (
+    <article className="prose prose-p:min-h-[.4em]">
+      <div
+        className="text-gray-600 text-sm mt-2 line-clamp-3"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </article>
+  );
+}
+
+/**
  * Horizontally auto-scrolling carousel for past shows.
  * Pauses on hover, supports manual prev/next navigation.
  */
 function PastShowsCarousel({ shows, primary, surface, showsSlug = "shows" }: { shows: ShowData[]; primary: string; surface: string; showsSlug?: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const animFrameRef = useRef<number>(0);
   const pausedRef = useRef(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);

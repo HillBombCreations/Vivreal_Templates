@@ -4,16 +4,23 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import { useSiteData } from "@/contexts/SiteDataContext";
 import { Button } from "@/components/ui/Button";
 import { subscribeUser } from "@/lib/api/subscribe/client";
+import type { HomeSectionProps } from "../index";
 
 const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const EmailListComponent = ({ collectionId }: { collectionId: string }) => {
-  const siteData = useSiteData();
+const EmailPopup = ({ config, siteData }: HomeSectionProps) => {
+  // Resolve collectionId: explicit config, or find the subscribers page's collectionId
+  const collectionId =
+    (config.collectionId as string) ||
+    siteData?.pageConfigs?.find((p) => p.format === "subscribers")?.collectionId ||
+    "";
+
+  const delayMs = (config.delayMs as number) || 3000;
+
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,11 +34,11 @@ const EmailListComponent = ({ collectionId }: { collectionId: string }) => {
 
     if (!subscribed) {
       if (!lastDismissed || now - parseInt(lastDismissed, 10) > DAY_MS) {
-        const timer = setTimeout(() => setOpen(true), 3000);
+        const timer = setTimeout(() => setOpen(true), delayMs);
         return () => clearTimeout(timer);
       }
     }
-  }, []);
+  }, [delayMs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,4 +175,4 @@ const EmailListComponent = ({ collectionId }: { collectionId: string }) => {
   );
 };
 
-export default EmailListComponent;
+export default EmailPopup;

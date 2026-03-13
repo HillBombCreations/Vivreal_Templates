@@ -3,17 +3,16 @@
 import { useEffect, useRef } from "react";
 import { Star } from "lucide-react";
 import type { ReviewDisplay } from "@/types/Reviews";
-import type { SiteData } from "@/types/SiteData";
+import type { HomeSectionProps } from "../index";
 
 const SCROLL_SPEED = 0.5;
 
-interface TestimonialsProps {
-  reviews: ReviewDisplay[];
-  siteData: SiteData;
-  heading: string;
-}
+export default function Testimonials({ config, siteData, prefetchedData }: HomeSectionProps) {
+  const reviews = (prefetchedData?.reviews as ReviewDisplay[]) || [];
+  const heading = (prefetchedData?.reviewsHeading as string)
+    || (config.sectionName as string)
+    || "What People Are Saying";
 
-export default function Testimonials({ reviews, siteData, heading }: TestimonialsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(false);
 

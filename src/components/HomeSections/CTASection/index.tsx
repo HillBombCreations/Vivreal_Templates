@@ -3,12 +3,24 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ArrowRight } from 'lucide-react';
-import { useSiteData } from '@/contexts/SiteDataContext';
+import type { HomeSectionProps } from '../index';
 
-const CTASection = () => {
-  const siteData = useSiteData();
+const CTASection = ({ config, siteData }: HomeSectionProps) => {
   const primary = siteData?.primary || '#000000';
-  const reviewPage = siteData?.pageConfigs?.find((p) => p.format === "form");
+
+  // Determine the target page: use config.targetFormat to find a page by format,
+  // or config.linkTo for a direct path
+  const targetFormat = config.targetFormat as string | undefined;
+  const linkTo = config.linkTo as string | undefined;
+
+  const targetPage = targetFormat
+    ? siteData?.pageConfigs?.find((p) => p.format === targetFormat)
+    : undefined;
+
+  const href = linkTo || (targetPage ? `/${targetPage.slug}` : undefined);
+  const label = (config.label as string)
+    || targetPage?.labels?.navLabel
+    || "Leave a Review";
 
   return (
     <section className="py-10 md:py-16 relative overflow-hidden">
@@ -24,26 +36,26 @@ const CTASection = () => {
               <h2
                 className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in text-white"
               >
-                Enjoyed your visit?
+                {(config.heading as string) || "Enjoyed your visit?"}
               </h2>
               <p
                 className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in text-white/90"
                 style={{ animationDelay: '100ms' }}
               >
-                We&apos;d love to hear what you think! Take a moment to share your experience by leaving us a review.
+                {(config.subheading as string) || "We'd love to hear what you think! Take a moment to share your experience by leaving us a review."}
               </p>
               <div
                 className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in"
                 style={{ animationDelay: '200ms' }}
               >
-                {reviewPage && (
-                  <Link href={`/${reviewPage.slug}`}>
+                {href && (
+                  <Link href={href}>
                     <Button
                       size="lg"
                       variant="secondary"
                       className="font-medium cursor-pointer bg-white text-gray-900 hover:bg-white/90"
                     >
-                      {reviewPage.labels?.navLabel || "Leave a Review"}
+                      {label}
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </Button>
                   </Link>

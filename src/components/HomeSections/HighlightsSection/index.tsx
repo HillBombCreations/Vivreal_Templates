@@ -1,14 +1,11 @@
 import { Mic, Users, MapPin } from "lucide-react";
-import type { SiteData } from "@/types/SiteData";
+import type { HomeSectionProps } from "../index";
 
-interface HighlightsSectionProps {
-  siteData: SiteData;
-  showCount: number;
-  memberCount: number;
-  venueCount: number;
-}
+export default function HighlightsSection({ siteData, prefetchedData }: HomeSectionProps) {
+  const showCount = (prefetchedData?.showCount as number) ?? 0;
+  const memberCount = (prefetchedData?.memberCount as number) ?? 0;
+  const venueCount = (prefetchedData?.venueCount as number) ?? 0;
 
-export default function HighlightsSection({ siteData, showCount, memberCount, venueCount }: HighlightsSectionProps) {
   const primary = siteData?.primary || "#000000";
   const surface = siteData?.surface || "#ffffff";
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
@@ -26,7 +23,7 @@ export default function HighlightsSection({ siteData, showCount, memberCount, ve
     <section className="py-20 md:py-28" style={{ background: surface }}>
       <div className="mx-5 md:mx-20 lg:mx-40">
         <div className="grid md:grid-cols-2 gap-12 md:gap-20 items-center">
-          {/* Left — About text */}
+          {/* Left -- About text */}
           <div>
             <h2 className="text-2xl lg:text-3xl font-display font-bold tracking-tight mb-6">
               {aboutHeading}
@@ -36,7 +33,7 @@ export default function HighlightsSection({ siteData, showCount, memberCount, ve
             </p>
           </div>
 
-          {/* Right — Stats */}
+          {/* Right -- Stats */}
           <div className="grid grid-cols-3 gap-6">
             {stats.map((stat) => (
               <div
