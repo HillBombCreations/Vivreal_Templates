@@ -1,4 +1,4 @@
-import CTASection from "@/components/CTASection";
+import CTASection from "@/components/HomeSections/CTASection";
 
 interface StaticPageProps {
   labels: { title: string; content: string };

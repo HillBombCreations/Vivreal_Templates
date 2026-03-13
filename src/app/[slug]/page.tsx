@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import CTASection from "@/components/CTASection";
+import CTASection from "@/components/HomeSections/CTASection";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowsPaginated } from "@/lib/api/shows";

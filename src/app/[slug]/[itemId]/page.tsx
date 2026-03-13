@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import CTASection from "@/components/CTASection";
+import CTASection from "@/components/HomeSections/CTASection";
 import { ArrowLeft, Calendar, MapPin } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";

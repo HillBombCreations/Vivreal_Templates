@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { ArrowRight } from 'lucide-react';
 import type { HomeSectionProps } from '../index';
 
-const CTASection = ({ config, siteData }: HomeSectionProps) => {
+const CTASection = ({ config = {}, siteData }: Partial<HomeSectionProps>) => {
   const primary = siteData?.primary || '#000000';
 
   // Determine the target page: use config.targetFormat to find a page by format,
