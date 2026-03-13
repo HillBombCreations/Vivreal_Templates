@@ -10,7 +10,9 @@ import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
+import { getProductById } from "@/lib/api/products";
 import MemberDetail from "@/components/PageTemplates/MemberDetail";
+import ProductDetailClient from "@/components/PageTemplates/ProductDetailClient";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -186,6 +188,21 @@ export default async function DynamicItemPage({ params }: Props) {
           tiktokEmbeds={tiktokEmbeds}
           backSlug={slug}
         />
+        <Footer />
+      </>
+    );
+  }
+
+  // Product detail
+  if (pageConfig.format === "products") {
+    const product = await getProductById(itemId);
+    if (!product) return notFound();
+
+    return (
+      <>
+        <Navbar />
+        <ProductDetailClient product={product} siteData={siteData} />
+        <CTASection />
         <Footer />
       </>
     );

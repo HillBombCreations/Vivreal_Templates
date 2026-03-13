@@ -6,15 +6,24 @@ import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteDa
 import { getPageBySlug } from "@/lib/pages";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
+import { getProducts, getFilters } from "@/lib/api/products";
 import ShowPageClient from "@/components/PageTemplates/ShowPageClient";
 import AboutClient from "@/components/PageTemplates/AboutClient";
-import ReviewClient from "@/components/PageTemplates/ReviewClient";
+import FormClient from "@/components/PageTemplates/FormClient";
+import ProductsClient from "@/components/PageTemplates/ProductsClient";
+import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
 import StaticPage from "@/components/PageTemplates/StaticPage";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function DynamicPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function DynamicPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
@@ -81,14 +90,57 @@ export default async function DynamicPage({ params }: { params: Promise<{ slug: 
     );
   }
 
-  // Form pages — review format
+  // Form pages — form/review format
   if (format === "form") {
     const collectionId = getPageCollectionId(siteData, name, "");
 
     return (
       <>
         <Navbar />
-        <ReviewClient collectionId={collectionId} />
+        <FormClient collectionId={collectionId} />
+        <Footer />
+      </>
+    );
+  }
+
+  // Product listing pages — products format
+  if (format === "products") {
+    const resolvedSearchParams = await searchParams;
+    const filterKey = resolvedSearchParams?.filterType as string | undefined;
+    const filterVal = resolvedSearchParams?.filter as string | undefined;
+    const searchVal = resolvedSearchParams?.search as string | undefined;
+    const sortVal = resolvedSearchParams?.sort as string | undefined;
+
+    const [products, filters] = await Promise.all([
+      getProducts({ filterKey, filterVal, searchVal, sortVal }),
+      pageConfig.collectionId ? getFilters(pageConfig.collectionId) : Promise.resolve([]),
+    ]);
+
+    return (
+      <>
+        <Navbar />
+        <ProductsClient
+          products={products}
+          filters={filters}
+          labels={pageConfig.labels ?? {}}
+          slug={slug}
+        />
+        <CTASection />
+        <Footer />
+      </>
+    );
+  }
+
+  // Subscribe / newsletter pages
+  if (format === "subscribe") {
+    return (
+      <>
+        <Navbar />
+        <SubscribeClient
+          collectionId={pageConfig.collectionId ?? ""}
+          labels={pageConfig.labels ?? {}}
+        />
+        <CTASection />
         <Footer />
       </>
     );
