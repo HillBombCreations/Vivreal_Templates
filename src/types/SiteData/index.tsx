@@ -32,6 +32,19 @@ export interface PageConfig {
     displayOnFooter?: boolean;
 }
 
+export interface HomeSectionConfig {
+    collectionId?: string;
+    sectionName?: string;
+    [key: string]: unknown;
+}
+
+export interface HomeSection {
+    type: string;
+    order: number;
+    enabled: boolean;
+    config: HomeSectionConfig;
+}
+
 export interface SiteData {
     primary?: string;
     domainName?: string;
@@ -70,6 +83,7 @@ export interface SiteData {
         heading?: string,
         description?: string,
     },
+    homeSections?: HomeSection[];
 }
 
 export type Pages = {
