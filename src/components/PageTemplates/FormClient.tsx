@@ -6,7 +6,12 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 import { Star } from "lucide-react";
 import { createReview } from "@/lib/api/review/client";
 
-const ReviewClient = ({ collectionId }: { collectionId: string }) => {
+interface FormClientProps {
+  collectionId: string;
+  labels?: Record<string, string>;
+}
+
+const FormClient = ({ collectionId, labels }: FormClientProps) => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
     name: "",
@@ -19,8 +24,14 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState(false);
 
-  const siteName = siteData?.businessInfo?.name || siteData?.name || 'us';
-  const contactEmail = siteData?.businessInfo?.contactInfo?.email || '';
+  const pageTitle = labels?.title || "Leave a Review";
+  const pageSubtitle = labels?.subtitle || "";
+  const siteName = siteData?.businessInfo?.name || siteData?.name || "us";
+  const contactEmail = siteData?.businessInfo?.contactInfo?.email || "";
+
+  const subtitle =
+    pageSubtitle ||
+    `Had a great experience with ${siteName}? Tell us how we did and help others discover us!`;
 
   const validate = () => {
     const newErrors: { [key: string]: string } = {};
@@ -69,7 +80,7 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
       }
     } catch (err) {
       setError(true);
-      console.error("Error submitting review:", err);
+      console.error("Error submitting form:", err);
     } finally {
       setIsSubmitting(false);
     }
@@ -81,12 +92,11 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
         <div className="text-center mb-12">
           <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
             <span style={{ color: siteData?.["text-primary"] }}>
-              Leave a Review
+              {pageTitle}
             </span>
           </h1>
           <p className="text-gray-700 text-lg md:text-xl max-w-2xl mx-auto">
-            Had a great experience with <strong>{siteName}</strong>? Tell us
-            how we did and help others discover us!
+            {subtitle}
           </p>
         </div>
 
@@ -96,7 +106,7 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
         >
           {success && (
             <div className="mb-6 rounded-lg bg-green-100 text-green-800 p-4 text-center">
-              Thanks for your review! We appreciate your feedback and support.
+              Thanks for your submission! We appreciate your feedback and support.
             </div>
           )}
 
@@ -106,7 +116,10 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
               {contactEmail && (
                 <>
                   {" "}or email us at{" "}
-                  <a href={`mailto:${contactEmail}`} className="underline font-medium">
+                  <a
+                    href={`mailto:${contactEmail}`}
+                    className="underline font-medium"
+                  >
                     {contactEmail}
                   </a>
                 </>
@@ -117,7 +130,9 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
 
           <form onSubmit={handleSubmit} noValidate className="space-y-6">
             <div>
-              <label htmlFor="name" className="block mb-2 font-semibold">Name</label>
+              <label htmlFor="name" className="block mb-2 font-semibold">
+                Name
+              </label>
               <input
                 type="text"
                 id="name"
@@ -129,11 +144,15 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
                 }`}
                 placeholder="Your name"
               />
-              {errors.name && <p className="mt-1 text-sm text-red-600">{errors.name}</p>}
+              {errors.name && (
+                <p className="mt-1 text-sm text-red-600">{errors.name}</p>
+              )}
             </div>
 
             <div>
-              <label htmlFor="email" className="block mb-2 font-semibold">Email</label>
+              <label htmlFor="email" className="block mb-2 font-semibold">
+                Email
+              </label>
               <input
                 type="email"
                 id="email"
@@ -145,7 +164,9 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
                 }`}
                 placeholder="your.email@example.com"
               />
-              {errors.email && <p className="mt-1 text-sm text-red-600">{errors.email}</p>}
+              {errors.email && (
+                <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+              )}
             </div>
 
             <div>
@@ -163,11 +184,15 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
                   />
                 ))}
               </div>
-              {errors.rating && <p className="mt-1 text-sm text-red-600">{errors.rating}</p>}
+              {errors.rating && (
+                <p className="mt-1 text-sm text-red-600">{errors.rating}</p>
+              )}
             </div>
 
             <div>
-              <label htmlFor="review" className="block mb-2 font-semibold">Your Review</label>
+              <label htmlFor="review" className="block mb-2 font-semibold">
+                {labels?.reviewLabel || "Your Review"}
+              </label>
               <textarea
                 id="review"
                 name="review"
@@ -177,9 +202,14 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
                 className={`w-full rounded-md border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition resize-none ${
                   errors.review ? "border-red-700" : "border-gray-300"
                 }`}
-                placeholder="Share your thoughts about your experience..."
+                placeholder={
+                  labels?.reviewPlaceholder ||
+                  "Share your thoughts about your experience..."
+                }
               />
-              {errors.review && <p className="mt-1 text-sm text-red-600">{errors.review}</p>}
+              {errors.review && (
+                <p className="mt-1 text-sm text-red-600">{errors.review}</p>
+              )}
             </div>
 
             <div className="text-center">
@@ -193,7 +223,9 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
                 size="lg"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? "Submitting..." : "Submit Review"}
+                {isSubmitting
+                  ? "Submitting..."
+                  : labels?.submitLabel || "Submit Review"}
               </Button>
             </div>
           </form>
@@ -203,4 +235,4 @@ const ReviewClient = ({ collectionId }: { collectionId: string }) => {
   );
 };
 
-export default ReviewClient;
+export default FormClient;
