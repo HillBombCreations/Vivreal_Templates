@@ -1,3 +1,6 @@
+import { JSX } from "react";
+import { Lightbulb, Target, Handshake } from "lucide-react";
+
 export interface LandingSection {
     title?: string;
     subtitle?: string;
@@ -8,6 +11,7 @@ export interface LandingSection {
 }
 
 export interface ProductShowcaseItem {
+    _id?: string;
     title: string;
     description: string;
     imageUrl: string;
@@ -16,6 +20,7 @@ export interface ProductShowcaseItem {
 }
 
 export interface OfferingItem {
+    _id?: string;
     title: string;
     description: string;
     icon?: string;
@@ -27,3 +32,11 @@ export type LandingSections = Record<string, LandingSection>;
 export type ToastState =
     | { open: false }
     | { open: true; type: "success" | "error"; message: string };
+
+export type FeatureIcon = "lightBulb" | "target" | "heart";
+
+export const IconMap: Record<FeatureIcon, JSX.Element> = {
+    lightBulb: <Lightbulb className="h-4 w-4" />,
+    target: <Target className="h-4 w-4" />,
+    heart: <Handshake className="h-4 w-4" />,
+};

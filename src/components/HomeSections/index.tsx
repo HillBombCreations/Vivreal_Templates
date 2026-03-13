@@ -1,11 +1,17 @@
 import type { HomeSection, HomeSectionConfig, SiteData } from "@/types/SiteData";
 
-// Section components
+// Showcase sections
 import HeroSection from "./HeroSection";
 import HighlightsSection from "./HighlightsSection";
 import Testimonials from "./Testimonials";
 import CTASection from "./CTASection";
 import EmailPopup from "./EmailPopup";
+
+// Ecommerce sections
+import HeroSectionEcommerce from "./HeroSectionEcommerce";
+import ProductShowcase from "./ProductShowcase";
+import Offerings from "./Offerings";
+import ContactSection from "./ContactSection";
 
 export interface HomeSectionProps {
   config: HomeSectionConfig;
@@ -33,16 +39,14 @@ export function HomeSectionRenderer({ section, siteData, prefetchedData }: HomeS
       return <CTASection {...props} />;
     case "email-popup":
       return <EmailPopup {...props} />;
-
-    // Ecommerce sections (Task 9)
-    // case "hero-ecommerce":
-    //   return <HeroEcommerce {...props} />;
-    // case "product-showcase":
-    //   return <ProductShowcase {...props} />;
-    // case "offerings":
-    //   return <Offerings {...props} />;
-    // case "contact":
-    //   return <Contact {...props} />;
+    case "hero-ecommerce":
+      return <HeroSectionEcommerce {...props} />;
+    case "product-showcase":
+      return <ProductShowcase {...props} />;
+    case "offerings":
+      return <Offerings {...props} />;
+    case "contact":
+      return <ContactSection {...props} />;
 
     default:
       return null;
