@@ -7,6 +7,7 @@ import { Menu } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { NavigationData } from "@/types/Navigation";
 import MobileNavigationMenu from "./MobileNavigationMenu";
+import CartBadge from "./CartBadge";
 
 interface Props {
   navItems: NavigationData[];
@@ -29,13 +30,16 @@ const MobileNavigationMenuClient = ({ navItems, logoUrl, siteName }: Props) => {
             </span>
           )}
         </Link>
-        <button
-          className="p-2"
-          onClick={() => setMobileMenuOpen(true)}
-          aria-label="Open menu"
-        >
-          <Menu size={24} />
-        </button>
+        <div className="flex items-center">
+          <CartBadge />
+          <button
+            className="p-2"
+            onClick={() => setMobileMenuOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu size={24} />
+          </button>
+        </div>
       </div>
       <hr className="md:hidden mt-1" />
 

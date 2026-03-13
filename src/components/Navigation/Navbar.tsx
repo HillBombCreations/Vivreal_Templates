@@ -7,6 +7,7 @@ import { NavigationData } from '@/types/Navigation';
 import { getNavigationData } from '@/lib/api/navigation';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import CartBadge from './CartBadge';
 
 async function fetchNavItems(): Promise<NavigationData[]> {
   try {
@@ -53,6 +54,7 @@ const Navbar = async () => {
           </nav>
 
           <div className="flex items-center space-x-3">
+            <CartBadge />
             {(() => {
               const reviewPage = siteData?.pageConfigs?.find((p) => p.format === "form");
               if (!reviewPage) return null;

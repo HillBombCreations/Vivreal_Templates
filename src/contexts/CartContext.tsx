@@ -109,3 +109,11 @@ export function useCartContext(): CartContextValue {
   }
   return ctx;
 }
+
+/**
+ * Optional cart hook — returns null if CartProvider isn't mounted.
+ * Safe to use in components that render on both ecommerce and non-ecommerce sites.
+ */
+export function useOptionalCart(): CartContextValue | null {
+  return useContext(CartContext);
+}
