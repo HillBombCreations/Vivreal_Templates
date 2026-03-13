@@ -1,10 +1,28 @@
 import { Suspense } from "react";
 import HeroSection from "@/components/HeroSection";
 import { getShows } from "@/lib/api/shows";
+import { getPartners } from "@/lib/api/partners";
+import { getSiteData, getPageCollectionId, getPageLabel } from "@/lib/api/siteData";
 
 async function HeroSectionContent() {
-  const shows = await getShows();
-  return <HeroSection shows={shows} />;
+  const siteData = await getSiteData();
+  const showsCollectionId = getPageCollectionId(siteData, "shows", process.env.SHOWS_ID || "");
+  const partnersCollectionId = getPageCollectionId(siteData, "partners", process.env.PARTNERS_ID || "");
+  const [shows, partners] = await Promise.all([
+    getShows(showsCollectionId),
+    getPartners(partnersCollectionId),
+  ]);
+
+  const labels = {
+    upcoming: getPageLabel(siteData, "shows", "upcoming", "Upcoming"),
+    past: getPageLabel(siteData, "shows", "past", "Past"),
+  };
+
+  // Find the shows page slug dynamically
+  const showsPage = siteData.pageConfigs?.find((p) => p.format === "shows");
+  const showsSlug = showsPage?.slug || "shows";
+
+  return <HeroSection shows={shows} siteData={siteData} labels={labels} partners={partners} showsSlug={showsSlug} />;
 }
 
 function HeroSkeleton() {
@@ -13,10 +31,7 @@ function HeroSkeleton() {
       <div className="mx-5 md:mx-20 lg:mx-40 animate-pulse">
         {/* Hero Grid */}
         <div className="grid items-center gap-12 sm:grid-cols-2">
-          {/* Hero Image Placeholder */}
           <div className="h-80 bg-gray-200 rounded-lg" />
-
-          {/* Text Content Placeholder */}
           <div className="space-y-5">
             <div className="h-10 w-1/3 bg-gray-200 rounded" />
             <div className="h-8 w-2/3 bg-gray-200 rounded" />
@@ -27,14 +42,7 @@ function HeroSkeleton() {
           </div>
         </div>
 
-        {/* Venue Logos */}
-        <div className="flex flex-wrap justify-center gap-6 mt-14">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="w-32 h-16 bg-gray-200 rounded-lg" />
-          ))}
-        </div>
-
-        {/* Upcoming Shows */}
+        {/* Upcoming */}
         <div className="mt-20">
           <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
           <div className="flex flex-col gap-4">
@@ -55,12 +63,12 @@ function HeroSkeleton() {
           </div>
         </div>
 
-        {/* Past Shows */}
+        {/* Past */}
         <div className="mt-20">
           <div className="h-8 w-1/4 bg-gray-200 rounded mb-8" />
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
-            {[...Array(10)].map((_, i) => (
-              <div key={i} className="h-64 bg-gray-200 rounded-lg" />
+          <div className="flex gap-4 overflow-hidden">
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="flex-shrink-0 w-48 h-64 bg-gray-200 rounded-lg" />
             ))}
           </div>
         </div>

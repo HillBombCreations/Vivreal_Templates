@@ -1,6 +1,6 @@
 import 'server-only';
 import type { MetadataRoute } from 'next';
-import type { SiteData } from '@/types/SiteData';
+import type { PageConfig, SiteData } from '@/types/SiteData';
 import { clientFetchSafe } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -16,6 +16,7 @@ const FALLBACK_SITE_DATA: SiteData = {
   'text-inverse': '#ffffff',
   border: '#e0e0e0',
   pages: {},
+  pageConfigs: [],
   siteMap: [],
   logo: {
     name: '',
@@ -34,7 +35,9 @@ interface SiteDetailsResponse {
   domainName: string;
   domainInformation?: object;
   businessInfo?: SiteData['businessInfo'];
+  aboutSection?: SiteData['aboutSection'];
   socialLinks?: SiteData['socialLinks'];
+  pages?: PageConfig[];
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -50,8 +53,35 @@ export const getSiteData = async (): Promise<SiteData> => {
     domainName: raw.domainName,
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
+    aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
+    pageConfigs: raw.pages ?? [],
   };
+};
+
+/**
+ * Helper to find a page config by name and read a label with a fallback.
+ */
+export const getPageLabel = (
+  siteData: SiteData,
+  pageName: string,
+  labelKey: string,
+  fallback: string
+): string => {
+  const page = siteData.pageConfigs?.find((p) => p.name === pageName);
+  return page?.labels?.[labelKey] || fallback;
+};
+
+/**
+ * Helper to get a collection ID from page config, falling back to env var.
+ */
+export const getPageCollectionId = (
+  siteData: SiteData,
+  pageName: string,
+  envFallback: string
+): string => {
+  const page = siteData.pageConfigs?.find((p) => p.name === pageName);
+  return page?.collectionId || envFallback;
 };
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {

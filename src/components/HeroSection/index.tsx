@@ -1,18 +1,28 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { ShowData } from "@/types/Shows";
-import { useSiteData } from "@/contexts/SiteDataContext";
+import { SiteData } from "@/types/SiteData";
 import { ShowSkeletonCard, PastShowSkeleton } from "./skeletonLoader";
-import { Calendar, MapPin, ArrowRight } from "lucide-react";
+import { Calendar, MapPin, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import type { PartnerData } from "@/lib/api/partners";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const HeroSection = ({ shows }: { shows: ShowData[] }) => {
-  const siteData = useSiteData();
+const SCROLL_SPEED = 0.3; // pixels per frame
+
+interface HeroSectionProps {
+  shows: ShowData[];
+  siteData: SiteData;
+  labels: { upcoming: string; past: string };
+  partners?: PartnerData[];
+  showsSlug?: string;
+}
+
+const HeroSection = ({ shows, siteData, labels, partners = [], showsSlug = "shows" }: HeroSectionProps) => {
   const [isMobile, setIsMobile] = useState(false);
   const [upcomingShows, setUpcomingShows] = useState<ShowData[]>([]);
   const [pastShows, setPastShows] = useState<ShowData[]>([]);
@@ -20,6 +30,9 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
 
   const primary = siteData?.primary || '#000000';
   const siteName = siteData?.businessInfo?.name || siteData?.name || '';
+
+  const upcomingLabel = labels.upcoming;
+  const pastLabel = labels.past;
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -60,17 +73,7 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
       {/* Hero banner */}
       <div className="mx-5 md:mx-20 lg:mx-40">
         <div className="grid items-center gap-12 sm:grid-cols-2">
-          <div className="relative">
-            <Image
-              src="/heroImage.png"
-              alt="Hero illustration"
-              width={600}
-              height={400}
-              className="w-full h-auto object-contain rounded-2xl"
-              priority
-            />
-          </div>
-          <div className="space-y-6 text-center sm:text-left">
+          <div>
             <h1
               id="hero-heading"
               className="text-4xl lg:text-5xl font-display font-bold tracking-tight"
@@ -79,15 +82,47 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
               <br />
               <span style={{ color: primary }}>{siteName}</span>
             </h1>
-            <p className="text-gray-700 text-lg md:text-xl max-w-xl mx-auto sm:mx-0">
-              Discover our latest content, upcoming events, and more.
+            <hr className="my-6 border-gray-300" />
+            <p className="text-gray-700 text-lg md:text-xl">
+              {siteData?.businessInfo?.description || "Discover our latest content, upcoming events, and more."}
             </p>
+
+            {/* Featured venues / partners */}
+            {partners.length > 0 && (
+              <div className="mt-8">
+                <p className="text-sm font-medium text-gray-900 mb-4">
+                  {siteData?.partnerTagline || "Featuring top talent from these iconic stages and more!"}
+                </p>
+                <div className="flex flex-wrap items-center gap-6 md:gap-8">
+                  {partners.map((partner, idx) => (
+                    <Image
+                      key={idx}
+                      src={partner.logoUrl || "/logo.png"}
+                      alt={partner.name}
+                      width={120}
+                      height={60}
+                      className="max-h-16 md:max-h-20 max-w-[140px] md:max-w-[160px] w-auto h-auto object-contain grayscale opacity-80 hover:grayscale-0 hover:opacity-100 transition-all"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex justify-center">
+            <Image
+              src={siteData?.heroImage?.currentFile?.source || "/heroImage.png"}
+              alt={siteName}
+              width={600}
+              height={400}
+              className="w-full h-auto object-contain"
+              priority
+            />
           </div>
         </div>
 
         {/* Upcoming content */}
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">
-          Upcoming
+          {upcomingLabel}
         </h2>
 
         {loading ? (
@@ -102,7 +137,7 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
           <div className="flex flex-col gap-4 mt-6">
             {upcomingShows.map((show, idx) => (
               <Link
-                href={`/shows/${show.id}`}
+                href={`/${showsSlug}/${show.id}`}
                 key={idx}
                 className={`
                   flex ${isMobile ? 'flex-col' : 'flex-row'}
@@ -179,43 +214,158 @@ const HeroSection = ({ shows }: { shows: ShowData[] }) => {
           </div>
         )}
 
-        {/* Past content */}
+        {/* Past content — auto-scrolling carousel */}
         <h2 className="text-2xl lg:text-3xl font-display font-bold mt-16 tracking-tight">
-          Past
+          {pastLabel}
         </h2>
 
         {loading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-6" aria-busy="true">
-            {[...Array(10)].map((_, i) => (
+          <div className="flex gap-4 mt-6 overflow-hidden" aria-busy="true">
+            {[...Array(5)].map((_, i) => (
               <PastShowSkeleton key={i} />
             ))}
           </div>
         ) : pastShows.length === 0 ? (
           <p className="mt-6 text-gray-500">No past content yet.</p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 mt-6">
-            {pastShows.filter(show => show.imageUrl || show.image).map((show, idx) => (
-              <Link
-                key={idx}
-                href={`/shows/${show.id}`}
-                className="relative overflow-hidden rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 bg-gray-100"
-              >
-                <Image
-                  src={show.imageUrl || show.image || '/logo.png'}
-                  alt={show.title || `Past content ${idx + 1}`}
-                  width={0}
-                  height={0}
-                  sizes="(max-width: 768px) 50vw, (max-width: 1200px) 25vw, 20vw"
-                  className="w-full h-64 object-contain"
-                  loading="lazy"
-                />
-              </Link>
-            ))}
-          </div>
+          <PastShowsCarousel
+            shows={pastShows.filter(show => show.imageUrl || show.image)}
+            primary={primary}
+            surface={siteData?.surface || '#ffffff'}
+            showsSlug={showsSlug}
+          />
         )}
       </div>
     </section>
   );
 };
+
+/**
+ * Horizontally auto-scrolling carousel for past shows.
+ * Pauses on hover, supports manual prev/next navigation.
+ */
+function PastShowsCarousel({ shows, primary, surface, showsSlug = "shows" }: { shows: ShowData[]; primary: string; surface: string; showsSlug?: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const animFrameRef = useRef<number>(0);
+  const pausedRef = useRef(false);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollButtons = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 1);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1);
+  }, []);
+
+  // Auto-scroll animation loop
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    let cancelled = false;
+    let accum = 0; // accumulate sub-pixel increments
+
+    const tick = () => {
+      if (cancelled) return;
+      if (!pausedRef.current && el.scrollWidth > el.clientWidth) {
+        accum += SCROLL_SPEED;
+        if (accum >= 1) {
+          const px = Math.floor(accum);
+          accum -= px;
+          el.scrollLeft += px;
+          if (el.scrollLeft >= el.scrollWidth - el.clientWidth) {
+            el.scrollLeft = 0;
+          }
+          updateScrollButtons();
+        }
+      }
+      requestAnimationFrame(tick);
+    };
+
+    requestAnimationFrame(tick);
+    updateScrollButtons();
+
+    return () => { cancelled = true; };
+  }, [shows, updateScrollButtons]);
+
+  const scrollBy = (dir: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = 300; // w-72 = 288px + gap
+    el.scrollBy({ left: dir * cardWidth * 2, behavior: "smooth" });
+    setTimeout(updateScrollButtons, 350);
+  };
+
+  return (
+    <div
+      className="relative group mt-6"
+      onMouseEnter={() => { pausedRef.current = true; }}
+      onMouseLeave={() => { pausedRef.current = false; }}
+    >
+      {/* Left arrow */}
+      {canScrollLeft && (
+        <button
+          type="button"
+          onClick={() => scrollBy(-1)}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/90 shadow-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          aria-label="Scroll left"
+        >
+          <ChevronLeft size={20} style={{ color: primary }} />
+        </button>
+      )}
+
+      {/* Right arrow */}
+      {canScrollRight && (
+        <button
+          type="button"
+          onClick={() => scrollBy(1)}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 rounded-full bg-white/90 shadow-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+          aria-label="Scroll right"
+        >
+          <ChevronRight size={20} style={{ color: primary }} />
+        </button>
+      )}
+
+      {/* Fade edges */}
+      <div className="absolute left-0 top-0 bottom-0 w-16 z-[5] pointer-events-none" style={{ background: `linear-gradient(to right, ${surface}, transparent)` }} />
+      <div className="absolute right-0 top-0 bottom-0 w-16 z-[5] pointer-events-none" style={{ background: `linear-gradient(to left, ${surface}, transparent)` }} />
+
+      {/* Scrollable track */}
+      <div
+        ref={scrollRef}
+        className="flex gap-5 overflow-x-auto scrollbar-hide"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        onScroll={updateScrollButtons}
+      >
+        {shows.map((show, idx) => (
+          <Link
+            key={idx}
+            href={`/${showsSlug}/${show.id}`}
+            className="relative flex-shrink-0 w-72 overflow-hidden rounded-xl shadow-sm hover:shadow-md transition-all duration-300 hover:-translate-y-0.5 bg-gray-100"
+          >
+            <Image
+              src={show.imageUrl || show.image || '/logo.png'}
+              alt={show.title || `Past content ${idx + 1}`}
+              width={0}
+              height={0}
+              sizes="300px"
+              className="w-full h-96 object-contain"
+              loading="lazy"
+            />
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+              <p className="text-white text-sm font-medium truncate">{show.title}</p>
+              {show.date && (
+                <p className="text-white/70 text-xs">
+                  {new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(show.date))}
+                </p>
+              )}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default HeroSection;

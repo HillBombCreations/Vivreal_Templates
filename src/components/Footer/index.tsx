@@ -71,8 +71,15 @@ const Footer = async () => {
         <div className="border-t border-border pt-8 pb-8">
           <p className="text-sm text-gray-800 text-center">
             &copy; {currentYear} {siteName}. All rights reserved.{' '}
-            <a href="/privacy" className="underline hover:text-blue-600">Privacy Policy</a>{' | '}
-            <a href="/terms" className="underline hover:text-blue-600">Terms of Use</a>
+            {(() => {
+              const footerPages = siteData?.pageConfigs?.filter((p) => p.displayOnFooter) ?? [];
+              return footerPages.map((p, idx) => (
+                <span key={p.slug}>
+                  {idx > 0 && ' | '}
+                  <Link href={`/${p.slug}`} className="underline hover:text-blue-600">{p.labels?.title || p.name}</Link>
+                </span>
+              ));
+            })()}
           </p>
         </div>
         <div className="flex items-center justify-center">

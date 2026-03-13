@@ -6,7 +6,7 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 import { Star } from "lucide-react";
 import { createReview } from "@/lib/api/review/client";
 
-const ReviewClient = () => {
+const ReviewClient = ({ collectionId }: { collectionId: string }) => {
   const siteData = useSiteData();
   const [formData, setFormData] = useState({
     name: "",
@@ -60,7 +60,7 @@ const ReviewClient = () => {
     setSuccess(false);
 
     try {
-      const ok = await createReview(formData);
+      const ok = await createReview({ ...formData, collectionId });
       if (ok) {
         setSuccess(true);
         setFormData({ name: "", email: "", rating: 0, review: "" });

@@ -13,12 +13,23 @@ export interface Businessinfo {
         phoneNumber?: string
     },
     name?: string,
+    description?: string,
     shipping?: boolean
 }
 
 export interface SocialLink {
     platform: string;
     url: string;
+}
+
+export interface PageConfig {
+    name: string;
+    slug: string;
+    format: 'collection-list' | 'collection-detail' | 'form' | 'static' | string;
+    collectionId: string | null;
+    labels: Record<string, string>;
+    displayOnHeader?: boolean;
+    displayOnFooter?: boolean;
 }
 
 export interface SiteData {
@@ -31,12 +42,14 @@ export interface SiteData {
     hover?: string;
     surface?: string;
     pages: Record<string, string>;
+    pageConfigs: PageConfig[];
     siteMap: MetadataRoute.Sitemap;
     ["surface-alt"]?: string;
     ["text-primary"]?: string;
     ["text-secondary"]?: string;
     ["text-inverse"]?: string;
     border?: string;
+    partnerTagline?: string;
     logo: {
         name?: string,
         key: string,
@@ -44,6 +57,18 @@ export interface SiteData {
         currentFile: {
             source: string
         }
+    },
+    heroImage?: {
+        name?: string,
+        key: string,
+        type: string,
+        currentFile: {
+            source: string
+        }
+    },
+    aboutSection?: {
+        heading?: string,
+        description?: string,
     },
 }
 

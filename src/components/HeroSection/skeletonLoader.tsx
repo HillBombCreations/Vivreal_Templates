@@ -26,7 +26,7 @@ export const ShowSkeletonCard = ({ isMobile }: { isMobile: boolean }) => (
 );
 
 export const PastShowSkeleton = () => (
-  <div className="relative overflow-hidden rounded-lg shadow-sm">
+  <div className="relative flex-shrink-0 w-48 overflow-hidden rounded-xl shadow-sm">
     <Skeleton className="w-full h-64" />
   </div>
 );

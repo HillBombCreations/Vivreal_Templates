@@ -10,9 +10,11 @@ interface PaginatedResponse<T> {
   totalCount: number;
 }
 
-export async function getTeamMembers(): Promise<TeamData[]> {
+export async function getTeamMembers(collectionId?: string): Promise<TeamData[]> {
+  const id = collectionId || TEAMMEMBERS_ID;
+  if (!id) return [];
   const res = await clientFetchSafe<PaginatedResponse<CMSTeamData>>(
-    `/tenant/collectionObjects?collectionId=${encodeURIComponent(TEAMMEMBERS_ID)}`,
+    `/tenant/collectionObjects?collectionId=${encodeURIComponent(id)}`,
     { items: [], totalCount: 0 }
   );
 
@@ -22,5 +24,6 @@ export async function getTeamMembers(): Promise<TeamData[]> {
     id: item.objectValue._id,
     image: getSignedUrl(item.objectValue.headshot),
     imageUrl: getSignedUrl(item.objectValue.headshot),
+    socialLinks: item.objectValue.socialLinks,
   }));
 }

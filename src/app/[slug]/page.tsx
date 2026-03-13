@@ -1,0 +1,133 @@
+import { notFound } from "next/navigation";
+import Navbar from "@/components/Navigation/Navbar";
+import Footer from "@/components/Footer";
+import CTASection from "@/components/CTASection";
+import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
+import { getPageBySlug } from "@/lib/pages";
+import { getShowsPaginated } from "@/lib/api/shows";
+import { getTeamMembers } from "@/lib/api/team";
+import ShowPageClient from "@/components/PageTemplates/ShowPageClient";
+import AboutClient from "@/components/PageTemplates/AboutClient";
+import ReviewClient from "@/components/PageTemplates/ReviewClient";
+import StaticPage from "@/components/PageTemplates/StaticPage";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function DynamicPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const siteData = await getSiteData();
+  const pageConfig = getPageBySlug(siteData, slug);
+
+  if (!pageConfig) return notFound();
+
+  const { format, name } = pageConfig;
+
+  // Collection list pages — shows/events format
+  if (format === "shows") {
+    const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
+    const { shows, totalCount } = await getShowsPaginated({ collectionId, limit: 100, skip: 0 });
+    const today = new Date();
+
+    const upcomingShows = shows
+      .filter((s) => s.date && new Date(s.date) >= today)
+      .sort((a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime());
+
+    const pastShows = shows
+      .filter((s) => s.date && new Date(s.date) < today)
+      .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
+
+    const labels = {
+      title: getPageLabel(siteData, name, "title", "All Content"),
+      subtitle: getPageLabel(siteData, name, "subtitle", "Browse our upcoming and past content — events, highlights, and more."),
+      upcoming: getPageLabel(siteData, name, "upcoming", "Upcoming"),
+      past: getPageLabel(siteData, name, "past", "Past"),
+    };
+
+    return (
+      <>
+        <Navbar />
+        <ShowPageClient
+          upcomingShows={upcomingShows}
+          pastShows={pastShows}
+          labels={labels}
+          slug={slug}
+          collectionId={collectionId}
+          totalCount={totalCount}
+        />
+        <CTASection />
+        <Footer />
+      </>
+    );
+  }
+
+  // Collection list pages — team/people format
+  if (format === "team") {
+    const collectionId = getPageCollectionId(siteData, name, process.env.TEAMMEMBERS_ID || "");
+    const teamMembers = await getTeamMembers(collectionId);
+
+    const labels = {
+      title: getPageLabel(siteData, name, "title", "Meet the Team"),
+      subtitle: getPageLabel(siteData, name, "subtitle", "Behind every great experience is a passionate team. Here's a glimpse of the people who make it possible."),
+    };
+
+    return (
+      <>
+        <Navbar />
+        <AboutClient teamMembers={teamMembers} labels={labels} slug={slug} />
+        <CTASection />
+        <Footer />
+      </>
+    );
+  }
+
+  // Form pages — review format
+  if (format === "form") {
+    const collectionId = getPageCollectionId(siteData, name, "");
+
+    return (
+      <>
+        <Navbar />
+        <ReviewClient collectionId={collectionId} />
+        <Footer />
+      </>
+    );
+  }
+
+  // Static pages — privacy, terms, etc.
+  if (format === "static") {
+    const labels = {
+      title: getPageLabel(siteData, name, "title", name),
+      content: getPageLabel(siteData, name, "content", ""),
+    };
+
+    return (
+      <>
+        <Navbar />
+        <StaticPage labels={labels} pageName={name} />
+        <CTASection />
+        <Footer />
+      </>
+    );
+  }
+
+  return notFound();
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const siteData = await getSiteData();
+  const pageConfig = getPageBySlug(siteData, slug);
+  const siteName = siteData?.businessInfo?.name || siteData?.name || "";
+
+  if (!pageConfig) {
+    return { title: `Not Found | ${siteName}` };
+  }
+
+  const title = pageConfig.labels?.title || pageConfig.name;
+
+  return {
+    title: `${title} | ${siteName}`,
+    description: pageConfig.labels?.subtitle || `${title} — ${siteName}`,
+  };
+}

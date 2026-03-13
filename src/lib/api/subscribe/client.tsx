@@ -1,9 +1,9 @@
-export async function subscribeUser(email: string): Promise<boolean> {
+export async function subscribeUser(email: string, collectionId: string): Promise<boolean> {
   try {
     const res = await fetch("/api/subscribe", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, collectionId }),
     });
     if (!res.ok) return false;
     const json = await res.json();

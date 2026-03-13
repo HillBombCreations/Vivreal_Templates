@@ -7,7 +7,7 @@ function isValidEmail(email: unknown): email is string {
 
 export async function POST(req: Request) {
   try {
-    const { email } = await req.json();
+    const { email, collectionId } = await req.json();
 
     if (!isValidEmail(email)) {
       return NextResponse.json(
@@ -16,7 +16,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const ok = await subscribeUser(email);
+    if (!collectionId) {
+      return NextResponse.json(
+        { success: false, message: "Missing collectionId." },
+        { status: 400 }
+      );
+    }
+
+    const ok = await subscribeUser(email, collectionId);
     if (!ok) {
       return NextResponse.json(
         { success: false, message: "Subscribe failed." },

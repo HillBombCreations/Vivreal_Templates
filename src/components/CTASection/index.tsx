@@ -1,5 +1,6 @@
 "use client";
 
+import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ArrowRight } from 'lucide-react';
 import { useSiteData } from '@/contexts/SiteDataContext';
@@ -7,6 +8,7 @@ import { useSiteData } from '@/contexts/SiteDataContext';
 const CTASection = () => {
   const siteData = useSiteData();
   const primary = siteData?.primary || '#000000';
+  const reviewPage = siteData?.pageConfigs?.find((p) => p.format === "form");
 
   return (
     <section className="py-10 md:py-16 relative overflow-hidden">
@@ -34,16 +36,18 @@ const CTASection = () => {
                 className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in"
                 style={{ animationDelay: '200ms' }}
               >
-                <a href="/review">
-                  <Button
-                    size="lg"
-                    variant="secondary"
-                    className="font-medium cursor-pointer bg-white text-gray-900 hover:bg-white/90"
-                  >
-                    Leave a Review
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </a>
+                {reviewPage && (
+                  <Link href={`/${reviewPage.slug}`}>
+                    <Button
+                      size="lg"
+                      variant="secondary"
+                      className="font-medium cursor-pointer bg-white text-gray-900 hover:bg-white/90"
+                    >
+                      {reviewPage.labels?.navLabel || "Leave a Review"}
+                      <ArrowRight className="ml-2 h-4 w-4" />
+                    </Button>
+                  </Link>
+                )}
               </div>
             </div>
           </div>

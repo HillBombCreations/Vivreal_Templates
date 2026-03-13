@@ -1,30 +1,34 @@
 import { NavigationData } from '@/types/Navigation';
 import { getSiteData } from '@/lib/api/siteData';
 
-/**
- * Default pages every showcase template includes.
- * The label can be overridden by siteData.pages config.
- */
-const DEFAULT_NAV: NavigationData[] = [
-  { path: '/', label: 'Home', displayOnHeader: true },
-  { path: '/shows', label: 'Content', displayOnHeader: true },
-  { path: '/team', label: 'Our Team', displayOnHeader: true },
-];
-
 export const getNavigationData = async (): Promise<NavigationData[]> => {
   try {
     const siteData = await getSiteData();
-    const pages = siteData?.pages;
+    const pageConfigs = siteData?.pageConfigs;
 
-    if (!pages || Object.keys(pages).length === 0) {
-      return DEFAULT_NAV;
+    // Always start with Home
+    const nav: NavigationData[] = [
+      { path: '/', label: 'Home', displayOnHeader: true },
+    ];
+
+    if (pageConfigs && pageConfigs.length > 0) {
+      for (const page of pageConfigs) {
+        if (page.displayOnHeader === false) continue;
+        // Skip static pages (privacy/terms) from main nav — they go in footer
+        if (page.format === 'static') continue;
+        nav.push({
+          path: `/${page.slug}`,
+          label: page.labels?.navLabel || page.labels?.title || page.name,
+          displayOnHeader: true,
+        });
+      }
     }
 
-    // Build nav from siteData.pages — each key is a page identifier
-    // For now, merge with defaults so routes always resolve
-    return DEFAULT_NAV;
+    return nav;
   } catch {
-    return DEFAULT_NAV;
+    return [
+      { path: '/', label: 'Home', displayOnHeader: true },
+    ];
   }
 };
 

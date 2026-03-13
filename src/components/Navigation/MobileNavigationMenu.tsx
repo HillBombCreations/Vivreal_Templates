@@ -82,15 +82,19 @@ export default function MobileNavigationMenu({
             </div>
           )
         })}
-        <div className="w-full space-y-3">
-          <a
-            href="/review"
-          >
-            <Button style={{ color: siteData?.primary }} variant="outline" size="sm" className="w-full font-medium">
-              Leave A Review
-            </Button>
-          </a>
-        </div>
+        {(() => {
+          const reviewPage = siteData?.pageConfigs?.find((p) => p.format === "form");
+          if (!reviewPage) return null;
+          return (
+            <div className="w-full space-y-3">
+              <a href={`/${reviewPage.slug}`}>
+                <Button style={{ color: siteData?.primary }} variant="outline" size="sm" className="w-full font-medium">
+                  {reviewPage.labels?.navLabel || "Leave A Review"}
+                </Button>
+              </a>
+            </div>
+          );
+        })()}
       </SheetContent>
     </Sheet>
   )

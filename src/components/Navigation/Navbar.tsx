@@ -53,16 +53,22 @@ const Navbar = async () => {
           </nav>
 
           <div className="flex items-center space-x-3">
-            <Link href="/review">
-              <Button
-                variant="outline"
-                size="sm"
-                className="font-medium cursor-pointer border-current"
-                style={{ color: siteData?.primary }}
-              >
-                Leave A Review
-              </Button>
-            </Link>
+            {(() => {
+              const reviewPage = siteData?.pageConfigs?.find((p) => p.format === "form");
+              if (!reviewPage) return null;
+              return (
+                <Link href={`/${reviewPage.slug}`}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="font-medium cursor-pointer border-current"
+                    style={{ color: siteData?.primary }}
+                  >
+                    {reviewPage.labels?.navLabel || "Leave A Review"}
+                  </Button>
+                </Link>
+              );
+            })()}
           </div>
         </div>
       </div>

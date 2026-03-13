@@ -1,4 +1,3 @@
-// app/api/reviews/route.ts
 import { NextResponse } from "next/server";
 import { createReview } from "@/lib/api/review";
 
@@ -11,6 +10,7 @@ export async function POST(req: Request) {
       name: body.name,
       review: body.review,
       rating: body.rating,
+      collectionId: body.collectionId,
     });
 
     if (!success) {
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {
-    console.error("[POST /api/reviews] Error:", err);
+    console.error("[POST /api/review] Error:", err);
     return NextResponse.json({ success: false, message: "Server error" }, { status: 500 });
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
@@ -11,7 +12,7 @@ const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const EmailListComponent = () => {
+const EmailListComponent = ({ collectionId }: { collectionId: string }) => {
   const siteData = useSiteData();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -45,7 +46,7 @@ const EmailListComponent = () => {
     setSuccess(false);
 
     try {
-      const ok = await subscribeUser(email);
+      const ok = await subscribeUser(email, collectionId);
       if (ok) {
         localStorage.setItem(SUBSCRIBE_KEY, "true");
         setSuccess(true);
@@ -154,9 +155,9 @@ const EmailListComponent = () => {
                 <p className="text-center text-xs text-gray-500">
                   By subscribing, you agree to receive updates from {siteName}.
                   You can unsubscribe anytime. See our{" "}
-                  <a href="/privacy" className="underline">
+                  <Link href="/privacy" className="underline">
                     Privacy Policy
-                  </a>.
+                  </Link>.
                 </p>
               </form>
             )}

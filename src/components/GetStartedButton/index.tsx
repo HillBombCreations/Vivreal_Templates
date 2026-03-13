@@ -1,6 +1,7 @@
 "use client";
 
 import { CSSProperties } from 'react';
+import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 
 interface GetStartedButtonProps {
@@ -34,8 +35,8 @@ const GetStartedButton = ({ color }: GetStartedButtonProps) => {
     }
 
   return (
-        <a
-            href="/contact"
+        <Link
+            href="/"
             className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-3xl text-white font-medium transition "
             style={style}
             onMouseEnter={e => {
@@ -47,7 +48,7 @@ const GetStartedButton = ({ color }: GetStartedButtonProps) => {
         >
         {'Learn More'}
         <ArrowRight className="w-4 h-4" />
-        </a>
+        </Link>
   );
 };
 
