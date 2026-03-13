@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { SiteData } from '@/types/SiteData';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
+import { CartProvider } from '@/contexts/CartContext';
 
 const queryClient = new QueryClient();
 
@@ -30,8 +31,10 @@ const Providers = ({
         }
     }, [siteData]);
 
-    return (
-    <SiteDataProvider siteData={siteData}>
+    const pageList = (siteData.pageConfigs ?? []) as Array<{ format?: string }>;
+    const hasProducts = pageList.some((p) => p.format === 'products');
+
+    const content = (
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
             <AppToaster />
@@ -39,6 +42,11 @@ const Providers = ({
             {children}
         </TooltipProvider>
         </QueryClientProvider>
+    );
+
+    return (
+    <SiteDataProvider siteData={siteData}>
+        {hasProducts ? <CartProvider>{content}</CartProvider> : content}
     </SiteDataProvider>
     );
 };
