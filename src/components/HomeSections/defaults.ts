@@ -13,7 +13,7 @@ export function getDefaultHomeSections(pages: PageLike[]): HomeSection[] {
       { type: "product-showcase", order: 2, enabled: true, config: {} },
       { type: "offerings", order: 3, enabled: true, config: {} },
       { type: "contact", order: 4, enabled: true, config: {} },
-      { type: "cta", order: 5, enabled: true, config: { linkTo: "/products" } },
+      { type: "cta", order: 5, enabled: true, config: { linkTo: "/products", label: "Browse products", heading: "Find something you love", subheading: "Explore our full collection of products — new arrivals, best-sellers, and more." } },
     ];
   }
 

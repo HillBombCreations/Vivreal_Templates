@@ -18,9 +18,37 @@ const CTASection = ({ config = {}, siteData }: Partial<HomeSectionProps>) => {
     : undefined;
 
   const href = linkTo || (targetPage ? `/${targetPage.slug}` : undefined);
-  const label = (config.label as string)
-    || targetPage?.labels?.navLabel
-    || "Leave a Review";
+
+  // Derive the effective format: explicit targetFormat, or infer from linkTo path
+  const effectiveFormat = targetFormat
+    || siteData?.pageConfigs?.find((p) => linkTo === `/${p.slug}`)?.format;
+
+  // Context-aware defaults based on what the CTA links to
+  const formatDefaults: Record<string, { label: string; heading: string; subheading: string }> = {
+    products: {
+      label: "Browse products",
+      heading: "Find something you love",
+      subheading: "Explore our full collection — new arrivals, best-sellers, and more.",
+    },
+    form: {
+      label: "Leave a review",
+      heading: "Enjoyed your visit?",
+      subheading: "We'd love to hear what you think! Take a moment to share your experience.",
+    },
+    shows: {
+      label: "View events",
+      heading: "Don't miss out",
+      subheading: "Check out our upcoming events and secure your spot.",
+    },
+  };
+
+  const defaults = (effectiveFormat && formatDefaults[effectiveFormat]) || {
+    label: "Learn more",
+    heading: "Ready to get started?",
+    subheading: "We'd love to help you find what you're looking for.",
+  };
+
+  const label = (config.label as string) || targetPage?.labels?.navLabel || defaults.label;
 
   return (
     <section className="py-10 md:py-16 relative overflow-hidden">
@@ -36,13 +64,13 @@ const CTASection = ({ config = {}, siteData }: Partial<HomeSectionProps>) => {
               <h2
                 className="text-2xl md:text-4xl font-display font-bold tracking-tight mb-4 animate-fade-in text-white"
               >
-                {(config.heading as string) || "Enjoyed your visit?"}
+                {(config.heading as string) || defaults.heading}
               </h2>
               <p
                 className="text-md md:text-lg mb-8 max-w-2xl mx-auto animate-fade-in text-white/90"
                 style={{ animationDelay: '100ms' }}
               >
-                {(config.subheading as string) || "We'd love to hear what you think! Take a moment to share your experience by leaving us a review."}
+                {(config.subheading as string) || defaults.subheading}
               </p>
               <div
                 className="flex flex-col sm:flex-row gap-4 justify-center animate-fade-in"
