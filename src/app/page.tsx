@@ -5,6 +5,7 @@ import { getDefaultHomeSections } from "@/components/HomeSections/defaults";
 import { prefetchHomeSectionData } from "@/lib/api/homeSectionData";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
+import HomeLoading from "./loading";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ async function Resolved() {
 
 export default function HomePage() {
   return (
-    <Suspense>
+    <Suspense fallback={<HomeLoading />}>
       <Resolved />
     </Suspense>
   );
