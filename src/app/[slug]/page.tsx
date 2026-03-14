@@ -106,13 +106,19 @@ export default async function DynamicPage({
   // Product listing pages — products format
   if (format === "products") {
     const resolvedSearchParams = await searchParams;
-    const filterKey = resolvedSearchParams?.filterType as string | undefined;
-    const filterVal = resolvedSearchParams?.filter as string | undefined;
     const searchVal = resolvedSearchParams?.search as string | undefined;
     const sortVal = resolvedSearchParams?.sort as string | undefined;
 
+    // Parse multi-filter params: f_productType=Bagels&f_priceRange=$10-$20
+    const activeFilters: Record<string, string> = {};
+    for (const [key, val] of Object.entries(resolvedSearchParams ?? {})) {
+      if (key.startsWith("f_") && typeof val === "string" && val) {
+        activeFilters[key.slice(2)] = val;
+      }
+    }
+
     const [products, filters] = await Promise.all([
-      getProducts({ filterKey, filterVal, searchVal, sortVal }),
+      getProducts({ filters: activeFilters, searchVal, sortVal }),
       pageConfig.collectionId ? getFilters(pageConfig.collectionId) : Promise.resolve([]),
     ]);
 
@@ -124,6 +130,9 @@ export default async function DynamicPage({
           filters={filters}
           labels={pageConfig.labels ?? {}}
           slug={slug}
+          initialFilters={activeFilters}
+          initialSort={sortVal}
+          initialSearch={searchVal}
         />
         <CTASection />
         <Footer />

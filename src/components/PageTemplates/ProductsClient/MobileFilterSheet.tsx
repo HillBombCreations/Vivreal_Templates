@@ -8,14 +8,12 @@ interface MobileFilterSheetProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   sortKey: string;
-  filterType: string;
-  filterGroupType: string;
+  activeFilters: Record<string, string>;
   groups: Filter[];
   sortOptions: SortOption[];
   loading?: boolean;
   onApply: (next: {
-    filterValue: string;
-    filterGroupType: string;
+    filters: Record<string, string>;
     sortKey: string;
   }) => void;
   onClear: () => void;
@@ -30,8 +28,7 @@ export default function MobileFilterSheet({
   open,
   onOpenChange,
   sortKey,
-  filterType,
-  filterGroupType,
+  activeFilters,
   groups,
   sortOptions,
   loading,
@@ -40,9 +37,7 @@ export default function MobileFilterSheet({
 }: MobileFilterSheetProps) {
   const [mounted, setMounted] = useState(false);
   const [draftSort, setDraftSort] = useState(sortKey);
-  const [draftFilterValue, setDraftFilterValue] = useState(filterType);
-  const [draftFilterGroupType, setDraftFilterGroupType] =
-    useState(filterGroupType);
+  const [draftFilters, setDraftFilters] = useState<Record<string, string>>({});
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [sortOpen, setSortOpen] = useState(false);
 
@@ -50,9 +45,8 @@ export default function MobileFilterSheet({
     if (!open) return;
     setMounted(true);
     setDraftSort(sortKey);
-    setDraftFilterValue(filterType);
+    setDraftFilters({ ...activeFilters });
     setSortOpen(false);
-    setDraftFilterGroupType(filterGroupType || groups?.[0]?.key || "");
 
     setOpenGroups(() =>
       (groups || []).reduce(
@@ -63,7 +57,7 @@ export default function MobileFilterSheet({
         {} as Record<string, boolean>
       )
     );
-  }, [open, sortKey, filterType, filterGroupType, groups]);
+  }, [open, sortKey, activeFilters, groups]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,10 +77,21 @@ export default function MobileFilterSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onOpenChange]);
 
+  const toggleDraftFilter = (value: string, groupKey: string) => {
+    setDraftFilters((prev) => {
+      const next = { ...prev };
+      if (value) {
+        next[groupKey] = value;
+      } else {
+        delete next[groupKey];
+      }
+      return next;
+    });
+  };
+
   const apply = () => {
     onApply({
-      filterValue: draftFilterValue,
-      filterGroupType: draftFilterGroupType,
+      filters: draftFilters,
       sortKey: draftSort,
     });
     onOpenChange(false);
@@ -94,9 +99,8 @@ export default function MobileFilterSheet({
 
   const clear = () => {
     setDraftSort("featured");
-    setDraftFilterValue("");
+    setDraftFilters({});
     setSortOpen(false);
-    setDraftFilterGroupType(groups?.[0]?.key || "");
     onClear();
     onOpenChange(false);
   };
@@ -156,6 +160,7 @@ export default function MobileFilterSheet({
                 {groups.map((g) => {
                   const isOpen = !!openGroups[g.key];
                   const hasOptions = !!g.filters?.length;
+                  const activeValue = draftFilters[g.key] || "";
 
                   return (
                     <div
@@ -174,7 +179,14 @@ export default function MobileFilterSheet({
                         }
                         className="w-full flex items-center justify-between px-4 py-3 text-left text-sm font-semibold disabled:opacity-60 disabled:pointer-events-none"
                       >
-                        <span>{g.title}</span>
+                        <span>
+                          {g.title}
+                          {activeValue && (
+                            <span className="ml-2 text-[11px] font-medium text-black/50">
+                              ({capitalize(activeValue)})
+                            </span>
+                          )}
+                        </span>
                         <ChevronDown
                           className={`h-4 w-4 text-black/50 transition-transform ${
                             isOpen ? "rotate-180" : "rotate-0"
@@ -189,41 +201,31 @@ export default function MobileFilterSheet({
                               <button
                                 type="button"
                                 disabled={loading}
-                                onClick={() => {
-                                  setDraftFilterGroupType(g.key);
-                                  setDraftFilterValue("");
-                                }}
+                                onClick={() => toggleDraftFilter("", g.key)}
                                 className="rounded-full border px-3 py-1.5 text-[12px] font-semibold"
                                 style={{
-                                  borderColor:
-                                    draftFilterGroupType === g.key &&
-                                    draftFilterValue === ""
-                                      ? "var(--primary)"
-                                      : "rgba(0,0,0,0.10)",
+                                  borderColor: !activeValue
+                                    ? "var(--primary)"
+                                    : "rgba(0,0,0,0.10)",
                                   color: "rgba(0,0,0,0.75)",
-                                  background:
-                                    draftFilterGroupType === g.key &&
-                                    draftFilterValue === ""
-                                      ? "rgba(0,0,0,0.03)"
-                                      : "transparent",
+                                  background: !activeValue
+                                    ? "rgba(0,0,0,0.03)"
+                                    : "transparent",
                                 }}
                               >
                                 All
                               </button>
 
                               {g.filters!.map((filter) => {
-                                const active =
-                                  draftFilterGroupType === g.key &&
-                                  draftFilterValue === filter;
+                                const active = activeValue === filter;
                                 return (
                                   <button
                                     key={`${g.key}-${filter}`}
                                     type="button"
                                     disabled={loading}
-                                    onClick={() => {
-                                      setDraftFilterGroupType(g.key);
-                                      setDraftFilterValue(filter);
-                                    }}
+                                    onClick={() =>
+                                      toggleDraftFilter(filter, g.key)
+                                    }
                                     className="rounded-full border px-3 py-1.5 text-[12px] font-semibold transition active:scale-[0.99] disabled:opacity-60 disabled:pointer-events-none"
                                     style={{
                                       borderColor: active

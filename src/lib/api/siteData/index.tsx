@@ -1,6 +1,6 @@
 import 'server-only';
 import type { MetadataRoute } from 'next';
-import type { PageConfig, SiteData } from '@/types/SiteData';
+import type { HomeSection, PageConfig, SiteData } from '@/types/SiteData';
 import { clientFetchSafe } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -38,6 +38,7 @@ interface SiteDetailsResponse {
   aboutSection?: SiteData['aboutSection'];
   socialLinks?: SiteData['socialLinks'];
   pages?: PageConfig[];
+  homeSections?: HomeSection[];
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -56,6 +57,7 @@ export const getSiteData = async (): Promise<SiteData> => {
     aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
     pageConfigs: raw.pages ?? [],
+    homeSections: raw.homeSections,
   };
 };
 

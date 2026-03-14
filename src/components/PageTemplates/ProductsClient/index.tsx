@@ -2,25 +2,204 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { SlidersHorizontal } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import type { Product, Filter, SortOption } from "@/types/Products";
 import ProductGrid from "./ProductGrid";
 import MobileFilterSheet from "./MobileFilterSheet";
-
-const DEBOUNCE_MS = 500;
+import AddedToCartToast from "./AddedToCartToast";
 
 const SORT_OPTIONS: SortOption[] = [
   { key: "featured", label: "Featured" },
-  { key: "newest", label: "Newest" },
-  { key: "priceAsc", label: "Price: Low \u2192 High" },
-  { key: "priceDesc", label: "Price: High \u2192 Low" },
-  { key: "nameAsc", label: "Name: A \u2192 Z" },
+  { key: "createdAt:desc", label: "Newest" },
+  { key: "price:asc", label: "Price: Low \u2192 High" },
+  { key: "price:desc", label: "Price: High \u2192 Low" },
+  { key: "name:asc", label: "Name: A \u2192 Z" },
 ];
+
+const ITEMS_PER_PAGE = 12;
 
 function capitalize(s: string): string {
   if (!s) return "";
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function SortDropdown({
+  value,
+  options,
+  loading,
+  onChange,
+}: {
+  value: string;
+  options: SortOption[];
+  loading: boolean;
+  onChange: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const selected = options.find((o) => o.key === value) ?? options[0];
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        disabled={loading}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex items-center gap-2 cursor-pointer rounded-2xl border bg-white/70 backdrop-blur px-3 h-9 text-sm font-semibold shadow-sm transition hover:bg-white disabled:opacity-60"
+        style={{ borderColor: "rgba(0,0,0,0.08)" }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <ArrowUpDown className="h-4 w-4 text-black/60" />
+        <span className="text-black/70">Sort:</span>
+        <span className="text-black">{selected?.label ?? "Select"}</span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-2 w-56 rounded-2xl border bg-white/90 backdrop-blur shadow-lg p-2"
+          style={{ borderColor: "rgba(0,0,0,0.10)" }}
+        >
+          {options.map((opt) => {
+            const active = opt.key === selected?.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onChange(opt.key);
+                  setOpen(false);
+                }}
+                className="w-full rounded-xl cursor-pointer px-3 py-2 text-left text-sm font-semibold transition hover:bg-black/5"
+                style={{
+                  background: active ? "rgba(0,0,0,0.06)" : "transparent",
+                  color: "rgba(0,0,0,0.78)",
+                }}
+              >
+                <span className="inline-flex w-full items-center justify-between gap-3">
+                  <span>{opt.label}</span>
+                  {active && <Check className="h-4 w-4 text-black/60" />}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSidebar({
+  groups,
+  activeFilters,
+  loading,
+  toggleFilter,
+}: {
+  groups: Filter[];
+  activeFilters: Record<string, string>;
+  loading: boolean;
+  toggleFilter: (value: string, groupKey: string) => void;
+}) {
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
+    (groups || []).reduce((acc, g, idx) => {
+      acc[g.key] = idx === 0;
+      return acc;
+    }, {} as Record<string, boolean>)
+  );
+
+  return (
+    <aside className="flex flex-col gap-4">
+      {groups.map((group) => {
+        const isOpen = !!openGroups[group.key];
+        const activeValue = activeFilters[group.key] || "";
+
+        return (
+          <div
+            key={group.key}
+            className="rounded-2xl border bg-white/70 backdrop-blur"
+            style={{ borderColor: "rgba(0,0,0,0.08)" }}
+          >
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() =>
+                setOpenGroups((prev) => ({
+                  ...prev,
+                  [group.key]: !prev[group.key],
+                }))
+              }
+              className="w-full flex cursor-pointer items-center justify-between px-4 py-4 text-left text-sm font-semibold disabled:opacity-60 disabled:pointer-events-none"
+              aria-expanded={isOpen}
+            >
+              <span>{group.title}</span>
+              <ChevronDown
+                className={[
+                  "h-4 w-4 text-black/50 transition-transform",
+                  isOpen ? "rotate-180" : "rotate-0",
+                ].join(" ")}
+              />
+            </button>
+
+            {isOpen && (
+              <div className="px-4 pb-4">
+                <div className="mt-1 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleFilter("", group.key)}
+                    disabled={loading}
+                    className="text-left rounded-xl px-3 py-2 cursor-pointer text-sm font-semibold transition inline-flex items-center gap-2 disabled:opacity-60"
+                    style={{
+                      color: !activeValue
+                        ? "var(--text-inverse)"
+                        : "var(--text-primary)",
+                      background: !activeValue
+                        ? "var(--primary)"
+                        : "var(--surface)",
+                    }}
+                  >
+                    All
+                  </button>
+
+                  {group.filters?.map((f) => {
+                    const active = activeValue === f;
+                    return (
+                      <button
+                        key={`${group.key}-${f}`}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => toggleFilter(f, group.key)}
+                        className="text-left rounded-xl px-3 py-2 cursor-pointer text-sm font-semibold transition inline-flex items-center gap-2 disabled:opacity-60"
+                        style={{
+                          color: active
+                            ? "var(--text-inverse)"
+                            : "var(--text-primary)",
+                          background: active
+                            ? "var(--primary)"
+                            : "var(--surface)",
+                        }}
+                      >
+                        {capitalize(f)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </aside>
+  );
 }
 
 interface ProductsClientProps {
@@ -28,6 +207,9 @@ interface ProductsClientProps {
   filters: Filter[];
   labels: Record<string, string>;
   slug: string;
+  initialFilters?: Record<string, string>;
+  initialSort?: string;
+  initialSearch?: string;
 }
 
 export default function ProductsClient({
@@ -35,6 +217,9 @@ export default function ProductsClient({
   filters,
   labels,
   slug,
+  initialFilters,
+  initialSort,
+  initialSearch,
 }: ProductsClientProps) {
   const router = useRouter();
   const siteData = useSiteData();
@@ -43,31 +228,52 @@ export default function ProductsClient({
   const businessInfo = siteData?.businessInfo;
   const hasNoShipping = businessInfo && businessInfo?.shipping === false;
 
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const skipNextSearchEffectRef = useRef(false);
   const [isPending, startTransition] = useTransition();
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-  const [filterType, setFilterType] = useState("");
-  const [filterGroupType, setFilterGroupType] = useState(
-    filters?.[0]?.key ?? ""
+  const [activeFilters, setActiveFilters] = useState<Record<string, string>>(
+    initialFilters ?? {}
   );
   const [selectedVariants, setSelectedVariants] = useState<
     Record<string, string>
   >({});
-  const [sortKey, setSortKey] = useState("featured");
-  const [localSearch, setLocalSearch] = useState("");
+  const [sortKey, setSortKey] = useState(initialSort || "featured");
+  const [localSearch, setLocalSearch] = useState(initialSearch || "");
+  const [page, setPage] = useState(1);
+  const [addTick, setAddTick] = useState(0);
+
+  // Sync state from server when URL params change on navigation
+  const initialFiltersKey = JSON.stringify(initialFilters);
+  useEffect(() => {
+    setActiveFilters(initialFilters ?? {});
+    setSortKey(initialSort || "featured");
+    setLocalSearch(initialSearch || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiltersKey, initialSort, initialSearch]);
+
+  // Reset to page 1 when products change
+  useEffect(() => {
+    setPage(1);
+  }, [products]);
+
+  const totalPages = Math.max(1, Math.ceil(products.length / ITEMS_PER_PAGE));
+  const paginatedProducts = products.slice(
+    (page - 1) * ITEMS_PER_PAGE,
+    page * ITEMS_PER_PAGE
+  );
 
   const replaceProductsQuery = (next: {
-    filter?: string;
-    filterType?: string;
+    filters?: Record<string, string>;
     sort?: string;
     search?: string;
   }) => {
     const params = new URLSearchParams();
 
-    if (next.filter?.trim() && next.filterType?.trim()) {
-      params.set("filter", next.filter.trim());
-      params.set("filterType", next.filterType.trim());
+    if (next.filters) {
+      for (const [key, val] of Object.entries(next.filters)) {
+        if (key && val) {
+          params.set(`f_${key}`, val);
+        }
+      }
     }
     if (next.search?.trim()) params.set("search", next.search.trim());
     if (next.sort && next.sort !== "featured") params.set("sort", next.sort);
@@ -78,38 +284,36 @@ export default function ProductsClient({
     startTransition(() => router.replace(url));
   };
 
-  const applyFilter = (value: string, groupKey: string) => {
-    setFilterType(value);
-    setFilterGroupType(groupKey);
+  const toggleFilter = (value: string, groupKey: string) => {
+    const next = { ...activeFilters };
+    if (value) {
+      next[groupKey] = value;
+    } else {
+      delete next[groupKey];
+    }
+    setActiveFilters(next);
     setLocalSearch("");
-    skipNextSearchEffectRef.current = true;
     replaceProductsQuery({
       search: "",
       sort: sortKey,
-      filter: value,
-      filterType: groupKey,
+      filters: next,
     });
   };
 
   const applyMobileFilterSort = ({
-    filterValue,
-    filterGroupType: fgt,
+    filters: mobileFilters,
     sortKey: sk,
   }: {
-    filterValue: string;
-    filterGroupType: string;
+    filters: Record<string, string>;
     sortKey: string;
   }) => {
     setSortKey(sk);
-    setFilterType(filterValue);
-    setFilterGroupType(fgt);
+    setActiveFilters(mobileFilters);
     setLocalSearch("");
-    skipNextSearchEffectRef.current = true;
     replaceProductsQuery({
       search: "",
       sort: sk,
-      filter: filterValue,
-      filterType: fgt,
+      filters: mobileFilters,
     });
   };
 
@@ -118,52 +322,33 @@ export default function ProductsClient({
     replaceProductsQuery({
       search: localSearch,
       sort: value,
-      filter: filterType,
-      filterType: filterGroupType,
+      filters: activeFilters,
     });
   };
 
   const onSearch = (val: string) => {
     setLocalSearch(val);
-    setFilterGroupType(filters?.[0]?.key ?? "");
-    setFilterType("");
+    setActiveFilters({});
     replaceProductsQuery({
       search: val,
       sort: sortKey,
-      filter: "",
-      filterType: filters?.[0]?.key ?? "",
+      filters: {},
     });
   };
 
-  // Debounced search
-  useEffect(() => {
-    if (skipNextSearchEffectRef.current) {
-      skipNextSearchEffectRef.current = false;
-      return;
-    }
-
-    if (timerRef.current) clearTimeout(timerRef.current);
-
-    timerRef.current = setTimeout(() => {
-      onSearch(localSearch);
-    }, DEBOUNCE_MS);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [localSearch]);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const hasActiveFilter = !!filterType?.trim();
+  const activeFilterCount = Object.keys(activeFilters).filter(
+    (k) => activeFilters[k]
+  ).length;
+  const hasActiveFilter = activeFilterCount > 0;
   const hasActiveSort = sortKey !== "featured";
   const hasActiveBlade = hasActiveFilter || hasActiveSort;
   const loading = isPending;
+
+  // Build summary label for active filters
+  const filterSummary = Object.entries(activeFilters)
+    .filter(([, v]) => v)
+    .map(([, v]) => capitalize(v))
+    .join(", ");
 
   return (
     <div className="min-h-[100dvh]" style={{ background: surface }}>
@@ -203,7 +388,12 @@ export default function ProductsClient({
               type="text"
               value={localSearch}
               onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Search products..."
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  onSearch(localSearch);
+                }
+              }}
+              placeholder="Search products... (press Enter)"
               className="w-full h-11 px-4 rounded-2xl border border-black/10 bg-white/70 backdrop-blur text-sm focus:outline-none focus:ring-2 transition"
               style={
                 {
@@ -213,21 +403,25 @@ export default function ProductsClient({
             />
           </div>
 
-          {/* Desktop sort */}
+          {/* Desktop search button + sort */}
           <div className="hidden md:flex items-center gap-2">
-            <span className="text-xs font-semibold text-black/50">Sort:</span>
-            <select
-              value={sortKey}
-              onChange={(e) => applySort(e.target.value)}
+            <button
+              type="button"
+              onClick={() => onSearch(localSearch)}
               disabled={loading}
-              className="h-9 rounded-xl border border-black/10 bg-white/70 px-3 text-sm font-medium focus:outline-none cursor-pointer"
+              className="h-9 px-3 rounded-xl flex items-center gap-1.5 text-sm font-medium transition hover:opacity-90 active:scale-95 cursor-pointer disabled:opacity-60"
+              style={{ background: "var(--primary)", color: "var(--text-inverse)" }}
+              aria-label="Search"
             >
-              {SORT_OPTIONS.map((opt) => (
-                <option key={opt.key} value={opt.key}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              <Search className="h-4 w-4" />
+              <span>Search</span>
+            </button>
+            <SortDropdown
+              value={sortKey}
+              options={SORT_OPTIONS}
+              loading={loading}
+              onChange={applySort}
+            />
           </div>
 
           {/* Mobile filters button */}
@@ -269,7 +463,7 @@ export default function ProductsClient({
 
             {hasActiveBlade && (
               <p className="mt-2 text-[11px] text-black/55">
-                {hasActiveFilter ? `Filter: ${capitalize(filterType)}` : null}
+                {hasActiveFilter ? `Filter: ${filterSummary}` : null}
                 {hasActiveFilter && hasActiveSort ? " \u2022 " : null}
                 {hasActiveSort
                   ? `Sort: ${SORT_OPTIONS.find((o) => o.key === sortKey)?.label ?? sortKey}`
@@ -285,68 +479,79 @@ export default function ProductsClient({
         <div className="grid gap-6 lg:grid-cols-12 items-start">
           {/* Desktop sidebar filters */}
           <div className="hidden lg:block lg:col-span-2">
-            <div className="space-y-4">
-              <h3 className="text-xs font-semibold text-black/50 uppercase tracking-wider">
-                Types
-              </h3>
-              {filters.map((group) => (
-                <div key={group.key} className="space-y-1">
-                  <p className="text-sm font-semibold text-black/70">
-                    {group.title}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => applyFilter("", group.key)}
-                    className="block w-full text-left text-sm px-2 py-1 rounded-lg transition disabled:opacity-60"
-                    style={{
-                      fontWeight:
-                        filterGroupType === group.key && filterType === ""
-                          ? 700
-                          : 400,
-                      color:
-                        filterGroupType === group.key && filterType === ""
-                          ? "var(--primary)"
-                          : "rgba(0,0,0,0.6)",
-                    }}
-                  >
-                    All
-                  </button>
-                  {group.filters?.map((f) => {
-                    const active =
-                      filterGroupType === group.key && filterType === f;
-                    return (
-                      <button
-                        key={f}
-                        type="button"
-                        disabled={loading}
-                        onClick={() => applyFilter(f, group.key)}
-                        className="block w-full text-left text-sm px-2 py-1 rounded-lg transition disabled:opacity-60"
-                        style={{
-                          fontWeight: active ? 700 : 400,
-                          color: active
-                            ? "var(--primary)"
-                            : "rgba(0,0,0,0.6)",
-                        }}
-                      >
-                        {capitalize(f)}
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
+            <FilterSidebar
+              groups={filters}
+              activeFilters={activeFilters}
+              loading={loading}
+              toggleFilter={toggleFilter}
+            />
           </div>
 
-          {/* Product grid */}
+          {/* Product grid + pagination */}
           <div className="lg:col-span-10 min-w-0">
             <ProductGrid
-              products={products}
+              products={paginatedProducts}
               selectedVariants={selectedVariants}
               setSelectedVariants={setSelectedVariants}
               slug={slug}
               loading={loading}
+              onItemAdded={() => setAddTick((t) => t + 1)}
             />
+
+            {/* Pagination */}
+            {totalPages > 1 && !loading && (
+              <div className="mt-8 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="h-9 px-3 rounded-xl border text-sm font-semibold transition hover:bg-black/5 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                  style={{ borderColor: "rgba(0,0,0,0.10)" }}
+                >
+                  Previous
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                  (p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      className="h-9 w-9 rounded-xl text-sm font-semibold transition cursor-pointer"
+                      style={{
+                        background:
+                          p === page ? "var(--primary)" : "transparent",
+                        color:
+                          p === page ? "var(--text-inverse)" : "rgba(0,0,0,0.7)",
+                        border:
+                          p === page ? "none" : "1px solid rgba(0,0,0,0.10)",
+                      }}
+                    >
+                      {p}
+                    </button>
+                  )
+                )}
+
+                <button
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="h-9 px-3 rounded-xl border text-sm font-semibold transition hover:bg-black/5 disabled:opacity-40 disabled:pointer-events-none cursor-pointer"
+                  style={{ borderColor: "rgba(0,0,0,0.10)" }}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+
+            {/* Items count */}
+            {products.length > 0 && !loading && (
+              <div className="mt-3 text-center text-[12px] text-black/45">
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1}–
+                {Math.min(page * ITEMS_PER_PAGE, products.length)} of{" "}
+                {products.length} products
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -355,20 +560,20 @@ export default function ProductsClient({
         open={mobileSheetOpen}
         onOpenChange={setMobileSheetOpen}
         sortKey={sortKey}
-        filterType={filterType}
-        filterGroupType={filterGroupType}
+        activeFilters={activeFilters}
         groups={filters}
         sortOptions={SORT_OPTIONS}
         loading={loading}
         onApply={applyMobileFilterSort}
         onClear={() =>
           applyMobileFilterSort({
-            filterValue: "",
-            filterGroupType: filters?.[0]?.key ?? "",
+            filters: {},
             sortKey: "featured",
           })
         }
       />
+
+      <AddedToCartToast addTick={addTick} />
     </div>
   );
 }

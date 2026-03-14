@@ -16,6 +16,8 @@ export const getNavigationData = async (): Promise<NavigationData[]> => {
         if (page.displayOnHeader === false) continue;
         // Skip static pages (privacy/terms) from main nav — they go in footer
         if (page.format === 'static') continue;
+        // Skip root page — already hardcoded as "Home" above
+        if (!page.slug || page.slug === '/') continue;
         nav.push({
           path: `/${page.slug}`,
           label: page.labels?.navLabel || page.labels?.title || page.name,

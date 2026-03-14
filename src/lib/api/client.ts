@@ -7,7 +7,7 @@
 import 'server-only';
 
 const CLIENT_API_URL =
-  process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
+  process.env.NEXT_PUBLIC_CLIENT_API || 'https://dev-client.vivreal.io';
 
 const API_KEY = process.env.API_KEY || '';
 

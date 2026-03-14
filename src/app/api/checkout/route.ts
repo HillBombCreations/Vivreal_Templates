@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
   // Forward to VR_Client_API
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
-    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://dev-client.vivreal.io";
 
   const res = await fetch(`${clientApiUrl}/tenant/createCheckoutSession`, {
     method: "POST",

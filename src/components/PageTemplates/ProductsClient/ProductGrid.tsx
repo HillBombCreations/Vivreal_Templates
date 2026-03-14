@@ -17,6 +17,7 @@ interface ProductGridProps {
   >;
   slug: string;
   loading?: boolean;
+  onItemAdded?: () => void;
 }
 
 export default function ProductGrid({
@@ -25,6 +26,7 @@ export default function ProductGrid({
   setSelectedVariants,
   slug,
   loading = false,
+  onItemAdded,
 }: ProductGridProps) {
   const router = useRouter();
   const siteData = useSiteData();
@@ -95,7 +97,7 @@ export default function ProductGrid({
           siteLogo={siteLogo}
           cart={cart}
           setQty={setQty}
-          onAddToCart={() =>
+          onAddToCart={() => {
             handleAddToCart({
               product,
               selectedVariant:
@@ -105,8 +107,9 @@ export default function ProductGrid({
               quantity: 1,
               cart,
               setCart,
-            })
-          }
+            });
+            onItemAdded?.();
+          }}
           onClick={() =>
             router.push(
               `/${slug}/${encodeURIComponent(getProductKey(product))}`
