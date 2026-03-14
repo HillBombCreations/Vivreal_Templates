@@ -8,6 +8,7 @@ import type { SiteData } from "@/types/SiteData";
 import { getSafeFieldValue, resolveVariant } from "@/lib/utils/variantUtils";
 import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
 import { useCartContext } from "@/contexts/CartContext";
+import FloatingCartDialog from "./FloatingCartDialog";
 
 interface ProductDetailClientProps {
   product: Product;
@@ -26,8 +27,14 @@ export default function ProductDetailClient({
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
 
   const [selectedVariant, setSelectedVariant] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState<number>(product?.quantityOptions?.[0] ?? 1);
   const [loadingCheckout, setLoadingCheckout] = useState(false);
+  const [addedOpen, setAddedOpen] = useState(false);
+
+  // Snapshot the variant/quantity at add-to-cart time so the floating
+  // dialog doesn't update when the user changes selections
+  const [addedVariant, setAddedVariant] = useState<string | null>(null);
+  const [addedQuantity, setAddedQuantity] = useState(1);
 
   useMemo(() => {
     if (!product) return;
@@ -80,6 +87,11 @@ export default function ProductDetailClient({
       cart,
       setCart,
     });
+    // Snapshot current selections so the dialog doesn't change
+    // if the user picks a different variant while it's open
+    setAddedVariant(selectedVariant);
+    setAddedQuantity(quantity);
+    setAddedOpen(true);
   };
 
   const onBuyNow = async () => {
@@ -201,17 +213,17 @@ export default function ProductDetailClient({
                 {/* Quantity selector */}
                 <div className="mt-6">
                   <div className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-3">
-                    Quantity
+                    Quantity{product.quantityUnit ? ` (${product.quantityUnit})` : ""}
                   </div>
                   <div className="inline-flex rounded-full border border-black/[0.08] bg-black/[0.01] overflow-hidden">
-                    {[1, 2, 3, 4, 5].map((n) => {
+                    {(product.quantityOptions ?? [1, 2, 3, 4, 5]).map((n) => {
                       const active = quantity === n;
                       return (
                         <button
                           key={n}
                           type="button"
                           onClick={() => setQuantity(n)}
-                          className="h-10 w-10 text-sm cursor-pointer font-semibold transition-all"
+                          className="h-10 min-w-10 px-2 text-sm cursor-pointer font-semibold transition-all"
                           style={{
                             background: active
                               ? `${primary}15`
@@ -270,6 +282,16 @@ export default function ProductDetailClient({
           </div>
         </div>
       </div>
+
+      {/* Floating confirmation after adding to cart */}
+      <FloatingCartDialog
+        open={addedOpen}
+        onClose={() => setAddedOpen(false)}
+        product={product}
+        quantity={addedQuantity}
+        cartCount={cartCount}
+        variant={addedVariant}
+      />
     </div>
   );
 }

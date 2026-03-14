@@ -20,7 +20,8 @@ export function handleAddToCart({
 }: AddToCartProps): void {
   const variant = resolveVariant(selectedVariant, product) ?? "default";
   const cartKey = `${product._id}_${variant}`;
-  const name = getSafeFieldValue(product, "name", selectedVariant) ?? "";
+  const baseName = getSafeFieldValue(product, "name", selectedVariant) ?? "";
+  const name = variant !== "default" ? `${baseName} (${variant})` : baseName;
   const price = getSafeFieldValue(product, "price", selectedVariant) ?? "";
   const imageUrl = getSafeFieldValue(product, "imageUrl", selectedVariant) ?? "";
   const priceID = product.default_price ?? "";
@@ -36,6 +37,7 @@ export function handleAddToCart({
     priceID,
     imageUrl,
     variant,
+    ...(product.quantityUnit && { unit: product.quantityUnit }),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));

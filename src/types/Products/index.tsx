@@ -15,6 +15,8 @@ export interface Product {
         values: string[];
     };
     default_price?: string;
+    quantityOptions?: number[];
+    quantityUnit?: string;
 }
 
 export type ProductVariantKey = "name" | "price" | "description" | "imageUrl";
@@ -23,6 +25,7 @@ export interface Filter {
     title: string;
     filters: string[];
     key: string;
+    type?: string;
 }
 
 export interface SortOption {
