@@ -61,7 +61,7 @@ const ProductShowcase = ({ config, siteData, prefetchedData }: HomeSectionProps)
   const onShop = () => {
     const productType = current?.["product-type"] ?? "";
     router.push(
-      `/products?filter=${encodeURIComponent(productType)}&filterType=producttype`
+      `/products?f_productType=${encodeURIComponent(productType)}`
     );
   };
 
@@ -95,7 +95,7 @@ const ProductShowcase = ({ config, siteData, prefetchedData }: HomeSectionProps)
                 dir === "right" ? "animate-slideInRight" : "animate-slideInLeft",
               ].join(" ")}
             >
-              <div className="grid md:grid-cols-2 min-h-[400px]">
+              <div className="grid md:grid-cols-2 h-[400px] lg:h-[440px]">
                 {/* Image half */}
                 <div className="relative overflow-hidden" style={{ background: `${primary}04` }}>
                   <div
@@ -108,7 +108,7 @@ const ProductShowcase = ({ config, siteData, prefetchedData }: HomeSectionProps)
                   <img
                     src={current.imageUrl || "/vrlogo.png"}
                     alt={current.title}
-                    className="relative w-full h-full object-contain p-8 lg:p-12"
+                    className="absolute inset-0 w-full h-full object-contain p-8 lg:p-12"
                   />
                 </div>
 
