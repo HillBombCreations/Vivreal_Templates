@@ -96,7 +96,7 @@ const AboutClient = ({ teamMembers, labels, slug }: AboutClientProps) => {
                   {member.socialLinks && <SocialIcons socialLinks={member.socialLinks} />}
 
                   <div
-                    className="text-sm text-gray-600 line-clamp-4 leading-relaxed"
+                    className="text-sm text-gray-600 leading-relaxed line-clamp-4"
                     dangerouslySetInnerHTML={{ __html: member.description }}
                   />
                   <span

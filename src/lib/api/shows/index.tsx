@@ -19,7 +19,7 @@ function mapShow(item: CMSShowData): ShowData {
   return {
     title: item.objectValue.title,
     description: item.objectValue.description,
-    id: item.objectValue._id,
+    id: item._id,
     date: item.objectValue.date,
     time: item.objectValue.time,
     location: item.objectValue.location,
@@ -59,7 +59,7 @@ export async function getShowsPaginated({
   return { shows, totalCount: res.totalCount };
 }
 
-export const getShowById = async (id: string): Promise<ShowData | null> => {
-  const allShows = await getShows();
+export const getShowById = async (id: string, collectionId?: string): Promise<ShowData | null> => {
+  const allShows = await getShows(collectionId);
   return allShows.find((show) => show.id === id) || null;
 };

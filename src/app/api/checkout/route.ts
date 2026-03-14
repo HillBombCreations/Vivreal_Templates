@@ -21,14 +21,6 @@ function isCheckoutItem(item: unknown): item is CheckoutItem {
 }
 
 export async function POST(request: NextRequest) {
-  const stripeKey = process.env.STRIPE_SECRET_KEY;
-  if (!stripeKey) {
-    return NextResponse.json(
-      { error: "Checkout not configured" },
-      { status: 404 }
-    );
-  }
-
   const body = await request.json();
   const { products, requiresShipping, originUrl } = body;
 
@@ -53,7 +45,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Forward to VR_Client_API
+  // Forward to VR_Client_API — Stripe key is resolved server-side from group integrations
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
     process.env.NEXT_PUBLIC_CLIENT_API ?? "https://dev-client.vivreal.io";
@@ -68,7 +60,6 @@ export async function POST(request: NextRequest) {
       products,
       requiresShipping: Boolean(requiresShipping),
       originUrl,
-      stripeKey,
     }),
   });
 
@@ -81,5 +72,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  return NextResponse.json(data);
+  // VR_Client_API returns { success, data: "stripe_url" } — extract the URL
+  const url = data.data ?? data;
+  return NextResponse.json({ url });
 }

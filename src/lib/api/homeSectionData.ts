@@ -37,7 +37,7 @@ export async function prefetchHomeSectionData(
     const showsCollectionId = getPageCollectionId(siteData, "shows", process.env.SHOWS_ID || "");
     const partnersCollectionId = getPageCollectionId(siteData, "partners", process.env.PARTNERS_ID || "");
 
-    jobs.push({ type: "hero", key: "showsResult", promise: getShowsPaginated({ collectionId: showsCollectionId, limit: 5 }) });
+    jobs.push({ type: "hero", key: "showsResult", promise: getShowsPaginated({ collectionId: showsCollectionId, limit: 100 }) });
     jobs.push({ type: "hero", key: "partners", promise: getPartners(partnersCollectionId) });
   }
 

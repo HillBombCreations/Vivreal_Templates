@@ -1,6 +1,6 @@
 import type { Cart, CartItem } from "@/types/Cart";
 import type { Product } from "@/types/Products";
-import { resolveVariant, getSafeFieldValue } from "../variantUtils";
+import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils";
 import type { Dispatch, SetStateAction } from "react";
 
 interface AddToCartProps {
@@ -24,7 +24,7 @@ export function handleAddToCart({
   const name = variant !== "default" ? `${baseName} (${variant})` : baseName;
   const price = getSafeFieldValue(product, "price", selectedVariant) ?? "";
   const imageUrl = getSafeFieldValue(product, "imageUrl", selectedVariant) ?? "";
-  const priceID = product.default_price ?? "";
+  const priceID = resolveVariantableString(product.default_price, selectedVariant) ?? "";
 
   const existing = cart[cartKey];
   const newQty = existing ? existing.quantity + quantity : quantity;
@@ -69,7 +69,10 @@ export async function handleCheckout({
   });
 
   const data = await res.json();
-  if (data.url) {
+  if (
+    typeof data.url === "string" &&
+    data.url.startsWith("https://")
+  ) {
     window.location.replace(data.url);
   }
 }

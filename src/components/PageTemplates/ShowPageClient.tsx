@@ -161,9 +161,7 @@ const ShowPageClient = ({
         {pastShows?.length > 0 ? (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
-              {pastShows
-                .filter((show) => show.imageUrl || show.image)
-                .map((show, idx) => (
+              {pastShows.map((show, idx) => (
                   <Link
                     key={`past_${idx}`}
                     href={`/${slug}/${show.id}`}

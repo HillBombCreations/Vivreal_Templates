@@ -168,11 +168,6 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                             <div className="truncate text-sm font-semibold">
                               {item?.name}
                             </div>
-                            {!!item?.variant && item.variant !== "default" && (
-                              <div className="mt-0.5 text-xs text-black/55">
-                                {capitalize(item.variant)}
-                              </div>
-                            )}
                             <div className="mt-1 text-xs text-black/60">
                               {currency(priceEach)}{" "}
                               <span className="text-black/35">&bull;</span>{" "}
@@ -206,7 +201,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                               <Minus className="mx-auto h-4 w-4" />
                             </button>
                             <div className="min-w-8 text-center text-sm font-semibold">
-                              {item.quantity || 0}{item.unit ? ` ${item.unit}` : ""}
+                              {item.quantity || 0}
                             </div>
                             <button
                               type="button"

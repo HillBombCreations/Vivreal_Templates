@@ -159,7 +159,7 @@ const HeroSection = ({ config, siteData, prefetchedData }: HomeSectionProps) => 
           <p className="mt-6 text-gray-500">No past content yet.</p>
         ) : (
           <PastShowsCarousel
-            shows={pastShows.filter(show => show.imageUrl || show.image)}
+            shows={pastShows}
             primary={primary}
             surface={siteData?.surface || '#ffffff'}
             showsSlug={showsSlug}

@@ -14,7 +14,7 @@ export interface Product {
         name: string;
         values: string[];
     };
-    default_price?: string;
+    default_price?: Variantable<string>;
     quantityOptions?: number[];
     quantityUnit?: string;
 }

@@ -13,6 +13,7 @@ import FormClient from "@/components/PageTemplates/FormClient";
 import ProductsClient from "@/components/PageTemplates/ProductsClient";
 import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
 import StaticPage from "@/components/PageTemplates/StaticPage";
+import CheckoutResultClient from "@/components/PageTemplates/CheckoutResultClient";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -150,6 +151,17 @@ export default async function DynamicPage({
           labels={pageConfig.labels ?? {}}
         />
         <CTASection />
+        <Footer />
+      </>
+    );
+  }
+
+  // Checkout result pages — success/cancel after Stripe checkout
+  if (format === "checkout-success" || format === "checkout-cancel") {
+    return (
+      <>
+        <Navbar />
+        <CheckoutResultClient success={format === "checkout-success"} />
         <Footer />
       </>
     );

@@ -64,7 +64,7 @@ export default function MemberDetail({ member, siteData, tiktokEmbeds, backSlug 
               </div>
             </div>
 
-            <article className="prose prose-lg max-w-none">
+            <article className="prose prose-lg max-w-none max-h-96 overflow-y-auto">
               <div dangerouslySetInnerHTML={{ __html: member.description }} />
             </article>
           </div>

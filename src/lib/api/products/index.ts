@@ -52,7 +52,7 @@ function transformProduct(raw: Record<string, unknown>): Product {
     buttonLabel: (objectValue.buttonLabel as string) ?? undefined,
     "filter-type": (objectValue["filter-type"] as string) ?? undefined,
     usingVariant,
-    default_price: (objectValue.default_price as string) ?? undefined,
+    default_price: (objectValue.default_price as Product["default_price"]) ?? undefined,
     quantityOptions: Array.isArray(objectValue.quantityOptions) ? objectValue.quantityOptions as number[] : undefined,
     quantityUnit: (objectValue.quantityUnit as string) ?? undefined,
   };

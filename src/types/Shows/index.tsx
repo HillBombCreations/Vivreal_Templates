@@ -13,9 +13,9 @@ export type ShowData = {
 };
 
 export type CMSShowData = {
+  _id: string;
   objectValue: {
     title: string;
-    _id: string;
     description: string;
     date?: string;
     time?: string;

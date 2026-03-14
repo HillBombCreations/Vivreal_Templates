@@ -32,7 +32,8 @@ export default async function DynamicItemPage({ params }: Props) {
 
   // Show/event detail
   if (pageConfig.format === "shows") {
-    const show = await getShowById(itemId);
+    const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
+    const show = await getShowById(itemId, collectionId);
 
     if (!show) {
       return (
@@ -222,7 +223,8 @@ export async function generateMetadata({ params }: Props) {
   }
 
   if (pageConfig.format === "shows") {
-    const show = await getShowById(itemId);
+    const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
+    const show = await getShowById(itemId, collectionId);
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
