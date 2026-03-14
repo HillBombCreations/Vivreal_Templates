@@ -23,7 +23,7 @@ function DesktopDetailCard({
         >
           {selected.title}
         </h3>
-        <p className="mt-2 text-sm leading-relaxed text-black/50 max-w-2xl">
+        <p className="mt-2 text-sm leading-relaxed text-black/50 max-w-2xl line-clamp-2 min-h-[2.5em]">
           {selected.description}
         </p>
       </div>
@@ -198,7 +198,7 @@ const Offerings = ({ siteData, prefetchedData }: HomeSectionProps) => {
                     >
                       {card.title}
                     </div>
-                    <div className="mt-1 text-sm leading-relaxed text-black/50 line-clamp-2">
+                    <div className="mt-1 text-sm leading-relaxed text-black/50 line-clamp-2 min-h-[2.5em]">
                       {card.description}
                     </div>
                   </div>
