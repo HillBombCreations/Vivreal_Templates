@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/Button';
 import { ArrowRight } from 'lucide-react';
+import { useSiteData } from '@/contexts/SiteDataContext';
 import type { HomeSectionProps } from '../index';
 
-const CTASection = ({ config = {}, siteData }: Partial<HomeSectionProps>) => {
+const CTASection = ({ config = {}, siteData: siteDataProp }: Partial<HomeSectionProps>) => {
+  const contextData = useSiteData();
+  const siteData = siteDataProp || contextData;
   const primary = siteData?.primary || '#000000';
 
   // Determine the target page: use config.targetFormat to find a page by format,

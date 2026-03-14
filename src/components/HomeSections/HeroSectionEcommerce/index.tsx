@@ -21,8 +21,9 @@ const HeroSectionEcommerce = ({ config, siteData, prefetchedData }: HomeSectionP
   const ctaLabel = heroSection?.buttonLabel ?? "Shop new arrivals";
   const ctaHref = (config.linkTo as string) ?? "/products";
 
+  const hasShipping = siteData?.businessInfo?.shipping !== false;
   const trustItems = [
-    { icon: <Truck className="h-4 w-4" />, label: "Fast delivery" },
+    { icon: <Truck className="h-4 w-4" />, label: hasShipping ? "Fast delivery" : "Pickup available" },
     { icon: <Shield className="h-4 w-4" />, label: "Secure checkout" },
     { icon: <Star className="h-4 w-4" />, label: "Top quality" },
   ];

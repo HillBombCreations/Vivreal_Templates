@@ -17,7 +17,7 @@ const SORT_OPTIONS: SortOption[] = [
   { key: "name:asc", label: "Name: A \u2192 Z" },
 ];
 
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 15;
 
 function capitalize(s: string): string {
   if (!s) return "";

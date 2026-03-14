@@ -13,11 +13,27 @@ function unwrapItems(raw: PaginatedResponse | Record<string, unknown>[]): Record
   return (raw as PaginatedResponse)?.items ?? [];
 }
 
-function resolveProductImage(item: Record<string, unknown>): string {
+function resolveProductImage(item: Record<string, unknown>): string | Record<string, string> {
   const objectValue = item.objectValue as Record<string, unknown> | undefined;
-  const currentFile = objectValue?.currentFile as Record<string, unknown> | undefined;
-  if (!currentFile) return "";
-  return getSignedUrl(currentFile) || "";
+  if (!objectValue) return "";
+  // VR_Client_API sets currentFile on the productImage field, not at the top level.
+  // Simple products: productImage = { name, key, type, currentFile }
+  // Variant products: productImage = { "variant1": { name, key, ..., currentFile }, ... }
+  const productImage = objectValue.productImage as Record<string, unknown> | undefined;
+  if (!productImage) return "";
+  // Simple case — currentFile directly on productImage
+  const direct = getSignedUrl(productImage);
+  if (direct) return direct;
+  // Variant case — build a variant map of image URLs
+  const variantMap: Record<string, string> = {};
+  for (const key of Object.keys(productImage)) {
+    const url = getSignedUrl(productImage[key]);
+    if (url) variantMap[key] = url;
+  }
+  const keys = Object.keys(variantMap);
+  if (keys.length === 0) return "";
+  if (keys.length === 1) return variantMap[keys[0]];
+  return variantMap;
 }
 
 function transformProduct(raw: Record<string, unknown>): Product {
@@ -30,13 +46,15 @@ function transformProduct(raw: Record<string, unknown>): Product {
     name: (objectValue.name as Product["name"]) ?? "",
     price: (objectValue.price as Product["price"]) ?? "",
     description: (objectValue.description as Product["description"]) ?? "",
-    imageUrl: imageUrl || ((objectValue.imageUrl as Product["imageUrl"]) ?? ""),
+    imageUrl: imageUrl || ((objectValue.imageUrl as Product["imageUrl"]) ?? "") as Product["imageUrl"],
     link: (objectValue.link as string) ?? undefined,
     productType: (objectValue.productType as string) ?? undefined,
     buttonLabel: (objectValue.buttonLabel as string) ?? undefined,
     "filter-type": (objectValue["filter-type"] as string) ?? undefined,
     usingVariant,
     default_price: (objectValue.default_price as string) ?? undefined,
+    quantityOptions: Array.isArray(objectValue.quantityOptions) ? objectValue.quantityOptions as number[] : undefined,
+    quantityUnit: (objectValue.quantityUnit as string) ?? undefined,
   };
 }
 

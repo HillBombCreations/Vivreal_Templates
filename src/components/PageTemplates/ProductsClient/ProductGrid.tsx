@@ -49,10 +49,10 @@ export default function ProductGrid({
         {[...Array(9)].map((_, i) => (
           <div
             key={i}
-            className="rounded-2xl border border-black/[0.06] bg-white overflow-hidden flex flex-col h-[420px] animate-pulse"
+            className="rounded-2xl border border-black/[0.06] bg-white overflow-hidden flex flex-col h-[340px] animate-pulse"
           >
             <div className="border-b border-black/[0.04]">
-              <div className="h-[190px] w-full bg-black/[0.04]" />
+              <div className="h-[150px] w-full bg-black/[0.04]" />
             </div>
             <div className="p-4 flex flex-col flex-1 min-h-0">
               <div className="h-7 mb-3 rounded-lg bg-black/[0.04] w-20" />
@@ -174,11 +174,11 @@ function ProductCard({
           onClick();
         }
       }}
-      className="group text-left rounded-2xl border border-black/[0.06] bg-white overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-black/10 flex flex-col h-[420px]"
+      className="group text-left rounded-2xl border border-black/[0.06] bg-white overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-black/10 flex flex-col h-[340px]"
     >
       {/* Image */}
       <div className="border-b border-black/[0.04] bg-black/[0.01]">
-        <div className="h-[190px] w-full relative overflow-hidden">
+        <div className="h-[150px] w-full relative overflow-hidden">
           <div className="absolute inset-0 p-5">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
