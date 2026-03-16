@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 import type { Product } from "@/types/Products";
 import type { SiteData } from "@/types/SiteData";
-import { getSafeFieldValue, resolveVariant } from "@/lib/utils/variantUtils";
+import { getSafeFieldValue, resolveVariant, resolveVariantableString } from "@/lib/utils/variantUtils";
 import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
 import { useCartContext } from "@/contexts/CartContext";
 import FloatingCartDialog from "./FloatingCartDialog";
@@ -97,21 +97,19 @@ export default function ProductDetailClient({
   const onBuyNow = async () => {
     setLoadingCheckout(true);
     try {
+      const variant = resolveVariant(selectedVariant, product) ?? "default";
+      const priceID = resolveVariantableString(product.default_price, selectedVariant) ?? "";
       await handleCheckout({
         cart: {
-          [`${product._id}_${resolveVariant(selectedVariant, product) ?? "default"}`]:
+          [`${product._id}_${variant}`]:
             {
               _id: product._id,
               quantity,
               name: name ?? "",
               price: price ?? "",
-              priceID: product.default_price
-                ? typeof product.default_price === "string"
-                  ? product.default_price
-                  : ""
-                : "",
+              priceID,
               imageUrl: img ?? "",
-              variant: resolveVariant(selectedVariant, product) ?? "default",
+              variant,
             },
         },
         requiresShipping: siteData?.businessInfo?.shipping !== false,
