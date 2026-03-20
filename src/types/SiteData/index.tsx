@@ -40,6 +40,7 @@ export interface PageCollectionBinding {
     sectionConfig?: Record<string, unknown>;
     order?: number;
     enabled?: boolean;
+    subtitle?: string;
 }
 
 export interface PageCtaConfig {

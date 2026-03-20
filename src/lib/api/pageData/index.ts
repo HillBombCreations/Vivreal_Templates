@@ -8,6 +8,7 @@ interface RoleContent {
   items: ContentItem[];
   displayAs: string;
   label?: string;
+  subtitle?: string;
 }
 
 export interface PageData {
@@ -24,7 +25,7 @@ async function fetchBinding(
   if (type === 'collection') {
     const b = binding as PageCollectionBinding;
     const { items } = await getCollectionItems(b.collectionId);
-    return { items, displayAs: b.displayAs ?? 'cards', label: b.name };
+    return { items, displayAs: b.displayAs ?? 'cards', label: b.name, subtitle: b.subtitle };
   }
   const b = binding as PageIntegrationBinding;
   const intType = b.type ?? b.name ?? '';

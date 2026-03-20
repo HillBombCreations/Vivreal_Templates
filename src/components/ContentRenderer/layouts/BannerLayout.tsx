@@ -1,6 +1,5 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
 import type { ContentLayoutProps } from "@/types/ContentItem";
 
 /* ------------------------------------------------------------------ */
@@ -49,25 +48,33 @@ export default function BannerLayout({
   items,
   accent,
   loading,
+  pageLabels,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
 
   const primary = accent || "var(--primary)";
+  const labels = pageLabels ?? {};
 
-  if (!items.length) return <Empty accent={primary} />;
+  // Prefer page labels for hero content, fall back to first item
+  const heroTitle = (labels.title as string) || items[0]?.title || "Welcome";
+  const heroSubtitle = (labels.subtitle as string) || items[0]?.description;
+  const heroImage = (labels.heroImage as { key?: string })?.key
+    ? (labels.heroImageUrl as string) // signed URL would be here
+    : items[0]?.imageUrl;
+  const buttonLabel = (labels.buttonLabel as string) || items[0]?.tags?.[0];
+  const buttonLink = (labels.buttonLink as string) || items[0]?.href;
 
-  const item = items[0];
-  const hasImage = !!item.imageUrl;
+  if (!heroTitle && !items.length) return <Empty accent={primary} />;
 
   return (
     <section className="relative min-h-[60vh] md:min-h-[70vh] overflow-hidden">
       {/* Background image */}
-      {hasImage && (
+      {heroImage && (
         <>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={item.imageUrl}
-            alt={item.title}
+            src={heroImage}
+            alt={heroTitle}
             className="absolute inset-0 h-full w-full object-cover"
             loading="eager"
           />
@@ -76,7 +83,7 @@ export default function BannerLayout({
       )}
 
       {/* Fallback gradient when no image */}
-      {!hasImage && (
+      {!heroImage && (
         <div
           className="absolute inset-0"
           style={{
@@ -88,38 +95,39 @@ export default function BannerLayout({
       {/* Content overlay */}
       <div className="relative flex flex-col items-center justify-center min-h-[60vh] md:min-h-[70vh] px-6 py-20 text-center">
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-white max-w-3xl leading-[1.1]">
-          {item.title}
+          {heroTitle}
         </h1>
 
-        {item.description && (
+        {heroSubtitle && (
           <p className="mt-5 text-base sm:text-lg text-white/80 max-w-xl leading-relaxed">
-            {item.description}
+            {heroSubtitle}
           </p>
         )}
 
-        {item.href && (
+        {buttonLabel && buttonLink && (
           <a
-            href={item.href}
+            href={buttonLink}
             className="mt-8 group inline-flex items-center gap-2 h-12 px-7 rounded-full text-sm font-semibold shadow-lg transition-all hover:shadow-xl active:scale-[0.98] bg-white"
             style={{ color: primary }}
           >
-            Learn more
-            <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            {buttonLabel}
+            <svg className="h-4 w-4 transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
           </a>
         )}
 
-        {item.tags && item.tags.length > 0 && (
-          <div className="mt-6 flex gap-2 flex-wrap justify-center">
-            {item.tags.map((tag) => (
-              <span
-                key={tag}
-                className="rounded-full px-3 py-1 text-xs font-medium bg-white/20 text-white backdrop-blur-sm"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        )}
+        {/* Trust indicators */}
+        <div className="mt-10 flex items-center gap-6 text-white/50 text-xs">
+          <span className="flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+            Quality Guaranteed
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" /></svg>
+            Made with Care
+          </span>
+        </div>
       </div>
     </section>
   );

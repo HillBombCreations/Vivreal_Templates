@@ -40,11 +40,14 @@ export interface ContentRendererProps extends ContentLayoutProps {
   displayAs?: string;
   /** Optional section heading shown above the content */
   label?: string;
+  /** Optional subtitle shown below the heading */
+  subtitle?: string;
 }
 
 export default function ContentRenderer({
   displayAs = "cards",
   label,
+  subtitle,
   ...layoutProps
 }: ContentRendererProps) {
   const Layout = layoutMap[displayAs] ?? CardsLayout;
@@ -60,6 +63,9 @@ export default function ContentRenderer({
           >
             {label}
           </h2>
+          {subtitle && (
+            <p className="mt-2 text-base text-black/50">{subtitle}</p>
+          )}
         </div>
       )}
       <Layout {...layoutProps} />

@@ -48,9 +48,11 @@ async function Resolved() {
             items={section.items}
             displayAs={section.displayAs}
             label={section.label}
+            subtitle={section.subtitle}
             slug="home"
             detailEnabled={false}
             accent={siteData.primary}
+            pageLabels={homePageConfig.labels}
           />
         ))}
 
@@ -63,9 +65,11 @@ async function Resolved() {
                 items={s.items}
                 displayAs={s.displayAs}
                 label={s.label}
+                subtitle={s.subtitle}
                 slug="home"
                 detailEnabled={false}
                 accent={siteData.primary}
+                pageLabels={homePageConfig.labels}
               />
             ))}
           </div>
