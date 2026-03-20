@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { getPageData } from "@/lib/api/pageData";
 import ContentRenderer from "@/components/ContentRenderer";
-import PageShell from "@/components/PageShell";
 import CTASection from "@/components/HomeSections/CTASection";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -15,7 +14,6 @@ async function Resolved() {
   const homePageConfig = siteData.homePageConfig;
 
   if (!homePageConfig) {
-    // Fallback for sites with no home page config
     return (
       <>
         <Navbar />
@@ -31,57 +29,49 @@ async function Resolved() {
   }
 
   const pageData = await getPageData(homePageConfig);
+  const allSections = [...pageData.primary, ...pageData.secondary];
 
-  // Per-page CTA: enabled by default, controllable from portal
   const ctaConfig = homePageConfig.cta ?? {};
   const showCta = homePageConfig.cta?.enabled !== false;
 
   return (
     <>
       <Navbar />
-      <PageShell
-        title={homePageConfig.labels?.title}
-        subtitle={homePageConfig.labels?.subtitle}
-        sidebar={
-          pageData.sidebar.length > 0
-            ? <>{pageData.sidebar.map((s, i) => (
-                <ContentRenderer
-                  key={`sidebar-${i}`}
-                  items={s.items}
-                  displayAs={s.displayAs}
-                  slug="home"
-                  detailEnabled={false}
-                  accent={siteData.primary}
-                />
-              ))}</>
-            : undefined
-        }
-        supplemental={
-          pageData.supplemental.length > 0
-            ? <>{pageData.supplemental.map((s, i) => (
-                <ContentRenderer
-                  key={`supp-${i}`}
-                  items={s.items}
-                  displayAs={s.displayAs}
-                  slug="home"
-                  detailEnabled={false}
-                  accent={siteData.primary}
-                />
-              ))}</>
-            : undefined
-        }
-      >
-        {[...pageData.primary, ...pageData.secondary].map((section, i) => (
+
+      {/* Sections rendered directly — no PageShell wrapper.
+          Each ContentRenderer handles its own content-grid constraint
+          (full-bleed types like banner skip it). */}
+      <div className="space-y-16 pb-16">
+        {allSections.map((section, i) => (
           <ContentRenderer
             key={i}
             items={section.items}
             displayAs={section.displayAs}
+            label={section.label}
             slug="home"
             detailEnabled={false}
             accent={siteData.primary}
           />
         ))}
-      </PageShell>
+
+        {/* Supplemental sections */}
+        {pageData.supplemental.length > 0 && (
+          <div className="content-grid space-y-16">
+            {pageData.supplemental.map((s, i) => (
+              <ContentRenderer
+                key={`supp-${i}`}
+                items={s.items}
+                displayAs={s.displayAs}
+                label={s.label}
+                slug="home"
+                detailEnabled={false}
+                accent={siteData.primary}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       {showCta && (
         <CTASection
           config={ctaConfig}

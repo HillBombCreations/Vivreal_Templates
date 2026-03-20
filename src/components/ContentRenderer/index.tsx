@@ -32,15 +32,37 @@ const layoutMap: Record<string, ComponentType<ContentLayoutProps>> = {
   reviews: ReviewsLayout,
 };
 
+/** displayAs types that render full-width (no content-grid constraint) */
+const FULL_BLEED = new Set(["banner"]);
+
 export interface ContentRendererProps extends ContentLayoutProps {
   /** Which layout to render — defaults to 'cards' */
   displayAs?: string;
+  /** Optional section heading shown above the content */
+  label?: string;
 }
 
 export default function ContentRenderer({
   displayAs = "cards",
+  label,
   ...layoutProps
 }: ContentRendererProps) {
   const Layout = layoutMap[displayAs] ?? CardsLayout;
-  return <Layout {...layoutProps} />;
+  const isFullBleed = FULL_BLEED.has(displayAs);
+
+  return (
+    <section className={isFullBleed ? "" : "content-grid"}>
+      {label && !isFullBleed && (
+        <div className="mb-6">
+          <h2
+            className="text-2xl md:text-3xl font-bold tracking-tight"
+            style={{ color: "var(--text-primary)" }}
+          >
+            {label}
+          </h2>
+        </div>
+      )}
+      <Layout {...layoutProps} />
+    </section>
+  );
 }

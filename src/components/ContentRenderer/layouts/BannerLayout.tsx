@@ -9,7 +9,7 @@ import type { ContentLayoutProps } from "@/types/ContentItem";
 
 function Skeleton() {
   return (
-    <div className="relative min-h-[60vh] rounded-2xl overflow-hidden animate-pulse bg-black/[0.04]">
+    <div className="relative min-h-[60vh] overflow-hidden animate-pulse bg-black/[0.04]">
       <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
         <div className="h-8 w-2/3 max-w-md rounded-lg bg-black/[0.06]" />
         <div className="mt-4 h-5 w-1/2 max-w-sm rounded-lg bg-black/[0.04]" />
@@ -26,7 +26,7 @@ function Skeleton() {
 function Empty({ accent }: { accent: string }) {
   return (
     <div
-      className="relative min-h-[40vh] rounded-2xl overflow-hidden flex items-center justify-center"
+      className="relative min-h-[40vh] overflow-hidden flex items-center justify-center"
       style={{ background: `color-mix(in srgb, ${accent} 8%, white)` }}
     >
       <div className="text-center px-8">
@@ -60,7 +60,7 @@ export default function BannerLayout({
   const hasImage = !!item.imageUrl;
 
   return (
-    <section className="relative min-h-[60vh] md:min-h-[70vh] overflow-hidden rounded-2xl">
+    <section className="relative min-h-[60vh] md:min-h-[70vh] overflow-hidden">
       {/* Background image */}
       {hasImage && (
         <>
