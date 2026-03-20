@@ -86,6 +86,37 @@ export const getPageCollectionId = (
   return page?.collectionId || envFallback;
 };
 
+/**
+ * Check if a page has a specific integration binding (by type or name).
+ */
+export const pageHasIntegration = (
+  siteData: SiteData,
+  pageName: string,
+  integrationType: string
+): boolean => {
+  const page = siteData.pageConfigs?.find((p) => p.name === pageName);
+  if (!page?.integrations?.length) return false;
+  const lower = integrationType.toLowerCase();
+  return page.integrations.some(
+    (i) => (i.type ?? i.name ?? '').toLowerCase() === lower
+  );
+};
+
+/**
+ * Check if any page in the site has a specific integration binding.
+ */
+export const siteHasIntegration = (
+  siteData: SiteData,
+  integrationType: string
+): boolean => {
+  const lower = integrationType.toLowerCase();
+  return (siteData.pageConfigs ?? []).some((page) =>
+    (page.integrations ?? []).some(
+      (i) => (i.type ?? i.name ?? '').toLowerCase() === lower
+    )
+  );
+};
+
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const raw = await clientFetchSafe<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,

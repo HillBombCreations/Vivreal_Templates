@@ -33,6 +33,10 @@ export default async function DynamicPage({
 
   const { format, name } = pageConfig;
 
+  // Per-page CTA: enabled by default, controllable from portal
+  const showCta = pageConfig.cta?.enabled !== false;
+  const ctaConfig = pageConfig.cta ?? {};
+
   // Collection list pages — shows/events format
   if (format === "shows") {
     const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
@@ -65,7 +69,7 @@ export default async function DynamicPage({
           collectionId={collectionId}
           totalCount={totalCount}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -85,7 +89,7 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <AboutClient teamMembers={teamMembers} labels={labels} slug={slug} />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -118,9 +122,19 @@ export default async function DynamicPage({
       }
     }
 
+    // Read integration type and filter collection from page config bindings
+    const integrationBinding = (pageConfig.integrations ?? []).find(
+      (i) => (i.type ?? i.name ?? '').toLowerCase()
+    );
+    const integrationType = (integrationBinding?.type ?? integrationBinding?.name ?? 'stripe').toLowerCase();
+    // Filter collection can be on the integration binding or the page config (legacy)
+    const filterCollectionId = (integrationBinding as Record<string, unknown>)?.collectionId as string | undefined
+      ?? pageConfig.collectionId
+      ?? null;
+
     const [products, filters] = await Promise.all([
-      getProducts({ filters: activeFilters, searchVal, sortVal }),
-      pageConfig.collectionId ? getFilters(pageConfig.collectionId) : Promise.resolve([]),
+      getProducts({ filters: activeFilters, searchVal, sortVal, integrationType }),
+      filterCollectionId ? getFilters(filterCollectionId) : Promise.resolve([]),
     ]);
 
     return (
@@ -131,11 +145,12 @@ export default async function DynamicPage({
           filters={filters}
           labels={pageConfig.labels ?? {}}
           slug={slug}
+          detailEnabled={pageConfig.detailPage?.enabled !== false}
           initialFilters={activeFilters}
           initialSort={sortVal}
           initialSearch={searchVal}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -150,7 +165,7 @@ export default async function DynamicPage({
           collectionId={pageConfig.collectionId ?? ""}
           labels={pageConfig.labels ?? {}}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -178,7 +193,7 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <StaticPage labels={labels} pageName={name} />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );

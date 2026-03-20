@@ -28,6 +28,9 @@ export default async function DynamicItemPage({ params }: Props) {
 
   if (!pageConfig) return notFound();
 
+  // Guard: if detail pages are explicitly disabled for this page, return 404
+  if (pageConfig.detailPage?.enabled === false) return notFound();
+
   const primary = siteData?.primary || "#000000";
 
   // Show/event detail

@@ -31,8 +31,13 @@ const Providers = ({
         }
     }, [siteData]);
 
-    const pageList = (siteData.pageConfigs ?? []) as Array<{ format?: string }>;
-    const hasProducts = pageList.some((p) => p.format === 'products');
+    const pages = siteData.pageConfigs ?? [];
+    const hasProducts = pages.some((p) => p.format === 'products') ||
+        pages.some((p) =>
+            (p.integrations ?? []).some(
+                (i) => (i.type ?? i.name ?? '').toLowerCase() === 'stripe'
+            )
+        );
 
     const content = (
         <QueryClientProvider client={queryClient}>
