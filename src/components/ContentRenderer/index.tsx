@@ -8,6 +8,12 @@ import CarouselLayout from "./layouts/CarouselLayout";
 import TimelineLayout from "./layouts/TimelineLayout";
 import GalleryLayout from "./layouts/GalleryLayout";
 import FeedLayout from "./layouts/FeedLayout";
+import BannerLayout from "./layouts/BannerLayout";
+import ShowcaseLayout from "./layouts/ShowcaseLayout";
+import FeatureListLayout from "./layouts/FeatureListLayout";
+import FormLayout from "./layouts/FormLayout";
+import StatsLayout from "./layouts/StatsLayout";
+import ReviewsLayout from "./layouts/ReviewsLayout";
 import type { ComponentType } from "react";
 
 const layoutMap: Record<string, ComponentType<ContentLayoutProps>> = {
@@ -18,6 +24,12 @@ const layoutMap: Record<string, ComponentType<ContentLayoutProps>> = {
   timeline: TimelineLayout,
   gallery: GalleryLayout,
   feed: FeedLayout,
+  banner: BannerLayout,
+  showcase: ShowcaseLayout,
+  "feature-list": FeatureListLayout,
+  form: FormLayout,
+  stats: StatsLayout,
+  reviews: ReviewsLayout,
 };
 
 export interface ContentRendererProps extends ContentLayoutProps {

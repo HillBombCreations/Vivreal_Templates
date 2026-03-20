@@ -26,7 +26,7 @@ export interface PageIntegrationBinding {
     type?: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery';
+    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews';
     /** Collection ID for integration-type collections (e.g., product filters). */
     collectionId?: string;
 }
@@ -35,7 +35,7 @@ export interface PageCollectionBinding {
     collectionId: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section';
+    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews' | 'grid' | 'feed';
     sectionType?: string;
     sectionConfig?: Record<string, unknown>;
     order?: number;
