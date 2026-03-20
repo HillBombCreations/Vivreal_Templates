@@ -4,6 +4,9 @@ import Footer from "@/components/Footer";
 import CTASection from "@/components/HomeSections/CTASection";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
+import { getPageData } from "@/lib/api/pageData";
+import ContentRenderer from "@/components/ContentRenderer";
+import PageShell from "@/components/PageShell";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getProducts, getFilters } from "@/lib/api/products";
@@ -199,7 +202,42 @@ export default async function DynamicPage({
     );
   }
 
-  return notFound();
+  // Generic binding-driven pages (list, grid, standard, or any custom format)
+  const pageData = await getPageData(pageConfig);
+  const detailEnabled = pageConfig.detailPage?.enabled !== false;
+  const hasAnyContent = [...pageData.primary, ...pageData.secondary, ...pageData.supplemental, ...pageData.sidebar].some(s => s.items.length > 0);
+
+  if (!hasAnyContent) return notFound();
+
+  return (
+    <>
+      <Navbar />
+      <PageShell
+        title={pageConfig.labels?.title}
+        subtitle={pageConfig.labels?.subtitle}
+        sidebar={
+          pageData.sidebar.length > 0
+            ? <>{pageData.sidebar.map((s, i) => (
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+              ))}</>
+            : undefined
+        }
+        supplemental={
+          pageData.supplemental.length > 0
+            ? <>{pageData.supplemental.map((s, i) => (
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+              ))}</>
+            : undefined
+        }
+      >
+        {[...pageData.primary, ...pageData.secondary].map((section, i) => (
+          <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} />
+        ))}
+      </PageShell>
+      {showCta && <CTASection config={ctaConfig} />}
+      <Footer />
+    </>
+  );
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
