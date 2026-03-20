@@ -1,6 +1,12 @@
 import 'server-only';
 import type { MetadataRoute } from 'next';
-import type { HomeSection, PageConfig, SiteData } from '@/types/SiteData';
+import type {
+  HomeSection,
+  PageCollectionBinding,
+  PageConfig,
+  PageIntegrationBinding,
+  SiteData,
+} from '@/types/SiteData';
 import { clientFetchSafe } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -116,6 +122,39 @@ export const siteHasIntegration = (
     )
   );
 };
+
+/**
+ * Group a page's collection and integration bindings by their role.
+ * Bindings without an explicit role default to 'primary'.
+ */
+export function getPageBindingsByRole(pageConfig: PageConfig): {
+  primary: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  secondary: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  supplemental: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  sidebar: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+} {
+  const collections = pageConfig.collections ?? [];
+  const integrations = pageConfig.integrations ?? [];
+
+  return {
+    primary: {
+      collections: collections.filter((c) => (c.role ?? 'primary') === 'primary'),
+      integrations: integrations.filter((i) => (i.role ?? 'primary') === 'primary'),
+    },
+    secondary: {
+      collections: collections.filter((c) => c.role === 'secondary'),
+      integrations: integrations.filter((i) => i.role === 'secondary'),
+    },
+    supplemental: {
+      collections: collections.filter((c) => c.role === 'supplemental'),
+      integrations: integrations.filter((i) => i.role === 'supplemental'),
+    },
+    sidebar: {
+      collections: collections.filter((c) => c.role === 'sidebar'),
+      integrations: integrations.filter((i) => i.role === 'sidebar'),
+    },
+  };
+}
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const raw = await clientFetchSafe<SiteDetailsResponse | null>(
