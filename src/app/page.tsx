@@ -38,9 +38,19 @@ async function Resolved() {
     <>
       <Navbar />
 
-      {/* Sections rendered directly — no PageShell wrapper.
-          Each ContentRenderer handles its own content-grid constraint
-          (full-bleed types like banner skip it). */}
+      {/* Hero banner — rendered from page labels, not a collection binding */}
+      {(homePageConfig.labels?.title || homePageConfig.labels?.heroImage) && (
+        <ContentRenderer
+          items={[]}
+          displayAs="banner"
+          slug="home"
+          detailEnabled={false}
+          accent={siteData.primary}
+          pageLabels={homePageConfig.labels}
+        />
+      )}
+
+      {/* Collection sections */}
       <div className="space-y-16 pb-16">
         {allSections.map((section, i) => (
           <ContentRenderer
