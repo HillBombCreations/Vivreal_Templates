@@ -35,7 +35,11 @@ export interface PageCollectionBinding {
     collectionId: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery';
+    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section';
+    sectionType?: string;
+    sectionConfig?: Record<string, unknown>;
+    order?: number;
+    enabled?: boolean;
 }
 
 export interface PageCtaConfig {
@@ -115,6 +119,7 @@ export interface SiteData {
         description?: string,
     },
     homeSections?: HomeSection[];
+    homePageConfig?: PageConfig | null;
 }
 
 export type Pages = {

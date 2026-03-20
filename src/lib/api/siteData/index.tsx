@@ -55,6 +55,11 @@ export const getSiteData = async (): Promise<SiteData> => {
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
 
+  const allPages = raw.pages ?? [];
+  const homePageConfig = allPages.find(
+    (p) => p.format === "home" || p.slug === "home"
+  );
+
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
@@ -62,7 +67,8 @@ export const getSiteData = async (): Promise<SiteData> => {
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
-    pageConfigs: raw.pages ?? [],
+    pageConfigs: allPages.filter((p) => p.format !== "home" && p.slug !== "home"),
+    homePageConfig: homePageConfig ?? null,
     homeSections: raw.homeSections,
   };
 };
