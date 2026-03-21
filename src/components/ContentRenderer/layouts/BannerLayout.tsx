@@ -63,7 +63,8 @@ export default function BannerLayout({
 
   const heroTitle = (labels.title as string) || items[0]?.title || "Welcome";
   const heroSubtitle = (labels.subtitle as string) || items[0]?.description;
-  const heroImage = (labels.heroImageUrl as string) || items[0]?.imageUrl;
+  const heroImageField = labels.heroImage as Record<string, unknown> | undefined;
+  const heroImage = (heroImageField?.currentFile as Record<string, string>)?.source || items[0]?.imageUrl;
   const buttonLabel = (labels.buttonLabel as string) || items[0]?.tags?.[0];
   const buttonLink = (labels.buttonLink as string) || items[0]?.href;
 
