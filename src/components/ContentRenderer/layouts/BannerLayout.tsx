@@ -88,7 +88,7 @@ export default function BannerLayout({
       />
 
       <div className="content-grid relative">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center min-h-[60vh] md:min-h-[70vh] py-16 md:py-20">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 items-center min-h-[60vh] md:min-h-[70vh] pt-24 md:pt-28 pb-16 md:pb-20">
           {/* Left — text + CTA */}
           <div className="flex flex-col justify-center order-2 lg:order-1">
             <h1

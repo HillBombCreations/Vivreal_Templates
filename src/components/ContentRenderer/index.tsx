@@ -54,17 +54,17 @@ export default function ContentRenderer({
   const isFullBleed = FULL_BLEED.has(displayAs);
 
   return (
-    <section className={isFullBleed ? "" : "content-grid"}>
+    <section className={isFullBleed ? "" : "content-grid py-16 md:py-24"}>
       {label && !isFullBleed && (
-        <div className="mb-6">
+        <div className="mb-8 md:mb-12 text-center">
           <h2
-            className="text-2xl md:text-3xl font-bold tracking-tight"
+            className="text-3xl md:text-4xl font-bold tracking-tight"
             style={{ color: "var(--text-primary)" }}
           >
             {label}
           </h2>
           {subtitle && (
-            <p className="mt-2 text-base text-black/50">{subtitle}</p>
+            <p className="mt-3 text-base md:text-lg text-black/50 max-w-2xl mx-auto leading-relaxed">{subtitle}</p>
           )}
         </div>
       )}

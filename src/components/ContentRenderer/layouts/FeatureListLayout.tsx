@@ -56,66 +56,71 @@ export default function FeatureListLayout({
   const primary = accent || "var(--primary)";
 
   return (
-    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-      {items.map((item) => (
-        <div
-          key={item.id}
-          className="rounded-2xl border border-black/[0.06] bg-white p-6 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
-        >
-          {/* Icon or image */}
+    <div
+      className="rounded-3xl py-14 md:py-20 px-6 md:px-10"
+      style={{ background: `color-mix(in srgb, ${primary} 5%, white)` }}
+    >
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {items.map((item) => (
           <div
-            className="h-12 w-12 rounded-xl flex items-center justify-center mb-4 overflow-hidden"
-            style={{ background: `color-mix(in srgb, ${primary} 8%, transparent)` }}
+            key={item.id}
+            className="rounded-2xl bg-white p-6 md:p-8 shadow-sm transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
           >
-            {item.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={item.imageUrl}
-                alt={item.title}
-                className="h-full w-full object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <span
-                className="text-lg font-bold"
-                style={{ color: primary }}
-              >
-                {item.title.charAt(0).toUpperCase()}
-              </span>
+            {/* Icon or image */}
+            <div
+              className="h-48 md:h-56 w-full rounded-2xl flex items-center justify-center mb-5 overflow-hidden"
+              style={{ background: `color-mix(in srgb, ${primary} 6%, transparent)` }}
+            >
+              {item.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.imageUrl}
+                  alt={item.title}
+                  className="h-full w-full object-contain p-2"
+                  loading="lazy"
+                />
+              ) : (
+                <span
+                  className="text-xl font-bold"
+                  style={{ color: primary }}
+                >
+                  {item.title.charAt(0).toUpperCase()}
+                </span>
+              )}
+            </div>
+
+            {/* Title */}
+            <h3 className="text-lg font-semibold tracking-tight">
+              {item.title}
+            </h3>
+
+            {/* Description */}
+            {item.description && (
+              <p className="mt-2.5 text-sm leading-relaxed text-black/55">
+                {item.description}
+              </p>
+            )}
+
+            {/* Tags */}
+            {item.tags && item.tags.length > 0 && (
+              <div className="mt-5 flex gap-1.5 flex-wrap">
+                {item.tags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
+                    style={{
+                      background: `color-mix(in srgb, ${primary} 10%, transparent)`,
+                      color: primary,
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
             )}
           </div>
-
-          {/* Title */}
-          <h3 className="text-[15px] font-semibold tracking-tight">
-            {item.title}
-          </h3>
-
-          {/* Description */}
-          {item.description && (
-            <p className="mt-2 text-sm leading-relaxed text-black/50 line-clamp-3">
-              {item.description}
-            </p>
-          )}
-
-          {/* Tags */}
-          {item.tags && item.tags.length > 0 && (
-            <div className="mt-4 flex gap-1.5 flex-wrap">
-              {item.tags.slice(0, 3).map((tag) => (
-                <span
-                  key={tag}
-                  className="rounded-full px-2.5 py-0.5 text-[11px] font-medium"
-                  style={{
-                    background: `color-mix(in srgb, ${primary} 8%, transparent)`,
-                    color: primary,
-                  }}
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }

@@ -51,6 +51,8 @@ export default function ShowcaseLayout({
   emptyMessage,
 }: ContentLayoutProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState<"left" | "right" | null>(null);
+  const [animKey, setAnimKey] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
   if (loading) return <Skeleton />;
@@ -59,8 +61,16 @@ export default function ShowcaseLayout({
   const primary = accent || "var(--primary)";
   const current = items[currentIndex];
 
-  const next = () => setCurrentIndex((i) => (i + 1) % items.length);
-  const prev = () => setCurrentIndex((i) => (i - 1 + items.length) % items.length);
+  const next = () => {
+    setDirection("right");
+    setCurrentIndex((i) => (i + 1) % items.length);
+    setAnimKey((k) => k + 1);
+  };
+  const prev = () => {
+    setDirection("left");
+    setCurrentIndex((i) => (i - 1 + items.length) % items.length);
+    setAnimKey((k) => k + 1);
+  };
 
   const onTouchStart = (e: React.TouchEvent) => {
     setTouchStartX(e.touches[0]?.clientX ?? null);
@@ -83,7 +93,7 @@ export default function ShowcaseLayout({
       {/* Desktop layout */}
       <div className="hidden md:grid grid-cols-[1fr_auto] items-start gap-4">
         <div className="rounded-2xl border border-black/[0.06] bg-white shadow-sm overflow-hidden">
-          <div className="grid md:grid-cols-2 h-[400px] lg:h-[440px]">
+          <div key={animKey} className={`grid md:grid-cols-2 h-[400px] lg:h-[440px] ${direction === "right" ? "animate-slide-in-right" : direction === "left" ? "animate-slide-in-left" : ""}`}>
             {/* Image half */}
             <div className="relative overflow-hidden" style={{ background: `color-mix(in srgb, ${primary} 3%, white)` }}>
               {current.imageUrl ? (
@@ -125,18 +135,29 @@ export default function ShowcaseLayout({
                 </p>
               )}
 
-              {detailHref && (
-                <div className="mt-6">
-                  <a
-                    href={detailHref}
-                    className="group h-11 px-6 cursor-pointer rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
-                    style={{ background: primary, color: "white" }}
-                  >
-                    View details
-                    <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </a>
-                </div>
-              )}
+              {/* CTA button — uses buttonLabel + product-type from raw data for filter link */}
+              {(() => {
+                const raw = current.raw ?? {};
+                const btnLabel = (raw.buttonLabel as string) || (detailHref ? "View details" : null);
+                const productType = (raw["product-type"] as string) || (raw.productType as string);
+                const href = productType
+                  ? `/products?f_productType=${encodeURIComponent(productType)}`
+                  : detailHref;
+
+                if (!btnLabel || !href) return null;
+                return (
+                  <div className="mt-6">
+                    <a
+                      href={href}
+                      className="group h-11 px-6 cursor-pointer rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+                      style={{ background: primary, color: "white" }}
+                    >
+                      {btnLabel}
+                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                    </a>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -173,7 +194,7 @@ export default function ShowcaseLayout({
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
       >
-        <div className="rounded-2xl border border-black/[0.06] bg-white shadow-sm overflow-hidden">
+        <div key={animKey} className={`rounded-2xl border border-black/[0.06] bg-white shadow-sm overflow-hidden ${direction === "right" ? "animate-slide-in-right" : direction === "left" ? "animate-slide-in-left" : ""}`}>
           {current.imageUrl && (
             <div className="relative h-[260px] sm:h-[300px] overflow-hidden" style={{ background: `color-mix(in srgb, ${primary} 3%, white)` }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -198,6 +219,28 @@ export default function ShowcaseLayout({
                 {current.price}
               </p>
             )}
+
+            {/* CTA button — mobile */}
+            {(() => {
+              const raw = current.raw ?? {};
+              const btnLabel = (raw.buttonLabel as string) || "View details";
+              const productType = (raw["product-type"] as string) || (raw.productType as string);
+              const href = productType
+                ? `/products?f_productType=${encodeURIComponent(productType)}`
+                : detailHref;
+
+              if (!href) return null;
+              return (
+                <a
+                  href={href}
+                  className="mt-4 group h-10 px-5 cursor-pointer rounded-full text-sm font-semibold inline-flex items-center gap-2 shadow-sm transition-all hover:shadow-md active:scale-[0.98]"
+                  style={{ background: primary, color: "white" }}
+                >
+                  {btnLabel}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </a>
+              );
+            })()}
           </div>
         </div>
 

@@ -46,9 +46,6 @@ export default function FormLayout({
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<ToastState>({ open: false });
 
-  const heading = items[0]?.title || "Get in touch";
-  const subheading = items[0]?.description || "Have a question? Drop us a line.";
-
   const isValidEmail = (email: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -104,27 +101,23 @@ export default function FormLayout({
 
   return (
     <>
-      <div className="grid gap-12 lg:grid-cols-2 items-center">
-        {/* Left column -- heading */}
-        <div className="text-center lg:text-left">
-          <h2 className="text-3xl md:text-4xl font-bold tracking-tight">
-            {heading}
-          </h2>
-          <p className="mt-4 text-base md:text-lg leading-relaxed text-black/55 max-w-lg mx-auto lg:mx-0">
-            {subheading}
-          </p>
-
-          <div className="mt-8 flex flex-wrap items-center gap-3 justify-center lg:justify-start">
-            {features.map((f) => (
-              <div
-                key={f.label}
-                className="inline-flex items-center gap-2 rounded-full border border-black/[0.06] bg-black/[0.02] px-4 py-2 text-xs font-medium text-black/70"
+      <div className="grid gap-10 lg:grid-cols-[1fr_1.2fr] items-center min-h-[50vh]">
+        {/* Left column -- feature badges */}
+        <div className="flex flex-col gap-4">
+          {features.map((f) => (
+            <div
+              key={f.label}
+              className="inline-flex items-center gap-3 rounded-xl border border-black/[0.06] bg-white px-5 py-3.5 text-sm font-medium text-black/70 shadow-sm"
+            >
+              <span
+                className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: `color-mix(in srgb, ${primary} 10%, transparent)`, color: primary }}
               >
-                <span style={{ color: primary }}>{f.icon}</span>
-                {f.label}
-              </div>
-            ))}
-          </div>
+                {f.icon}
+              </span>
+              {f.label}
+            </div>
+          ))}
         </div>
 
         {/* Right column -- form */}

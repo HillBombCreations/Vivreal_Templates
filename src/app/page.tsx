@@ -34,31 +34,24 @@ async function Resolved() {
   const ctaConfig = homePageConfig.cta ?? {};
   const showCta = homePageConfig.cta?.enabled !== false;
 
-  // Merge signed heroImage from siteData (signed via siteDetails.values.mediaFields)
-  // into page labels so BannerLayout can read currentFile.source
-  const pageLabels = {
-    ...homePageConfig.labels,
-    ...(siteData.heroImage ? { heroImage: siteData.heroImage } : {}),
-  };
-
   return (
     <>
       <Navbar />
 
-      {/* Hero banner — rendered from page labels, not a collection binding */}
-      {(pageLabels.title || pageLabels.heroImage) && (
+      {/* Hero banner — rendered from page labels (API signs heroImage via processSiteDetails) */}
+      {(homePageConfig.labels?.title || homePageConfig.labels?.heroImage) && (
         <ContentRenderer
           items={[]}
           displayAs="banner"
           slug="home"
           detailEnabled={false}
           accent={siteData.primary}
-          pageLabels={pageLabels}
+          pageLabels={homePageConfig.labels}
         />
       )}
 
-      {/* Collection sections */}
-      <div className="space-y-16 pb-16">
+      {/* Collection sections — each section targets full viewport height */}
+      <div className="pb-16">
         {allSections.map((section, i) => (
           <ContentRenderer
             key={i}
