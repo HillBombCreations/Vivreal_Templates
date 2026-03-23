@@ -49,6 +49,7 @@ export interface PageCtaConfig {
     subheading?: string;
     label?: string;
     linkTo?: string;
+    [key: string]: unknown;
 }
 
 export interface PageConfig {
