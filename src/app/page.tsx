@@ -1,8 +1,8 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
-import { HomeSectionRenderer } from "@/components/HomeSections";
-import { getDefaultHomeSections } from "@/components/HomeSections/defaults";
-import { prefetchHomeSectionData } from "@/lib/api/homeSectionData";
+import { getPageData } from "@/lib/api/pageData";
+import ContentRenderer from "@/components/ContentRenderer";
+import CTASection from "@/components/HomeSections/CTASection";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "./loading";
@@ -11,25 +11,88 @@ export const dynamic = "force-dynamic";
 
 async function Resolved() {
   const siteData = await getSiteData();
-  const pages = siteData.pageConfigs ?? [];
+  const homePageConfig = siteData.homePageConfig;
 
-  const sections = (siteData.homeSections ?? getDefaultHomeSections(pages))
-    .filter((s) => s.enabled)
-    .sort((a, b) => a.order - b.order);
+  if (!homePageConfig) {
+    return (
+      <>
+        <Navbar />
+        <div className="content-grid py-20 text-center">
+          <h1 className="text-3xl font-bold">Welcome</h1>
+          <p className="mt-4 text-lg text-black/50">
+            {siteData.businessInfo?.description || "Discover our latest content, events, and more."}
+          </p>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
-  const prefetchedData = await prefetchHomeSectionData(sections, siteData);
+  const pageData = await getPageData(homePageConfig);
+  const allSections = [...pageData.primary, ...pageData.secondary];
+
+  const ctaConfig = homePageConfig.cta ?? {};
+  const showCta = homePageConfig.cta?.enabled !== false;
 
   return (
     <>
       <Navbar />
-      {sections.map((section) => (
-        <HomeSectionRenderer
-          key={`${section.type}-${section.order}`}
-          section={section}
-          siteData={siteData}
-          prefetchedData={prefetchedData[section.type]}
+
+      {/* Hero banner — rendered from page labels (API signs heroImage via processSiteDetails) */}
+      {(homePageConfig.labels?.title || homePageConfig.labels?.heroImage) && (
+        <ContentRenderer
+          items={[]}
+          displayAs="banner"
+          slug="home"
+          detailEnabled={false}
+          accent={siteData.primary}
+          pageLabels={homePageConfig.labels}
         />
-      ))}
+      )}
+
+      {/* Collection sections — each section targets full viewport height */}
+      <div className="pb-16">
+        {allSections.map((section, i) => (
+          <ContentRenderer
+            key={i}
+            items={section.items}
+            displayAs={section.displayAs}
+            label={section.label}
+            subtitle={section.subtitle}
+            slug="home"
+            detailEnabled={false}
+            accent={siteData.primary}
+            pageLabels={homePageConfig.labels}
+          />
+        ))}
+
+        {/* Supplemental sections */}
+        {pageData.supplemental.length > 0 && (
+          <div className="content-grid space-y-16">
+            {pageData.supplemental.map((s, i) => (
+              <ContentRenderer
+                key={`supp-${i}`}
+                items={s.items}
+                displayAs={s.displayAs}
+                label={s.label}
+                subtitle={s.subtitle}
+                slug="home"
+                detailEnabled={false}
+                accent={siteData.primary}
+                pageLabels={homePageConfig.labels}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showCta && (
+        <CTASection
+          config={ctaConfig}
+          siteData={siteData}
+          prefetchedData={{}}
+        />
+      )}
       <Footer />
     </>
   );

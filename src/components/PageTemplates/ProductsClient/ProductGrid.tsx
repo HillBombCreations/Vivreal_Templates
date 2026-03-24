@@ -17,6 +17,7 @@ interface ProductGridProps {
   >;
   slug: string;
   loading?: boolean;
+  detailEnabled?: boolean;
   onItemAdded?: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function ProductGrid({
   setSelectedVariants,
   slug,
   loading = false,
+  detailEnabled = true,
   onItemAdded,
 }: ProductGridProps) {
   const router = useRouter();
@@ -110,10 +112,10 @@ export default function ProductGrid({
             });
             onItemAdded?.();
           }}
-          onClick={() =>
+          onClick={detailEnabled ? () =>
             router.push(
               `/${slug}/${encodeURIComponent(getProductKey(product))}`
-            )
+            ) : undefined
           }
         />
       ))}
@@ -135,7 +137,7 @@ interface ProductCardProps {
   cart: Record<string, { quantity: number }>;
   setQty: (cartKey: string, qty: number) => void;
   onAddToCart: () => void;
-  onClick: () => void;
+  onClick?: () => void;
 }
 
 function ProductCard({
@@ -168,13 +170,13 @@ function ProductCard({
       role="link"
       tabIndex={0}
       onClick={onClick}
-      onKeyDown={(e) => {
+      onKeyDown={onClick ? (e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onClick();
         }
-      }}
-      className="group text-left rounded-2xl border border-black/[0.06] bg-white overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-black/10 flex flex-col h-[340px]"
+      } : undefined}
+      className={`group text-left rounded-2xl border border-black/[0.06] bg-white overflow-hidden hover:shadow-lg transition-shadow duration-300 focus:outline-none focus:ring-2 focus:ring-black/10 flex flex-col h-[340px] ${onClick ? "cursor-pointer" : ""}`}
     >
       {/* Image */}
       <div className="border-b border-black/[0.04] bg-black/[0.01]">

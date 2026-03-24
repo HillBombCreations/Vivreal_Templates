@@ -62,8 +62,9 @@ export async function getProducts(opts?: {
   filters?: Record<string, string>;
   searchVal?: string;
   sortVal?: string;
+  integrationType?: string;
 }): Promise<Product[]> {
-  const params = new URLSearchParams({ type: "stripe" });
+  const params = new URLSearchParams({ type: opts?.integrationType || "stripe" });
   if (opts?.filters) {
     for (const [key, val] of Object.entries(opts.filters)) {
       if (key && val) params.set(`filters[${key}]`, val);

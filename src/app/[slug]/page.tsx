@@ -4,9 +4,13 @@ import Footer from "@/components/Footer";
 import CTASection from "@/components/HomeSections/CTASection";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
+import { getPageData } from "@/lib/api/pageData";
+import ContentRenderer from "@/components/ContentRenderer";
+import PageShell from "@/components/PageShell";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getProducts, getFilters } from "@/lib/api/products";
+import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
 import ShowPageClient from "@/components/PageTemplates/ShowPageClient";
 import AboutClient from "@/components/PageTemplates/AboutClient";
 import FormClient from "@/components/PageTemplates/FormClient";
@@ -33,8 +37,30 @@ export default async function DynamicPage({
 
   const { format, name } = pageConfig;
 
+  // Per-page CTA: enabled by default, controllable from portal
+  const showCta = pageConfig.cta?.enabled !== false;
+  const ctaConfig = pageConfig.cta ?? {};
+
   // Collection list pages — shows/events format
   if (format === "shows") {
+    const showsBinding = (pageConfig.collections ?? [])[0];
+    const showsDisplayAs = showsBinding?.displayAs;
+
+    if (showsDisplayAs && showsDisplayAs !== 'cards') {
+      const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
+      const { items } = await getCollectionItems(collectionId);
+      return (
+        <>
+          <Navbar />
+          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
+            <ContentRenderer items={items} displayAs={showsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
+          </PageShell>
+          {showCta && <CTASection config={ctaConfig} />}
+          <Footer />
+        </>
+      );
+    }
+
     const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
     const { shows, totalCount } = await getShowsPaginated({ collectionId, limit: 100, skip: 0 });
     const today = new Date();
@@ -65,7 +91,7 @@ export default async function DynamicPage({
           collectionId={collectionId}
           totalCount={totalCount}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -73,6 +99,24 @@ export default async function DynamicPage({
 
   // Collection list pages — team/people format
   if (format === "team") {
+    const teamBinding = (pageConfig.collections ?? [])[0];
+    const teamDisplayAs = teamBinding?.displayAs;
+
+    if (teamDisplayAs && teamDisplayAs !== 'cards') {
+      const collectionId = getPageCollectionId(siteData, name, process.env.TEAMMEMBERS_ID || "");
+      const { items } = await getCollectionItems(collectionId);
+      return (
+        <>
+          <Navbar />
+          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
+            <ContentRenderer items={items} displayAs={teamDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
+          </PageShell>
+          {showCta && <CTASection config={ctaConfig} />}
+          <Footer />
+        </>
+      );
+    }
+
     const collectionId = getPageCollectionId(siteData, name, process.env.TEAMMEMBERS_ID || "");
     const teamMembers = await getTeamMembers(collectionId);
 
@@ -85,7 +129,7 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <AboutClient teamMembers={teamMembers} labels={labels} slug={slug} />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -106,6 +150,27 @@ export default async function DynamicPage({
 
   // Product listing pages — products format
   if (format === "products") {
+    // Read integration type and displayAs from page config bindings
+    const integrationBinding = (pageConfig.integrations ?? []).find(
+      (i) => (i.type ?? i.name ?? '').toLowerCase()
+    );
+    const integrationType = (integrationBinding?.type ?? integrationBinding?.name ?? 'stripe').toLowerCase();
+    const productsDisplayAs = integrationBinding?.displayAs;
+
+    if (productsDisplayAs && productsDisplayAs !== 'cards') {
+      const { items } = await getIntegrationItems(integrationType, {});
+      return (
+        <>
+          <Navbar />
+          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
+            <ContentRenderer items={items} displayAs={productsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
+          </PageShell>
+          {showCta && <CTASection config={ctaConfig} />}
+          <Footer />
+        </>
+      );
+    }
+
     const resolvedSearchParams = await searchParams;
     const searchVal = resolvedSearchParams?.search as string | undefined;
     const sortVal = resolvedSearchParams?.sort as string | undefined;
@@ -117,10 +182,14 @@ export default async function DynamicPage({
         activeFilters[key.slice(2)] = val;
       }
     }
+    // Filter collection can be on the integration binding or the page config (legacy)
+    const filterCollectionId = (integrationBinding as Record<string, unknown>)?.collectionId as string | undefined
+      ?? pageConfig.collectionId
+      ?? null;
 
     const [products, filters] = await Promise.all([
-      getProducts({ filters: activeFilters, searchVal, sortVal }),
-      pageConfig.collectionId ? getFilters(pageConfig.collectionId) : Promise.resolve([]),
+      getProducts({ filters: activeFilters, searchVal, sortVal, integrationType }),
+      filterCollectionId ? getFilters(filterCollectionId) : Promise.resolve([]),
     ]);
 
     return (
@@ -131,11 +200,12 @@ export default async function DynamicPage({
           filters={filters}
           labels={pageConfig.labels ?? {}}
           slug={slug}
+          detailEnabled={pageConfig.detailPage?.enabled !== false}
           initialFilters={activeFilters}
           initialSort={sortVal}
           initialSearch={searchVal}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -150,7 +220,7 @@ export default async function DynamicPage({
           collectionId={pageConfig.collectionId ?? ""}
           labels={pageConfig.labels ?? {}}
         />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
@@ -178,13 +248,48 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <StaticPage labels={labels} pageName={name} />
-        <CTASection />
+        {showCta && <CTASection config={ctaConfig} />}
         <Footer />
       </>
     );
   }
 
-  return notFound();
+  // Generic binding-driven pages (list, grid, standard, or any custom format)
+  const pageData = await getPageData(pageConfig);
+  const detailEnabled = pageConfig.detailPage?.enabled !== false;
+  const hasAnyContent = [...pageData.primary, ...pageData.secondary, ...pageData.supplemental, ...pageData.sidebar].some(s => s.items.length > 0);
+
+  if (!hasAnyContent) return notFound();
+
+  return (
+    <>
+      <Navbar />
+      <PageShell
+        title={pageConfig.labels?.title}
+        subtitle={pageConfig.labels?.subtitle}
+        sidebar={
+          pageData.sidebar.length > 0
+            ? <>{pageData.sidebar.map((s, i) => (
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+              ))}</>
+            : undefined
+        }
+        supplemental={
+          pageData.supplemental.length > 0
+            ? <>{pageData.supplemental.map((s, i) => (
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+              ))}</>
+            : undefined
+        }
+      >
+        {[...pageData.primary, ...pageData.secondary].map((section, i) => (
+          <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} />
+        ))}
+      </PageShell>
+      {showCta && <CTASection config={ctaConfig} />}
+      <Footer />
+    </>
+  );
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {

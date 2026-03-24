@@ -207,6 +207,7 @@ interface ProductsClientProps {
   filters: Filter[];
   labels: Record<string, string>;
   slug: string;
+  detailEnabled?: boolean;
   initialFilters?: Record<string, string>;
   initialSort?: string;
   initialSearch?: string;
@@ -217,6 +218,7 @@ export default function ProductsClient({
   filters,
   labels,
   slug,
+  detailEnabled = true,
   initialFilters,
   initialSort,
   initialSearch,
@@ -495,6 +497,7 @@ export default function ProductsClient({
               setSelectedVariants={setSelectedVariants}
               slug={slug}
               loading={loading}
+              detailEnabled={detailEnabled}
               onItemAdded={() => setAddTick((t) => t + 1)}
             />
 

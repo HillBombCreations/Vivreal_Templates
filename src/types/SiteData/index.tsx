@@ -22,14 +22,50 @@ export interface SocialLink {
     url: string;
 }
 
+export interface PageIntegrationBinding {
+    type?: string;
+    name?: string;
+    role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
+    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews';
+    /** Collection ID for integration-type collections (e.g., product filters). */
+    collectionId?: string;
+}
+
+export interface PageCollectionBinding {
+    collectionId: string;
+    name?: string;
+    role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
+    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews' | 'grid' | 'feed';
+    sectionType?: string;
+    sectionConfig?: Record<string, unknown>;
+    order?: number;
+    enabled?: boolean;
+    subtitle?: string;
+}
+
+export interface PageCtaConfig {
+    enabled?: boolean;
+    heading?: string;
+    subheading?: string;
+    label?: string;
+    linkTo?: string;
+}
+
 export interface PageConfig {
     name: string;
     slug: string;
     format: 'collection-list' | 'collection-detail' | 'form' | 'static' | string;
     collectionId: string | null;
+    collections?: PageCollectionBinding[];
+    integrations?: PageIntegrationBinding[];
     labels: Record<string, string>;
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
+    cta?: PageCtaConfig;
+    detailPage?: {
+        enabled?: boolean;
+        integrations?: PageIntegrationBinding[];
+    };
 }
 
 export interface HomeSectionConfig {
@@ -84,6 +120,7 @@ export interface SiteData {
         description?: string,
     },
     homeSections?: HomeSection[];
+    homePageConfig?: PageConfig | null;
 }
 
 export type Pages = {
