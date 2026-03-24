@@ -44,6 +44,7 @@ export interface PageCollectionBinding {
 }
 
 export interface PageCtaConfig {
+    [key: string]: unknown;
     enabled?: boolean;
     heading?: string;
     subheading?: string;
