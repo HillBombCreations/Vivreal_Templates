@@ -1,7 +1,10 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { getPageData } from "@/lib/api/pageData";
+import { getShowsPaginated } from "@/lib/api/shows";
+import { getPartners } from "@/lib/api/partners";
 import ContentRenderer from "@/components/ContentRenderer";
+import HeroSection from "@/components/HomeSections/HeroSection";
 import CTASection from "@/components/HomeSections/CTASection";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -28,17 +31,99 @@ async function Resolved() {
     );
   }
 
-  const pageData = await getPageData(homePageConfig);
-  const allSections = [...pageData.primary, ...pageData.secondary];
-
+  const collections = homePageConfig.collections ?? [];
   const ctaConfig = homePageConfig.cta ?? {};
   const showCta = homePageConfig.cta?.enabled !== false;
+
+  // Detect site type from page bindings
+  const showsBinding = collections.find(
+    (c) => c.name?.toLowerCase().includes('show') || c.displayAs === 'shows'
+  );
+  const partnersBinding = collections.find(
+    (c) => c.name?.toLowerCase().includes('partner') || c.role === 'supplemental'
+  );
+  const reviewsBinding = collections.find(
+    (c) => c.name?.toLowerCase().includes('review') || c.name?.toLowerCase().includes('testimonial') || c.displayAs === 'reviews'
+  );
+
+  const isShowcase = !!showsBinding;
+
+  if (isShowcase) {
+    // ── Showcase layout: HeroSection + shows + partners + testimonials + CTA ──
+
+    // Fetch shows for the hero section
+    const showsCollectionId = showsBinding?.collectionId ?? '';
+    const { shows } = showsCollectionId
+      ? await getShowsPaginated({ collectionId: showsCollectionId, limit: 100, skip: 0 })
+      : { shows: [] };
+
+    // Fetch partners
+    const partnersCollectionId = partnersBinding?.collectionId ?? '';
+    const partners = partnersCollectionId
+      ? await getPartners(partnersCollectionId)
+      : [];
+
+    // Fetch reviews/testimonials
+    const reviewsCollectionId = reviewsBinding?.collectionId ?? '';
+    let reviewItems: { items: import("@/types/ContentItem").ContentItem[] } = { items: [] };
+    if (reviewsCollectionId) {
+      const { getCollectionItems } = await import("@/lib/api/collections");
+      reviewItems = await getCollectionItems(reviewsCollectionId);
+    }
+
+    // Build labels for the hero section
+    const showsPage = siteData.pageConfigs?.find((p) => p.format === 'shows');
+    const heroLabels = {
+      upcoming: (showsPage?.labels?.upcoming as string) || 'Upcoming',
+      past: (showsPage?.labels?.past as string) || 'Past',
+    };
+
+    return (
+      <>
+        <Navbar />
+
+        <HeroSection
+          config={homePageConfig.cta ?? {}}
+          siteData={siteData}
+          prefetchedData={{
+            shows,
+            partners,
+            labels: heroLabels,
+            showsSlug: showsPage?.slug || 'shows',
+          }}
+        />
+
+        {/* Testimonials / Reviews */}
+        {reviewItems.items.length > 0 && (
+          <ContentRenderer
+            items={reviewItems.items}
+            displayAs={reviewsBinding?.displayAs ?? 'reviews'}
+            label={reviewsBinding?.name ?? 'What People Are Saying'}
+            slug="home"
+            detailEnabled={false}
+            accent={siteData.primary}
+          />
+        )}
+
+        {showCta && (
+          <CTASection config={ctaConfig} siteData={siteData} prefetchedData={{}} />
+        )}
+
+        <Footer />
+      </>
+    );
+  }
+
+  // ── Ecommerce / generic layout: Banner + collection sections + CTA ──
+
+  const pageData = await getPageData(homePageConfig);
+  const allSections = [...pageData.primary, ...pageData.secondary];
 
   return (
     <>
       <Navbar />
 
-      {/* Hero banner — rendered from page labels (API signs heroImage via processSiteDetails) */}
+      {/* Hero banner — rendered from page labels */}
       {(homePageConfig.labels?.title || homePageConfig.labels?.heroImage) && (
         <ContentRenderer
           items={[]}
@@ -50,7 +135,7 @@ async function Resolved() {
         />
       )}
 
-      {/* Collection sections — each section targets full viewport height */}
+      {/* Collection sections */}
       <div className="pb-16">
         {allSections.map((section, i) => (
           <ContentRenderer
@@ -87,11 +172,7 @@ async function Resolved() {
       </div>
 
       {showCta && (
-        <CTASection
-          config={ctaConfig}
-          siteData={siteData}
-          prefetchedData={{}}
-        />
+        <CTASection config={ctaConfig} siteData={siteData} prefetchedData={{}} />
       )}
       <Footer />
     </>
