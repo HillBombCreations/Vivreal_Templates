@@ -95,7 +95,8 @@ export const getPageCollectionId = (
   envFallback: string
 ): string => {
   const page = siteData.pageConfigs?.find((p) => p.name === pageName);
-  return page?.collectionId || envFallback;
+  // Support both old format (collectionId on page) and new universal format (collections array)
+  return page?.collectionId || page?.collections?.[0]?.collectionId || envFallback;
 };
 
 /**
