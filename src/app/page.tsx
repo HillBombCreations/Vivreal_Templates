@@ -35,18 +35,22 @@ async function Resolved() {
   const ctaConfig = homePageConfig.cta ?? {};
   const showCta = homePageConfig.cta?.enabled !== false;
 
-  // Detect site type from page bindings
-  const showsBinding = collections.find(
-    (c) => c.name?.toLowerCase().includes('show')
-  );
-  const partnersBinding = collections.find(
-    (c) => c.name?.toLowerCase().includes('partner') || c.role === 'supplemental'
-  );
-  const reviewsBinding = collections.find(
-    (c) => c.name?.toLowerCase().includes('review') || c.name?.toLowerCase().includes('testimonial') || c.displayAs === 'reviews'
-  );
+  // Detect site type from page formats — reliable, doesn't depend on collection names
+  const pageFormats = new Set((siteData.pageConfigs ?? []).map((p) => p.format));
+  const isShowcase = pageFormats.has('shows');
 
-  const isShowcase = !!showsBinding;
+  // Find specific bindings for showcase layout
+  const showsPage = siteData.pageConfigs?.find((p) => p.format === 'shows');
+  const showsColId = showsPage?.collections?.[0]?.collectionId;
+  const showsBinding = isShowcase
+    ? collections.find((c) => showsColId && c.collectionId === showsColId) ?? collections[0]
+    : null;
+  const partnersBinding = isShowcase
+    ? collections.find((c) => c.role === 'supplemental' && c.displayAs === 'carousel')
+    : null;
+  const reviewsBinding = isShowcase
+    ? collections.find((c) => c.displayAs === 'reviews')
+    : null;
 
   if (isShowcase) {
     // ── Showcase layout: HeroSection + shows + partners + testimonials + CTA ──
