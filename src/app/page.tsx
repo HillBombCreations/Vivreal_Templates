@@ -37,7 +37,7 @@ async function Resolved() {
 
   // Detect site type from page bindings
   const showsBinding = collections.find(
-    (c) => c.name?.toLowerCase().includes('show') || c.displayAs === 'shows'
+    (c) => c.name?.toLowerCase().includes('show')
   );
   const partnersBinding = collections.find(
     (c) => c.name?.toLowerCase().includes('partner') || c.role === 'supplemental'
