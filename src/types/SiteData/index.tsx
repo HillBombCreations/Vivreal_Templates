@@ -43,8 +43,7 @@ export interface PageCollectionBinding {
     subtitle?: string;
 }
 
-export interface PageCtaConfig {
-    [key: string]: unknown;
+export interface PageCtaConfig extends Record<string, unknown> {
     enabled?: boolean;
     heading?: string;
     subheading?: string;

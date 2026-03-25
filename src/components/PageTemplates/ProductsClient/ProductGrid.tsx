@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShoppingCart, Plus, Minus } from "lucide-react";
 import type { Product } from "@/types/Products";
