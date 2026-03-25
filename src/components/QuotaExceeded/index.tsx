@@ -19,7 +19,7 @@ export default function QuotaExceeded() {
         <div className="mt-8 rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-sm text-gray-400">
             If you are the site owner, please check your account&apos;s usage and billing settings
-            in the <span className="font-medium text-gray-600">Vivreal Portal</span>.
+            in the <a href="https://www.vivreal.io/app" className="font-medium text-gray-600 underline hover:text-gray-900 transition-colors">Vivreal Portal</a>.
           </p>
         </div>
       </div>

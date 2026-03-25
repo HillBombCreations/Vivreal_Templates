@@ -179,6 +179,27 @@ All `generateMetadata()` functions read from `getSiteData()` to build page title
 
 ---
 
+## Updating `@vivreal/site-renderer`
+
+The shared rendering package is installed from GitHub. After changes are pushed to `vivreal-site-renderer` master:
+
+```bash
+# 1. Remove the old copy + Next.js cache
+rm -rf .next node_modules/@vivreal/site-renderer
+
+# 2. Reinstall from GitHub (--install-links avoids symlinks that break Turbopack)
+npm install "github:HillBombCreations/vivreal-site-renderer#master" --install-links
+
+# 3. Restart dev server
+npm run dev
+```
+
+**Why `--install-links`?** Without it, npm creates a symlink for git-based deps. Turbopack cannot resolve modules through symlinks, so the build fails with "Can't resolve '@vivreal/site-renderer'". The `--install-links` flag forces a real copy.
+
+**Why clear `.next`?** Turbopack caches compiled modules aggressively. If you update the renderer and the changes don't appear, clearing `.next` forces a full recompile.
+
+---
+
 ## Template Branch Model
 
 - Each branch in `Vivreal_Templates` = one template type

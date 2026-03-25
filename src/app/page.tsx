@@ -100,14 +100,16 @@ async function Resolved() {
 
         {/* Testimonials / Reviews */}
         {reviewItems.items.length > 0 && (
-          <ContentRenderer
-            items={reviewItems.items}
-            displayAs={reviewsBinding?.displayAs ?? 'reviews'}
-            label={reviewsBinding?.name ?? 'What People Are Saying'}
-            slug="home"
-            detailEnabled={false}
-            accent={siteData.primary}
-          />
+          <div className="py-16 md:py-24">
+            <ContentRenderer
+              items={reviewItems.items}
+              displayAs={reviewsBinding?.displayAs ?? 'reviews'}
+              label={reviewsBinding?.name ?? 'What People Are Saying'}
+              slug="home"
+              detailEnabled={false}
+              accent={siteData.primary}
+            />
+          </div>
         )}
 
         {showCta && (
