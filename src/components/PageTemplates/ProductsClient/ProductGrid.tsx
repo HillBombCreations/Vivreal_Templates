@@ -4,10 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShoppingCart, Plus, Minus } from "lucide-react";
 import type { Product } from "@/types/Products";
+import type { ContentItem } from "@/types/ContentItem";
 import { useCartContext } from "@/contexts/CartContext";
 import { getProductKey, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { handleAddToCart } from "@/lib/utils/cartUtils";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import ContentRenderer from "@/components/ContentRenderer";
 
 interface ProductGridProps {
   products: Product[];
@@ -16,6 +18,7 @@ interface ProductGridProps {
     React.SetStateAction<Record<string, string>>
   >;
   slug: string;
+  displayAs?: string;
   loading?: boolean;
   detailEnabled?: boolean;
   onItemAdded?: () => void;
@@ -26,6 +29,7 @@ export default function ProductGrid({
   selectedVariants,
   setSelectedVariants,
   slug,
+  displayAs = 'cards',
   loading = false,
   detailEnabled = true,
   onItemAdded,
@@ -85,6 +89,30 @@ export default function ProductGrid({
           Try a different filter or search term.
         </div>
       </div>
+    );
+  }
+
+  // For non-cards layouts, convert products to ContentItems and use ContentRenderer
+  if (displayAs !== 'cards') {
+    const contentItems: ContentItem[] = products.map((product) => {
+      const variant = selectedVariants[getProductKey(product)] || product.usingVariant?.values?.[0] || null;
+      return {
+        id: String(product._id ?? ''),
+        title: getSafeFieldValue(product, 'name', variant) ?? '',
+        description: getSafeFieldValue(product, 'description', variant) ?? '',
+        imageUrl: getSafeFieldValue(product, 'imageUrl', variant) || siteLogo,
+        price: getSafeFieldValue(product, 'price', variant) ?? undefined,
+        source: 'integration' as const,
+        raw: product as unknown as Record<string, unknown>,
+      };
+    });
+    return (
+      <ContentRenderer
+        items={contentItems}
+        displayAs={displayAs}
+        slug={slug}
+        detailEnabled={detailEnabled}
+      />
     );
   }
 
