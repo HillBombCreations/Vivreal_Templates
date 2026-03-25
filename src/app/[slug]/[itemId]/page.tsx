@@ -11,8 +11,10 @@ import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
+import { getIntegrationItems } from "@/lib/api/collections";
 import MemberDetail from "@/components/PageTemplates/MemberDetail";
 import ProductDetailClient from "@/components/PageTemplates/ProductDetailClient";
+import ContentRenderer from "@/components/ContentRenderer";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -27,6 +29,9 @@ export default async function DynamicItemPage({ params }: Props) {
   const pageConfig = getPageBySlug(siteData, slug);
 
   if (!pageConfig) return notFound();
+
+  // Guard: if detail pages are explicitly disabled for this page, return 404
+  if (pageConfig.detailPage?.enabled === false) return notFound();
 
   const primary = siteData?.primary || "#000000";
 
@@ -199,10 +204,38 @@ export default async function DynamicItemPage({ params }: Props) {
     const product = await getProductById(itemId);
     if (!product) return notFound();
 
+    // Fetch supplemental integrations for the detail page (non-Stripe ones)
+    const detailIntegrations = (pageConfig.detailPage?.integrations ?? [])
+      .filter(i => (i.type ?? i.name ?? '').toLowerCase() !== 'stripe');
+
+    const detailSupplemental = await Promise.all(
+      detailIntegrations.map(async (binding) => {
+        const type = (binding.type ?? binding.name ?? '').toLowerCase();
+        const { items } = await getIntegrationItems(type, { limit: 10 });
+        return { items, displayAs: binding.displayAs ?? 'feed', type };
+      })
+    );
+
     return (
       <>
         <Navbar />
         <ProductDetailClient product={product} siteData={siteData} />
+        {detailSupplemental.length > 0 && (
+          <div className="content-grid py-8">
+            {detailSupplemental.map((section, i) => (
+              <div key={i} className="mb-8">
+                <h3 className="text-lg font-semibold mb-4 capitalize" style={{ color: 'var(--text-primary)' }}>
+                  {section.type}
+                </h3>
+                <ContentRenderer
+                  items={section.items}
+                  displayAs={section.displayAs}
+                  slug={slug}
+                />
+              </div>
+            ))}
+          </div>
+        )}
         <CTASection />
         <Footer />
       </>

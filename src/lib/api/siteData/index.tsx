@@ -1,6 +1,12 @@
 import 'server-only';
 import type { MetadataRoute } from 'next';
-import type { HomeSection, PageConfig, SiteData } from '@/types/SiteData';
+import type {
+  HomeSection,
+  PageCollectionBinding,
+  PageConfig,
+  PageIntegrationBinding,
+  SiteData,
+} from '@/types/SiteData';
 import { clientFetchSafe } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -49,6 +55,11 @@ export const getSiteData = async (): Promise<SiteData> => {
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
 
+  const allPages = raw.pages ?? [];
+  const homePageConfig = allPages.find(
+    (p) => p.format === "home" || p.slug === "home"
+  );
+
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
@@ -56,7 +67,8 @@ export const getSiteData = async (): Promise<SiteData> => {
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
-    pageConfigs: raw.pages ?? [],
+    pageConfigs: allPages.filter((p) => p.format !== "home" && p.slug !== "home"),
+    homePageConfig: homePageConfig ?? null,
     homeSections: raw.homeSections,
   };
 };
@@ -85,6 +97,70 @@ export const getPageCollectionId = (
   const page = siteData.pageConfigs?.find((p) => p.name === pageName);
   return page?.collectionId || envFallback;
 };
+
+/**
+ * Check if a page has a specific integration binding (by type or name).
+ */
+export const pageHasIntegration = (
+  siteData: SiteData,
+  pageName: string,
+  integrationType: string
+): boolean => {
+  const page = siteData.pageConfigs?.find((p) => p.name === pageName);
+  if (!page?.integrations?.length) return false;
+  const lower = integrationType.toLowerCase();
+  return page.integrations.some(
+    (i) => (i.type ?? i.name ?? '').toLowerCase() === lower
+  );
+};
+
+/**
+ * Check if any page in the site has a specific integration binding.
+ */
+export const siteHasIntegration = (
+  siteData: SiteData,
+  integrationType: string
+): boolean => {
+  const lower = integrationType.toLowerCase();
+  return (siteData.pageConfigs ?? []).some((page) =>
+    (page.integrations ?? []).some(
+      (i) => (i.type ?? i.name ?? '').toLowerCase() === lower
+    )
+  );
+};
+
+/**
+ * Group a page's collection and integration bindings by their role.
+ * Bindings without an explicit role default to 'primary'.
+ */
+export function getPageBindingsByRole(pageConfig: PageConfig): {
+  primary: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  secondary: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  supplemental: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+  sidebar: { collections: PageCollectionBinding[]; integrations: PageIntegrationBinding[] };
+} {
+  const collections = pageConfig.collections ?? [];
+  const integrations = pageConfig.integrations ?? [];
+
+  return {
+    primary: {
+      collections: collections.filter((c) => (c.role ?? 'primary') === 'primary'),
+      integrations: integrations.filter((i) => (i.role ?? 'primary') === 'primary'),
+    },
+    secondary: {
+      collections: collections.filter((c) => c.role === 'secondary'),
+      integrations: integrations.filter((i) => i.role === 'secondary'),
+    },
+    supplemental: {
+      collections: collections.filter((c) => c.role === 'supplemental'),
+      integrations: integrations.filter((i) => i.role === 'supplemental'),
+    },
+    sidebar: {
+      collections: collections.filter((c) => c.role === 'sidebar'),
+      integrations: integrations.filter((i) => i.role === 'sidebar'),
+    },
+  };
+}
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const raw = await clientFetchSafe<SiteDetailsResponse | null>(

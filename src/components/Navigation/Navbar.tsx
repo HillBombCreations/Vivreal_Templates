@@ -33,16 +33,16 @@ const Navbar = async () => {
 
         <div className="hidden md:flex items-center relative justify-between">
           <div className="flex items-center space-x-3">
-            <Link href="/" className="flex items-center space-x-3">
+            <Link href="/" className="flex items-center gap-2.5">
               <Image
                 src={logoUrl}
                 alt={siteName || 'Site logo'}
-                width={70}
-                height={70}
+                width={40}
+                height={40}
                 className="object-contain"
               />
               {siteName && (
-                <span className="text-2xl font-semibold text-gray-900 font-brand leading-none">
+                <span className="text-xl font-semibold text-gray-900 font-brand">
                   {siteName}
                 </span>
               )}

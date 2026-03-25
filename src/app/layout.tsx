@@ -1,5 +1,7 @@
 import { ReactNode } from 'react';
 import '@/styles/globals.css';
+import '@vivreal/site-renderer/styles/content-grid.css';
+import '@vivreal/site-renderer/styles/animations.css';
 import { getSiteData } from '@/lib/api/siteData';
 import Providers from '@/components/Providers';
 
