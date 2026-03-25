@@ -7,8 +7,7 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint",
-    "postinstall": "cd node_modules/@vivreal/site-renderer && npx tsc || true"
+    "lint": "eslint"
   },
   "dependencies": {
     "@lottiefiles/react-lottie-player": "^3.6.0",
