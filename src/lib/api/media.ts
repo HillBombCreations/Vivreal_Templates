@@ -17,5 +17,20 @@
 export function getSignedUrl(field: unknown): string {
   if (!field || typeof field !== 'object') return '';
   const f = field as Record<string, unknown>;
-  return (f.currentFile as Record<string, string>)?.source || '';
+
+  // Standard shape: { currentFile: { source: signedUrl } }
+  const direct = (f.currentFile as Record<string, string>)?.source;
+  if (direct) return direct;
+
+  // Variant shape: { variantName: { currentFile: { source } }, ... }
+  // Pick the first variant that has a signed URL
+  for (const val of Object.values(f)) {
+    if (val && typeof val === 'object') {
+      const sub = val as Record<string, unknown>;
+      const subUrl = (sub.currentFile as Record<string, string>)?.source;
+      if (subUrl) return subUrl;
+    }
+  }
+
+  return '';
 }

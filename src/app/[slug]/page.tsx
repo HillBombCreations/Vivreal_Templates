@@ -155,21 +155,7 @@ export default async function DynamicPage({
       (i) => (i.type ?? i.name ?? '').toLowerCase()
     );
     const integrationType = (integrationBinding?.type ?? integrationBinding?.name ?? 'stripe').toLowerCase();
-    const productsDisplayAs = integrationBinding?.displayAs;
-
-    if (productsDisplayAs && productsDisplayAs !== 'cards') {
-      const { items } = await getIntegrationItems(integrationType, {});
-      return (
-        <>
-          <Navbar />
-          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
-            <ContentRenderer items={items} displayAs={productsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
-          </PageShell>
-          {showCta && <CTASection config={ctaConfig} />}
-          <Footer />
-        </>
-      );
-    }
+    const productsDisplayAs = integrationBinding?.displayAs ?? 'cards';
 
     const resolvedSearchParams = await searchParams;
     const searchVal = resolvedSearchParams?.search as string | undefined;
@@ -200,6 +186,7 @@ export default async function DynamicPage({
           filters={filters}
           labels={pageConfig.labels ?? {}}
           slug={slug}
+          displayAs={productsDisplayAs}
           detailEnabled={pageConfig.detailPage?.enabled !== false}
           initialFilters={activeFilters}
           initialSort={sortVal}
