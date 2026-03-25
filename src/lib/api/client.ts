@@ -17,6 +17,16 @@ interface ApiEnvelope<T> {
   error: string | null;
 }
 
+/** Custom error that preserves the HTTP status code. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 /**
  * Fetch data from VR_Client_API with auth.
  * Unwraps the { success, data, error } envelope automatically.
@@ -39,7 +49,7 @@ export async function clientFetch<T>(
 
   if (!res.ok) {
     console.error(`[clientFetch] ${res.status} ${res.statusText} — ${url}`);
-    throw new Error(`VR_Client_API ${res.status}: ${res.statusText}`);
+    throw new ApiError(`VR_Client_API ${res.status}: ${res.statusText}`, res.status);
   }
 
   const json = await res.json();
@@ -48,7 +58,7 @@ export async function clientFetch<T>(
   if (json && typeof json === 'object' && 'success' in json) {
     const envelope = json as ApiEnvelope<T>;
     if (!envelope.success) {
-      throw new Error(`VR_Client_API error: ${envelope.error || 'Unknown error'}`);
+      throw new ApiError(`VR_Client_API error: ${envelope.error || 'Unknown error'}`, 500);
     }
     return envelope.data;
   }
@@ -58,6 +68,8 @@ export async function clientFetch<T>(
 
 /**
  * Safe version — returns fallback on error instead of throwing.
+ * Re-throws ApiError with status 402 (quota exceeded / frozen account)
+ * so the page can render the QuotaExceeded component.
  */
 export async function clientFetchSafe<T>(
   path: string,
@@ -67,7 +79,16 @@ export async function clientFetchSafe<T>(
   try {
     return await clientFetch<T>(path, init);
   } catch (err) {
+    // Let 402 (quota/frozen) bubble up so pages can show the quota page
+    if (err instanceof ApiError && err.status === 402) {
+      throw err;
+    }
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
     return fallback;
   }
+}
+
+/** Check if an error is a 402 quota exceeded error. */
+export function isQuotaError(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 402;
 }
