@@ -18,7 +18,7 @@ export default function PageShell({
   subtitle,
 }: PageShellProps) {
   return (
-    <div className="content-grid py-10">
+    <div className="content-grid pt-28 pb-10">
       {(title || subtitle) && (
         <header className="mb-8">
           {title && (
