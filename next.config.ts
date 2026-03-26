@@ -3,7 +3,7 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
-  transpilePackages: ['@vivreal/site-renderer'],
+  transpilePackages: ['@hillbombcreations/site-renderer'],
   images: {
     remotePatterns: [
       {

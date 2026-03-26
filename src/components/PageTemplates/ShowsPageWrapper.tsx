@@ -3,8 +3,8 @@
 import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ShowsPage } from '@vivreal/site-renderer';
-import type { ShowData, SiteData } from '@vivreal/site-renderer';
+import { ShowsPage } from '@hillbombcreations/site-renderer';
+import type { ShowData, SiteData } from '@hillbombcreations/site-renderer';
 
 const PAGE_SIZE = 20;
 
