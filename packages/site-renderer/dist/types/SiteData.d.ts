@@ -15,8 +15,8 @@ export interface BusinessInfo {
     shipping?: boolean;
 }
 export interface SocialLink {
-    platform: string;
-    url: string;
+    type: string;
+    link: string;
 }
 export interface NavItem {
     name: string;

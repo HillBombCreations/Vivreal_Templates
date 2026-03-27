@@ -174,11 +174,11 @@ function SocialIcons({ socialLinks }: { socialLinks: SocialLinks }) {
 
   return (
     <div className="flex gap-2 mb-2">
-      {links.map(([platform]) => {
-        const config = SOCIAL_CONFIG[platform];
+      {links.map(([type]) => {
+        const config = SOCIAL_CONFIG[type];
         if (!config) return null;
         return (
-          <span key={platform} className="text-gray-400">
+          <span key={type} className="text-gray-400">
             {config.icon}
           </span>
         );

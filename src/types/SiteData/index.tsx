@@ -18,8 +18,8 @@ export interface Businessinfo {
 }
 
 export interface SocialLink {
-    platform: string;
-    url: string;
+    type: string;
+    link: string;
 }
 
 export interface PageIntegrationBinding {

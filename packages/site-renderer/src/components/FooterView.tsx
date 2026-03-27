@@ -25,9 +25,9 @@ const SOCIAL_PLATFORM_URLS: Record<string, string> = {
 };
 
 function resolveUrl(link: SocialLink): string {
-  if (link.url.startsWith('http')) return link.url;
-  const base = SOCIAL_PLATFORM_URLS[link.platform.toLowerCase()];
-  return base ? `${base}${link.url}` : `https://${link.url}`;
+  if (link.link.startsWith('http')) return link.link;
+  const base = SOCIAL_PLATFORM_URLS[link.type.toLowerCase()];
+  return base ? `${base}${link.link}` : `https://${link.link}`;
 }
 
 export default function FooterView({
@@ -170,7 +170,7 @@ export default function FooterView({
               </p>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {socialLinks.map((link) => (
-                  <li key={link.platform}>
+                  <li key={link.type}>
                     <a
                       href={resolveUrl(link)}
                       target="_blank"
@@ -190,7 +190,7 @@ export default function FooterView({
                         e.currentTarget.style.opacity = '0.85';
                       }}
                     >
-                      {link.platform}
+                      {link.type}
                     </a>
                   </li>
                 ))}

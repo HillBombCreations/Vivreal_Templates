@@ -187,13 +187,13 @@ function SocialBadges({ socialLinks, primary, surface }: { socialLinks?: TeamDat
 
   return (
     <div className="flex flex-wrap gap-2 mt-2">
-      {links.map(([platform, handle]) => {
-        const config = icons[platform];
+      {links.map(([type, handle]) => {
+        const config = icons[type];
         if (!config || !handle) return null;
         const cleanHandle = handle.replace(/^@/, "");
         return (
           <a
-            key={platform}
+            key={type}
             href={`${config.baseUrl}${cleanHandle}`}
             target="_blank"
             rel="noopener noreferrer"

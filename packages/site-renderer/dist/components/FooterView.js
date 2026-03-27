@@ -11,10 +11,10 @@ const SOCIAL_PLATFORM_URLS = {
     pinterest: 'https://pinterest.com/',
 };
 function resolveUrl(link) {
-    if (link.url.startsWith('http'))
-        return link.url;
-    const base = SOCIAL_PLATFORM_URLS[link.platform.toLowerCase()];
-    return base ? `${base}${link.url}` : `https://${link.url}`;
+    if (link.link.startsWith('http'))
+        return link.link;
+    const base = SOCIAL_PLATFORM_URLS[link.type.toLowerCase()];
+    return base ? `${base}${link.link}` : `https://${link.link}`;
 }
 export default function FooterView({ siteName, logoUrl, email, navItems, socialLinks = [], accentColor, LinkComponent = 'a', ImageComponent = 'img', }) {
     return (_jsxs("footer", { style: {
@@ -81,7 +81,7 @@ export default function FooterView({ siteName, logoUrl, email, navItems, socialL
                                                 e.currentTarget.style.opacity = '1';
                                             }, onMouseLeave: (e) => {
                                                 e.currentTarget.style.opacity = '0.85';
-                                            }, children: link.platform }) }, link.platform))) })] }))] }) }), _jsx("div", { style: {
+                                            }, children: link.type }) }, link.type))) })] }))] }) }), _jsx("div", { style: {
                     borderTop: '1px solid var(--border)',
                 }, children: _jsxs("div", { className: "content-grid", style: {
                         display: 'flex',
