@@ -46,6 +46,7 @@ export async function clientFetch<T>(
     },
     cache: 'no-store',
   });
+  console.log(res);
 
   if (!res.ok) {
     console.error(`[clientFetch] ${res.status} ${res.statusText} — ${url}`);

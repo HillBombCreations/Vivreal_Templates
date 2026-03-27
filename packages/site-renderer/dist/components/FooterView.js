@@ -1,6 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-const SOCIAL_PLATFORM_URLS = {
+const SOCIAL_type_URLS = {
     twitter: 'https://twitter.com/',
     x: 'https://x.com/',
     instagram: 'https://instagram.com/',
@@ -13,7 +13,7 @@ const SOCIAL_PLATFORM_URLS = {
 function resolveUrl(link) {
     if (link.link.startsWith('http'))
         return link.link;
-    const base = SOCIAL_PLATFORM_URLS[link.type.toLowerCase()];
+    const base = SOCIAL_type_URLS[link.type.toLowerCase()];
     return base ? `${base}${link.link}` : `https://${link.link}`;
 }
 export default function FooterView({ siteName, logoUrl, email, navItems, socialLinks = [], accentColor, LinkComponent = 'a', ImageComponent = 'img', }) {
