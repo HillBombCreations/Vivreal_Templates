@@ -46,7 +46,6 @@ src/
 │   │   └── [showId]/page.tsx       # Content detail page
 │   ├── team/                       # Team page
 │   │   ├── page.tsx                # Server: fetches team members
-│   │   └── AboutClient.tsx         # Client: renders team grid
 │   ├── review/                     # Review submission page
 │   │   ├── page.tsx                # Server wrapper
 │   │   └── ReviewClient.tsx        # Client: review form

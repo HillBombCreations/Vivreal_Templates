@@ -1,6 +1,4 @@
-import type { MetadataRoute } from 'next';
-
-export interface Businessinfo {
+export interface BusinessInfo {
     address?: {
         street1?: string,
         street2?: string,
@@ -22,11 +20,18 @@ export interface SocialLink {
     link: string;
 }
 
+export interface NavItem {
+    name: string;
+    slug: string;
+    path: string;
+    group?: string;
+}
+
 export interface PageIntegrationBinding {
     type?: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews';
+    displayAs?: string;
     /** Collection ID for integration-type collections (e.g., product filters). */
     collectionId?: string;
 }
@@ -43,13 +48,12 @@ export interface PageCollectionBinding {
     subtitle?: string;
 }
 
-export interface PageCtaConfig extends Record<string, unknown> {
+export interface PageCtaConfig {
     enabled?: boolean;
     heading?: string;
     subheading?: string;
     label?: string;
     linkTo?: string;
-    [key: string]: unknown;
 }
 
 export interface PageConfig {
@@ -59,7 +63,7 @@ export interface PageConfig {
     collectionId: string | null;
     collections?: PageCollectionBinding[];
     integrations?: PageIntegrationBinding[];
-    labels: Record<string, string>;
+    labels: Record<string, unknown>;
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
     cta?: PageCtaConfig;
@@ -86,14 +90,13 @@ export interface SiteData {
     primary?: string;
     domainName?: string;
     name?: string;
-    businessInfo?: Businessinfo;
+    businessInfo?: BusinessInfo;
     socialLinks?: SocialLink[];
     secondary?: string;
     hover?: string;
     surface?: string;
     pages: Record<string, string>;
     pageConfigs: PageConfig[];
-    siteMap: MetadataRoute.Sitemap;
     ["surface-alt"]?: string;
     ["text-primary"]?: string;
     ["text-secondary"]?: string;
@@ -122,23 +125,4 @@ export interface SiteData {
     },
     homeSections?: HomeSection[];
     homePageConfig?: PageConfig | null;
-}
-
-export type Pages = {
-    name: string;
-    format: string;
-}
-
-export type CMSSiteData = {
-    _id: string;
-    name: string;
-    domainName: string;
-    groupID: string;
-    pages: [Pages];
-    siteDetails: {
-        schema: object;
-        values: SiteData;
-    }
-    businessInfo: Businessinfo;
-    socialLinks?: SocialLink[];
 }

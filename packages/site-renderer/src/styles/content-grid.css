@@ -1,0 +1,32 @@
+.content-grid {
+  --padding-inline: 1rem;
+  --content-max-width: 1280px;
+  --breakout-max-width: calc(var(--content-max-width) + 30vw);
+
+  display: grid;
+  grid-template-columns:
+    [full-start] minmax(var(--padding-inline), 1fr)
+    [breakout-start] minmax(0, calc((var(--breakout-max-width) - var(--content-max-width)) / 2))
+    [content-start] min(100% - (var(--padding-inline) * 2), var(--content-max-width))
+    [content-end] minmax(0, calc((var(--breakout-max-width) - var(--content-max-width)) / 2))
+    [breakout-end] minmax(var(--padding-inline), 1fr)
+    [full-end];
+}
+
+.content-grid > :not(.breakout, .full) {
+  grid-column: content;
+}
+
+.content-grid > .breakout {
+  grid-column: breakout;
+}
+
+.content-grid > .full {
+  grid-column: full;
+}
+
+@media (min-width: 768px) {
+  .content-grid {
+    --padding-inline: 2rem;
+  }
+}
