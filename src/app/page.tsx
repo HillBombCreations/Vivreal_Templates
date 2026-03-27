@@ -3,9 +3,11 @@ import { getSiteData } from "@/lib/api/siteData";
 import { getPageData } from "@/lib/api/pageData";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getPartners } from "@/lib/api/partners";
+import Link from "next/link";
+import Image from "next/image";
 import ContentRenderer from "@/components/ContentRenderer";
-import HeroSection from "@/components/HomeSections/HeroSection";
-import CTASection from "@/components/HomeSections/CTASection";
+import { HeroSectionShowcase, CTASectionTemplate } from "@hillbombcreations/site-renderer";
+import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "./loading";
@@ -86,31 +88,32 @@ async function Resolved() {
       <>
         <Navbar />
 
-        <HeroSection
-          config={homePageConfig.cta ?? {}}
-          siteData={siteData}
-          prefetchedData={{
-            shows,
-            partners,
-            labels: heroLabels,
-            showsSlug: showsPage?.slug || 'shows',
-          }}
+        <HeroSectionShowcase
+          siteData={siteData as unknown as RendererSiteData}
+          shows={shows}
+          partners={partners}
+          labels={heroLabels}
+          showsSlug={showsPage?.slug || 'shows'}
+          LinkComponent={Link}
+          ImageComponent={Image}
         />
 
         {/* Testimonials / Reviews */}
         {reviewItems.items.length > 0 && (
-          <ContentRenderer
-            items={reviewItems.items}
-            displayAs={reviewsBinding?.displayAs ?? 'reviews'}
-            label={reviewsBinding?.name ?? 'What People Are Saying'}
-            slug="home"
-            detailEnabled={false}
-            accent={siteData.primary}
-          />
+          <div className="py-16 md:py-24">
+            <ContentRenderer
+              items={reviewItems.items}
+              displayAs={reviewsBinding?.displayAs ?? 'reviews'}
+              label={reviewsBinding?.name ?? 'What People Are Saying'}
+              slug="home"
+              detailEnabled={false}
+              accent={siteData.primary}
+            />
+          </div>
         )}
 
         {showCta && (
-          <CTASection config={ctaConfig} siteData={siteData} prefetchedData={{}} />
+          <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />
         )}
 
         <Footer />
@@ -176,7 +179,7 @@ async function Resolved() {
       </div>
 
       {showCta && (
-        <CTASection config={ctaConfig} siteData={siteData} prefetchedData={{}} />
+        <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />
       )}
       <Footer />
     </>

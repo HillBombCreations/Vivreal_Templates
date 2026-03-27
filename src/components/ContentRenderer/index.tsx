@@ -1,7 +1,7 @@
 'use client';
 
-import { ContentRenderer as BaseContentRenderer } from '@vivreal/site-renderer';
-import type { ContentRendererProps } from '@vivreal/site-renderer';
+import { ContentRenderer as BaseContentRenderer } from '@hillbombcreations/site-renderer';
+import type { ContentRendererProps } from '@hillbombcreations/site-renderer';
 
 export type { ContentRendererProps };
 

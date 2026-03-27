@@ -1,10 +1,8 @@
 import type { HomeSection, HomeSectionConfig, SiteData } from "@/types/SiteData";
 
 // Showcase sections
-import HeroSection from "./HeroSection";
 import HighlightsSection from "./HighlightsSection";
 import Testimonials from "./Testimonials";
-import CTASection from "./CTASection";
 import EmailPopup from "./EmailPopup";
 
 // Ecommerce sections
@@ -29,14 +27,10 @@ export function HomeSectionRenderer({ section, siteData, prefetchedData }: HomeS
   const props: HomeSectionProps = { config: section.config, siteData, prefetchedData };
 
   switch (section.type) {
-    case "hero":
-      return <HeroSection {...props} />;
     case "highlights":
       return <HighlightsSection {...props} />;
     case "testimonials":
       return <Testimonials {...props} />;
-    case "cta":
-      return <CTASection {...props} />;
     case "email-popup":
       return <EmailPopup {...props} />;
     case "hero-ecommerce":

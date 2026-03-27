@@ -1,7 +1,10 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import CTASection from "@/components/HomeSections/CTASection";
+import { CTASectionTemplate, TeamPage } from "@hillbombcreations/site-renderer";
+import type { SiteData as RendererSiteData, TeamMemberData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getPageData } from "@/lib/api/pageData";
@@ -11,8 +14,7 @@ import { getShowsPaginated } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getProducts, getFilters } from "@/lib/api/products";
 import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
-import ShowPageClient from "@/components/PageTemplates/ShowPageClient";
-import AboutClient from "@/components/PageTemplates/AboutClient";
+import ShowsPageWrapper from "@/components/PageTemplates/ShowsPageWrapper";
 import FormClient from "@/components/PageTemplates/FormClient";
 import ProductsClient from "@/components/PageTemplates/ProductsClient";
 import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
@@ -55,7 +57,7 @@ export default async function DynamicPage({
           <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
             <ContentRenderer items={items} displayAs={showsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
           </PageShell>
-          {showCta && <CTASection config={ctaConfig} />}
+          {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
           <Footer />
         </>
       );
@@ -83,15 +85,16 @@ export default async function DynamicPage({
     return (
       <>
         <Navbar />
-        <ShowPageClient
+        <ShowsPageWrapper
           upcomingShows={upcomingShows}
-          pastShows={pastShows}
+          initialPastShows={pastShows}
           labels={labels}
           slug={slug}
+          siteData={siteData as unknown as RendererSiteData}
           collectionId={collectionId}
           totalCount={totalCount}
         />
-        {showCta && <CTASection config={ctaConfig} />}
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
@@ -111,7 +114,7 @@ export default async function DynamicPage({
           <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
             <ContentRenderer items={items} displayAs={teamDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
           </PageShell>
-          {showCta && <CTASection config={ctaConfig} />}
+          {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
           <Footer />
         </>
       );
@@ -128,8 +131,15 @@ export default async function DynamicPage({
     return (
       <>
         <Navbar />
-        <AboutClient teamMembers={teamMembers} labels={labels} slug={slug} />
-        {showCta && <CTASection config={ctaConfig} />}
+        <TeamPage
+          members={teamMembers as TeamMemberData[]}
+          labels={labels}
+          slug={slug}
+          siteData={siteData as unknown as RendererSiteData}
+          LinkComponent={Link}
+          ImageComponent={Image}
+        />
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
@@ -192,7 +202,7 @@ export default async function DynamicPage({
           initialSort={sortVal}
           initialSearch={searchVal}
         />
-        {showCta && <CTASection config={ctaConfig} />}
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
@@ -207,7 +217,7 @@ export default async function DynamicPage({
           collectionId={pageConfig.collectionId ?? ""}
           labels={pageConfig.labels ?? {}}
         />
-        {showCta && <CTASection config={ctaConfig} />}
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
@@ -235,7 +245,7 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <StaticPage labels={labels} pageName={name} />
-        {showCta && <CTASection config={ctaConfig} />}
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
@@ -273,7 +283,7 @@ export default async function DynamicPage({
           <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} />
         ))}
       </PageShell>
-      {showCta && <CTASection config={ctaConfig} />}
+      {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
       <Footer />
     </>
   );

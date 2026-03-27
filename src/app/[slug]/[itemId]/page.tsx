@@ -3,7 +3,8 @@ import Link from "next/link";
 import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import CTASection from "@/components/HomeSections/CTASection";
+import { CTASectionTemplate } from "@hillbombcreations/site-renderer";
+import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { ArrowLeft, Calendar, MapPin } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
@@ -149,7 +150,7 @@ export default async function DynamicItemPage({ params }: Props) {
             </>
           )}
         </main>
-        <CTASection />
+        <CTASectionTemplate siteData={siteData as unknown as RendererSiteData} />
         <Footer />
       </>
     );
@@ -236,7 +237,7 @@ export default async function DynamicItemPage({ params }: Props) {
             ))}
           </div>
         )}
-        <CTASection />
+        <CTASectionTemplate siteData={siteData as unknown as RendererSiteData} />
         <Footer />
       </>
     );
