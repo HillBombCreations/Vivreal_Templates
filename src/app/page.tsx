@@ -3,10 +3,9 @@ import { getSiteData } from "@/lib/api/siteData";
 import { getPageData } from "@/lib/api/pageData";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getPartners } from "@/lib/api/partners";
-import Link from "next/link";
-import Image from "next/image";
 import ContentRenderer from "@/components/ContentRenderer";
-import { HeroSectionShowcase, CTASectionTemplate } from "@hillbombcreations/site-renderer";
+import HeroSectionShowcaseClient from "@/components/HomeSections/HeroSectionShowcaseClient";
+import { CTASectionTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -88,14 +87,12 @@ async function Resolved() {
       <>
         <Navbar />
 
-        <HeroSectionShowcase
+        <HeroSectionShowcaseClient
           siteData={siteData as unknown as RendererSiteData}
           shows={shows}
           partners={partners}
           labels={heroLabels}
           showsSlug={showsPage?.slug || 'shows'}
-          LinkComponent={Link}
-          ImageComponent={Image}
         />
 
         {/* Testimonials / Reviews */}

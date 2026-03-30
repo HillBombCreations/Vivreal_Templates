@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate, TeamPage } from "@hillbombcreations/site-renderer";
+import { CTASectionTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData, TeamMemberData } from "@hillbombcreations/site-renderer";
+import TeamPageClient from "@/components/PageTemplates/TeamPageClient";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getPageData } from "@/lib/api/pageData";
@@ -131,13 +130,11 @@ export default async function DynamicPage({
     return (
       <>
         <Navbar />
-        <TeamPage
+        <TeamPageClient
           members={teamMembers as TeamMemberData[]}
           labels={labels}
           slug={slug}
           siteData={siteData as unknown as RendererSiteData}
-          LinkComponent={Link}
-          ImageComponent={Image}
         />
         {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
