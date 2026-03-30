@@ -85,7 +85,6 @@ async function Resolved() {
     return (
       <>
         <Navbar />
-
         <HeroSectionShowcase
           siteData={siteData as unknown as RendererSiteData}
           shows={shows}
