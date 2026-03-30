@@ -1,8 +1,6 @@
 'use client';
 
 import { useCallback, useRef, useState } from 'react';
-import Link from 'next/link';
-import Image from 'next/image';
 import { ShowsPage } from '@hillbombcreations/site-renderer';
 import type { ShowData, SiteData } from '@hillbombcreations/site-renderer';
 
@@ -72,8 +70,6 @@ export default function ShowsPageWrapper({
       onLoadMore={handleLoadMore}
       hasMore={!loadedAll.current}
       loadingMore={loadingMore}
-      LinkComponent={Link}
-      ImageComponent={Image}
     />
   );
 }

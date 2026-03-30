@@ -4,8 +4,7 @@ import { getPageData } from "@/lib/api/pageData";
 import { getShowsPaginated } from "@/lib/api/shows";
 import { getPartners } from "@/lib/api/partners";
 import ContentRenderer from "@/components/ContentRenderer";
-import HeroSectionShowcaseClient from "@/components/HomeSections/HeroSectionShowcaseClient";
-import { CTASectionTemplate } from "@hillbombcreations/site-renderer";
+import { HeroSectionShowcase, CTASectionTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -87,7 +86,7 @@ async function Resolved() {
       <>
         <Navbar />
 
-        <HeroSectionShowcaseClient
+        <HeroSectionShowcase
           siteData={siteData as unknown as RendererSiteData}
           shows={shows}
           partners={partners}
