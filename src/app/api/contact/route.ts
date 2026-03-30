@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
 
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
-    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://dev-client.vivreal.io";
+    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
 
   try {
     const res = await fetch(`${clientApiUrl}/tenant/sendContactEmail`, {
