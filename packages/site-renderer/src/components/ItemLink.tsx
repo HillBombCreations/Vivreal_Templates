@@ -1,6 +1,7 @@
 'use client';
 
-import type { ElementType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { useSiteRenderer } from '../context/SiteRendererContext';
 
 interface ItemLinkProps {
   href?: string;
@@ -8,7 +9,6 @@ interface ItemLinkProps {
   children: ReactNode;
   className?: string;
   style?: React.CSSProperties;
-  LinkComponent?: ElementType;
 }
 
 export default function ItemLink({
@@ -17,8 +17,9 @@ export default function ItemLink({
   children,
   className,
   style,
-  LinkComponent = 'a',
 }: ItemLinkProps) {
+  const { LinkComponent } = useSiteRenderer();
+
   if (href && enabled) {
     return (
       <LinkComponent href={href} className={className} style={style}>

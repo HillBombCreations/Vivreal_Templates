@@ -76,7 +76,6 @@ export default function CardsLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -90,7 +89,6 @@ export default function CardsLayout({
           key={item.id}
           href={`/${slug}/${encodeURIComponent(item.id)}`}
           enabled={detailEnabled}
-          LinkComponent={LinkComponent}
           className={`group rounded-2xl border border-black/[0.06] bg-white overflow-hidden flex flex-col transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 ${
             detailEnabled ? "cursor-pointer" : ""
           }`}

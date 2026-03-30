@@ -1,6 +1,8 @@
 'use client';
 import { jsx as _jsx } from "react/jsx-runtime";
-export default function ItemLink({ href, enabled = true, children, className, style, LinkComponent = 'a', }) {
+import { useSiteRenderer } from '../context/SiteRendererContext';
+export default function ItemLink({ href, enabled = true, children, className, style, }) {
+    const { LinkComponent } = useSiteRenderer();
     if (href && enabled) {
         return (_jsx(LinkComponent, { href: href, className: className, style: style, children: children }));
     }

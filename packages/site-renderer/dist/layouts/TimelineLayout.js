@@ -16,7 +16,7 @@ function Empty({ message }) {
 /* ------------------------------------------------------------------ */
 /*  Timeline Layout                                                    */
 /* ------------------------------------------------------------------ */
-export default function TimelineLayout({ items, slug, detailEnabled, accent, loading, emptyMessage, LinkComponent, }) {
+export default function TimelineLayout({ items, slug, detailEnabled, accent, loading, emptyMessage, }) {
     if (loading)
         return _jsx(Skeleton, {});
     if (!items.length)
@@ -33,7 +33,7 @@ export default function TimelineLayout({ items, slug, detailEnabled, accent, loa
                                         : { left: "50%", marginLeft: 7 }),
                                 } }), _jsx("div", { className: isLeft
                                     ? "sm:pr-8 sm:text-right"
-                                    : "sm:col-start-2 sm:pl-8", children: _jsxs(ItemLink, { href: `/${slug}/${encodeURIComponent(item.id)}`, enabled: detailEnabled, LinkComponent: LinkComponent, className: `group rounded-2xl border border-black/[0.06] bg-white p-5 sm:p-6 overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block ${detailEnabled ? "cursor-pointer" : ""}`, children: [item.date && (_jsx("span", { className: "inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider mb-3", style: {
+                                    : "sm:col-start-2 sm:pl-8", children: _jsxs(ItemLink, { href: `/${slug}/${encodeURIComponent(item.id)}`, enabled: detailEnabled, className: `group rounded-2xl border border-black/[0.06] bg-white p-5 sm:p-6 overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block ${detailEnabled ? "cursor-pointer" : ""}`, children: [item.date && (_jsx("span", { className: "inline-block rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-wider mb-3", style: {
                                                 background: `color-mix(in srgb, ${primary} 8%, transparent)`,
                                                 color: primary,
                                             }, children: item.date })), item.imageUrl && (_jsx("div", { className: "relative h-[140px] sm:h-[160px] rounded-xl overflow-hidden mb-4 bg-black/[0.02]", children: _jsx("img", { src: item.imageUrl, alt: item.title, className: "h-full w-full object-cover transition-transform duration-500 group-hover:scale-105", loading: "lazy" }) })), _jsx("h3", { className: `font-semibold text-[15px] sm:text-base leading-snug ${isLeft ? "sm:text-right" : ""}`, children: item.title }), item.description && (_jsx("p", { className: `mt-2 text-sm text-black/50 leading-relaxed line-clamp-3 ${isLeft ? "sm:text-right" : ""}`, children: item.description })), item.tags && item.tags.length > 0 && (_jsx("div", { className: `mt-3 flex gap-1.5 flex-wrap ${isLeft ? "sm:justify-end" : ""}`, children: item.tags.slice(0, 3).map((tag) => (_jsx("span", { className: "rounded-full px-2 py-0.5 text-[10px] font-medium bg-black/[0.04] text-black/50", children: tag }, tag))) }))] }) })] }, item.id));

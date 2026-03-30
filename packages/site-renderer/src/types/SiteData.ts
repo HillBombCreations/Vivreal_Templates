@@ -16,12 +16,13 @@ export interface BusinessInfo {
 }
 
 export interface SocialLink {
-    type: string;
-    link: string;
+    platform: string;
+    url: string;
 }
 
 export interface NavItem {
     name: string;
+    label?: string;
     slug: string;
     path: string;
     group?: string;
@@ -125,4 +126,10 @@ export interface SiteData {
     },
     homeSections?: HomeSection[];
     homePageConfig?: PageConfig | null;
+}
+
+export interface HomeSectionProps {
+    config: HomeSectionConfig;
+    siteData: SiteData;
+    prefetchedData?: Record<string, unknown>;
 }

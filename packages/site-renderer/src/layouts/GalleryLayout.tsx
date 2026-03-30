@@ -62,7 +62,6 @@ export default function GalleryLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -76,7 +75,6 @@ export default function GalleryLayout({
           key={item.id}
           href={`/${slug}/${encodeURIComponent(item.id)}`}
           enabled={detailEnabled}
-          LinkComponent={LinkComponent}
           className={`group break-inside-avoid block rounded-2xl overflow-hidden relative ${
             detailEnabled ? "cursor-pointer" : ""
           }`}

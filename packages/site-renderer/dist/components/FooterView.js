@@ -1,5 +1,6 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { useSiteRenderer } from '../context/SiteRendererContext';
 const SOCIAL_PLATFORM_URLS = {
     twitter: 'https://twitter.com/',
     x: 'https://x.com/',
@@ -11,12 +12,13 @@ const SOCIAL_PLATFORM_URLS = {
     pinterest: 'https://pinterest.com/',
 };
 function resolveUrl(link) {
-    if (link.link.startsWith('http'))
-        return link.link;
-    const base = SOCIAL_PLATFORM_URLS[link.type.toLowerCase()];
-    return base ? `${base}${link.link}` : `https://${link.link}`;
+    if (link.url.startsWith('http'))
+        return link.url;
+    const base = SOCIAL_PLATFORM_URLS[link.platform.toLowerCase()];
+    return base ? `${base}${link.url}` : `https://${link.url}`;
 }
-export default function FooterView({ siteName, logoUrl, email, navItems, socialLinks = [], accentColor, LinkComponent = 'a', ImageComponent = 'img', }) {
+export default function FooterView({ siteName, logoUrl, email, navItems, socialLinks = [], accentColor, }) {
+    const { LinkComponent, ImageComponent } = useSiteRenderer();
     return (_jsxs("footer", { style: {
             background: 'color-mix(in srgb, var(--secondary) 15%, var(--surface))',
             borderTop: '1px solid var(--border)',
@@ -81,7 +83,7 @@ export default function FooterView({ siteName, logoUrl, email, navItems, socialL
                                                 e.currentTarget.style.opacity = '1';
                                             }, onMouseLeave: (e) => {
                                                 e.currentTarget.style.opacity = '0.85';
-                                            }, children: link.type }) }, link.type))) })] }))] }) }), _jsx("div", { style: {
+                                            }, children: link.platform }) }, link.platform))) })] }))] }) }), _jsx("div", { style: {
                     borderTop: '1px solid var(--border)',
                 }, children: _jsxs("div", { className: "content-grid", style: {
                         display: 'flex',

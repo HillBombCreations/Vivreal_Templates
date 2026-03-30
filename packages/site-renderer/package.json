@@ -1,7 +1,6 @@
 {
-  "name": "@vivreal/site-renderer",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@hillbombcreations/site-renderer",
+  "version": "0.2.0",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,13 +10,26 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./styles/*": "./src/styles/*"
+    "./styles/*": "./styles/*"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HillBombCreations/vivreal-site-renderer.git"
+  },
+  "publishConfig": {
+    "@hillbombcreations:registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "dist",
+    "styles"
+  ],
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "prepare": "tsc"
   },
   "peerDependencies": {
+    "next": "^15.0.0 || ^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -25,8 +37,9 @@
     "lucide-react": "^0.460.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
     "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0"
+    "@types/react-dom": "^19.0.0",
+    "next": "^16.2.1",
+    "typescript": "^5.7.0"
   }
 }

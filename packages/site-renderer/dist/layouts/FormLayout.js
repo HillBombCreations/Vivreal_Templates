@@ -2,6 +2,7 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 import { useMemo, useState } from "react";
 import { Mail, Clock, Users, X, CheckCircle2, AlertCircle } from "lucide-react";
+import { useSiteRenderer } from "../context/SiteRendererContext";
 /* ------------------------------------------------------------------ */
 /*  Loading skeleton                                                   */
 /* ------------------------------------------------------------------ */
@@ -11,7 +12,8 @@ function Skeleton() {
 /* ------------------------------------------------------------------ */
 /*  Form Layout                                                        */
 /* ------------------------------------------------------------------ */
-export default function FormLayout({ items, accent, loading, previewMode, }) {
+export default function FormLayout({ items, accent, loading, }) {
+    const { previewMode } = useSiteRenderer();
     const primary = accent || "var(--primary)";
     const [form, setForm] = useState({ fullName: "", email: "", message: "" });
     const [submitting, setSubmitting] = useState(false);

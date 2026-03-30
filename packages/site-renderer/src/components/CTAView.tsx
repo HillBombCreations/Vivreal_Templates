@@ -1,6 +1,6 @@
 'use client';
-import type { ElementType } from 'react';
 import { ArrowRight } from 'lucide-react';
+import { useSiteRenderer } from '../context/SiteRendererContext';
 
 export interface CTAViewProps {
   heading?: string;
@@ -8,7 +8,6 @@ export interface CTAViewProps {
   label?: string;
   linkTo?: string;
   accentColor?: string;
-  LinkComponent?: ElementType;
 }
 
 export default function CTAView({
@@ -17,8 +16,8 @@ export default function CTAView({
   label = 'Get Started',
   linkTo = '/',
   accentColor = '#6366f1',
-  LinkComponent = 'a',
 }: CTAViewProps) {
+  const { LinkComponent } = useSiteRenderer();
   return (
     <section className="content-grid" style={{ paddingTop: '64px', paddingBottom: '64px' }}>
       <div

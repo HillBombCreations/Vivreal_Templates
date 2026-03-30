@@ -1,57 +1,33 @@
 'use client';
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-export default function NavbarView({ siteName, logoUrl, navItems, accentColor, LinkComponent = 'a', ImageComponent = 'img', }) {
-    return (_jsxs("header", { style: {
-            position: 'sticky',
-            top: 0,
-            zIndex: 50,
-            backgroundColor: 'rgba(255, 255, 255, 0.85)',
-            backdropFilter: 'blur(12px)',
-            WebkitBackdropFilter: 'blur(12px)',
-            borderBottom: '1px solid var(--border)',
-        }, children: [_jsxs("div", { className: "content-grid", style: {
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    height: '64px',
-                    paddingTop: '0',
-                    paddingBottom: '0',
-                }, children: [_jsxs(LinkComponent, { href: "/", style: {
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '10px',
-                            textDecoration: 'none',
-                            color: 'var(--text-primary)',
-                        }, children: [logoUrl && (_jsx(ImageComponent, { src: logoUrl, alt: `${siteName} logo`, width: 32, height: 32, style: { width: '32px', height: '32px', objectFit: 'contain', borderRadius: '4px' } })), _jsx("span", { style: {
-                                    fontWeight: 700,
-                                    fontSize: '1.125rem',
-                                    color: accentColor ?? 'var(--text-primary)',
-                                    letterSpacing: '-0.01em',
-                                }, children: siteName })] }), navItems.length > 0 && (_jsx("nav", { style: {
-                            display: 'none',
-                            alignItems: 'center',
-                            gap: '8px',
-                        }, className: "navbar-desktop-nav", children: navItems.map((item) => (_jsx(LinkComponent, { href: item.path, style: {
-                                padding: '6px 14px',
-                                borderRadius: '6px',
-                                fontSize: '0.9375rem',
-                                fontWeight: 500,
-                                color: 'var(--text-primary)',
-                                textDecoration: 'none',
-                                transition: 'background-color 0.15s, color 0.15s',
-                            }, onMouseEnter: (e) => {
-                                e.currentTarget.style.backgroundColor = accentColor
-                                    ? `${accentColor}18`
-                                    : 'color-mix(in srgb, var(--secondary) 10%, transparent)';
-                                e.currentTarget.style.color = accentColor ?? 'var(--text-primary)';
-                            }, onMouseLeave: (e) => {
-                                e.currentTarget.style.backgroundColor = 'transparent';
-                                e.currentTarget.style.color = 'var(--text-primary)';
-                            }, children: item.name }, item.path))) }))] }), _jsx("style", { children: `
-        @media (min-width: 768px) {
-          .navbar-desktop-nav {
-            display: flex !important;
-          }
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useState } from 'react';
+import { Menu, X, ShoppingCart } from 'lucide-react';
+import { useSiteRenderer } from '../context/SiteRendererContext';
+export default function NavbarView({ siteName, logoUrl, navItems, accentColor, pageConfigs, }) {
+    const { LinkComponent, ImageComponent } = useSiteRenderer();
+    const [mobileOpen, setMobileOpen] = useState(false);
+    const primary = accentColor ?? '#1a1a2e';
+    // Find the review/form page for the CTA button
+    const reviewPage = pageConfigs?.find((p) => p.format === 'form');
+    return (_jsxs(_Fragment, { children: [_jsx("header", { className: "fixed top-0 left-0 right-0 z-50 pt-4 pb-1 md:pt-5 bg-white/90 backdrop-blur-sm", children: _jsxs("div", { className: "w-full px-4", children: [_jsxs("div", { className: "flex md:hidden items-center justify-between", children: [_jsxs(LinkComponent, { href: "/", onClick: (e) => e.preventDefault(), className: "flex-1 inline-flex items-center gap-2", children: [logoUrl && (_jsx(ImageComponent, { src: logoUrl, alt: siteName || 'Logo', width: 48, height: 48, className: "inline-block object-contain", style: { width: 48, height: 48, objectFit: 'contain' } })), _jsx("span", { className: "text-2xl font-semibold leading-none", style: { color: 'var(--text-primary, #0b1220)' }, children: siteName })] }), _jsxs("div", { className: "flex items-center gap-1", children: [_jsx("button", { className: "p-2 rounded-lg hover:bg-black/5 transition", "aria-label": "Cart", children: _jsx(ShoppingCart, { className: "h-5 w-5", style: { color: 'var(--text-primary, #333)' } }) }), _jsx("button", { className: "p-2 rounded-lg hover:bg-black/5 transition", onClick: () => setMobileOpen(!mobileOpen), "aria-label": "Menu", children: mobileOpen ? _jsx(X, { className: "w-6 h-6" }) : _jsx(Menu, { className: "w-6 h-6" }) })] })] }), _jsx("hr", { className: "md:hidden mt-1 border-black/10" }), _jsxs("div", { className: "hidden md:flex items-center relative justify-between", children: [_jsx("div", { className: "flex items-center gap-2.5", children: _jsxs(LinkComponent, { href: "/", onClick: (e) => e.preventDefault(), className: "flex items-center gap-2.5", children: [logoUrl && (_jsx(ImageComponent, { src: logoUrl, alt: siteName || 'Logo', width: 40, height: 40, className: "object-contain", style: { width: 40, height: 40, objectFit: 'contain' } })), _jsx("span", { className: "text-xl font-semibold text-gray-900", children: siteName })] }) }), _jsx("nav", { className: "absolute left-1/2 transform -translate-x-1/2 flex items-center gap-1", children: navItems.map((item) => (_jsx(LinkComponent, { href: item.path, onClick: (e) => e.preventDefault(), className: "nav-link text-base font-medium px-3 py-2 text-gray-800 relative transition-colors hover:text-gray-900", children: item.label || item.name }, item.path))) }), _jsxs("div", { className: "flex items-center gap-3", children: [_jsx("button", { className: "p-2 rounded-lg hover:bg-black/5 transition relative", "aria-label": "Cart", children: _jsx(ShoppingCart, { className: "h-5 w-5", style: { color: 'var(--text-primary, #333)' } }) }), reviewPage && (_jsx(LinkComponent, { href: `/${reviewPage.slug}`, onClick: (e) => e.preventDefault(), className: "inline-flex items-center h-9 px-4 rounded-lg text-sm font-medium border transition hover:opacity-90", style: { borderColor: primary, color: primary }, children: reviewPage.labels?.navLabel || 'Leave A Review' }))] })] })] }) }), mobileOpen && (_jsxs("div", { className: "fixed inset-0 z-[60] bg-white pt-20 px-6", children: [_jsx("button", { className: "absolute top-5 right-5 p-2 rounded-lg hover:bg-black/5", onClick: () => setMobileOpen(false), "aria-label": "Close menu", children: _jsx(X, { className: "w-6 h-6" }) }), _jsx("nav", { className: "flex flex-col gap-2", children: navItems.map((item) => (_jsx(LinkComponent, { href: item.path, className: "text-lg font-medium py-3 px-4 rounded-xl hover:bg-black/5 transition", style: { color: 'var(--text-primary, #0b1220)' }, onClick: (e) => { e.preventDefault(); setMobileOpen(false); }, children: item.label || item.name }, item.path))) })] })), _jsx("style", { children: `
+        .nav-link {
+          position: relative;
         }
-      ` })] }));
+        .nav-link::after {
+          content: "";
+          position: absolute;
+          bottom: -2px;
+          left: 0;
+          width: 0%;
+          height: 2px;
+          background-color: ${primary};
+          transition: width 0.3s ease;
+        }
+        .nav-link:hover::after {
+          width: 100%;
+        }
+        .nav-link:hover {
+          color: ${primary} !important;
+        }
+      ` }), _jsx("div", { style: { height: '72px' } })] }));
 }

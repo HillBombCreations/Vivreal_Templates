@@ -1,6 +1,6 @@
 'use client';
-import type { ElementType } from 'react';
 import type { NavItem, SocialLink } from '../types/SiteData';
+import { useSiteRenderer } from '../context/SiteRendererContext';
 
 export interface FooterViewProps {
   siteName: string;
@@ -9,8 +9,6 @@ export interface FooterViewProps {
   navItems: NavItem[];
   socialLinks?: SocialLink[];
   accentColor?: string;
-  LinkComponent?: ElementType;
-  ImageComponent?: ElementType;
 }
 
 const SOCIAL_PLATFORM_URLS: Record<string, string> = {
@@ -25,9 +23,9 @@ const SOCIAL_PLATFORM_URLS: Record<string, string> = {
 };
 
 function resolveUrl(link: SocialLink): string {
-  if (link.link.startsWith('http')) return link.link;
-  const base = SOCIAL_PLATFORM_URLS[link.type.toLowerCase()];
-  return base ? `${base}${link.link}` : `https://${link.link}`;
+  if (link.url.startsWith('http')) return link.url;
+  const base = SOCIAL_PLATFORM_URLS[link.platform.toLowerCase()];
+  return base ? `${base}${link.url}` : `https://${link.url}`;
 }
 
 export default function FooterView({
@@ -37,9 +35,8 @@ export default function FooterView({
   navItems,
   socialLinks = [],
   accentColor,
-  LinkComponent = 'a',
-  ImageComponent = 'img',
 }: FooterViewProps) {
+  const { LinkComponent, ImageComponent } = useSiteRenderer();
   return (
     <footer
       style={{
@@ -170,7 +167,7 @@ export default function FooterView({
               </p>
               <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 {socialLinks.map((link) => (
-                  <li key={link.type}>
+                  <li key={link.platform}>
                     <a
                       href={resolveUrl(link)}
                       target="_blank"
@@ -190,7 +187,7 @@ export default function FooterView({
                         e.currentTarget.style.opacity = '0.85';
                       }}
                     >
-                      {link.type}
+                      {link.platform}
                     </a>
                   </li>
                 ))}

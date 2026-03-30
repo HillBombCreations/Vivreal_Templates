@@ -77,7 +77,6 @@ export default function FeedLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -91,7 +90,6 @@ export default function FeedLayout({
           key={item.id}
           href={`/${slug}/${encodeURIComponent(item.id)}`}
           enabled={detailEnabled}
-          LinkComponent={LinkComponent}
           className={`group block rounded-2xl border border-black/[0.06] bg-white overflow-hidden transition-all duration-300 hover:shadow-lg ${
             detailEnabled ? "cursor-pointer" : ""
           }`}

@@ -79,7 +79,6 @@ export default function TimelineLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -133,7 +132,6 @@ export default function TimelineLayout({
                 <ItemLink
                   href={`/${slug}/${encodeURIComponent(item.id)}`}
                   enabled={detailEnabled}
-                  LinkComponent={LinkComponent}
                   className={`group rounded-2xl border border-black/[0.06] bg-white p-5 sm:p-6 overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 block ${
                     detailEnabled ? "cursor-pointer" : ""
                   }`}

@@ -1,7 +1,9 @@
 'use client';
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { ArrowRight } from 'lucide-react';
-export default function CTAView({ heading = 'Ready to get started?', subheading, label = 'Get Started', linkTo = '/', accentColor = '#6366f1', LinkComponent = 'a', }) {
+import { useSiteRenderer } from '../context/SiteRendererContext';
+export default function CTAView({ heading = 'Ready to get started?', subheading, label = 'Get Started', linkTo = '/', accentColor = '#6366f1', }) {
+    const { LinkComponent } = useSiteRenderer();
     return (_jsx("section", { className: "content-grid", style: { paddingTop: '64px', paddingBottom: '64px' }, children: _jsxs("div", { style: {
                 backgroundColor: accentColor,
                 borderRadius: '16px',

@@ -1,4 +1,3 @@
-import type { ElementType } from 'react';
 export interface ContentItem {
     /** Unique ID (MongoDB _id) */
     id: string;
@@ -42,11 +41,5 @@ export interface ContentLayoutProps {
     emptyMessage?: string;
     /** Page-level labels for layouts that need hero/page config */
     pageLabels?: Record<string, unknown>;
-    /** Pass next/link in Next.js, defaults to 'a' */
-    LinkComponent?: ElementType;
-    /** Pass next/image in Next.js, defaults to 'img' */
-    ImageComponent?: ElementType;
-    /** When true, disables interactive features (form submissions, navigation) */
-    previewMode?: boolean;
 }
 //# sourceMappingURL=ContentItem.d.ts.map

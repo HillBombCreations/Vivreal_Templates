@@ -71,7 +71,6 @@ export default function CarouselLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -127,7 +126,6 @@ export default function CarouselLayout({
             key={item.id}
             href={`/${slug}/${encodeURIComponent(item.id)}`}
             enabled={detailEnabled}
-            LinkComponent={LinkComponent}
             className={`group shrink-0 snap-start w-[280px] sm:w-[320px] lg:w-[340px] rounded-2xl border border-black/[0.06] bg-white overflow-hidden transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 ${
               detailEnabled ? "cursor-pointer" : ""
             }`}

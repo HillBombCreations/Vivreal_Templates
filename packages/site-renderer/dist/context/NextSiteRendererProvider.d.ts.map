@@ -1,0 +1,1 @@
+{"version":3,"file":"NextSiteRendererProvider.d.ts","sourceRoot":"","sources":["../../src/context/NextSiteRendererProvider.tsx"],"names":[],"mappings":"AAEA,OAAO,KAAK,EAAE,SAAS,EAAE,MAAM,OAAO,CAAC;AAKvC,UAAU,6BAA6B;IACrC,WAAW,CAAC,EAAE,OAAO,CAAC;IACtB,QAAQ,EAAE,SAAS,CAAC;CACrB;AAED,wBAAgB,wBAAwB,CAAC,EACvC,WAAmB,EACnB,QAAQ,GACT,EAAE,6BAA6B,2CAU/B"}

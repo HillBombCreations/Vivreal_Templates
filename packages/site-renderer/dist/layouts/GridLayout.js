@@ -16,13 +16,13 @@ function Empty({ message }) {
 /* ------------------------------------------------------------------ */
 /*  Grid Layout — dense, image-dominant                                */
 /* ------------------------------------------------------------------ */
-export default function GridLayout({ items, slug, detailEnabled, accent, loading, emptyMessage, LinkComponent, }) {
+export default function GridLayout({ items, slug, detailEnabled, accent, loading, emptyMessage, }) {
     if (loading)
         return _jsx(Skeleton, {});
     if (!items.length)
         return _jsx(Empty, { message: emptyMessage });
     const primary = accent || "var(--primary)";
-    return (_jsx("div", { className: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4", children: items.map((item) => (_jsxs(ItemLink, { href: `/${slug}/${encodeURIComponent(item.id)}`, enabled: detailEnabled, LinkComponent: LinkComponent, className: `group relative rounded-2xl overflow-hidden aspect-square ${detailEnabled ? "cursor-pointer" : ""}`, children: [item.imageUrl ? (_jsxs(_Fragment, { children: [_jsx("img", { src: item.imageUrl, alt: item.title, className: "absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110", loading: "lazy" }), _jsx("div", { className: "absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent" })] })) : (_jsx("div", { className: "absolute inset-0", style: {
+    return (_jsx("div", { className: "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4", children: items.map((item) => (_jsxs(ItemLink, { href: `/${slug}/${encodeURIComponent(item.id)}`, enabled: detailEnabled, className: `group relative rounded-2xl overflow-hidden aspect-square ${detailEnabled ? "cursor-pointer" : ""}`, children: [item.imageUrl ? (_jsxs(_Fragment, { children: [_jsx("img", { src: item.imageUrl, alt: item.title, className: "absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110", loading: "lazy" }), _jsx("div", { className: "absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-transparent" })] })) : (_jsx("div", { className: "absolute inset-0", style: {
                         background: `color-mix(in srgb, ${primary} 6%, white)`,
                     } })), _jsx("div", { className: "absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" }), _jsxs("div", { className: "absolute inset-x-0 bottom-0 p-4 translate-y-1 group-hover:translate-y-0 transition-transform duration-300", children: [_jsx("h3", { className: "font-semibold text-sm leading-snug text-white drop-shadow-sm line-clamp-2", children: item.title }), item.price && (_jsx("span", { className: "mt-1 inline-block text-xs font-bold text-white/90 drop-shadow-sm", children: item.price }))] }), item.tags && item.tags.length > 0 && (_jsx("div", { className: "absolute top-3 right-3 flex gap-1", children: _jsx("span", { className: "rounded-full bg-white/90 backdrop-blur-sm px-2 py-0.5 text-[10px] font-semibold text-black/70 shadow-sm", children: item.tags[0] }) }))] }, item.id))) }));
 }

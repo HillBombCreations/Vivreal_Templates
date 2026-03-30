@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Mail, Clock, Users, X, CheckCircle2, AlertCircle } from "lucide-react";
 import type { ContentLayoutProps } from "../types/ContentItem";
+import { useSiteRenderer } from "../context/SiteRendererContext";
 
 interface ToastState {
   open: boolean;
@@ -39,8 +40,8 @@ export default function FormLayout({
   items,
   accent,
   loading,
-  previewMode,
 }: ContentLayoutProps) {
+  const { previewMode } = useSiteRenderer();
   const primary = accent || "var(--primary)";
 
   const [form, setForm] = useState({ fullName: "", email: "", message: "" });

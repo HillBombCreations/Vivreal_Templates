@@ -60,7 +60,6 @@ export default function GridLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -74,7 +73,6 @@ export default function GridLayout({
           key={item.id}
           href={`/${slug}/${encodeURIComponent(item.id)}`}
           enabled={detailEnabled}
-          LinkComponent={LinkComponent}
           className={`group relative rounded-2xl overflow-hidden aspect-square ${
             detailEnabled ? "cursor-pointer" : ""
           }`}

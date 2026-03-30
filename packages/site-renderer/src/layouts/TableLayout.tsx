@@ -86,7 +86,6 @@ export default function TableLayout({
   accent,
   loading,
   emptyMessage,
-  LinkComponent,
 }: ContentLayoutProps) {
   if (loading) return <Skeleton />;
   if (!items.length) return <Empty message={emptyMessage} />;
@@ -119,7 +118,7 @@ export default function TableLayout({
             key={item.id}
             href={`/${slug}/${encodeURIComponent(item.id)}`}
             enabled={detailEnabled}
-            LinkComponent={LinkComponent}
+
             className={`grid grid-cols-[1fr_2fr_1fr_1fr] gap-4 px-6 py-4 border-b border-black/[0.04] last:border-b-0 transition-colors duration-150 hover:bg-black/[0.015] ${
               detailEnabled ? "cursor-pointer" : ""
             }`}
@@ -188,7 +187,7 @@ export default function TableLayout({
             key={item.id}
             href={`/${slug}/${encodeURIComponent(item.id)}`}
             enabled={detailEnabled}
-            LinkComponent={LinkComponent}
+
             className={`block p-4 transition-colors duration-150 hover:bg-black/[0.015] ${
               detailEnabled ? "cursor-pointer" : ""
             }`}
