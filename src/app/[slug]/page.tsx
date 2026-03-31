@@ -174,9 +174,9 @@ export default async function DynamicPage({
         activeFilters[key.slice(2)] = val;
       }
     }
-    // Filter collection can be on the integration binding or the page config (legacy)
-    const filterCollectionId = (integrationBinding as Record<string, unknown>)?.collectionId as string | undefined
-      ?? pageConfig.collectionId
+    // Filter collection: page-level collectionId holds the filter definitions,
+    // integration binding collectionId identifies the product collection (not filters)
+    const filterCollectionId = pageConfig.collectionId
       ?? null;
 
     const [products, filters] = await Promise.all([

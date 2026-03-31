@@ -50,29 +50,45 @@ export async function POST(request: NextRequest) {
   const clientApiUrl =
     process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
 
-  const res = await fetch(`${clientApiUrl}/tenant/createCheckoutSession`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: apiKey ?? "",
-    },
-    body: JSON.stringify({
-      products,
-      requiresShipping: Boolean(requiresShipping),
-      originUrl,
-    }),
-  });
+  try {
+    const upstreamUrl = `${clientApiUrl}/tenant/createCheckoutSession`;
+    console.log('[checkout] Calling:', upstreamUrl, 'apiKey present:', !!apiKey);
 
-  const data = await res.json();
+    const res = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: apiKey ?? "",
+      },
+      body: JSON.stringify({
+        products,
+        requiresShipping: Boolean(requiresShipping),
+        originUrl,
+      }),
+    });
 
-  if (!res.ok) {
+    const text = await res.text();
+    console.log('[checkout] Response status:', res.status, 'body:', text.slice(0, 300));
+
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: data.error ?? data.message ?? "Checkout failed", detail: text.slice(0, 200) },
+        { status: res.status }
+      );
+    }
+
+    // VR_Client_API returns { success, data: { url, sessionId } } or { data: "stripe_url" }
+    const url = data.data?.url ?? data.data ?? data.url;
+    return NextResponse.json({ url });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[checkout] Fetch error:', message);
     return NextResponse.json(
-      { error: data.error ?? "Checkout failed" },
-      { status: res.status }
+      { error: "Bad Gateway", detail: message },
+      { status: 502 }
     );
   }
-
-  // VR_Client_API returns { success, data: "stripe_url" } — extract the URL
-  const url = data.data ?? data;
-  return NextResponse.json({ url });
 }

@@ -133,7 +133,11 @@ async function Resolved() {
           slug="home"
           detailEnabled={false}
           accent={siteData.primary}
-          pageLabels={homePageConfig.labels}
+          pageLabels={{
+            ...homePageConfig.labels,
+            // Fall back to site logo if no heroImage is uploaded
+            ...(!homePageConfig.labels?.heroImage && siteData.logo ? { heroImage: siteData.logo } : {}),
+          }}
         />
       )}
 
