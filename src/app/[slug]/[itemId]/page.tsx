@@ -3,7 +3,7 @@ import Link from "next/link";
 import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate } from "@hillbombcreations/site-renderer";
+import { CTASectionTemplate } from "@/components/RendererExports";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { ArrowLeft, Calendar, MapPin } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";

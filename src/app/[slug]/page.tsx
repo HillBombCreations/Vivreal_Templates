@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate, TeamPage } from "@hillbombcreations/site-renderer";
+import { CTASectionTemplate, TeamPage } from "@/components/RendererExports";
 import type { SiteData as RendererSiteData, TeamMemberData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";

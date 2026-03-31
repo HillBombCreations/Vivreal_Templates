@@ -21,10 +21,10 @@ function resolveProductImage(item: Record<string, unknown>): string | Record<str
   // Variant products: productImage = { "variant1": { name, key, ..., currentFile }, ... }
   const productImage = objectValue.productImage as Record<string, unknown> | undefined;
   if (!productImage) return "";
-  // Simple case — currentFile directly on productImage
-  const direct = getSignedUrl(productImage);
-  if (direct) return direct;
-  // Variant case — build a variant map of image URLs
+  // Simple case — currentFile exists directly on productImage (not a variant product)
+  const directCf = productImage.currentFile as Record<string, string> | undefined;
+  if (directCf?.source) return directCf.source;
+  // Variant case — build a variant map of image URLs per variant key
   const variantMap: Record<string, string> = {};
   for (const key of Object.keys(productImage)) {
     const url = getSignedUrl(productImage[key]);
