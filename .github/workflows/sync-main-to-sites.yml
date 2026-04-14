@@ -6,15 +6,30 @@ on:
       - main
 
 jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.list.outputs.branches }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: List site branches
+        id: list
+        run: |
+          BRANCHES=$(git branch -r | grep -v 'origin/main' | grep -v 'origin/HEAD' | sed 's|origin/||' | sed 's/^[ \t]*//' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "branches=$BRANCHES" >> "$GITHUB_OUTPUT"
+          echo "Found branches: $BRANCHES"
+
   sync:
+    needs: discover
+    if: needs.discover.outputs.branches != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        branch:
-          - dougskitchen-dougs-kitchen
-          - easttenn-waves-of-grain
-          - thecomedycollective-the-comedy-collective
+        branch: ${{ fromJson(needs.discover.outputs.branches) }}
     steps:
       - uses: actions/checkout@v4
         with:
