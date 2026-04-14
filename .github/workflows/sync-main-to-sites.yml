@@ -1,0 +1,30 @@
+name: Sync main to site branches
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch:
+          - dougskitchen-dougs-kitchen
+          - easttenn-waves-of-grain
+          - thecomedycollective-the-comedy-collective
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge main into ${{ matrix.branch }}
+        run: |
+          git config user.name "Vivreal Bot"
+          git config user.email "bot@vivreal.io"
+          git checkout ${{ matrix.branch }}
+          git merge origin/main --no-edit -m "chore: sync main → ${{ matrix.branch }}"
+          git push origin ${{ matrix.branch }}
