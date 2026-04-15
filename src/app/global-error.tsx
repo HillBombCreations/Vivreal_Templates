@@ -1,5 +1,7 @@
 'use client';
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
 import QuotaExceeded from '@/components/QuotaExceeded';
 
 export default function GlobalError({
@@ -7,6 +9,10 @@ export default function GlobalError({
 }: {
   error: Error & { status?: number; digest?: string };
 }) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   const isQuota = error.message?.includes('402') || error.status === 402;
 
   return (

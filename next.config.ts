@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "path";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
@@ -24,4 +25,9 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Disable source map upload for template sites (no SENTRY_AUTH_TOKEN)
+  disableServerWebpackPlugin: true,
+  disableClientWebpackPlugin: true,
+  silent: true,
+});

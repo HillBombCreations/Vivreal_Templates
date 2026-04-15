@@ -1,5 +1,7 @@
 'use client';
 
+import * as Sentry from "@sentry/nextjs";
+import { useEffect } from "react";
 import QuotaExceeded from '@/components/QuotaExceeded';
 
 export default function ErrorPage({
@@ -7,6 +9,10 @@ export default function ErrorPage({
 }: {
   error: Error & { status?: number; digest?: string };
 }) {
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
+
   // 402 = quota exceeded / frozen account
   const isQuota = error.message?.includes('402') || error.status === 402;
 
