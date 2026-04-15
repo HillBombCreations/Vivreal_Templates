@@ -27,7 +27,8 @@ const nextConfig: NextConfig = {
 
 export default withSentryConfig(nextConfig, {
   // Disable source map upload for template sites (no SENTRY_AUTH_TOKEN)
-  disableServerWebpackPlugin: true,
-  disableClientWebpackPlugin: true,
+  sourcemaps: {
+    disable: true,
+  },
   silent: true,
 });
