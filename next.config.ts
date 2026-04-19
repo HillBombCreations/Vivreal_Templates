@@ -5,6 +5,12 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
+  experimental: {
+    // Enables React's View Transitions API integration — used by
+    // `<ViewTransition>` wrappers in the root layout to animate route
+    // changes. Browsers without support (Safari <18) degrade gracefully.
+    viewTransition: true,
+  },
   images: {
     remotePatterns: [
       {
