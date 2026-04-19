@@ -175,7 +175,7 @@ export default async function DynamicPage({
     // Map raw ContentItems to the MenuPage shape. Keep the mapping narrow —
     // the renderer doesn't know about CMS internals.
     const categories: MenuCategory[] = categoriesRes.items.map((raw, idx) => {
-      const r = raw as Record<string, unknown>;
+      const r = raw as unknown as Record<string, unknown>;
       return {
         id: typeof r.id === 'string' ? r.id : `cat-${idx}`,
         name: typeof r.name === 'string' ? r.name : `Category ${idx + 1}`,
@@ -186,7 +186,7 @@ export default async function DynamicPage({
     });
 
     const items: MenuItem[] = itemsRes.items.map((raw, idx) => {
-      const r = raw as Record<string, unknown>;
+      const r = raw as unknown as Record<string, unknown>;
       const dietary = Array.isArray(r.dietaryTags)
         ? (r.dietaryTags as unknown[]).filter((t): t is string => typeof t === 'string')
         : undefined;
