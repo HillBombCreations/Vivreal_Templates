@@ -122,6 +122,20 @@ export interface SiteData {
     },
     homeSections?: HomeSection[];
     homePageConfig?: PageConfig | null;
+    /**
+     * Template-level metadata. `templateType` is used by the root layout to gate
+     * template-specific UI (e.g., the restaurant Reserve-a-Table FloatingCta).
+     * Plumbed through VR_Client_API → getSiteData → here.
+     */
+    siteInfo?: {
+        templateType?: 'ecommerce' | 'showcase' | 'restaurant' | 'services' | 'portfolio' | string;
+        mode?: string;
+        typography?: {
+            presetId?: string;
+            [key: string]: unknown;
+        };
+        [key: string]: unknown;
+    };
 }
 
 export type Pages = {

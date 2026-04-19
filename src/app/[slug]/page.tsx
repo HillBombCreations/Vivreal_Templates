@@ -1,8 +1,13 @@
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate, TeamPage } from "@/components/RendererExports";
-import type { SiteData as RendererSiteData, TeamMemberData } from "@hillbombcreations/site-renderer";
+import { CTASectionTemplate, TeamPage, MenuPage } from "@/components/RendererExports";
+import type {
+  SiteData as RendererSiteData,
+  TeamMemberData,
+  MenuCategory,
+  MenuItem,
+} from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getPageData } from "@/lib/api/pageData";
@@ -134,6 +139,76 @@ export default async function DynamicPage({
           labels={labels}
           slug={slug}
           siteData={siteData as unknown as RendererSiteData}
+        />
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
+        <Footer />
+      </>
+    );
+  }
+
+  // Restaurant menu pages — menu format (Iter 5)
+  // Convention: first collection binding is Menu Categories (filter nav),
+  // second binding is Menu Items (the dishes). Matches the restaurant
+  // blueprint seeded by VR_Secure_API.buildRestaurantPages.
+  if (format === "menu") {
+    const bindings = pageConfig.collections ?? [];
+    // Find by role or name — primary binding = items, supplemental = categories.
+    const categoriesBinding = bindings.find(
+      (b) => (b.name ?? '').toLowerCase().includes('categor'),
+    ) ?? bindings[0];
+    const itemsBinding = bindings.find(
+      (b) => (b.name ?? '').toLowerCase().includes('item'),
+    ) ?? bindings[bindings.length - 1];
+
+    const categoriesCollectionId = categoriesBinding?.collectionId || '';
+    const itemsCollectionId = itemsBinding?.collectionId || '';
+
+    const [categoriesRes, itemsRes] = await Promise.all([
+      categoriesCollectionId
+        ? getCollectionItems(categoriesCollectionId)
+        : Promise.resolve({ items: [], totalCount: 0 }),
+      itemsCollectionId
+        ? getCollectionItems(itemsCollectionId)
+        : Promise.resolve({ items: [], totalCount: 0 }),
+    ]);
+
+    // Map raw ContentItems to the MenuPage shape. Keep the mapping narrow —
+    // the renderer doesn't know about CMS internals.
+    const categories: MenuCategory[] = categoriesRes.items.map((raw, idx) => {
+      const r = raw as Record<string, unknown>;
+      return {
+        id: typeof r.id === 'string' ? r.id : `cat-${idx}`,
+        name: typeof r.name === 'string' ? r.name : `Category ${idx + 1}`,
+        order: typeof r.order === 'number' ? r.order : idx,
+        icon: typeof r.icon === 'string' ? r.icon : undefined,
+        description: typeof r.description === 'string' ? r.description : undefined,
+      };
+    });
+
+    const items: MenuItem[] = itemsRes.items.map((raw, idx) => {
+      const r = raw as Record<string, unknown>;
+      const dietary = Array.isArray(r.dietaryTags)
+        ? (r.dietaryTags as unknown[]).filter((t): t is string => typeof t === 'string')
+        : undefined;
+      return {
+        id: typeof r.id === 'string' ? r.id : `item-${idx}`,
+        name: typeof r.name === 'string' ? r.name : 'Untitled',
+        description: typeof r.description === 'string' ? r.description : undefined,
+        price: typeof r.price === 'number' ? r.price : undefined,
+        priceDisplay: typeof r.priceDisplay === 'string' ? r.priceDisplay : undefined,
+        category: typeof r.category === 'string' ? r.category : undefined,
+        dietaryTags: dietary,
+      };
+    });
+
+    return (
+      <>
+        <Navbar />
+        <MenuPage
+          categories={categories}
+          items={items}
+          title={pageConfig.labels?.title as string | undefined}
+          subtitle={pageConfig.labels?.subtitle as string | undefined}
         />
         {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />

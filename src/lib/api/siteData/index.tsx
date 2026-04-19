@@ -45,6 +45,10 @@ interface SiteDetailsResponse {
   socialLinks?: SiteData['socialLinks'];
   pages?: PageConfig[];
   homeSections?: HomeSection[];
+  // Carries templateType used to gate template-specific UI (e.g., restaurant
+  // FloatingCta in app/layout.tsx). Added to VR_Client_API getSiteDetails
+  // service 2026-04-18.
+  siteInfo?: SiteData['siteInfo'];
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -70,6 +74,10 @@ export const getSiteData = async (): Promise<SiteData> => {
     pageConfigs: allPages.filter((p) => p.format !== "home" && p.slug !== "home"),
     homePageConfig: homePageConfig ?? null,
     homeSections: raw.homeSections,
+    // Thread siteInfo through so layout can read templateType. Fall back to
+    // values.siteInfo for backward-compat with older responses that may only
+    // carry it inside siteDetails.values.
+    siteInfo: raw.siteInfo ?? raw.siteDetails.values.siteInfo,
   };
 };
 
