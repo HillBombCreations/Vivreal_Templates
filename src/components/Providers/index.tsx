@@ -10,7 +10,7 @@ import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
-import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
+import SiteRendererBridge from './SiteRendererBridge';
 
 const queryClient = new QueryClient();
 
@@ -41,7 +41,7 @@ const Providers = ({
         );
 
     const content = (
-        <NextSiteRendererProvider>
+        <SiteRendererBridge>
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
             <AppToaster />
@@ -49,7 +49,7 @@ const Providers = ({
             {children}
         </TooltipProvider>
         </QueryClientProvider>
-        </NextSiteRendererProvider>
+        </SiteRendererBridge>
     );
 
     return (

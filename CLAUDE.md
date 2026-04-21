@@ -1,5 +1,15 @@
 # CLAUDE.md — Vivreal Showcase Template
 
+## Recent changes (2026-04-21, Phase 5b)
+
+Detail pages (`/<slug>/<itemId>` for products/shows/team) no longer use hardcoded JSX in `src/app/[slug]/[itemId]/page.tsx`. They now render through `<DetailPageTemplate>` from `@hillbombcreations/site-renderer@^0.4.0` (config-driven via `pageConfig.detailPage.sections` + per-format defaults).
+
+**Deleted:** `src/components/PageTemplates/ProductDetailClient/`, `src/components/PageTemplates/MemberDetail.tsx`.
+**Moved:** `FloatingCartDialog.tsx` → `src/components/Cart/FloatingCartDialog.tsx` (still used for the post-add toast).
+**Added:** `src/lib/cartAdapter.ts` (implements renderer's `CartAdapter` interface), `src/components/Providers/SiteRendererBridge.tsx` (wires the adapter into `NextSiteRendererProvider`), `src/app/[slug]/[itemId]/DetailPageClient.tsx` (client wrapper that owns the floating cart dialog).
+
+`npm install` will fail until renderer 0.4.0 is published to GitHub Packages — see the renderer repo's release runbook.
+
 ## What This Is
 
 The **showcase** template — a Next.js 15 site template for content-driven businesses. It supports events/shows, team pages, reviews, and email subscriptions. Designed to be fully data-driven: all branding, content, and navigation come from the Vivreal CMS via VR_Client_API.
