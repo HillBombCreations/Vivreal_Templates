@@ -40,4 +40,6 @@ export interface ContentLayoutProps {
   loading?: boolean;
   /** Empty state message */
   emptyMessage?: string;
+  /** Page-level labels for layouts that need hero/page config */
+  pageLabels?: Record<string, unknown>;
 }

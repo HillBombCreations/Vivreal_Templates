@@ -43,12 +43,12 @@ const Footer = async () => {
                 {socialLinks.map((link, idx) => (
                   <a
                     key={idx}
-                    href={link.url}
+                    href={link.link}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-gray-800 hover:text-foreground transition-colors text-sm font-medium"
                   >
-                    {link.platform}
+                    {link.type}
                   </a>
                 ))}
               </div>

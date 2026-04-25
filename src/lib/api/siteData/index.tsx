@@ -45,6 +45,10 @@ interface SiteDetailsResponse {
   socialLinks?: SiteData['socialLinks'];
   pages?: PageConfig[];
   homeSections?: HomeSection[];
+  // Carries templateType used to gate template-specific UI (e.g., restaurant
+  // FloatingCta in app/layout.tsx). Added to VR_Client_API getSiteDetails
+  // service 2026-04-18.
+  siteInfo?: SiteData['siteInfo'];
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -55,6 +59,11 @@ export const getSiteData = async (): Promise<SiteData> => {
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
 
+  const allPages = raw.pages ?? [];
+  const homePageConfig = allPages.find(
+    (p) => p.format === "home" || p.slug === "home"
+  );
+
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
@@ -62,8 +71,13 @@ export const getSiteData = async (): Promise<SiteData> => {
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
-    pageConfigs: raw.pages ?? [],
+    pageConfigs: allPages.filter((p) => p.format !== "home" && p.slug !== "home"),
+    homePageConfig: homePageConfig ?? null,
     homeSections: raw.homeSections,
+    // Thread siteInfo through so layout can read templateType. Fall back to
+    // values.siteInfo for backward-compat with older responses that may only
+    // carry it inside siteDetails.values.
+    siteInfo: raw.siteInfo ?? raw.siteDetails.values.siteInfo,
   };
 };
 
@@ -89,7 +103,8 @@ export const getPageCollectionId = (
   envFallback: string
 ): string => {
   const page = siteData.pageConfigs?.find((p) => p.name === pageName);
-  return page?.collectionId || envFallback;
+  // Support both old format (collectionId on page) and new universal format (collections array)
+  return page?.collectionId || page?.collections?.[0]?.collectionId || envFallback;
 };
 
 /**

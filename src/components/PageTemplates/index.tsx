@@ -1,5 +1,4 @@
-export { default as ShowPageClient } from "./ShowPageClient";
-export { default as AboutClient } from "./AboutClient";
+export { default as ShowsPageWrapper } from "./ShowsPageWrapper";
 export { default as FormClient } from "./FormClient";
 export { default as StaticPage } from "./StaticPage";
 export { default as MemberDetail } from "./MemberDetail";

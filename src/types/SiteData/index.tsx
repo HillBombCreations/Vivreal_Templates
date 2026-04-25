@@ -18,15 +18,15 @@ export interface Businessinfo {
 }
 
 export interface SocialLink {
-    platform: string;
-    url: string;
+    type: string;
+    link: string;
 }
 
 export interface PageIntegrationBinding {
     type?: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery';
+    displayAs?: 'feed' | 'grid' | 'carousel' | 'cards' | 'table' | 'timeline' | 'gallery' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews';
     /** Collection ID for integration-type collections (e.g., product filters). */
     collectionId?: string;
 }
@@ -35,15 +35,21 @@ export interface PageCollectionBinding {
     collectionId: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery';
+    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews' | 'grid' | 'feed';
+    sectionType?: string;
+    sectionConfig?: Record<string, unknown>;
+    order?: number;
+    enabled?: boolean;
+    subtitle?: string;
 }
 
-export interface PageCtaConfig {
+export interface PageCtaConfig extends Record<string, unknown> {
     enabled?: boolean;
     heading?: string;
     subheading?: string;
     label?: string;
     linkTo?: string;
+    [key: string]: unknown;
 }
 
 export interface PageConfig {
@@ -115,6 +121,21 @@ export interface SiteData {
         description?: string,
     },
     homeSections?: HomeSection[];
+    homePageConfig?: PageConfig | null;
+    /**
+     * Template-level metadata. `templateType` is used by the root layout to gate
+     * template-specific UI (e.g., the restaurant Reserve-a-Table FloatingCta).
+     * Plumbed through VR_Client_API → getSiteData → here.
+     */
+    siteInfo?: {
+        templateType?: 'ecommerce' | 'showcase' | 'restaurant' | 'services' | 'portfolio' | string;
+        mode?: string;
+        typography?: {
+            presetId?: string;
+            [key: string]: unknown;
+        };
+        [key: string]: unknown;
+    };
 }
 
 export type Pages = {

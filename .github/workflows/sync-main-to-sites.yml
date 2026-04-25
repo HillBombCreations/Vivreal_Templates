@@ -1,0 +1,45 @@
+name: Sync main to site branches
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      branches: ${{ steps.list.outputs.branches }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: List site branches
+        id: list
+        run: |
+          BRANCHES=$(git branch -r | grep -v 'origin/main' | grep -v 'origin/HEAD' | sed 's|origin/||' | sed 's/^[ \t]*//' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "branches=$BRANCHES" >> "$GITHUB_OUTPUT"
+          echo "Found branches: $BRANCHES"
+
+  sync:
+    needs: discover
+    if: needs.discover.outputs.branches != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        branch: ${{ fromJson(needs.discover.outputs.branches) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.TOKEN_FOR_GITHUIB }}
+
+      - name: Merge main into ${{ matrix.branch }}
+        run: |
+          git config user.name "Vivreal Bot"
+          git config user.email "bot@vivreal.io"
+          git checkout ${{ matrix.branch }}
+          git merge origin/main --no-edit -m "chore: sync main → ${{ matrix.branch }}"
+          git push origin ${{ matrix.branch }}
