@@ -95,7 +95,7 @@ function toContentItem(
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
 
   const title = String(objectValue.title ?? objectValue.name ?? '');
-  const description = objectValue.description ?? objectValue.bio;
+  const description = objectValue.description ?? objectValue.bio ?? objectValue.review;
   const price = objectValue.price;
   const date = objectValue.date ?? raw.publishDate;
   const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
