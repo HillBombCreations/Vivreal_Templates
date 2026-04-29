@@ -5,11 +5,34 @@
  * Automatically unwraps the { success, data, error } response envelope.
  */
 import 'server-only';
+import { headers } from 'next/headers';
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 
 const API_KEY = process.env.API_KEY || '';
+
+const PREVIEW_REQUEST_HEADER = 'x-vivreal-preview-token';
+const PREVIEW_FORWARD_HEADER = 'x-vivreal-preview';
+
+/**
+ * Pull the portal preview-bypass token (if any) out of the current request
+ * scope. middleware.ts injects it from `?vivreal_preview=<token>` on the
+ * inbound URL; we relay it as `x-vivreal-preview` on every server-to-server
+ * fetch so VR_Client_API can skip quota tracking for portal-driven previews.
+ *
+ * `headers()` throws when called outside a request scope (e.g., during a
+ * build-time prerender). In that case we just have no token and the call
+ * is tracked normally — exactly the right fallback.
+ */
+async function readPreviewToken(): Promise<string | null> {
+  try {
+    const h = await headers();
+    return h.get(PREVIEW_REQUEST_HEADER);
+  } catch {
+    return null;
+  }
+}
 
 interface ApiEnvelope<T> {
   success: boolean;
@@ -37,13 +60,17 @@ export async function clientFetch<T>(
 ): Promise<T> {
   const url = `${CLIENT_API_URL}${path}`;
 
+  const previewToken = await readPreviewToken();
+  const fwdHeaders: Record<string, string> = {
+    Authorization: API_KEY,
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  if (previewToken) fwdHeaders[PREVIEW_FORWARD_HEADER] = previewToken;
+
   const res = await fetch(url, {
     ...init,
-    headers: {
-      Authorization: API_KEY,
-      'Content-Type': 'application/json',
-      ...(init?.headers as Record<string, string>),
-    },
+    headers: fwdHeaders,
     cache: 'no-store',
   });
 
