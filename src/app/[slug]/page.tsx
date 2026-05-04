@@ -370,17 +370,22 @@ export default async function DynamicPage({
   );
 }
 
+const STATIC_PAGE_TITLES: Record<string, string> = {
+  privacy: "Privacy Policy",
+  terms: "Terms of Service",
+};
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
-  if (!pageConfig) {
+  if (!pageConfig && !STATIC_PAGE_TITLES[slug]) {
     return { title: `Not Found | ${siteName}` };
   }
 
-  const title = pageConfig.labels?.title || pageConfig.name;
+  const title = pageConfig?.labels?.title || pageConfig?.name || STATIC_PAGE_TITLES[slug];
 
   return {
     title: `${title} | ${siteName}`,

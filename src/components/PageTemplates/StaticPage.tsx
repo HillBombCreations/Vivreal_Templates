@@ -73,10 +73,10 @@ function buildDefaultContent(pageName: string, opts: { businessName: string; ema
   return "";
 }
 
-const StaticPage = async ({ labels, pageName }: StaticPageProps) => {
+export default async function StaticPage({ labels, pageName }: StaticPageProps) {
   const siteData = await getSiteData();
   const businessName = siteData?.businessInfo?.name || siteData?.name || "";
-  const email = siteData?.businessInfo?.email || "";
+  const email = siteData?.businessInfo?.contactInfo?.email || "";
 
   const content = labels.content || buildDefaultContent(pageName, { businessName, email });
 
@@ -106,6 +106,4 @@ const StaticPage = async ({ labels, pageName }: StaticPageProps) => {
       </main>
     </>
   );
-};
-
-export default StaticPage;
+}
