@@ -389,6 +389,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
   return {
     title: `${title} | ${siteName}`,
-    description: pageConfig.labels?.subtitle || `${title} — ${siteName}`,
+    description: pageConfig?.labels?.subtitle || `${title} — ${siteName}`,
   };
 }
