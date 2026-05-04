@@ -38,13 +38,19 @@ export default async function DynamicPage({
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
 
-  if (!pageConfig) return notFound();
+  // Privacy and terms always render on every site, even if not in page config
+  const STATIC_SLUGS: Record<string, string> = {
+    privacy: "Privacy Policy",
+    terms: "Terms of Service",
+  };
+  if (!pageConfig && !STATIC_SLUGS[slug]) return notFound();
 
-  const { format, name } = pageConfig;
+  const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
+  const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;
 
   // Per-page CTA: enabled by default, controllable from portal
-  const showCta = pageConfig.cta?.enabled !== false;
-  const ctaConfig = pageConfig.cta ?? {};
+  const showCta = pageConfig?.cta?.enabled !== false;
+  const ctaConfig = pageConfig?.cta ?? {};
 
   // Collection list pages — shows/events format
   if (format === "shows") {
@@ -315,7 +321,7 @@ export default async function DynamicPage({
     return (
       <>
         <Navbar />
-        <StaticPage labels={labels} pageName={name} />
+        <StaticPage labels={labels} pageName={slug} />
         {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
