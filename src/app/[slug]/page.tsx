@@ -48,9 +48,30 @@ export default async function DynamicPage({
   const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
   const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;
 
+  // Static pages (privacy, terms) — handle first so pageConfig can be undefined below
+  if (format === "static") {
+    const labels = {
+      title: getPageLabel(siteData, name, "title", name),
+      content: getPageLabel(siteData, name, "content", ""),
+    };
+    const showCta = pageConfig?.cta?.enabled !== false;
+    const ctaConfig = pageConfig?.cta ?? {};
+    return (
+      <>
+        <Navbar />
+        <StaticPage labels={labels} pageName={slug} />
+        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
+        <Footer />
+      </>
+    );
+  }
+
+  // Beyond this point pageConfig is always defined (non-static formats require a page config)
+  if (!pageConfig) return notFound();
+
   // Per-page CTA: enabled by default, controllable from portal
-  const showCta = pageConfig?.cta?.enabled !== false;
-  const ctaConfig = pageConfig?.cta ?? {};
+  const showCta = pageConfig.cta?.enabled !== false;
+  const ctaConfig = pageConfig.cta ?? {};
 
   // Collection list pages — shows/events format
   if (format === "shows") {
@@ -306,23 +327,6 @@ export default async function DynamicPage({
       <>
         <Navbar />
         <CheckoutResultClient success={format === "checkout-success"} />
-        <Footer />
-      </>
-    );
-  }
-
-  // Static pages — privacy, terms, etc.
-  if (format === "static") {
-    const labels = {
-      title: getPageLabel(siteData, name, "title", name),
-      content: getPageLabel(siteData, name, "content", ""),
-    };
-
-    return (
-      <>
-        <Navbar />
-        <StaticPage labels={labels} pageName={slug} />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
         <Footer />
       </>
     );
