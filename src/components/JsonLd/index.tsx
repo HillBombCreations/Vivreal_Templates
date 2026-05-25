@@ -21,6 +21,7 @@
  *   - `Article` — fallback for other content detail pages
  */
 import type { SiteData } from '@/types/SiteData';
+import { unsignMediaUrl } from './unsignMediaUrl';
 
 interface JsonLdProps {
   schema: Record<string, unknown> | Array<Record<string, unknown>>;
@@ -51,7 +52,10 @@ export function buildSiteJsonLd(siteData: SiteData): Array<Record<string, unknow
   const domain = siteData.domainName;
   const url = domain ? `https://${domain}` : undefined;
   const description = siteData.businessInfo?.description;
-  const logoUrl = siteData.logo?.currentFile?.source || undefined;
+  // Strip CloudFront signing params before embedding in JSON-LD — the
+  // signed form expires after 300s but JSON-LD lives in crawler caches
+  // for days/weeks. See ./unsignMediaUrl.ts for the full rationale.
+  const logoUrl = unsignMediaUrl(siteData.logo?.currentFile?.source);
   const email = siteData.businessInfo?.contactInfo?.email;
   const phone = siteData.businessInfo?.contactInfo?.phoneNumber;
   const address = siteData.businessInfo?.address;
@@ -131,11 +135,15 @@ export interface DetailJsonLdInput {
 export function buildDetailJsonLd(
   input: DetailJsonLdInput
 ): Record<string, unknown> {
+  // Strip CloudFront signing params from imageUrl before embedding —
+  // signed URLs expire after 300s but JSON-LD is crawler-cached for days.
+  // See ./unsignMediaUrl.ts for the full rationale.
+  const cleanImage = unsignMediaUrl(input.imageUrl);
   const base: Record<string, unknown> = {
     '@context': 'https://schema.org',
     name: input.title,
     ...(input.description ? { description: input.description } : {}),
-    ...(input.imageUrl ? { image: input.imageUrl } : {}),
+    ...(cleanImage ? { image: cleanImage } : {}),
     ...(input.url ? { url: input.url } : {}),
   };
 

@@ -17,6 +17,7 @@ import MemberDetail from "@/components/PageTemplates/MemberDetail";
 import ProductDetailClient from "@/components/PageTemplates/ProductDetailClient";
 import ContentRenderer from "@/components/ContentRenderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
+import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -204,7 +205,10 @@ export default async function DynamicItemPage({ params }: Props) {
       );
     }
 
-    const memberImage = member.imageUrl || member.image || undefined;
+    // Strip CloudFront signing params before embedding in JSON-LD; signed
+    // URLs expire after 300s but JSON-LD lives in crawler caches for days.
+    // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
+    const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Person',
