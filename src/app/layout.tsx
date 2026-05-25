@@ -7,6 +7,7 @@ import { isQuotaError } from '@/lib/api/client';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
+import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
@@ -14,8 +15,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
     // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
     const templateType = siteData.siteInfo?.templateType;
+    const siteSchema = buildSiteJsonLd(siteData);
     return (
       <html lang="en">
+          <head>
+              {/* Structured data for classic crawlers + AI assistants. Emitted
+                  here so every page inherits site-level Organization/WebSite. */}
+              <JsonLd schema={siteSchema} />
+          </head>
           <body>
               <Providers siteData={siteData}>
                   {/*

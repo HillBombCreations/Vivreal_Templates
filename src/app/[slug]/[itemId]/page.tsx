@@ -16,6 +16,7 @@ import { getIntegrationItems } from "@/lib/api/collections";
 import MemberDetail from "@/components/PageTemplates/MemberDetail";
 import ProductDetailClient from "@/components/PageTemplates/ProductDetailClient";
 import ContentRenderer from "@/components/ContentRenderer";
+import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -62,8 +63,25 @@ export default async function DynamicItemPage({ params }: Props) {
       );
     }
 
+    const showStartDate =
+      show.date && show.time
+        ? `${show.date}T${show.time}`
+        : show.date || undefined;
+    const showJsonLd = buildDetailJsonLd({
+      format: 'shows',
+      title: show.title,
+      description: show.description?.replace(/<[^>]*>/g, '').slice(0, 500),
+      imageUrl: show.imageUrl || show.image || undefined,
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
+      startDate: showStartDate,
+      location: show.location || undefined,
+    });
+
     return (
       <>
+        <JsonLd schema={showJsonLd} />
         <Navbar />
         <main className="pt-24 md:pt-32 pb-20 md:pb-32 max-w-6xl mx-auto px-4 prose prose-primary prose-headings:font-display prose-headings:font-bold animate-fade-in">
           <Link
@@ -186,8 +204,31 @@ export default async function DynamicItemPage({ params }: Props) {
       );
     }
 
+    const memberImage = member.imageUrl || member.image || undefined;
+    const memberJsonLd: Record<string, unknown> = {
+      '@context': 'https://schema.org',
+      '@type': 'Person',
+      name: member.name,
+      ...(member.description
+        ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
+        : {}),
+      ...(memberImage ? { image: memberImage } : {}),
+      ...(siteData.domainName
+        ? { url: `https://${siteData.domainName}/${slug}/${itemId}` }
+        : {}),
+      ...(siteData.businessInfo?.name
+        ? {
+            worksFor: {
+              '@type': 'Organization',
+              name: siteData.businessInfo.name,
+            },
+          }
+        : {}),
+    };
+
     return (
       <>
+        <JsonLd schema={memberJsonLd} />
         <Navbar />
         <MemberDetail
           member={member}
@@ -217,8 +258,36 @@ export default async function DynamicItemPage({ params }: Props) {
       })
     );
 
+    // Product JSON-LD: only emit Product schema when name/price/image are
+    // plain strings (not variant maps) — otherwise we'd need to pick a
+    // default variant, which is a renderer-level concern. Fall back to
+    // the generic detail JSON-LD (Thing) when variant-keyed.
+    const productName =
+      typeof product.name === 'string' ? product.name : undefined;
+    const productPrice =
+      typeof product.price === 'string' ? product.price : undefined;
+    const productImage =
+      typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
+    const productDescription =
+      typeof product.description === 'string'
+        ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
+        : undefined;
+
+    const productJsonLd = buildDetailJsonLd({
+      format: 'products',
+      title: productName || 'Product',
+      description: productDescription,
+      imageUrl: productImage,
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
+      price: productPrice,
+      sku: product._id,
+    });
+
     return (
       <>
+        <JsonLd schema={productJsonLd} />
         <Navbar />
         <ProductDetailClient product={product} siteData={siteData} />
         {detailSupplemental.length > 0 && (
