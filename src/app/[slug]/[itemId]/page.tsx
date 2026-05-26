@@ -14,8 +14,13 @@ import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
 import { getIntegrationItems } from "@/lib/api/collections";
 import MemberDetail from "@/components/PageTemplates/MemberDetail";
-import ProductDetailClient from "@/components/PageTemplates/ProductDetailClient";
+import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
+import type {
+  DetailPageConfig,
+  DetailSection,
+  PageCtaConfig as RendererPageCtaConfig,
+} from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 
@@ -289,11 +294,44 @@ export default async function DynamicItemPage({ params }: Props) {
       sku: product._id,
     });
 
+    // Build the renderer detail config. The route already renders supplemental
+    // integrations + CTA in its own blocks below, so scope the renderer's
+    // sections to the buy box (hero/variants/addToCart/content) to avoid
+    // double-rendering. Honor any explicitly-configured sections by filtering
+    // out the route-owned ones.
+    const ROUTE_OWNED_SECTIONS = new Set<DetailSection>([
+      "supplementalIntegrations",
+      "related",
+      "cta",
+    ]);
+    // The runtime `detailPage` may carry v0.4.0 fields (sections, heroVariant,
+    // etc.) the Templates `PageConfig` type doesn't declare — view it through
+    // the renderer's config type to read them safely.
+    const existingDetailPage = pageConfig.detailPage as DetailPageConfig | undefined;
+    const configuredSections = existingDetailPage?.sections;
+    const buyBoxSections: DetailSection[] = (configuredSections ?? [
+      "hero",
+      "variants",
+      "addToCart",
+      "content",
+    ]).filter((s) => !ROUTE_OWNED_SECTIONS.has(s));
+
+    const rendererDetailPage: DetailPageConfig = {
+      ...existingDetailPage,
+      sections: buyBoxSections,
+    };
+
     return (
       <>
         <JsonLd schema={productJsonLd} />
         <Navbar />
-        <ProductDetailClient product={product} siteData={siteData} />
+        <ProductDetailRenderer
+          product={product}
+          siteData={siteData}
+          slug={slug}
+          detailPage={rendererDetailPage}
+          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+        />
         {detailSupplemental.length > 0 && (
           <div className="content-grid py-8">
             {detailSupplemental.map((section, i) => (

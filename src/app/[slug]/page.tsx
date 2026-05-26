@@ -19,7 +19,7 @@ import { getProducts, getFilters } from "@/lib/api/products";
 import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
 import ShowsPageWrapper from "@/components/PageTemplates/ShowsPageWrapper";
 import FormClient from "@/components/PageTemplates/FormClient";
-import ProductsClient from "@/components/PageTemplates/ProductsClient";
+import ProductsPageClient from "@/components/PageTemplates/ProductsPageClient";
 import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
 import StaticPage from "@/components/PageTemplates/StaticPage";
 import CheckoutResultClient from "@/components/PageTemplates/CheckoutResultClient";
@@ -289,10 +289,10 @@ export default async function DynamicPage({
     return (
       <>
         <Navbar />
-        <ProductsClient
+        <ProductsPageClient
           products={products}
           filters={filters}
-          labels={pageConfig.labels ?? {}}
+          labels={(pageConfig.labels ?? {}) as Record<string, string>}
           slug={slug}
           displayAs={productsDisplayAs}
           detailEnabled={pageConfig.detailPage?.enabled !== false}
