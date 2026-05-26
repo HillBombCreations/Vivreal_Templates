@@ -6,10 +6,14 @@ const config: Config = {
   darkMode: 'class',
   content: [
     './src/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx}', 
+    './src/app/**/*.{js,ts,jsx,tsx}',
     './src/components/**/*.{js,ts,jsx,tsx}',
     './src/components/UI/**/*.{js,ts,jsx,tsx}',
-    './src/contexts/**/*.{js,ts,jsx,tsx}'
+    './src/contexts/**/*.{js,ts,jsx,tsx}',
+    // Scan the renderer package so every Tailwind class it uses is generated
+    // (Tailwind only generates classes it finds in `content`; without this, a
+    // renderer-only class like `invisible` is silently dropped).
+    './node_modules/@hillbombcreations/site-renderer/dist/**/*.{js,mjs}'
   ],
   theme: {
     container: {

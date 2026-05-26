@@ -17,6 +17,10 @@ export interface Product {
     default_price?: Variantable<string>;
     quantityOptions?: number[];
     quantityUnit?: string;
+    /** Inventory count — scalar (single-price) or a map keyed by variant value. */
+    stock?: Variantable<number>;
+    /** Per-product low-stock trigger; renderer falls back to its global default. */
+    lowStockThreshold?: number;
 }
 
 export type ProductVariantKey = "name" | "price" | "description" | "imageUrl";

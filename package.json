@@ -5,12 +5,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:linked": "node ../vivreal-site-renderer/scripts/dev-sync.js && next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
-    "@hillbombcreations/site-renderer": "^0.8.0",
+    "@hillbombcreations/site-renderer": "^0.9.4",
     "@sentry/nextjs": "^10.42.0",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@radix-ui/react-accordion": "^1.2.12",
