@@ -9,6 +9,13 @@ interface ContactPayload {
   customerEmail: string;
   message: string;
   siteName: string;
+  /**
+   * v0.7.0 (`@hillbombcreations/site-renderer`): any form field that
+   * isn't `name` / `email` / `message` is parked here under its
+   * configured `key`. Backward-compat: when absent, the email renders
+   * exactly as it did pre-v0.7.0.
+   */
+  customFields?: Record<string, unknown>;
   branding?: {
     primary?: string;
     surface?: string;
@@ -25,6 +32,66 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function humanizeKey(key: string): string {
+  // Convert camelCase / snake_case / kebab-case to "Title Case"
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function renderCustomFieldValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (Array.isArray(value)) return value.map((v) => String(v)).join(", ");
+  return String(value);
+}
+
+function buildCustomFieldsBlock(
+  customFields: Record<string, unknown> | undefined,
+  primary: string,
+): string {
+  if (!customFields) return "";
+  const entries = Object.entries(customFields).filter(([, v]) => {
+    const rendered = renderCustomFieldValue(v);
+    return rendered.length > 0;
+  });
+  if (entries.length === 0) return "";
+
+  const rows = entries
+    .map(([key, value]) => {
+      const label = escapeHtml(humanizeKey(key));
+      const rendered = escapeHtml(renderCustomFieldValue(value)).replace(/\n/g, "<br>");
+      return `
+        <tr>
+          <td style="padding:0 0 12px 0;">
+            <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-bottom:4px;">${label}</span>
+            <span style="font-size:14px;color:#374151;font-family:'Helvetica Neue',Arial,sans-serif;line-height:1.5;">${rendered}</span>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  // Subtle ${primary}-tinted card, sits between Message and Reply CTA.
+  return `
+    <tr>
+      <td style="padding:16px 36px 0 36px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${primary}08;border-radius:12px;border:1px solid ${primary}1a;">
+          <tr>
+            <td style="padding:18px 20px 6px 20px;">
+              <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:${primary};font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-bottom:12px;">Additional details</span>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                ${rows}
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+}
+
 function buildBrandedEmail(body: ContactPayload): string {
   const primary = body.branding?.primary || "#1a1a2e";
   const surface = body.branding?.surface || "#f8f9fb";
@@ -34,6 +101,7 @@ function buildBrandedEmail(body: ContactPayload): string {
   const name = escapeHtml(body.name);
   const email = escapeHtml(body.customerEmail);
   const message = escapeHtml(body.message).replace(/\n/g, "<br>");
+  const customFieldsBlock = buildCustomFieldsBlock(body.customFields, primary);
 
   const logoBlock = logoUrl
     ? `<img src="${logoUrl}" alt="${siteName}" width="140" height="auto" style="display:block;margin:0 auto;" />`
@@ -129,6 +197,8 @@ function buildBrandedEmail(body: ContactPayload): string {
                     </table>
                   </td>
                 </tr>
+
+                ${customFieldsBlock}
 
                 <!-- Reply CTA -->
                 <tr>
