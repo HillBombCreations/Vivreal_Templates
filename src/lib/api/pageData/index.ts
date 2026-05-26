@@ -9,6 +9,13 @@ interface RoleContent {
   displayAs: string;
   label?: string;
   subtitle?: string;
+  /**
+   * Opaque per-section configuration forwarded from
+   * `PageCollectionBinding.sectionConfig`. Currently consumed by individual
+   * renderer layouts (e.g. `StatsLayout` reads `sectionConfig.valueField`).
+   * Integration bindings don't have `sectionConfig` today; left undefined.
+   */
+  sectionConfig?: Record<string, unknown>;
 }
 
 export interface PageData {
@@ -25,7 +32,13 @@ async function fetchBinding(
   if (type === 'collection') {
     const b = binding as PageCollectionBinding;
     const { items } = await getCollectionItems(b.collectionId);
-    return { items, displayAs: b.displayAs ?? 'cards', label: b.name, subtitle: b.subtitle };
+    return {
+      items,
+      displayAs: b.displayAs ?? 'cards',
+      label: b.name,
+      subtitle: b.subtitle,
+      sectionConfig: b.sectionConfig,
+    };
   }
   const b = binding as PageIntegrationBinding;
   const intType = b.type ?? b.name ?? '';

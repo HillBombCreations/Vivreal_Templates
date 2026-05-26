@@ -103,6 +103,7 @@ async function Resolved() {
               slug="home"
               detailEnabled={false}
               accent={siteData.primary}
+              sectionConfig={reviewsBinding?.sectionConfig}
             />
           </div>
         )}
@@ -154,6 +155,7 @@ async function Resolved() {
             detailEnabled={false}
             accent={siteData.primary}
             pageLabels={homePageConfig.labels}
+            sectionConfig={section.sectionConfig}
           />
         ))}
 
@@ -171,6 +173,7 @@ async function Resolved() {
                 detailEnabled={false}
                 accent={siteData.primary}
                 pageLabels={homePageConfig.labels}
+                sectionConfig={s.sectionConfig}
               />
             ))}
           </div>

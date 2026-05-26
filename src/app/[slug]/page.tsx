@@ -85,7 +85,7 @@ export default async function DynamicPage({
         <>
           <Navbar />
           <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
-            <ContentRenderer items={items} displayAs={showsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
+            <ContentRenderer items={items} displayAs={showsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} sectionConfig={showsBinding?.sectionConfig} />
           </PageShell>
           {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
           <Footer />
@@ -142,7 +142,7 @@ export default async function DynamicPage({
         <>
           <Navbar />
           <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
-            <ContentRenderer items={items} displayAs={teamDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} />
+            <ContentRenderer items={items} displayAs={teamDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} sectionConfig={teamBinding?.sectionConfig} />
           </PageShell>
           {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
           <Footer />
@@ -348,20 +348,20 @@ export default async function DynamicPage({
         sidebar={
           pageData.sidebar.length > 0
             ? <>{pageData.sidebar.map((s, i) => (
-                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={s.sectionConfig} />
               ))}</>
             : undefined
         }
         supplemental={
           pageData.supplemental.length > 0
             ? <>{pageData.supplemental.map((s, i) => (
-                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} />
+                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={s.sectionConfig} />
               ))}</>
             : undefined
         }
       >
         {[...pageData.primary, ...pageData.secondary].map((section, i) => (
-          <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} />
+          <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={section.sectionConfig} />
         ))}
       </PageShell>
       {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
