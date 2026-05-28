@@ -39,6 +39,9 @@ function templatesProductToRenderer(product: Product, siteLogo: string): DetailP
     // Fall back to the site logo when the product has no image — matches the
     // products list (ProductsPageClient).
     imageUrl: product.imageUrl || siteLogo,
+    // Gallery has NO siteLogo fallback: an empty gallery signals the hero to
+    // use the single-image (imageUrl) path. Only real galleries populate it.
+    gallery: product.gallery,
     link: product.link,
     productType: product.productType,
     buttonLabel: product.buttonLabel,
