@@ -1,7 +1,7 @@
 import "server-only";
 import { clientFetchSafe } from "../client";
 import { getSignedUrl } from "../media";
-import type { Product, Filter } from "@/types/Products";
+import type { Product, Filter, Variantable } from "@/types/Products";
 
 interface PaginatedResponse {
   items: Record<string, unknown>[];
@@ -13,40 +13,89 @@ function unwrapItems(raw: PaginatedResponse | Record<string, unknown>[]): Record
   return (raw as PaginatedResponse)?.items ?? [];
 }
 
-function resolveProductImage(item: Record<string, unknown>): string | Record<string, string> {
-  const objectValue = item.objectValue as Record<string, unknown> | undefined;
-  if (!objectValue) return "";
-  // VR_Client_API sets currentFile on the productImage field, not at the top level.
-  // Simple products: productImage = { name, key, type, currentFile }
-  // Variant products: productImage = { "variant1": { name, key, ..., currentFile }, ... }
-  const productImage = objectValue.productImage as Record<string, unknown> | undefined;
-  if (!productImage) return "";
-  // Simple case — currentFile exists directly on productImage (not a variant product)
-  const directCf = productImage.currentFile as Record<string, string> | undefined;
-  if (directCf?.source) return directCf.source;
-  // Variant case — build a variant map of image URLs per variant key
-  const variantMap: Record<string, string> = {};
-  for (const key of Object.keys(productImage)) {
-    const url = getSignedUrl(productImage[key]);
-    if (url) variantMap[key] = url;
+interface ResolvedProductImages {
+  /** One URL per variant (or a bare string) — backward-compatible `imageUrl`. */
+  primary: Variantable<string>;
+  /** Ordered gallery URLs — `string[]` (non-variant) or `{ variant: string[] }`. */
+  gallery: Variantable<string[]>;
+}
+
+/** Signed URLs for an array of media descriptors (each has `currentFile.source`). */
+function extractSources(arr: unknown[]): string[] {
+  const out: string[] = [];
+  for (const d of arr) {
+    const url = getSignedUrl(d);
+    if (url) out.push(url);
   }
-  const keys = Object.keys(variantMap);
-  if (keys.length === 0) return "";
-  if (keys.length === 1) return variantMap[keys[0]];
-  return variantMap;
+  return out;
+}
+
+/**
+ * Resolve `productImage` into a backward-compatible single URL (`primary`,
+ * used as `imageUrl`) plus an ordered `gallery`. VR_Client_API sets
+ * `currentFile.source` on each media descriptor. Handles every shape:
+ *
+ *  - single descriptor          `{ ..., currentFile }`        → primary=url,  gallery=[url]
+ *  - variant→single descriptor  `{ v: { currentFile }, ... }` → primary={v:url}, gallery={v:[url]}
+ *  - flat gallery array         `[ { currentFile }, ... ]`    → primary=first, gallery=[urls]
+ *  - variant→gallery array      `{ v: [ {currentFile}, ...] }`→ primary={v:first}, gallery={v:[urls]}
+ *
+ * Single-key variant maps collapse to a bare string/array, matching the prior
+ * `imageUrl` behavior so existing consumers see no change.
+ */
+function resolveProductImages(item: Record<string, unknown>): ResolvedProductImages {
+  const empty: ResolvedProductImages = { primary: "", gallery: [] };
+  const objectValue = item.objectValue as Record<string, unknown> | undefined;
+  if (!objectValue) return empty;
+  const productImage = objectValue.productImage;
+  if (!productImage) return empty;
+
+  // Flat gallery array (non-variant, migrated/new products).
+  if (Array.isArray(productImage)) {
+    const urls = extractSources(productImage);
+    return { primary: urls[0] ?? "", gallery: urls };
+  }
+
+  if (typeof productImage === "object") {
+    const pi = productImage as Record<string, unknown>;
+
+    // Simple product — currentFile directly on the field (legacy single image).
+    const directCf = (pi.currentFile as Record<string, string> | undefined)?.source;
+    if (directCf) return { primary: directCf, gallery: [directCf] };
+
+    // Variant product — each value is a descriptor (single) or an array (gallery).
+    const primaryMap: Record<string, string> = {};
+    const galleryMap: Record<string, string[]> = {};
+    for (const key of Object.keys(pi)) {
+      const val = pi[key];
+      const urls = Array.isArray(val) ? extractSources(val) : [getSignedUrl(val)].filter(Boolean) as string[];
+      if (urls.length) {
+        galleryMap[key] = urls;
+        primaryMap[key] = urls[0];
+      }
+    }
+    const keys = Object.keys(primaryMap);
+    if (keys.length === 0) return empty;
+    // Collapse single-key maps to bare values (matches prior imageUrl logic).
+    if (keys.length === 1) return { primary: primaryMap[keys[0]], gallery: galleryMap[keys[0]] };
+    return { primary: primaryMap, gallery: galleryMap };
+  }
+
+  return empty;
 }
 
 function transformProduct(raw: Record<string, unknown>): Product {
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
   const usingVariant = raw.usingVariant as Product["usingVariant"] | undefined;
-  const imageUrl = resolveProductImage(raw);
+  const { primary, gallery } = resolveProductImages(raw);
 
   return {
     _id: String(raw._id ?? ""),
     name: (objectValue.name as Product["name"]) ?? "",
     price: (objectValue.price as Product["price"]) ?? "",
     description: (objectValue.description as Product["description"]) ?? "",
-    imageUrl: imageUrl || ((objectValue.imageUrl as Product["imageUrl"]) ?? "") as Product["imageUrl"],
+    imageUrl: primary || ((objectValue.imageUrl as Product["imageUrl"]) ?? "") as Product["imageUrl"],
+    gallery,
     link: (objectValue.link as string) ?? undefined,
     productType: (objectValue.productType as string) ?? undefined,
     buttonLabel: (objectValue.buttonLabel as string) ?? undefined,

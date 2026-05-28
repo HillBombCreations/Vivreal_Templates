@@ -6,6 +6,12 @@ export interface Product {
     price: Variantable<string>;
     description: Variantable<string>;
     imageUrl: Variantable<string>;
+    /**
+     * Ordered product gallery image URLs — `string[]` for non-variant products,
+     * `{ variant: string[] }` for variant products. Empty/absent ⇒ the detail
+     * hero falls back to the single `imageUrl` (legacy behavior).
+     */
+    gallery?: Variantable<string[]>;
     link?: string;
     productType?: string;
     buttonLabel?: string;
