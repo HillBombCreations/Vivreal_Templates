@@ -25,6 +25,9 @@ export function handleAddToCart({
   const price = getSafeFieldValue(product, "price", selectedVariant) ?? "";
   const imageUrl = getSafeFieldValue(product, "imageUrl", selectedVariant) ?? "";
   const priceID = resolveVariantableString(product.default_price, selectedVariant) ?? "";
+  // Resolve the unit for THIS line's variant so the cart stores a plain string
+  // (e.g. "lb"), never the whole variant→unit map.
+  const unit = resolveVariantableString(product.quantityUnit, selectedVariant);
 
   const existing = cart[cartKey];
   const newQty = existing ? existing.quantity + quantity : quantity;
@@ -37,7 +40,7 @@ export function handleAddToCart({
     priceID,
     imageUrl,
     variant,
-    ...(product.quantityUnit && { unit: product.quantityUnit }),
+    ...(unit && { unit }),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));

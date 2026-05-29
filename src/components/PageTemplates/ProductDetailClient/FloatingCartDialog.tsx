@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, X, Loader2 } from "lucide-react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { getSafeFieldValue } from "@/lib/utils/variantUtils";
+import { getSafeFieldValue, resolveVariantableString } from "@/lib/utils/variantUtils";
 import { handleCheckout } from "@/lib/utils/cartUtils";
 import type { FloatingCartDialogProps } from "@/types/Cart";
 
@@ -41,6 +41,11 @@ export default function FloatingCartDialog({
     if (!product) return siteLogo;
     return getSafeFieldValue(product, "imageUrl", variant) || siteLogo;
   }, [product, variant, siteLogo]);
+
+  const safeUnit = useMemo(
+    () => resolveVariantableString(product?.quantityUnit, variant) ?? "",
+    [product, variant],
+  );
 
   const handleOpenCart = () => {
     onClose();
@@ -107,7 +112,7 @@ export default function FloatingCartDialog({
                     {safeName}
                   </div>
                   <div className="mt-0.5 text-xs text-black/60">
-                    {quantity}{product?.quantityUnit ? ` ${product.quantityUnit}` : ""} &times; ${safePrice.toFixed(2)}
+                    {quantity}{safeUnit ? ` ${safeUnit}` : ""} &times; ${safePrice.toFixed(2)}
                   </div>
                 </div>
               </div>
