@@ -103,7 +103,7 @@ function transformProduct(raw: Record<string, unknown>): Product {
     usingVariant,
     default_price: (objectValue.default_price as Product["default_price"]) ?? undefined,
     quantityOptions: Array.isArray(objectValue.quantityOptions) ? objectValue.quantityOptions as number[] : undefined,
-    quantityUnit: (objectValue.quantityUnit as string) ?? undefined,
+    quantityUnit: (objectValue.quantityUnit as Product["quantityUnit"]) ?? undefined,
     stock: (objectValue.stock as Product["stock"]) ?? undefined,
     lowStockThreshold: typeof objectValue.lowStockThreshold === "number" ? objectValue.lowStockThreshold : undefined,
   };

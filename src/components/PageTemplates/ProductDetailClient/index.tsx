@@ -76,6 +76,7 @@ export default function ProductDetailClient({
   const name = getSafeFieldValue(product, "name", selectedVariant);
   const desc = getSafeFieldValue(product, "description", selectedVariant);
   const price = getSafeFieldValue(product, "price", selectedVariant);
+  const quantityUnit = resolveVariantableString(product.quantityUnit, selectedVariant);
 
   const variants: string[] = product?.usingVariant?.values || [];
 
@@ -211,7 +212,7 @@ export default function ProductDetailClient({
                 {/* Quantity selector */}
                 <div className="mt-6">
                   <div className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-3">
-                    Quantity{product.quantityUnit ? ` (${product.quantityUnit})` : ""}
+                    Quantity{quantityUnit ? ` (${quantityUnit})` : ""}
                   </div>
                   <div className="inline-flex rounded-full border border-black/[0.08] bg-black/[0.01] overflow-hidden">
                     {(product.quantityOptions ?? [1, 2, 3, 4, 5]).map((n) => {
