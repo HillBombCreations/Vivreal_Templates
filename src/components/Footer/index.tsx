@@ -1,108 +1,47 @@
-import Link from "next/link";
-import Image from 'next/image';
-import { NavigationData } from "@/types/Navigation";
-import { getNavigationData } from "@/lib/api/navigation";
-import { getSiteData } from "@/lib/api/siteData";
-import { getSignedUrl } from "@/lib/api/media";
+import {
+  Footer as RendererFooter,
+  deriveNav,
+  deriveFooterPages,
+} from '@hillbombcreations/site-renderer';
+import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
+import { getSiteData } from '@/lib/api/siteData';
+import { getSignedUrl } from '@/lib/api/media';
 
-async function fetchNavigationData(): Promise<NavigationData[]> {
-  try {
-    return await getNavigationData();
-  } catch (err) {
-    console.error("Error fetching navigation items:", err);
-    return [];
-  }
-}
-
+/**
+ * Site footer. Thin server-side data shell around the renderer's <Footer>
+ * (1.0 site chrome): fetches siteData + signed logo, derives the nav + the
+ * displayOnFooter "legal" links (via deriveFooterPages, which preserves the
+ * privacy/terms links the old footer auto-listed), maps social links to the
+ * renderer's shape, and threads Q3b overrides (footerColumns / legal /
+ * hidePoweredBy). The "Powered by Vivreal" attribution is tier-gated.
+ */
 const Footer = async () => {
-  const navItems = await fetchNavigationData();
   const siteData = await getSiteData();
-  const currentYear = new Date().getFullYear();
 
   const siteName = siteData?.businessInfo?.name || siteData?.name || '';
   const logoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
-  const socialLinks = siteData?.socialLinks ?? [];
+  const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
+  const navItems = deriveNav(pageConfigs);
+  const footerPages = deriveFooterPages(pageConfigs);
+  const socialLinks = (siteData?.socialLinks ?? []).map((l) => ({
+    platform: l.type,
+    url: l.link,
+  }));
 
   return (
-    <footer className="py-12 md:py-16 bg-secondary/50">
-      <div className="content-grid">
-        <div className="grid md:grid-cols-5 gap-8 mb-12">
-          <div className="col-span-full md:col-span-2">
-            <Link href="/" className="flex items-center mb-4">
-              <Image src={logoUrl} alt={siteName || 'Logo'} width={175} height={175} className="object-contain" />
-            </Link>
-            {siteData?.businessInfo?.contactInfo?.email && (
-              <p className="text-sm text-gray-800 mb-6 max-w-xs">
-                <a href={`mailto:${siteData.businessInfo.contactInfo.email}`} className="hover:underline">
-                  {siteData.businessInfo.contactInfo.email}
-                </a>
-              </p>
-            )}
-            {socialLinks.length > 0 && (
-              <div className="flex space-x-4">
-                {socialLinks.map((link, idx) => (
-                  <a
-                    key={idx}
-                    href={link.link}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-800 hover:text-foreground transition-colors text-sm font-medium"
-                  >
-                    {link.type}
-                  </a>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="col-span-full md:col-span-3">
-            <div className="flex flex-wrap gap-x-6 gap-y-2">
-              {navItems.map((item) => (
-                <Link
-                  href={item.path}
-                  key={item.path}
-                  className="text-sm font-medium text-gray-800 hover:underline"
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="border-t border-border pt-8 pb-8">
-          <p className="text-sm text-gray-800 text-center">
-            &copy; {currentYear} {siteName}. All rights reserved.{' '}
-            {(() => {
-              const footerPages = siteData?.pageConfigs?.filter((p) => p.displayOnFooter) ?? [];
-              return footerPages.map((p, idx) => (
-                <span key={p.slug}>
-                  {idx > 0 && ' | '}
-                  <Link href={`/${p.slug}`} className="underline hover:text-blue-600">{p.labels?.title || p.name}</Link>
-                </span>
-              ));
-            })()}
-          </p>
-        </div>
-        <div className="flex items-center justify-center">
-          <a
-            href="https://vivreal.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-2 text-gray-700 hover:text-gray-900 transition-colors"
-          >
-            <Image
-              src="/vrlogo.png"
-              alt="Vivreal Logo"
-              width={16}
-              height={16}
-              className="opacity-80"
-            />
-            <span className="text-xs md:text-sm text-gray-600">
-              Powered by <span className="font-medium text-gray-800">Vivreal</span>
-            </span>
-          </a>
-        </div>
-      </div>
-    </footer>
+    <RendererFooter
+      siteName={siteName}
+      logoUrl={logoUrl}
+      email={siteData?.businessInfo?.contactInfo?.email}
+      navItems={navItems}
+      socialLinks={socialLinks}
+      accentColor={siteData?.primary}
+      tier={siteData?.tier}
+      hidePoweredBy={siteData?.footer?.hidePoweredBy ?? false}
+      footerColumns={siteData?.footer?.columns ?? null}
+      legal={siteData?.footer?.legal ?? null}
+      footerPages={footerPages}
+    />
   );
 };
 

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next';
+import type { NavMenuItem, NavbarCta, FooterColumn, FooterLegal } from '@hillbombcreations/site-renderer';
 
 export interface Businessinfo {
     address?: {
@@ -136,6 +137,19 @@ export interface SiteData {
         };
         [key: string]: unknown;
     };
+    /** Q3b — Studio-authored navbar override (lazy; null/absent ⇒ auto-derive). */
+    navigation?: {
+        menuItems?: NavMenuItem[] | null;
+        cta?: NavbarCta | null;
+    } | null;
+    /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
+    footer?: {
+        columns?: FooterColumn[] | null;
+        legal?: FooterLegal | null;
+        hidePoweredBy?: boolean | null;
+    } | null;
+    /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
+    tier?: string;
 }
 
 export type Pages = {
