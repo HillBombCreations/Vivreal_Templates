@@ -49,6 +49,11 @@ interface SiteDetailsResponse {
   // FloatingCta in app/layout.tsx). Added to VR_Client_API getSiteDetails
   // service 2026-04-18.
   siteInfo?: SiteData['siteInfo'];
+  // Q3b — Studio-authored navbar/footer chrome. Returned by VR_Client_API
+  // getSiteDetails (null/absent ⇒ chrome auto-derives).
+  navigation?: SiteData['navigation'];
+  footer?: SiteData['footer'];
+  tier?: string;
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -78,6 +83,10 @@ export const getSiteData = async (): Promise<SiteData> => {
     // values.siteInfo for backward-compat with older responses that may only
     // carry it inside siteDetails.values.
     siteInfo: raw.siteInfo ?? raw.siteDetails.values.siteInfo,
+    // Q3b — Studio-authored navbar/footer chrome (null ⇒ renderer auto-derives).
+    navigation: raw.navigation ?? null,
+    footer: raw.footer ?? null,
+    tier: raw.tier,
   };
 };
 
