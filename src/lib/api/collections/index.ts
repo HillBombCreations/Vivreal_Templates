@@ -36,16 +36,38 @@ interface FetchResult {
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
 
-/** Common field names that may contain a media/image object. */
-const IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thumbnail'] as const;
+/**
+ * Field names checked FIRST when resolving an object's image. This is only a
+ * priority hint for disambiguation (when an object carries several media
+ * fields) — NOT an allowlist. It exists to preserve the exact image currently
+ * picked for the blueprint schemas; the type-based scan below resolves images
+ * regardless of field name.
+ */
+const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thumbnail'] as const;
 
 /**
- * Try each known image field on an objectValue and return the first
- * signed URL found (or empty string).
+ * Resolve the signed image URL for an object by the field's TYPE, not its name.
+ *
+ * Users define their own schemas, so an image can live under any key
+ * (`coverArt`, `poster`, `headshot`, `mugshot`, …). VR_Client_API only
+ * populates `currentFile.source` on actual media fields, so `getSignedUrl(v)`
+ * returning a non-empty string is a reliable structural signal that `v` is a
+ * media descriptor — independent of what the field is called.
+ *
+ * Order: try the preferred fields first (deterministic, back-compatible pick
+ * for the blueprint schemas), then scan every field and return the first whose
+ * value is a media descriptor.
  */
 function resolveImage(objectValue: Record<string, unknown>): string {
-  for (const field of IMAGE_FIELDS) {
+  // 1. Priority hint — keeps the existing pick for known blueprint fields.
+  for (const field of PREFERRED_IMAGE_FIELDS) {
     const url = getSignedUrl(objectValue[field]);
+    if (url) return url;
+  }
+  // 2. Type-based fallback — any field whose value is a media descriptor,
+  //    covering arbitrary user-defined schema keys.
+  for (const value of Object.values(objectValue)) {
+    const url = getSignedUrl(value);
     if (url) return url;
   }
   return '';
