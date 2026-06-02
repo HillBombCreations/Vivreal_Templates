@@ -1,11 +1,7 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
-import { getPageData } from "@/lib/api/pageData";
-import { getShowsPaginated } from "@/lib/api/shows";
-import { getPartners } from "@/lib/api/partners";
-import ContentRenderer from "@/components/ContentRenderer";
-import { HeroSectionShowcase, CTASectionTemplate } from "@/components/RendererExports";
-import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
+import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import { composePage } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "./loading";
@@ -16,6 +12,8 @@ async function Resolved() {
   const siteData = await getSiteData();
   const homePageConfig = siteData.homePageConfig;
 
+  // No portal home config — keep the route-level welcome fallback (composePage
+  // has no branch for it).
   if (!homePageConfig) {
     return (
       <>
@@ -31,158 +29,18 @@ async function Resolved() {
     );
   }
 
-  const collections = homePageConfig.collections ?? [];
-  const ctaConfig = homePageConfig.cta ?? {};
-  const showCta = homePageConfig.cta?.enabled !== false;
-
-  // Detect site type from page formats — reliable, doesn't depend on collection names
-  const pageFormats = new Set((siteData.pageConfigs ?? []).map((p) => p.format));
-  const isShowcase = pageFormats.has('shows');
-
-  // Find specific bindings for showcase layout
-  const showsPage = siteData.pageConfigs?.find((p) => p.format === 'shows');
-  const showsColId = showsPage?.collections?.[0]?.collectionId;
-  const showsBinding = isShowcase
-    ? collections.find((c) => showsColId && c.collectionId === showsColId) ?? collections[0]
-    : null;
-  const partnersBinding = isShowcase
-    ? collections.find((c) => c.role === 'supplemental' && c.displayAs === 'carousel')
-    : null;
-  const reviewsBinding = isShowcase
-    ? collections.find((c) => c.displayAs === 'reviews')
-    : null;
-
-  if (isShowcase) {
-    // ── Showcase layout: HeroSection + shows + partners + testimonials + CTA ──
-
-    // Fetch shows for the hero section
-    const showsCollectionId = showsBinding?.collectionId ?? '';
-    const { shows } = showsCollectionId
-      ? await getShowsPaginated({ collectionId: showsCollectionId, limit: 100, skip: 0 })
-      : { shows: [] };
-
-    // Fetch partners
-    const partnersCollectionId = partnersBinding?.collectionId ?? '';
-    const partners = partnersCollectionId
-      ? await getPartners(partnersCollectionId)
-      : [];
-
-    // Fetch reviews/testimonials
-    const reviewsCollectionId = reviewsBinding?.collectionId ?? '';
-    let reviewItems: { items: import("@/types/ContentItem").ContentItem[] } = { items: [] };
-    if (reviewsCollectionId) {
-      const { getCollectionItems } = await import("@/lib/api/collections");
-      reviewItems = await getCollectionItems(reviewsCollectionId);
-    }
-
-    // Build labels for the hero section
-    const showsPage = siteData.pageConfigs?.find((p) => p.format === 'shows');
-    const heroLabels = {
-      upcoming: (showsPage?.labels?.upcoming as string) || 'Upcoming',
-      past: (showsPage?.labels?.past as string) || 'Past',
-    };
-
-    return (
-      <>
-        <Navbar />
-        <HeroSectionShowcase
-          siteData={siteData as unknown as RendererSiteData}
-          shows={shows}
-          partners={partners}
-          labels={heroLabels}
-          showsSlug={showsPage?.slug || 'shows'}
-        />
-
-        {/* Testimonials / Reviews */}
-        {reviewItems.items.length > 0 && (
-          <div className="py-16 md:py-24">
-            <ContentRenderer
-              items={reviewItems.items}
-              displayAs={reviewsBinding?.displayAs ?? 'reviews'}
-              label={reviewsBinding?.name ?? 'What People Are Saying'}
-              slug="home"
-              detailEnabled={false}
-              accent={siteData.primary}
-              sectionConfig={reviewsBinding?.sectionConfig}
-            />
-          </div>
-        )}
-
-        {showCta && (
-          <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />
-        )}
-
-        <Footer />
-      </>
-    );
-  }
-
-  // ── Ecommerce / generic layout: Banner + collection sections + CTA ──
-
-  const pageData = await getPageData(homePageConfig);
-  const allSections = [...pageData.primary, ...pageData.secondary];
+  // Unified path (Plan 4, step 5): composePage dispatches showcase vs ecommerce
+  // internally via isHome + the presence of a sibling 'shows' page — identical to
+  // the legacy pageFormats.has('shows') check. The builder's binding scan covers
+  // both showcase (shows/partners/reviews bindings) and ecommerce (role-bucketed
+  // collection + integration bindings); banner logo fallback + CTA-by-default are
+  // owned by composePage's home branches.
+  const { input } = await buildPageContext({ siteData, page: homePageConfig, isHome: true });
 
   return (
     <>
       <Navbar />
-
-      {/* Hero banner — rendered from page labels */}
-      {(homePageConfig.labels?.title || homePageConfig.labels?.heroImage) && (
-        <ContentRenderer
-          items={[]}
-          displayAs="banner"
-          slug="home"
-          detailEnabled={false}
-          accent={siteData.primary}
-          pageLabels={{
-            ...homePageConfig.labels,
-            // Fall back to site logo if no heroImage is uploaded
-            ...(!homePageConfig.labels?.heroImage && siteData.logo ? { heroImage: siteData.logo } : {}),
-          }}
-        />
-      )}
-
-      {/* Collection sections */}
-      <div className="pb-16">
-        {allSections.map((section, i) => (
-          <ContentRenderer
-            key={i}
-            items={section.items}
-            displayAs={section.displayAs}
-            label={section.label}
-            subtitle={section.subtitle}
-            slug="home"
-            detailEnabled={false}
-            accent={siteData.primary}
-            pageLabels={homePageConfig.labels}
-            sectionConfig={section.sectionConfig}
-          />
-        ))}
-
-        {/* Supplemental sections */}
-        {pageData.supplemental.length > 0 && (
-          <div className="content-grid space-y-16">
-            {pageData.supplemental.map((s, i) => (
-              <ContentRenderer
-                key={`supp-${i}`}
-                items={s.items}
-                displayAs={s.displayAs}
-                label={s.label}
-                subtitle={s.subtitle}
-                slug="home"
-                detailEnabled={false}
-                accent={siteData.primary}
-                pageLabels={homePageConfig.labels}
-                sectionConfig={s.sectionConfig}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {showCta && (
-        <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />
-      )}
+      {composePage(input)}
       <Footer />
     </>
   );
