@@ -21,7 +21,11 @@ export async function getTeamMembers(collectionId?: string): Promise<TeamData[]>
   return res.items.map((item) => ({
     name: item.objectValue.name,
     description: item.objectValue.description,
-    id: item.objectValue._id,
+    // Use the collection-object document _id (canonical) so detail links match
+    // the list. The list (composePage → toContentItem) keys items by the document
+    // _id; shows + products do the same. Previously this used objectValue._id (a
+    // Mongoose-injected subdoc id), which mismatched the migrated list links → 404.
+    id: item._id,
     image: getSignedUrl(item.objectValue.headshot),
     imageUrl: getSignedUrl(item.objectValue.headshot),
     socialLinks: item.objectValue.socialLinks,

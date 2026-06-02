@@ -1,10 +1,9 @@
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate, TeamPage, MenuPage } from "@/components/RendererExports";
+import { CTASectionTemplate, MenuPage } from "@/components/RendererExports";
 import type {
   SiteData as RendererSiteData,
-  TeamMemberData,
   MenuCategory,
   MenuItem,
 } from "@hillbombcreations/site-renderer";
@@ -13,19 +12,32 @@ import { getPageBySlug } from "@/lib/pages";
 import { getPageData } from "@/lib/api/pageData";
 import ContentRenderer from "@/components/ContentRenderer";
 import PageShell from "@/components/PageShell";
-import { getShowsPaginated } from "@/lib/api/shows";
-import { getTeamMembers } from "@/lib/api/team";
-import { getProducts, getFilters } from "@/lib/api/products";
-import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
-import ShowsPageWrapper from "@/components/PageTemplates/ShowsPageWrapper";
+import { getCollectionItems } from "@/lib/api/collections";
 import FormClient from "@/components/PageTemplates/FormClient";
-import ProductsPageClient from "@/components/PageTemplates/ProductsPageClient";
 import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
-import StaticPage from "@/components/PageTemplates/StaticPage";
-import CheckoutResultClient from "@/components/PageTemplates/CheckoutResultClient";
+import { composePage } from "@hillbombcreations/site-renderer";
+import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
+import type { PageConfig } from "@/types/SiteData";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// Formats migrated to the unified composePage() pipeline (Plan 4). Migrated one
+// at a time, parity-gated; any format NOT listed here keeps the legacy per-format
+// JSX below. The live site and the Studio preview both render listed formats
+// through the same composePage(), so they can no longer drift.
+const COMPOSE_FORMATS = new Set<string>([
+  "static",
+  "shows",
+  "team",
+  "checkout-success",
+  "checkout-cancel",
+  "products",
+]);
+function composeFormat(format: string | undefined): format is string {
+  return format !== undefined && COMPOSE_FORMATS.has(format);
+}
 
 export default async function DynamicPage({
   params,
@@ -48,19 +60,69 @@ export default async function DynamicPage({
   const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
   const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;
 
-  // Static pages (privacy, terms) — handle first so pageConfig can be undefined below
-  if (format === "static") {
-    const labels = {
-      title: getPageLabel(siteData, name, "title", name),
-      content: getPageLabel(siteData, name, "content", ""),
-    };
-    const showCta = pageConfig?.cta?.enabled !== false;
-    const ctaConfig = pageConfig?.cta ?? {};
+  // Composed formats (Plan 4) — render through the same composePage() the Studio
+  // preview uses. Handled first so static can render with pageConfig undefined
+  // (privacy/terms always exist even without a portal page config).
+  if (composeFormat(format)) {
+    let composedPage: PageConfig;
+    if (format === "static") {
+      // Static (privacy/terms): resolve labels via getPageLabel exactly as the
+      // legacy StaticPage did, and synthesize a config for the slug-only
+      // privacy/terms pages that have no portal page config. composePage's static
+      // branch keys default copy off page.slug and emits the trailing CTA band.
+      const labels: Record<string, string> = {
+        title: getPageLabel(siteData, name, "title", name),
+        content: getPageLabel(siteData, name, "content", ""),
+      };
+      composedPage = pageConfig
+        ? { ...pageConfig, labels }
+        : { name, slug, format, collectionId: null, labels };
+    } else {
+      // Other composed formats (shows, team, products, checkout) always have a
+      // portal page config (reached before the !pageConfig notFound guard below).
+      // Pass it straight through — composePage owns their label defaults + shaping.
+      composedPage = pageConfig!;
+    }
+
+    // Products controlled query: parse f_<key>/search/sort from the URL so the
+    // builder filters server-side (VR_Client_API), and inject the live,
+    // router+cart-wired ProductsPage via the B1 component override. composePage
+    // renders the bare uncontrolled ProductsPage for the Studio preview.
+    let productQuery:
+      | { filters?: Record<string, string>; search?: string; sort?: string }
+      | undefined;
+    let components: { ProductsPage: typeof ProductsPageComposed } | undefined;
+    if (format === "products") {
+      const sp = (await searchParams) ?? {};
+      const filters: Record<string, string> = {};
+      for (const [key, val] of Object.entries(sp)) {
+        if (key.startsWith("f_") && typeof val === "string" && val) {
+          filters[key.slice(2)] = val;
+        }
+      }
+      productQuery = {
+        filters,
+        search: typeof sp.search === "string" ? sp.search : undefined,
+        sort: typeof sp.sort === "string" ? sp.sort : undefined,
+      };
+      components = { ProductsPage: ProductsPageComposed };
+    }
+
+    const { input } = await buildPageContext({
+      siteData,
+      page: composedPage,
+      isHome: false,
+      productQuery,
+    });
+
     return (
       <>
         <Navbar />
-        <StaticPage labels={labels} pageName={slug} />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
+        {composePage(
+          components
+            ? { ...input, options: { ...input.options!, components } }
+            : input,
+        )}
         <Footer />
       </>
     );
@@ -72,106 +134,6 @@ export default async function DynamicPage({
   // Per-page CTA: enabled by default, controllable from portal
   const showCta = pageConfig.cta?.enabled !== false;
   const ctaConfig = pageConfig.cta ?? {};
-
-  // Collection list pages — shows/events format
-  if (format === "shows") {
-    const showsBinding = (pageConfig.collections ?? [])[0];
-    const showsDisplayAs = showsBinding?.displayAs;
-
-    if (showsDisplayAs && showsDisplayAs !== 'cards') {
-      const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
-      const { items } = await getCollectionItems(collectionId);
-      return (
-        <>
-          <Navbar />
-          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
-            <ContentRenderer items={items} displayAs={showsDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} sectionConfig={showsBinding?.sectionConfig} />
-          </PageShell>
-          {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-          <Footer />
-        </>
-      );
-    }
-
-    const collectionId = getPageCollectionId(siteData, name, process.env.SHOWS_ID || "");
-    const { shows, totalCount } = await getShowsPaginated({ collectionId, limit: 100, skip: 0 });
-    const today = new Date();
-
-    const upcomingShows = shows
-      .filter((s) => s.date && new Date(s.date) >= today)
-      .sort((a, b) => new Date(a.date ?? 0).getTime() - new Date(b.date ?? 0).getTime());
-
-    const pastShows = shows
-      .filter((s) => s.date && new Date(s.date) < today)
-      .sort((a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime());
-
-    const labels = {
-      title: getPageLabel(siteData, name, "title", "All Content"),
-      subtitle: getPageLabel(siteData, name, "subtitle", "Browse our upcoming and past content — events, highlights, and more."),
-      upcoming: getPageLabel(siteData, name, "upcoming", "Upcoming"),
-      past: getPageLabel(siteData, name, "past", "Past"),
-    };
-
-    return (
-      <>
-        <Navbar />
-        <ShowsPageWrapper
-          upcomingShows={upcomingShows}
-          initialPastShows={pastShows}
-          labels={labels}
-          slug={slug}
-          siteData={siteData as unknown as RendererSiteData}
-          collectionId={collectionId}
-          totalCount={totalCount}
-        />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
-
-  // Collection list pages — team/people format
-  if (format === "team") {
-    const teamBinding = (pageConfig.collections ?? [])[0];
-    const teamDisplayAs = teamBinding?.displayAs;
-
-    if (teamDisplayAs && teamDisplayAs !== 'cards') {
-      const collectionId = getPageCollectionId(siteData, name, process.env.TEAMMEMBERS_ID || "");
-      const { items } = await getCollectionItems(collectionId);
-      return (
-        <>
-          <Navbar />
-          <PageShell title={pageConfig.labels?.title} subtitle={pageConfig.labels?.subtitle}>
-            <ContentRenderer items={items} displayAs={teamDisplayAs} slug={slug} detailEnabled={pageConfig.detailPage?.enabled !== false} sectionConfig={teamBinding?.sectionConfig} />
-          </PageShell>
-          {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-          <Footer />
-        </>
-      );
-    }
-
-    const collectionId = getPageCollectionId(siteData, name, process.env.TEAMMEMBERS_ID || "");
-    const teamMembers = await getTeamMembers(collectionId);
-
-    const labels = {
-      title: getPageLabel(siteData, name, "title", "Meet the Team"),
-      subtitle: getPageLabel(siteData, name, "subtitle", "Behind every great experience is a passionate team. Here's a glimpse of the people who make it possible."),
-    };
-
-    return (
-      <>
-        <Navbar />
-        <TeamPage
-          members={teamMembers as TeamMemberData[]}
-          labels={labels}
-          slug={slug}
-          siteData={siteData as unknown as RendererSiteData}
-        />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
 
   // Restaurant menu pages — menu format (Iter 5)
   // Convention: first collection binding is Menu Categories (filter nav),
@@ -256,56 +218,6 @@ export default async function DynamicPage({
     );
   }
 
-  // Product listing pages — products format
-  if (format === "products") {
-    // Read integration type and displayAs from page config bindings
-    const integrationBinding = (pageConfig.integrations ?? []).find(
-      (i) => (i.type ?? i.name ?? '').toLowerCase()
-    );
-    const integrationType = (integrationBinding?.type ?? integrationBinding?.name ?? 'stripe').toLowerCase();
-    const productsDisplayAs = integrationBinding?.displayAs ?? 'cards';
-
-    const resolvedSearchParams = await searchParams;
-    const searchVal = resolvedSearchParams?.search as string | undefined;
-    const sortVal = resolvedSearchParams?.sort as string | undefined;
-
-    // Parse multi-filter params: f_productType=Bagels&f_priceRange=$10-$20
-    const activeFilters: Record<string, string> = {};
-    for (const [key, val] of Object.entries(resolvedSearchParams ?? {})) {
-      if (key.startsWith("f_") && typeof val === "string" && val) {
-        activeFilters[key.slice(2)] = val;
-      }
-    }
-    // Filter collection: page-level collectionId holds the filter definitions,
-    // integration binding collectionId identifies the product collection (not filters)
-    const filterCollectionId = pageConfig.collectionId
-      ?? null;
-
-    const [products, filters] = await Promise.all([
-      getProducts({ filters: activeFilters, searchVal, sortVal, integrationType }),
-      filterCollectionId ? getFilters(filterCollectionId) : Promise.resolve([]),
-    ]);
-
-    return (
-      <>
-        <Navbar />
-        <ProductsPageClient
-          products={products}
-          filters={filters}
-          labels={(pageConfig.labels ?? {}) as Record<string, string>}
-          slug={slug}
-          displayAs={productsDisplayAs}
-          detailEnabled={pageConfig.detailPage?.enabled !== false}
-          initialFilters={activeFilters}
-          initialSort={sortVal}
-          initialSearch={searchVal}
-        />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
-
   // Subscribe / newsletter pages
   if (format === "subscribe") {
     return (
@@ -316,17 +228,6 @@ export default async function DynamicPage({
           labels={pageConfig.labels ?? {}}
         />
         {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
-
-  // Checkout result pages — success/cancel after Stripe checkout
-  if (format === "checkout-success" || format === "checkout-cancel") {
-    return (
-      <>
-        <Navbar />
-        <CheckoutResultClient success={format === "checkout-success"} />
         <Footer />
       </>
     );

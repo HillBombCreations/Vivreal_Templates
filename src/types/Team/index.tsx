@@ -16,6 +16,7 @@ export type TeamData = {
 };
 
 export type CMSTeamData = {
+  _id: string;
   objectValue: {
     headshot?: {
       key: string;
