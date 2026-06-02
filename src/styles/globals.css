@@ -1,6 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&family=Outfit:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+/* Tailwind v4 ignores the `content` array in tailwind.config.ts (no @config is
+   loaded) and its auto-detection deliberately skips node_modules. Explicitly
+   source the site-renderer package so EVERY utility class it uses — including
+   renderer-only ones like `lg:grid-cols-5`, `aspect-[3/4]`, `p-12` — is
+   generated. Without this, those classes silently no-op and renderer layouts
+   collapse (e.g. the Shows page past-grid + spotlight). */
+@source "../../node_modules/@hillbombcreations/site-renderer/dist";
+
 @layer base {
   :root {
     --background: 0 0% 100%;
