@@ -4,6 +4,7 @@ import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
+import EmailPopup from "@/components/HomeSections/EmailPopup";
 import HomeLoading from "./loading";
 
 export const dynamic = "force-dynamic";
@@ -37,10 +38,21 @@ async function Resolved() {
   // owned by composePage's home branches.
   const { input } = await buildPageContext({ siteData, page: homePageConfig, isHome: true });
 
+  // Subscribe popup. composePage composes the page BODY from homePageConfig
+  // bindings; the email-subscribe modal is route-level chrome (a self-gating
+  // client component). VR_Client_API surfaces the email-subscribe collection as a
+  // synthetic `subscribers`-format page in pageConfigs (getSiteDetails) — render
+  // the popup whenever one exists. EmailPopup resolves its target collection from
+  // that page itself, so no per-site home config is needed.
+  const hasSubscribers = (siteData.pageConfigs ?? []).some(
+    (p) => p.format === "subscribers",
+  );
+
   return (
     <>
       <Navbar />
       {composePage(input)}
+      {hasSubscribers && <EmailPopup config={{}} siteData={siteData} />}
       <Footer />
     </>
   );
