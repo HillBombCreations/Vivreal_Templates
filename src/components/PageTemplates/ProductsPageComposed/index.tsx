@@ -34,6 +34,7 @@ export default function ProductsPageComposed({
   slug = "",
   displayAs = "cards",
   detailEnabled = true,
+  sectionConfig,
 }: ProductsPageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,6 +86,7 @@ export default function ProductsPageComposed({
         labels={labels}
         slug={slug}
         displayAs={displayAs}
+        sectionConfig={sectionConfig}
         siteData={siteData as unknown as RendererSiteData}
         initialFilters={initialFilters}
         initialSort={initialSort}
