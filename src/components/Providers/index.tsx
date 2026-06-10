@@ -30,6 +30,16 @@ const Providers = ({
                 }
             });
         }
+        // Typography is an object (skipped by the string loop above) — map the
+        // Studio's Branding preset onto the font CSS vars consumed by
+        // globals.css (body / .font-brand) and the renderer's headings.
+        const typography = (siteData as { typography?: { displayFamily?: string; bodyFamily?: string } }).typography;
+        if (typography?.displayFamily) {
+            document.documentElement.style.setProperty('--font-display', typography.displayFamily);
+        }
+        if (typography?.bodyFamily) {
+            document.documentElement.style.setProperty('--font-body', typography.bodyFamily);
+        }
     }, [siteData]);
 
     const pages = siteData.pageConfigs ?? [];
