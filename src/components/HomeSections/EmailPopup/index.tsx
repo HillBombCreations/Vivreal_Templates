@@ -1,10 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { X } from "lucide-react";
-import { Button } from "@/components/ui/Button";
+import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import { subscribeUser } from "@/lib/api/subscribe/client";
 import type { HomeSectionProps } from "../index";
 
@@ -12,6 +9,13 @@ const SUBSCRIBE_KEY = "vivreal_subscribed";
 const DISMISS_KEY = "vivreal_popup_dismissed_at";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Thin wrapper around the renderer's SubscribeDialog (1.6.0). This component
+ * keeps ONLY the trigger policy (localStorage subscribe/dismiss gates + delay
+ * timer), the collectionId resolution, and the subscribe API call — the
+ * dialog presentation lives in the renderer so the Studio preview shows the
+ * exact same overlay the deployed site does.
+ */
 const EmailPopup = ({ config, siteData }: HomeSectionProps) => {
   // Resolve collectionId: explicit config, or find the subscribers page's collectionId
   const collectionId =
@@ -20,12 +24,7 @@ const EmailPopup = ({ config, siteData }: HomeSectionProps) => {
     "";
 
   const delayMs = (config.delayMs as number) || 3000;
-
   const [open, setOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState(false);
 
   useEffect(() => {
     const subscribed = localStorage.getItem(SUBSCRIBE_KEY);
@@ -40,138 +39,23 @@ const EmailPopup = ({ config, siteData }: HomeSectionProps) => {
     }
   }, [delayMs]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!email.trim() || !/\S+@\S+\.\S+/.test(email)) {
-      setError(true);
-      return;
-    }
-
-    setIsSubmitting(true);
-    setError(false);
-    setSuccess(false);
-
-    try {
-      const ok = await subscribeUser(email, collectionId);
-      if (ok) {
-        localStorage.setItem(SUBSCRIBE_KEY, "true");
-        setSuccess(true);
-        setEmail("");
-        setTimeout(() => setOpen(false), 2000);
-      } else {
-        setError(true);
-      }
-    } catch (err) {
-      setError(true);
-      console.error("Subscription failed:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleClose = () => {
-    setOpen(false);
-    localStorage.setItem(DISMISS_KEY, Date.now().toString());
-  };
-
-  const siteName = siteData?.businessInfo?.name || siteData?.name || 'us';
-
   return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          key="overlay"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-        >
-          <motion.div
-            key="dialog"
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 40 }}
-            transition={{ duration: 0.4 }}
-            className="w-[90%] max-w-lg rounded-2xl shadow-2xl border p-8 relative"
-            style={{
-              backgroundColor: siteData?.surface || "#FFFFFF",
-              borderColor: siteData?.primary,
-            }}
-          >
-            <button
-              onClick={handleClose}
-              className="absolute top-4 cursor-pointer right-4 p-1 rounded-full hover:bg-gray-100 transition"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
-            <div className="text-center mb-8">
-              <h2
-                className="text-3xl font-bold mb-3"
-                style={{ color: siteData?.primary }}
-              >
-                Stay Updated
-              </h2>
-              <p className="text-gray-700 text-lg">
-                Enter your email and hit subscribe to get the latest news and updates.
-              </p>
-            </div>
-
-            {success ? (
-              <div className="rounded-lg bg-green-100 text-green-800 p-4 text-center font-medium">
-                You&apos;re now subscribed!
-              </div>
-            ) : (
-              <form
-                onSubmit={handleSubmit}
-                noValidate
-                className="space-y-6 flex flex-col items-center"
-              >
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className={`w-full rounded-md border px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition ${
-                    error ? "border-red-700" : "border-gray-300"
-                  }`}
-                  placeholder="Enter your email address"
-                />
-
-                {error && (
-                  <p className="text-sm text-red-600 -mt-3">
-                    Please enter a valid email address.
-                  </p>
-                )}
-
-                <Button
-                  type="submit"
-                  size="lg"
-                  disabled={isSubmitting}
-                  style={{
-                    background: siteData?.primary,
-                    color: siteData?.["text-inverse"],
-                    cursor: "pointer",
-                    minWidth: "180px",
-                  }}
-                >
-                  {isSubmitting ? "Subscribing..." : "Subscribe"}
-                </Button>
-                <p className="text-center text-xs text-gray-500">
-                  By subscribing, you agree to receive updates from {siteName}.
-                  You can unsubscribe anytime. See our{" "}
-                  <Link href="/privacy" className="underline">
-                    Privacy Policy
-                  </Link>.
-                </p>
-              </form>
-            )}
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <SubscribeDialog
+      open={open}
+      onClose={() => {
+        setOpen(false);
+        localStorage.setItem(DISMISS_KEY, Date.now().toString());
+      }}
+      siteName={siteData?.businessInfo?.name || siteData?.name || "us"}
+      accent={siteData?.primary}
+      surface={siteData?.surface}
+      textInverse={siteData?.["text-inverse"]}
+      onSubscribe={async (email) => {
+        const ok = await subscribeUser(email, collectionId);
+        if (ok) localStorage.setItem(SUBSCRIBE_KEY, "true");
+        return ok;
+      }}
+    />
   );
 };
 
