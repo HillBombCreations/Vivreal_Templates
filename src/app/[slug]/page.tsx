@@ -34,6 +34,7 @@ const COMPOSE_FORMATS = new Set<string>([
   "checkout-success",
   "checkout-cancel",
   "products",
+  "schedule",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
