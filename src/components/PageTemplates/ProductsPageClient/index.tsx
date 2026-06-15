@@ -87,7 +87,10 @@ export default function ProductsPageClient({
 
     const qs = params.toString();
     const url = qs ? `/${slug}?${qs}` : `/${slug}`;
-    startTransition(() => router.replace(url));
+    // scroll: false — preserve the user's scroll position across a filter/sort/
+    // search change. The App Router default scrolls to top on navigation, which
+    // jarringly jumps the viewport up on every filter click.
+    startTransition(() => router.replace(url, { scroll: false }));
   };
 
   return (

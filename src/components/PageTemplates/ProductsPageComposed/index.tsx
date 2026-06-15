@@ -75,7 +75,12 @@ export default function ProductsPageComposed({
     if (next.sort && next.sort !== "featured") params.set("sort", next.sort);
 
     const qs = params.toString();
-    startTransition(() => router.replace(qs ? `/${slug}?${qs}` : `/${slug}`));
+    // scroll: false — a filter/sort/search change must NOT reposition the
+    // viewport. Without it, Next.js App Router scrolls to the top on every
+    // navigation, so each filter click jarringly jumps the user back up.
+    startTransition(() =>
+      router.replace(qs ? `/${slug}?${qs}` : `/${slug}`, { scroll: false }),
+    );
   };
 
   return (
