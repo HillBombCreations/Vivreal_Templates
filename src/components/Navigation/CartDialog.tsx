@@ -1,11 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { X, Plus, Minus, Trash2, ShoppingBag } from "lucide-react";
+import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide-react";
 import type { CartDialogProps, CartItem } from "@/types/Cart";
-import { handleCheckout } from "@/lib/utils/cartUtils";
+import {
+  handleCheckout,
+  validateCoupon,
+  type CouponPreview,
+  type CartLineItemInput,
+} from "@/lib/utils/cartUtils";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -13,8 +18,25 @@ const currency = (n: number) =>
     currency: "USD",
   }).format(n || 0);
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+/**
+ * Map a VR_Client_API validation `reason` to the §5.5 customer-facing copy.
+ * Unknown reasons fall through to the generic "isn't valid" line.
+ */
+function couponErrorCopy(reason: string | undefined): string {
+  switch (reason) {
+    case "expired":
+      return "This code has expired.";
+    case "min_subtotal":
+      return "Your cart doesn't meet this code's minimum.";
+    case "scope_miss":
+      return "This code doesn't apply to items in your cart.";
+    case "limit_reached":
+      return "This code has reached its limit.";
+    case "inactive":
+    case "not_found":
+    default:
+      return "That code isn't valid.";
+  }
 }
 
 export default function CartDialog({ open, onClose }: CartDialogProps) {
@@ -25,6 +47,16 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const businessInfo = siteData?.businessInfo || null;
 
   const [loadingCheckout, setLoadingCheckout] = useState(false);
+
+  // Promo-code state — the cart owns the applied-code lifecycle (this component
+  // stays mounted across open/close, so it persists for the session). Discount
+  // here is a DISPLAY value; Stripe re-validates + applies the authoritative
+  // amount at checkout (plan §1.3/§5.5).
+  const [codeInput, setCodeInput] = useState("");
+  const [applyingCode, setApplyingCode] = useState(false);
+  const [appliedCode, setAppliedCode] = useState<string | null>(null);
+  const [discount, setDiscount] = useState(0);
+  const [codeError, setCodeError] = useState<string | null>(null);
 
   const itemsArray = useMemo(() => {
     const entries = cart ? Object.entries(cart) : [];
@@ -48,6 +80,31 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     return itemsArray.reduce((acc, item) => acc + (item.quantity || 0), 0);
   }, [itemsArray]);
 
+  // Stripe-price-id line items for coupon validation (matches the checkout
+  // payload shape — the server keys scope/amount off the price id).
+  const cartLineItems = useMemo<CartLineItemInput[]>(
+    () =>
+      itemsArray
+        .filter((item) => item.priceID)
+        .map((item) => ({ price: item.priceID, quantity: item.quantity || 1 })),
+    [itemsArray]
+  );
+
+  const hasDiscount = appliedCode != null && discount > 0;
+  const total = Math.max(0, subtotal - (hasDiscount ? discount : 0));
+
+  // A coupon's discount depends on the exact cart. Any cart change invalidates a
+  // previously-applied code — clear it rather than show a stale discount (R2).
+  useEffect(() => {
+    if (appliedCode) {
+      setAppliedCode(null);
+      setDiscount(0);
+      setCodeError(null);
+    }
+    // Intentionally keyed on the cart line items only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartLineItems]);
+
   const setQty = (productId: string, nextQty: number) => {
     const next = { ...(cart || {}) };
     if (nextQty <= 0) {
@@ -58,6 +115,48 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     setCart(next);
   };
 
+  const onApplyCode = async () => {
+    const code = codeInput.trim().toUpperCase();
+    if (!code || applyingCode || cartLineItems.length === 0) return;
+    setApplyingCode(true);
+    setCodeError(null);
+    try {
+      const result: CouponPreview = await validateCoupon(code, cartLineItems);
+      if (result.valid) {
+        // VR_Client_API returns `newSubtotal` in CENTS (it prices off Stripe
+        // unit_amount). Our cart `subtotal` is in DOLLARS (display price string),
+        // so convert the server value before differencing. The displayed
+        // discount is a PREVIEW; Stripe applies the authoritative amount at
+        // checkout. Clamp to [0, subtotal] so a stale/odd value never shows a
+        // negative or larger-than-cart discount.
+        const newSubtotalDollars =
+          typeof result.newSubtotal === "number" ? result.newSubtotal / 100 : subtotal;
+        const previewDiscount = Math.min(subtotal, Math.max(0, subtotal - newSubtotalDollars));
+        setAppliedCode(code);
+        setDiscount(previewDiscount);
+        setCodeInput("");
+        setCodeError(null);
+      } else {
+        setAppliedCode(null);
+        setDiscount(0);
+        setCodeError(couponErrorCopy(result.reason));
+      }
+    } catch {
+      setAppliedCode(null);
+      setDiscount(0);
+      setCodeError(couponErrorCopy(undefined));
+    } finally {
+      setApplyingCode(false);
+    }
+  };
+
+  const onRemoveCode = () => {
+    setAppliedCode(null);
+    setDiscount(0);
+    setCodeError(null);
+    setCodeInput("");
+  };
+
   const onCheckout = async () => {
     setLoadingCheckout(true);
     try {
@@ -65,10 +164,22 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         cart,
         requiresShipping: !!businessInfo?.shipping,
         originUrl: window.location.origin,
+        ...(appliedCode ? { code: appliedCode } : {}),
       });
       setOpenCartMenu(false);
-    } catch {
-      // checkout redirect failed
+    } catch (err) {
+      // Re-validation failed at checkout (e.g. code limit hit between apply and
+      // checkout). Clear the code + surface the error — never proceed silently
+      // and never silently charge full (plan §5.5 / R2).
+      if (appliedCode) {
+        setAppliedCode(null);
+        setDiscount(0);
+      }
+      setCodeError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Checkout could not be started. Please try again."
+      );
     } finally {
       setLoadingCheckout(false);
     }
@@ -233,10 +344,93 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
 
         {/* Footer */}
         <div className="sticky bottom-0 border-t border-black/10 bg-[var(--surface,#fff)] px-4 py-4">
+          {/* Promo code (plan §5.5). Display only — Stripe re-validates + applies
+              the authoritative discount at checkout. */}
+          {itemsArray.length > 0 ? (
+            <div className="mb-3">
+              {appliedCode ? (
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2">
+                  <div className="flex items-center gap-2 min-w-0 text-sm font-semibold">
+                    <Check className="h-4 w-4 shrink-0" style={{ color: "var(--primary,#365b99)" }} aria-hidden="true" />
+                    <span className="truncate">{appliedCode} applied</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onRemoveCode}
+                    disabled={loadingCheckout}
+                    className="h-7 w-7 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white hover:bg-black/5 disabled:opacity-50"
+                    aria-label="Remove promo code"
+                  >
+                    <X className="mx-auto h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-black/55">
+                    <Tag className="h-3.5 w-3.5" aria-hidden="true" />
+                    Promo code
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={codeInput}
+                      onChange={(e) => setCodeInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void onApplyCode();
+                        }
+                      }}
+                      disabled={applyingCode || loadingCheckout}
+                      placeholder="Enter code"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      aria-invalid={!!codeError}
+                      className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-sm uppercase tracking-wide outline-none focus:border-black/25 disabled:opacity-60"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void onApplyCode()}
+                      disabled={applyingCode || loadingCheckout || !codeInput.trim()}
+                      className="h-10 px-4 cursor-pointer rounded-xl border border-black/10 bg-white text-sm font-semibold hover:bg-black/5 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 min-w-[84px]"
+                    >
+                      {applyingCode ? (
+                        <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" aria-hidden="true" />
+                      ) : (
+                        "Apply"
+                      )}
+                    </button>
+                  </div>
+                  {codeError ? (
+                    <div className="mt-1.5 text-xs font-medium" style={{ color: "#b91c1c" }} role="alert">
+                      {codeError}
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          ) : null}
+
           <div className="flex items-center justify-between text-sm">
             <div className="text-black/60">Subtotal</div>
             <div className="font-semibold">{currency(subtotal)}</div>
           </div>
+
+          {hasDiscount ? (
+            <>
+              <div className="mt-1 flex items-center justify-between text-sm">
+                <div className="text-black/60">Discount{appliedCode ? ` (${appliedCode})` : ""}</div>
+                <div className="font-semibold" style={{ color: "var(--primary,#365b99)" }}>
+                  −{currency(discount)}
+                </div>
+              </div>
+              <div className="mt-1 flex items-center justify-between text-sm">
+                <div className="text-black/70 font-semibold">Total</div>
+                <div className="font-bold">{currency(total)}</div>
+              </div>
+            </>
+          ) : null}
 
           <button
             type="button"

@@ -106,6 +106,13 @@ function transformProduct(raw: Record<string, unknown>): Product {
     quantityUnit: (objectValue.quantityUnit as Product["quantityUnit"]) ?? undefined,
     stock: (objectValue.stock as Product["stock"]) ?? undefined,
     lowStockThreshold: typeof objectValue.lowStockThreshold === "number" ? objectValue.lowStockThreshold : undefined,
+    // Public-sale DISPLAY fields (plan §5). Passed through verbatim — the
+    // renderer's lib/sale.ts validates window/shape defensively. Display only;
+    // Stripe applies the authoritative discount at checkout.
+    salePercent: (objectValue.salePercent as Product["salePercent"]) ?? undefined,
+    saleAmount: (objectValue.saleAmount as Product["saleAmount"]) ?? undefined,
+    saleStart: typeof objectValue.saleStart === "string" ? objectValue.saleStart : undefined,
+    saleEnd: typeof objectValue.saleEnd === "string" ? objectValue.saleEnd : undefined,
   };
 }
 
