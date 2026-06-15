@@ -50,12 +50,27 @@ interface CheckoutProps {
   cart: Cart;
   requiresShipping: boolean;
   originUrl: string;
+  /**
+   * Applied promo code (advisory). Carried through to VR_Client_API, which
+   * RE-VALIDATES it server-side before applying via Stripe (plan §1.3). Never
+   * trusted as-is — the client only controls the code string + quantities.
+   */
+  code?: string;
+}
+
+/** Thrown when checkout-time re-validation of the promo code fails (plan §5.5). */
+export class CheckoutCouponError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckoutCouponError";
+  }
 }
 
 export async function handleCheckout({
   cart,
   requiresShipping,
   originUrl,
+  code,
 }: CheckoutProps): Promise<void> {
   const products = Object.values(cart).map((item) => ({
     price: item.priceID,
@@ -65,17 +80,79 @@ export async function handleCheckout({
 
   if (products.length === 0) return;
 
+  const trimmedCode = typeof code === "string" ? code.trim().toUpperCase() : "";
+
   const res = await fetch("/api/checkout", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ products, requiresShipping, originUrl }),
+    body: JSON.stringify({
+      products,
+      requiresShipping,
+      originUrl,
+      // Only include the code when present; omitted entirely otherwise so
+      // no-code checkouts send a byte-identical payload to before this feature.
+      ...(trimmedCode ? { code: trimmedCode } : {}),
+    }),
   });
 
-  const data = await res.json();
-  if (
-    typeof data.url === "string" &&
-    data.url.startsWith("https://")
-  ) {
+  const data = await res.json().catch(() => ({}));
+
+  if (res.ok && typeof data.url === "string" && data.url.startsWith("https://")) {
     window.location.replace(data.url);
+    return;
   }
+
+  // Re-validation failed (e.g. the code's limit was hit between apply and
+  // checkout, or the sale ended). Surface a clear error so the caller can clear
+  // the code and never proceeds silently (plan §5.5 / R2).
+  const message =
+    (typeof data.error === "string" && data.error) ||
+    "Checkout could not be started. Please try again.";
+  throw new CheckoutCouponError(message);
+}
+
+export interface CouponPreview {
+  valid: boolean;
+  discountType?: "percent" | "fixed" | null;
+  discountValue?: number | null;
+  appliesToLineIds?: string[];
+  newSubtotal?: number | null;
+  reason?: string;
+}
+
+export interface CartLineItemInput {
+  /** Stripe price id. */
+  price: string;
+  quantity: number;
+}
+
+/**
+ * Validate a promo code against the current cart via the `/api/validate-coupon`
+ * edge route (→ VR_Client_API). Returns the server PREVIEW. The cart owns
+ * applied-code state + persistence; this helper is a thin transport.
+ */
+export async function validateCoupon(
+  code: string,
+  cartLineItems: CartLineItemInput[]
+): Promise<CouponPreview> {
+  const trimmed = code.trim().toUpperCase();
+  if (!trimmed || cartLineItems.length === 0) {
+    return { valid: false, reason: "not_found" };
+  }
+
+  const res = await fetch("/api/validate-coupon", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: trimmed, cartLineItems }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    // Transport/validation error — treat as an invalid code so the cart shows
+    // the generic error copy rather than crashing.
+    return { valid: false, reason: data?.error ? "error" : "not_found" };
+  }
+
+  return data as CouponPreview;
 }

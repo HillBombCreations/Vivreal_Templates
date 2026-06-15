@@ -51,6 +51,12 @@ function templatesProductToRenderer(product: Product, siteLogo: string): DetailP
     quantityUnit: product.quantityUnit,
     stock: product.stock,
     lowStockThreshold: product.lowStockThreshold,
+    // Public-sale DISPLAY fields (plan §5). Display only — Stripe applies the
+    // authoritative discount at checkout. Absent ⇒ detail price renders as before.
+    salePercent: product.salePercent,
+    saleAmount: product.saleAmount,
+    saleStart: product.saleStart,
+    saleEnd: product.saleEnd,
   };
 }
 

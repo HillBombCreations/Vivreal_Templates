@@ -28,6 +28,18 @@ export interface Product {
     stock?: Variantable<number>;
     /** Per-product low-stock trigger; renderer falls back to its global default. */
     lowStockThreshold?: number;
+    /**
+     * Public-sale DISPLAY fields (plan §5). Scalar or `Variantable<number>`
+     * (per-variant sales, OQ3). Absent ⇒ not on sale. The renderer shows the
+     * struck/sale price; Stripe applies the authoritative discount at checkout.
+     *   - `salePercent`  whole-number percent (10 == 10% off)
+     *   - `saleAmount`   fixed amount off, in CENTS
+     *   - `saleStart` / `saleEnd`  ISO date strings bounding the active window
+     */
+    salePercent?: Variantable<number>;
+    saleAmount?: Variantable<number>;
+    saleStart?: string;
+    saleEnd?: string;
 }
 
 export type ProductVariantKey = "name" | "price" | "description" | "imageUrl";

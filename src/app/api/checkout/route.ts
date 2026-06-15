@@ -22,7 +22,7 @@ function isCheckoutItem(item: unknown): item is CheckoutItem {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { products, requiresShipping, originUrl } = body;
+  const { products, requiresShipping, originUrl, code } = body;
 
   if (!Array.isArray(products) || products.length === 0) {
     return NextResponse.json(
@@ -45,6 +45,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Optional promo code — advisory only. The client charset is constrained here
+  // to a sane bound; VR_Client_API RE-VALIDATES + applies it (never trusts the
+  // client) before building the Stripe session (plan §1.3). A malformed value
+  // is dropped rather than rejected so checkout still proceeds at full price.
+  const normalizedCode =
+    typeof code === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(code.trim())
+      ? code.trim().toUpperCase()
+      : undefined;
+
   // Forward to VR_Client_API — Stripe key is resolved server-side from group integrations
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
@@ -64,6 +73,8 @@ export async function POST(request: NextRequest) {
         products,
         requiresShipping: Boolean(requiresShipping),
         originUrl,
+        // Only forward when present so no-code checkouts are byte-identical.
+        ...(normalizedCode ? { code: normalizedCode } : {}),
       }),
     });
 
