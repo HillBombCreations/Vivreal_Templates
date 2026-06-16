@@ -6,6 +6,7 @@
  */
 import 'server-only';
 import { headers } from 'next/headers';
+import { unstable_cache } from 'next/cache';
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
@@ -51,16 +52,17 @@ export class ApiError extends Error {
 }
 
 /**
- * Fetch data from VR_Client_API with auth.
- * Unwraps the { success, data, error } envelope automatically.
+ * Core fetch + envelope-unwrap. Takes the preview token explicitly so this can
+ * be invoked from inside a cache scope (unstable_cache), where request APIs
+ * like headers() are not permitted.
  */
-export async function clientFetch<T>(
+async function doClientFetch<T>(
   path: string,
+  previewToken: string | null,
   init?: RequestInit
 ): Promise<T> {
   const url = `${CLIENT_API_URL}${path}`;
 
-  const previewToken = await readPreviewToken();
   const fwdHeaders: Record<string, string> = {
     Authorization: API_KEY,
     'Content-Type': 'application/json',
@@ -94,6 +96,17 @@ export async function clientFetch<T>(
 }
 
 /**
+ * Fetch data from VR_Client_API with auth.
+ * Unwraps the { success, data, error } envelope automatically.
+ */
+export async function clientFetch<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T> {
+  return doClientFetch<T>(path, await readPreviewToken(), init);
+}
+
+/**
  * Safe version — returns fallback on error instead of throwing.
  * Re-throws ApiError with status 402 (quota exceeded / frozen account)
  * so the page can render the QuotaExceeded component.
@@ -111,6 +124,55 @@ export async function clientFetchSafe<T>(
       throw err;
     }
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
+    return fallback;
+  }
+}
+
+/**
+ * Cross-request cached variant for hot, rarely-changing, public reads (e.g. the
+ * siteDetails / site-chrome call hit on every page render). Caches the unwrapped
+ * result for `revalidateSeconds` via the Next.js Data Cache, so crawler/traffic
+ * bursts are served from cache instead of re-hitting VR_Client_API (and Mongo)
+ * on every render. Works even though the content routes are `force-dynamic` —
+ * unstable_cache is independent of route segment config.
+ *
+ * Safety:
+ * - Preview requests (carrying a per-request token) BYPASS the cache entirely —
+ *   they must always be fresh, and request APIs (headers()) can't be read inside
+ *   a cache scope.
+ * - 402 (quota/frozen) is never cached: it re-throws so the page re-evaluates
+ *   quota state on the next request.
+ * - Cache key includes `path` (so different siteIds/params are isolated); each
+ *   customer site is its own deployment, so entries are effectively per-site.
+ * - Callers must keep `revalidateSeconds` UNDER VR_Client_API's 300s signed
+ *   media-URL TTL so cached payloads never carry expired CDN links.
+ */
+export async function clientFetchCached<T>(
+  path: string,
+  fallback: T,
+  revalidateSeconds: number,
+  init?: RequestInit
+): Promise<T> {
+  const previewToken = await readPreviewToken();
+  if (previewToken) {
+    // Never cache preview traffic.
+    return clientFetchSafe<T>(path, fallback, init);
+  }
+
+  const cached = unstable_cache(
+    async () => doClientFetch<T>(path, null, init),
+    ['vr-client-api', path],
+    { revalidate: revalidateSeconds }
+  );
+
+  try {
+    return await cached();
+  } catch (err) {
+    // Let 402 (quota/frozen) bubble up so pages can show the quota page; never cache it.
+    if (err instanceof ApiError && err.status === 402) {
+      throw err;
+    }
+    console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
     return fallback;
   }
 }
