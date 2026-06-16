@@ -7,9 +7,17 @@ import type {
   PageIntegrationBinding,
   SiteData,
 } from '@/types/SiteData';
-import { clientFetchSafe } from '@/lib/api/client';
+import { clientFetchCached } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
+
+// Site chrome (theme, nav, footer, page configs) changes rarely, but the
+// siteDetails read is hit on EVERY page render of EVERY site. Cache it for 60s
+// so crawler/traffic bursts are served from the Next.js Data Cache instead of
+// re-hitting VR_Client_API (and Mongo) per render. Kept well under
+// VR_Client_API's 300s signed media-URL TTL. Content items are fetched
+// elsewhere and stay uncached/fresh; preview requests bypass the cache.
+const SITE_DETAILS_REVALIDATE_SECONDS = 60;
 
 const FALLBACK_SITE_DATA: SiteData = {
   primary: '#000000',
@@ -57,9 +65,10 @@ interface SiteDetailsResponse {
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
-  const raw = await clientFetchSafe<SiteDetailsResponse | null>(
+  const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
-    null
+    null,
+    SITE_DETAILS_REVALIDATE_SECONDS
   );
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
@@ -181,9 +190,10 @@ export function getPageBindingsByRole(pageConfig: PageConfig): {
 }
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
-  const raw = await clientFetchSafe<SiteDetailsResponse | null>(
+  const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
-    null
+    null,
+    SITE_DETAILS_REVALIDATE_SECONDS
   );
 
   if (!raw) return [];
