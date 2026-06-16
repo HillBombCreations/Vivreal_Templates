@@ -19,6 +19,13 @@ const SITE_ID = process.env.SITE_ID || '';
 // elsewhere and stay uncached/fresh; preview requests bypass the cache.
 const SITE_DETAILS_REVALIDATE_SECONDS = 60;
 
+// Cache tag for site-chrome reads. The site's /api/revalidate route invalidates
+// this tag on site.* (Studio save) and collection.* webhook events, so a chrome
+// edit is reflected on the next render without waiting for the time backstop.
+// (Time TTL stays 60s here; raising it past 300s requires the signed-media-URL
+// decision in docs/projects/template-cache-invalidation/design.md.)
+const SITE_CHROME_TAG = SITE_ID ? [`site:${SITE_ID}`] : undefined;
+
 const FALLBACK_SITE_DATA: SiteData = {
   primary: '#000000',
   secondary: '#333333',
@@ -68,7 +75,9 @@ export const getSiteData = async (): Promise<SiteData> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
     null,
-    SITE_DETAILS_REVALIDATE_SECONDS
+    SITE_DETAILS_REVALIDATE_SECONDS,
+    undefined,
+    SITE_CHROME_TAG
   );
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
@@ -193,7 +202,9 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
     null,
-    SITE_DETAILS_REVALIDATE_SECONDS
+    SITE_DETAILS_REVALIDATE_SECONDS,
+    undefined,
+    SITE_CHROME_TAG
   );
 
   if (!raw) return [];

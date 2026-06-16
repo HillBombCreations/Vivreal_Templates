@@ -145,13 +145,22 @@ export async function clientFetchSafe<T>(
  * - Cache key includes `path` (so different siteIds/params are isolated); each
  *   customer site is its own deployment, so entries are effectively per-site.
  * - Callers must keep `revalidateSeconds` UNDER VR_Client_API's 300s signed
- *   media-URL TTL so cached payloads never carry expired CDN links.
+ *   media-URL TTL so cached payloads never carry expired CDN links — UNLESS the
+ *   payload is media-free (see the cache-invalidation design, signed-URL crux).
+ *
+ * On-demand invalidation:
+ * - Pass `tags` (e.g. `['site:<id>']`, `['collection:<id>']`) to make the entry
+ *   invalidatable via `revalidateTag(tag, 'max')` from the `/api/revalidate`
+ *   route handler when the owning content is edited in the portal. The time
+ *   `revalidateSeconds` then acts purely as a backstop for missed webhooks.
+ * - Tags are additive and backward-compatible; omit for time-only caching.
  */
 export async function clientFetchCached<T>(
   path: string,
   fallback: T,
   revalidateSeconds: number,
-  init?: RequestInit
+  init?: RequestInit,
+  tags?: string[]
 ): Promise<T> {
   const previewToken = await readPreviewToken();
   if (previewToken) {
@@ -162,7 +171,7 @@ export async function clientFetchCached<T>(
   const cached = unstable_cache(
     async () => doClientFetch<T>(path, null, init),
     ['vr-client-api', path],
-    { revalidate: revalidateSeconds }
+    { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
 
   try {
