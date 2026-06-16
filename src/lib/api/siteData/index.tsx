@@ -7,17 +7,23 @@ import type {
   PageIntegrationBinding,
   SiteData,
 } from '@/types/SiteData';
-import { clientFetchCached } from '@/lib/api/client';
+import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 
 const SITE_ID = process.env.SITE_ID || '';
 
 // Site chrome (theme, nav, footer, page configs) changes rarely, but the
-// siteDetails read is hit on EVERY page render of EVERY site. Cache it for 60s
-// so crawler/traffic bursts are served from the Next.js Data Cache instead of
-// re-hitting VR_Client_API (and Mongo) per render. Kept well under
-// VR_Client_API's 300s signed media-URL TTL. Content items are fetched
-// elsewhere and stay uncached/fresh; preview requests bypass the cache.
-const SITE_DETAILS_REVALIDATE_SECONDS = 60;
+// siteDetails read is hit on EVERY page render of EVERY site. Cache it so
+// crawler/traffic bursts are served from the Next.js Data Cache instead of
+// re-hitting VR_Client_API (and Mongo) per render. TTL is env-gated via
+// SITE_CACHE_TTL_SECONDS (default 60 — well under VR_Client_API's 300s signed
+// media-URL TTL; raising it to 86400 requires first raising that signed-URL
+// TTL, per the enable runbook). Preview requests bypass the cache entirely.
+const SITE_DETAILS_REVALIDATE_SECONDS = SITE_CACHE_TTL_SECONDS;
+
+// Cache tag for site-chrome reads. The site's /api/revalidate route invalidates
+// this tag on site.* (Studio save) and collection.* webhook events, so a chrome
+// edit is reflected on the next render without waiting for the time backstop.
+const SITE_CHROME_TAG = SITE_ID ? [`site:${SITE_ID}`] : undefined;
 
 const FALLBACK_SITE_DATA: SiteData = {
   primary: '#000000',
@@ -68,7 +74,9 @@ export const getSiteData = async (): Promise<SiteData> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
     null,
-    SITE_DETAILS_REVALIDATE_SECONDS
+    SITE_DETAILS_REVALIDATE_SECONDS,
+    undefined,
+    SITE_CHROME_TAG
   );
 
   if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
@@ -193,7 +201,9 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
     null,
-    SITE_DETAILS_REVALIDATE_SECONDS
+    SITE_DETAILS_REVALIDATE_SECONDS,
+    undefined,
+    SITE_CHROME_TAG
   );
 
   if (!raw) return [];

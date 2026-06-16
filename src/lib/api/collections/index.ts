@@ -6,9 +6,33 @@
  */
 import 'server-only';
 
-import { clientFetchSafe } from '../client';
+import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '../client';
 import { getSignedUrl } from '../media';
 import type { ContentItem } from '@/types/ContentItem';
+
+const SITE_ID = process.env.SITE_ID || '';
+
+/**
+ * Build the cache tags for a collection-content read. Always carries the
+ * `collection:<id>` tag so a single collection edit invalidates exactly that
+ * read; also carries `site:<id>` so a site-wide invalidation (e.g. a chrome
+ * change that affects nav labels) clears it too. Tags map 1:1 to the events
+ * decoded in /api/revalidate.
+ */
+function collectionTags(collectionId: string): string[] {
+  const tags: string[] = [];
+  if (SITE_ID) tags.push(`site:${SITE_ID}`);
+  if (collectionId) tags.push(`collection:${collectionId}`);
+  return tags;
+}
+
+/** Build the cache tags for an integration-content read. */
+function integrationTags(type: string): string[] {
+  const tags: string[] = [];
+  if (SITE_ID) tags.push(`site:${SITE_ID}`);
+  if (type) tags.push(`integration:${type}`);
+  return tags;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Shared types                                                       */
@@ -154,9 +178,12 @@ export async function getCollectionItems(
   const params = buildParams(opts);
   params.set('collectionId', collectionId);
 
-  const raw = await clientFetchSafe<PaginatedResponse>(
+  const raw = await clientFetchCached<PaginatedResponse>(
     `/tenant/collectionObjects?${params}`,
-    { items: [], totalCount: 0 }
+    { items: [], totalCount: 0 },
+    SITE_CACHE_TTL_SECONDS,
+    undefined,
+    collectionTags(collectionId)
   );
 
   const { items, totalCount } = unwrap(raw);
@@ -179,9 +206,12 @@ export async function getIntegrationItems(
   const params = buildParams(opts);
   params.set('type', type);
 
-  const raw = await clientFetchSafe<PaginatedResponse>(
+  const raw = await clientFetchCached<PaginatedResponse>(
     `/tenant/integrationObjects?${params}`,
-    { items: [], totalCount: 0 }
+    { items: [], totalCount: 0 },
+    SITE_CACHE_TTL_SECONDS,
+    undefined,
+    integrationTags(type)
   );
 
   const { items, totalCount } = unwrap(raw);

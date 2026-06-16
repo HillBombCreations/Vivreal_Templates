@@ -17,6 +17,37 @@ const PREVIEW_REQUEST_HEADER = 'x-vivreal-preview-token';
 const PREVIEW_FORWARD_HEADER = 'x-vivreal-preview';
 
 /**
+ * Per-site cache TTL (seconds) for cached public reads (site chrome + content).
+ *
+ * Read once from `SITE_CACHE_TTL_SECONDS` with a SAFE default of 60. Default 60
+ * keeps this merge fully inert: behaviour is identical to the prior hardcoded
+ * 60s chrome cache, and content reads (newly cached) get the same short TTL that
+ * stays well under VR_Client_API's 300s signed media-URL TTL — so no cached
+ * payload can ever carry an expired CDN link at the default.
+ *
+ * Enabling the long cache is an ops step (per site, AFTER raising the signed-URL
+ * TTL to ~24h in VR_Client_API): set this env to `86400`. With on-demand
+ * `revalidateTag` invalidation wired (see /api/revalidate), the time TTL is then
+ * only a backstop for missed webhooks + scheduled publish-date go-lives.
+ *
+ * Invalid/absent/non-positive values fall back to 60 — never crash a render on a
+ * bad env value, never silently disable caching.
+ */
+function readCacheTtlSeconds(): number {
+  const raw = process.env.SITE_CACHE_TTL_SECONDS;
+  if (!raw) return 60;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 60;
+}
+
+/**
+ * Resolved per-site cache TTL in seconds. Module-scope const so every cached
+ * read in this deployment uses one consistent value (env is fixed per Lambda /
+ * Amplify instance for its lifetime).
+ */
+export const SITE_CACHE_TTL_SECONDS = readCacheTtlSeconds();
+
+/**
  * Pull the portal preview-bypass token (if any) out of the current request
  * scope. middleware.ts injects it from `?vivreal_preview=<token>` on the
  * inbound URL; we relay it as `x-vivreal-preview` on every server-to-server
@@ -145,13 +176,22 @@ export async function clientFetchSafe<T>(
  * - Cache key includes `path` (so different siteIds/params are isolated); each
  *   customer site is its own deployment, so entries are effectively per-site.
  * - Callers must keep `revalidateSeconds` UNDER VR_Client_API's 300s signed
- *   media-URL TTL so cached payloads never carry expired CDN links.
+ *   media-URL TTL so cached payloads never carry expired CDN links — UNLESS the
+ *   payload is media-free (see the cache-invalidation design, signed-URL crux).
+ *
+ * On-demand invalidation:
+ * - Pass `tags` (e.g. `['site:<id>']`, `['collection:<id>']`) to make the entry
+ *   invalidatable via `revalidateTag(tag, 'max')` from the `/api/revalidate`
+ *   route handler when the owning content is edited in the portal. The time
+ *   `revalidateSeconds` then acts purely as a backstop for missed webhooks.
+ * - Tags are additive and backward-compatible; omit for time-only caching.
  */
 export async function clientFetchCached<T>(
   path: string,
   fallback: T,
   revalidateSeconds: number,
-  init?: RequestInit
+  init?: RequestInit,
+  tags?: string[]
 ): Promise<T> {
   const previewToken = await readPreviewToken();
   if (previewToken) {
@@ -162,7 +202,7 @@ export async function clientFetchCached<T>(
   const cached = unstable_cache(
     async () => doClientFetch<T>(path, null, init),
     ['vr-client-api', path],
-    { revalidate: revalidateSeconds }
+    { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
 
   try {

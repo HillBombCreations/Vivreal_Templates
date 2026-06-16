@@ -1,7 +1,30 @@
 import "server-only";
-import { clientFetchSafe } from "../client";
+import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from "../client";
 import { getSignedUrl } from "../media";
 import type { Product, Filter, Variantable } from "@/types/Products";
+
+const SITE_ID = process.env.SITE_ID || "";
+
+/**
+ * Cache tags for a product read. Products come from an integration object
+ * (`integrationObjects?type=<type>`), so the read carries `integration:<type>`
+ * (a sync/edit of that integration invalidates exactly it) plus `site:<id>` so a
+ * site-wide invalidation clears it too. Tags map 1:1 to /api/revalidate decoding.
+ */
+function productTags(type: string): string[] {
+  const tags: string[] = [];
+  if (SITE_ID) tags.push(`site:${SITE_ID}`);
+  if (type) tags.push(`integration:${type}`);
+  return tags;
+}
+
+/** Cache tags for a filter read (a collection's objects). */
+function filterTags(collectionId: string): string[] {
+  const tags: string[] = [];
+  if (SITE_ID) tags.push(`site:${SITE_ID}`);
+  if (collectionId) tags.push(`collection:${collectionId}`);
+  return tags;
+}
 
 interface PaginatedResponse {
   items: Record<string, unknown>[];
@@ -131,9 +154,13 @@ export async function getProducts(opts?: {
   if (opts?.searchVal) params.set("search", opts.searchVal);
   if (opts?.sortVal) params.set("sort", opts.sortVal);
 
-  const raw = await clientFetchSafe<PaginatedResponse>(
+  const type = opts?.integrationType || "stripe";
+  const raw = await clientFetchCached<PaginatedResponse>(
     `/tenant/integrationObjects?${params}`,
-    { items: [], totalCount: 0 }
+    { items: [], totalCount: 0 },
+    SITE_CACHE_TTL_SECONDS,
+    undefined,
+    productTags(type)
   );
   return unwrapItems(raw).map(transformProduct);
 }
@@ -145,9 +172,12 @@ export async function getProductById(productId: string): Promise<Product | null>
 
 export async function getFilters(collectionId: string): Promise<Filter[]> {
   if (!collectionId) return [];
-  const raw = await clientFetchSafe<PaginatedResponse>(
+  const raw = await clientFetchCached<PaginatedResponse>(
     `/tenant/collectionObjects?collectionId=${collectionId}`,
-    { items: [], totalCount: 0 }
+    { items: [], totalCount: 0 },
+    SITE_CACHE_TTL_SECONDS,
+    undefined,
+    filterTags(collectionId)
   );
   return unwrapItems(raw).map((item) => {
     const obj = (item.objectValue ?? item) as Record<string, unknown>;
