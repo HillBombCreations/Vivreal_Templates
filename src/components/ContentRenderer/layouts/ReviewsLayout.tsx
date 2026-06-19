@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Star } from "lucide-react";
 import type { ContentLayoutProps } from "@/types/ContentItem";
+// CC8 — shared rating glyph (single source of truth in the renderer package).
+// This collapses the previously hand-synced ReviewsLayout copy into one import.
+import {
+  RatingGlyph,
+  RATING_ICON_NOUN,
+  resolveRatingIcon,
+  resolveRatingMax,
+  ratingTrackColor,
+  type RatingIcon,
+} from "@hillbombcreations/site-renderer";
 
 const SCROLL_SPEED = 0.5;
 
@@ -10,7 +19,7 @@ const SCROLL_SPEED = 0.5;
 /*  Loading skeleton                                                   */
 /* ------------------------------------------------------------------ */
 
-function Skeleton() {
+function Skeleton({ ratingCount = 5 }: { ratingCount?: number }) {
   return (
     <div className="flex gap-4 overflow-hidden">
       {[...Array(4)].map((_, i) => (
@@ -19,7 +28,8 @@ function Skeleton() {
           className="shrink-0 w-72 sm:w-80 rounded-2xl border border-black/[0.06] bg-white p-5 animate-pulse"
         >
           <div className="flex gap-1 mb-3">
-            {[...Array(5)].map((_, j) => (
+            {/* P5 — placeholder glyph count driven by ratingMax, not hardcoded 5. */}
+            {[...Array(ratingCount)].map((_, j) => (
               <div key={j} className="h-3.5 w-3.5 rounded bg-black/[0.06]" />
             ))}
           </div>
@@ -52,30 +62,157 @@ function Empty({ message }: { message?: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Reviews Layout                                                     */
+/*  Rating display row                                                  */
 /* ------------------------------------------------------------------ */
 
 /**
- * Extract a star rating from a ContentItem.
- * Looks at raw.rating, raw.stars, or falls back to 5.
+ * Accessible rating row. Renders `max` glyphs filled to `value` (incl. one
+ * per-icon-styled half via the shared `RatingGlyph`). Wrapped in `role="img"`
+ * with a single accessible name so screen readers announce "X out of M ⟨icon⟩"
+ * once, not per glyph.
+ *
+ * S5: when `value` is fractional, a small numeric badge (e.g. "4.5") sits beside
+ * the glyph row so the half isn't ambiguous on the carousel.
  */
-function getRating(item: { raw?: Record<string, unknown> }): number {
-  if (!item.raw) return 5;
-  const r = item.raw.rating ?? item.raw.stars ?? item.raw.score;
-  if (typeof r === "number") return Math.min(5, Math.max(0, Math.round(r)));
-  if (typeof r === "string") {
-    const n = parseInt(r, 10);
-    if (!isNaN(n)) return Math.min(5, Math.max(0, n));
-  }
-  return 5;
+function RatingRow({
+  icon,
+  value,
+  max,
+  size,
+  color,
+}: {
+  icon: RatingIcon;
+  value: number;
+  max: number;
+  size: number;
+  color: string;
+}) {
+  const trackColor = ratingTrackColor(color);
+  const isFractional = Math.abs(value - Math.round(value)) > 1e-9;
+  // The numeric glyph mode already shows the value — no extra badge there.
+  const showBadge = isFractional && icon !== "number";
+  return (
+    <div className="flex items-center gap-1.5">
+      <div
+        role="img"
+        aria-label={`${value} out of ${max} ${RATING_ICON_NOUN[icon]}`}
+        // P3 — number stays tight; icon families breathe at gap-1.
+        className={`flex items-center ${icon === "number" ? "gap-0.5" : "gap-1"}`}
+      >
+        {Array.from({ length: max }).map((_, i) => {
+          const pos = i + 1;
+          const fill: 0 | 0.5 | 1 =
+            value >= pos ? 1 : value >= pos - 0.5 ? 0.5 : 0;
+          return (
+            <RatingGlyph
+              key={i}
+              icon={icon}
+              fill={fill}
+              size={size}
+              color={color}
+              trackColor={trackColor}
+              value={pos}
+            />
+          );
+        })}
+      </div>
+      {showBadge && (
+        <span
+          aria-hidden="true"
+          className="text-xs font-semibold tabular-nums"
+          style={{ color }}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Field extraction (decimal rating + name/review fallbacks)          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Extract a DECIMAL rating from a ContentItem, clamped to `[0, max]`.
+ *
+ * CC8: no `Math.round` (half-steps like 4.5 must survive) and no hardcoded 5
+ * ceiling (driven by the configured `max`). Half values snap to the nearest
+ * 0.5 so the display matches the input's discrete steps.
+ */
+function getRating(
+  item: { raw?: Record<string, unknown> },
+  max: number,
+  ratingField?: string,
+): number {
+  const snap = (n: number) => Math.min(max, Math.max(0, Math.round(n * 2) / 2));
+
+  if (!item.raw) return max;
+
+  if (ratingField) {
+    const explicit = item.raw[ratingField];
+    if (typeof explicit === "number" && Number.isFinite(explicit)) return snap(explicit);
+    if (typeof explicit === "string") {
+      const n = parseFloat(explicit);
+      if (!isNaN(n)) return snap(n);
+    }
+  }
+
+  const r = item.raw.rating ?? item.raw.stars ?? item.raw.score;
+  if (typeof r === "number") return snap(r);
+  if (typeof r === "string") {
+    const n = parseFloat(r);
+    if (!isNaN(n)) return snap(n);
+  }
+  return max;
+}
+
+/** Reviewer name — `name` / `author` raw fallbacks, else the mapped title. */
+function getName(item: { title: string; raw?: Record<string, unknown> }): string {
+  const r = item.raw;
+  if (r) {
+    if (typeof r.name === "string" && r.name.trim()) return r.name;
+    if (typeof r.author === "string" && r.author.trim()) return r.author;
+  }
+  return item.title;
+}
+
+/** Review text — `review` / `quote` raw fallbacks, else the mapped description. */
+function getReviewText(item: {
+  description?: string;
+  raw?: Record<string, unknown>;
+}): string | undefined {
+  const r = item.raw;
+  if (r) {
+    if (typeof r.review === "string" && r.review.trim()) return r.review;
+    if (typeof r.quote === "string" && r.quote.trim()) return r.quote;
+  }
+  return item.description;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reviews Layout                                                     */
+/* ------------------------------------------------------------------ */
 
 export default function ReviewsLayout({
   items,
   accent,
   loading,
   emptyMessage,
+  sectionConfig,
 }: ContentLayoutProps) {
+  const ratingField =
+    typeof sectionConfig?.ratingField === "string"
+      ? (sectionConfig.ratingField as string)
+      : undefined;
+  // CC8 — rating display style, linked to the review form's config. Falls back
+  // to star / 5 so pre-CC8 Reviews sections render exactly as before.
+  const ratingIcon = resolveRatingIcon(sectionConfig?.ratingIcon);
+  const ratingMax = resolveRatingMax(sectionConfig?.ratingMax);
+  // S5 — legible display glyphs: 16px base, shrinking to 14px at large `max` so
+  // a max>=8 row still fits the card (parallels the input's max>=8 step-down).
+  const glyphSize = ratingMax >= 8 ? 14 : 16;
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(false);
 
@@ -122,7 +259,7 @@ export default function ReviewsLayout({
     };
   }, [items.length]);
 
-  if (loading) return <Skeleton />;
+  if (loading) return <Skeleton ratingCount={ratingMax} />;
   if (!items.length) return <Empty message={emptyMessage} />;
 
   return (
@@ -147,29 +284,30 @@ export default function ReviewsLayout({
         style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
       >
         {displayItems.map((item, idx) => {
-          const rating = getRating(item);
+          const rating = getRating(item, ratingMax, ratingField);
+          const name = getName(item);
+          const reviewText = getReviewText(item);
 
           return (
             <div
               key={`${item.id}-${idx}`}
               className="flex-shrink-0 w-72 sm:w-80 rounded-2xl border border-black/[0.06] bg-white p-5 shadow-sm flex flex-col"
             >
-              {/* Stars */}
-              <div className="flex items-center gap-0.5 mb-3">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star
-                    key={i}
-                    size={14}
-                    className={i < rating ? "fill-current" : "text-gray-200"}
-                    style={i < rating ? { color: primary } : undefined}
-                  />
-                ))}
+              {/* Rating row (configurable icon + max + per-icon half fill) */}
+              <div className="mb-3">
+                <RatingRow
+                  icon={ratingIcon}
+                  value={rating}
+                  max={ratingMax}
+                  size={glyphSize}
+                  color={primary}
+                />
               </div>
 
-              {/* Review text (description) */}
+              {/* Review text */}
               <p className="text-sm text-gray-700 leading-relaxed line-clamp-3">
-                {item.description
-                  ? <>&ldquo;{item.description}&rdquo;</>
+                {reviewText
+                  ? <>&ldquo;{reviewText}&rdquo;</>
                   : <span className="text-black/30 italic">No review text</span>
                 }
               </p>
@@ -180,7 +318,7 @@ export default function ReviewsLayout({
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={item.imageUrl}
-                    alt={item.title}
+                    alt={name}
                     className="h-8 w-8 rounded-full object-cover"
                     loading="lazy"
                   />
@@ -189,11 +327,11 @@ export default function ReviewsLayout({
                     className="h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
                     style={{ backgroundColor: primary }}
                   >
-                    {item.title.charAt(0).toUpperCase()}
+                    {name.charAt(0).toUpperCase()}
                   </div>
                 )}
                 <div>
-                  <p className="text-sm font-semibold text-gray-900">{item.title}</p>
+                  <p className="text-sm font-semibold text-gray-900">{name}</p>
                   {item.date && (
                     <p className="text-[11px] text-gray-400">
                       {new Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(new Date(item.date))}

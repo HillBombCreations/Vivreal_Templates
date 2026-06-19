@@ -9,30 +9,59 @@ import { getSignedUrl } from '@/lib/api/media';
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
- * (1.0 site chrome): fetches siteData + signed logo, derives the nav + the
- * displayOnFooter "legal" links (via deriveFooterPages, which preserves the
- * privacy/terms links the old footer auto-listed), maps social links to the
- * renderer's shape, and threads Q3b overrides (footerColumns / legal /
- * hidePoweredBy). The "Powered by Vivreal" attribution is tier-gated.
+ * (Group B one-footer model): fetches siteData + signed logo, threads the Q3b
+ * overrides (columns / legal / hidePoweredBy / social) AND the Group-B footer
+ * brand override.
+ *
+ * Group B chrome resolution:
+ *  - The renderer renders the ONE footer from the explicit columns when present,
+ *    else from the canonical derive (it runs `deriveChrome` internally when given
+ *    `pageConfigs`). We pass `pageConfigs` so un-migrated sites still render.
+ *  - Brand override is PER-FIELD: render value = `brand.<field>` when the KEY IS
+ *    PRESENT (an empty string is an honored override → renders nothing), else
+ *    inherit `businessInfo.<field>`. The renderer cannot sign URLs, so the
+ *    override logo is signed HERE (mirroring the businessInfo logo) from the
+ *    backend-delivered signed media object on `brand.logo`.
+ *  - "Powered by Vivreal" attribution stays tier-gated.
  */
 const Footer = async () => {
   const siteData = await getSiteData();
 
-  const siteName = siteData?.businessInfo?.name || siteData?.name || '';
-  const logoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  const businessName = siteData?.businessInfo?.name || siteData?.name || '';
+  const businessLogoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  const businessEmail = siteData?.businessInfo?.contactInfo?.email;
+
+  // Per-field inherit/override. A key being PRESENT on `brand` (even "") is an
+  // override; ABSENT inherits the businessInfo value. `Object.prototype
+  // .hasOwnProperty` is what distinguishes absent from present-empty — `?.field`
+  // would conflate `undefined` (absent) with a real "" override.
+  const brand = siteData?.footer?.brand ?? undefined;
+  const has = (k: string): boolean =>
+    !!brand && Object.prototype.hasOwnProperty.call(brand, k);
+
+  const siteName = has('name') ? (brand!.name ?? '') : businessName;
+  const email = has('email') ? (brand!.email ?? '') : businessEmail;
+  // Override logo: sign the backend-delivered media object for brand.logoKey.
+  // When the override key is present but no signed media object is delivered yet
+  // (backend signing pending), an empty string renders no logo (honored override).
+  const logoUrl = has('logoKey')
+    ? getSignedUrl(brand!.logo)
+    : businessLogoUrl;
+
   const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
   const navItems = deriveNav(pageConfigs);
   const footerPages = deriveFooterPages(pageConfigs);
-  const socialLinks = (siteData?.socialLinks ?? []).map((l) => ({
-    platform: l.type,
-    url: l.link,
-  }));
+
+  // Footer social overrides win over the site-level social links.
+  const socialLinks =
+    siteData?.footer?.socialLinks ??
+    (siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }));
 
   return (
     <RendererFooter
       siteName={siteName}
       logoUrl={logoUrl}
-      email={siteData?.businessInfo?.contactInfo?.email}
+      email={email}
       navItems={navItems}
       socialLinks={socialLinks}
       accentColor={siteData?.primary}
@@ -41,6 +70,7 @@ const Footer = async () => {
       footerColumns={siteData?.footer?.columns ?? null}
       legal={siteData?.footer?.legal ?? null}
       footerPages={footerPages}
+      pageConfigs={pageConfigs}
     />
   );
 };
