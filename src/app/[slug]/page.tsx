@@ -7,13 +7,15 @@ import type {
   MenuCategory,
   MenuItem,
 } from "@hillbombcreations/site-renderer";
-import { getSiteData, getPageLabel, getPageCollectionId } from "@/lib/api/siteData";
+import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getPageData } from "@/lib/api/pageData";
 import ContentRenderer from "@/components/ContentRenderer";
 import PageShell from "@/components/PageShell";
 import { getCollectionItems } from "@/lib/api/collections";
-import FormClient from "@/components/PageTemplates/FormClient";
+// CC8 Phase 4: FormClient is no longer routed (form pages compose through the
+// renderer FormLayout/ConfigurableForm via composePage). Import removed; the
+// component file is retained until it is retired post-dogfood validation.
 import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -35,6 +37,13 @@ const COMPOSE_FORMATS = new Set<string>([
   "checkout-cancel",
   "products",
   "schedule",
+  // CC8 Phase 4: route form/review pages through composePage → renderer
+  // FormLayout/ConfigurableForm so live == Studio preview (WYSIWYG). The
+  // renderer reads the section's submitMode/collectionId + rating config to
+  // render review-mode (rating input + POST to /api/review). A form page with
+  // no submitMode (no CC8 backfill yet) composes to the legacy contact form
+  // (email path) — graceful degradation, not a crash. See FormClient (retired).
+  "form",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -206,18 +215,10 @@ export default async function DynamicPage({
     );
   }
 
-  // Form pages — form/review format
-  if (format === "form") {
-    const collectionId = getPageCollectionId(siteData, name, "");
-
-    return (
-      <>
-        <Navbar />
-        <FormClient collectionId={collectionId} />
-        <Footer />
-      </>
-    );
-  }
+  // CC8 Phase 4: form/review pages are now composed (see COMPOSE_FORMATS +
+  // the composeFormat() block above). The legacy <FormClient> branch is removed
+  // from the routing path here; FormClient itself is retired in a SEPARATE
+  // commit after dogfood validation (publish-gate phasing). No fallback cycle.
 
   // Subscribe / newsletter pages
   if (format === "subscribe") {

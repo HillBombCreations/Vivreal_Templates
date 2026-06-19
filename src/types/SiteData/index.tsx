@@ -1,5 +1,29 @@
 import type { MetadataRoute } from 'next';
-import type { NavMenuItem, NavbarCta, FooterColumn, FooterLegal } from '@hillbombcreations/site-renderer';
+import type {
+  NavMenuItem,
+  NavbarCta,
+  FooterColumn,
+  FooterLegal,
+  FooterBrand,
+  NavbarBrand,
+  CartIcon,
+  EmailPopupConfig,
+  SocialLink as RendererSocialLink,
+} from '@hillbombcreations/site-renderer';
+
+/**
+ * Group B — a brand-override logo as delivered to the Templates wrapper. The
+ * renderer cannot sign URLs, so the WRAPPER signs. Brand override stores a bare
+ * `logoKey`; the backend (VR_Client_API getSiteDetails) signs it and delivers a
+ * sibling media object here (mirroring how `siteData.logo` arrives pre-signed
+ * with `currentFile.source`). Until the backend lands that, `logo` is absent and
+ * the wrapper falls back to inheriting the businessInfo logo.
+ */
+export interface BrandLogoMedia {
+    key?: string;
+    type?: string;
+    currentFile?: { source: string };
+}
 
 export interface Businessinfo {
     address?: {
@@ -141,13 +165,35 @@ export interface SiteData {
     navigation?: {
         menuItems?: NavMenuItem[] | null;
         cta?: NavbarCta | null;
+        /**
+         * Group B — per-field inherit/override header brand. ABSENT key ⇒ inherit
+         * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
+         * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
+         */
+        brand?: (NavbarBrand & { logo?: BrandLogoMedia }) | null;
+        /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
+        cartIcon?: CartIcon | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
         columns?: FooterColumn[] | null;
         legal?: FooterLegal | null;
         hidePoweredBy?: boolean | null;
+        /**
+         * Group B — per-field inherit/override footer brand (logo + name + email).
+         * Same presence-means-override semantics as the header brand.
+         */
+        brand?: (FooterBrand & { logo?: BrandLogoMedia }) | null;
+        /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
+        socialLinks?: RendererSocialLink[] | null;
     } | null;
+    /**
+     * CC9 — Studio-authored email-capture popup config. Lazy: null/absent ⇒ the
+     * EmailPopup wrapper falls back to legacy behavior (implicit-on iff a
+     * subscribers collection exists, hardcoded copy, 3000ms, 24h, home-only).
+     * Plumbed through VR_Client_API getSiteDetails → getSiteData → here.
+     */
+    emailPopup?: EmailPopupConfig | null;
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
 }
