@@ -9,8 +9,12 @@ export async function POST(req: Request) {
       email: body.email,
       name: body.name,
       review: body.review,
-      rating: body.rating,
+      // Keep rating numeric end-to-end (locked contract: decimal, e.g. 4.5).
+      // Coerce defensively in case a client serializes it as a string.
+      rating: typeof body.rating === 'number' ? body.rating : Number(body.rating),
       collectionId: body.collectionId,
+      // Pass the honeypot through so the backend's spam check receives it.
+      company_website: body.company_website,
     });
 
     if (!success) {

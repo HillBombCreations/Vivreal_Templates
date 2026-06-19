@@ -8,6 +8,7 @@ import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
+import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
@@ -43,6 +44,15 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                           hideOnPages={['/reservations']}
                       />
                   )}
+                  {/*
+                    CC9 — Email-capture popup. Mounted at the layout (NOT the home
+                    route) so per-page targeting is structurally possible. The
+                    wrapper self-gates on route + config; absent emailPopup config
+                    ⇒ legacy behavior (home-only, 3000ms, 24h cap, default copy,
+                    on-iff-subscribers-collection) — byte-identical to the prior
+                    home-only mount. See EmailPopup wrapper for the resolution.
+                  */}
+                  <EmailPopup config={siteData.emailPopup ?? {}} siteData={siteData} />
               </Providers>
           </body>
       </html>

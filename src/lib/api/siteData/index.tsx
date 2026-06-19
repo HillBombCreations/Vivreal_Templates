@@ -67,6 +67,9 @@ interface SiteDetailsResponse {
   // getSiteDetails (null/absent ⇒ chrome auto-derives).
   navigation?: SiteData['navigation'];
   footer?: SiteData['footer'];
+  // CC9 — Studio-authored email-capture popup config. Returned by VR_Client_API
+  // getSiteDetails (null/absent ⇒ legacy popup behavior).
+  emailPopup?: SiteData['emailPopup'];
   tier?: string;
 }
 
@@ -103,6 +106,8 @@ export const getSiteData = async (): Promise<SiteData> => {
     // Q3b — Studio-authored navbar/footer chrome (null ⇒ renderer auto-derives).
     navigation: raw.navigation ?? null,
     footer: raw.footer ?? null,
+    // CC9 — Studio-authored email-capture popup config (null ⇒ legacy behavior).
+    emailPopup: raw.emailPopup ?? null,
     tier: raw.tier,
   };
 };

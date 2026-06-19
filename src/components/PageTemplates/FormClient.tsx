@@ -1,3 +1,7 @@
+// CC8: retire after dogfood validation — replaced by composePage form rendering
+// (renderer FormLayout/ConfigurableForm). No longer routed from app/[slug]/page.tsx
+// as of CC8 Phase 4; kept in the tree per the publish-gate phasing (separate
+// retirement commit after the renderer form is published + dogfood-validated).
 "use client";
 
 import React, { useState } from "react";
