@@ -89,6 +89,29 @@ export const getSiteData = async (): Promise<SiteData> => {
     (p) => p.format === "home" || p.slug === "home"
   );
 
+  const pageConfigs = allPages.filter(
+    (p) => p.format !== "home" && p.slug !== "home"
+  );
+
+  // Wire the renderer's Schedule "Subscribe" button. The renderer reads
+  // page.labels.icalFeedUrl and rewrites https:// → webcal://, so it MUST be an
+  // absolute https URL on the site's canonical domain (a relative URL would not
+  // survive the webcal rewrite). The URL points at this site's own
+  // /feeds/schedule.ics proxy route (same origin). Only inject when a schedule
+  // page exists AND the canonical domain is known — never set a partial/relative
+  // value the renderer would mangle. No renderer change, no per-site authoring.
+  const domainName = raw.domainName;
+  if (domainName) {
+    for (const page of pageConfigs) {
+      if (page.format === "schedule") {
+        page.labels = {
+          ...(page.labels ?? {}),
+          icalFeedUrl: `https://${domainName}/feeds/schedule.ics`,
+        };
+      }
+    }
+  }
+
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
@@ -96,7 +119,7 @@ export const getSiteData = async (): Promise<SiteData> => {
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
     socialLinks: raw.socialLinks ?? [],
-    pageConfigs: allPages.filter((p) => p.format !== "home" && p.slug !== "home"),
+    pageConfigs,
     homePageConfig: homePageConfig ?? null,
     homeSections: raw.homeSections,
     // Thread siteInfo through so layout can read templateType. Fall back to
