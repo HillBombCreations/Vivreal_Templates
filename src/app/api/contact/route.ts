@@ -233,6 +233,58 @@ function buildBrandedEmail(body: ContactPayload): string {
 </html>`;
 }
 
+/**
+ * Resolve the site's contact recipient + name + branding from VR_Client_API.
+ *
+ * The renderer's contact form (ConfigurableForm) posts only
+ * `{ name, email, message, customerEmail }` — it never sends the recipient,
+ * site name, or branding. So we read them server-side from this site's
+ * siteDetails (same source `getSiteData()` uses), keyed by the SITE_ID env.
+ * Returns null on any failure so the caller can fall back to body values.
+ */
+async function resolveSiteContact(): Promise<{
+  email: string;
+  siteName: string;
+  branding: ContactPayload["branding"];
+} | null> {
+  const apiKey = process.env.API_KEY;
+  const siteId = process.env.SITE_ID;
+  const clientApiUrl =
+    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+  if (!siteId) return null;
+
+  try {
+    const res = await fetch(
+      `${clientApiUrl}/tenant/siteDetails?siteId=${encodeURIComponent(siteId)}`,
+      { headers: { Authorization: apiKey ?? "" }, cache: "no-store" }
+    );
+    if (!res.ok) return null;
+
+    const json = await res.json();
+    // VR_Client_API returns the { success, data } envelope (or the raw object).
+    const data = (json?.data ?? json) as {
+      name?: string;
+      businessInfo?: { name?: string; contactInfo?: { email?: string } };
+      siteDetails?: { values?: Record<string, unknown> };
+    };
+    const values = (data?.siteDetails?.values ?? {}) as Record<string, unknown>;
+    const logo = values.logo as { currentFile?: { source?: string } } | undefined;
+
+    return {
+      email: data?.businessInfo?.contactInfo?.email ?? "",
+      siteName: data?.businessInfo?.name ?? data?.name ?? "",
+      branding: {
+        primary: values.primary as string | undefined,
+        surface: values["surface-alt"] as string | undefined,
+        textPrimary: values["text-primary"] as string | undefined,
+        logoUrl: logo?.currentFile?.source,
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   let body: ContactPayload;
   try {
@@ -241,7 +293,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, customerEmail, message, siteName } = body;
+  const { name, customerEmail, message } = body;
 
   if (!name?.trim() || !customerEmail?.trim() || !message?.trim()) {
     return NextResponse.json(
@@ -250,13 +302,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const to = body.contactEmail || "";
+  // Body values (legacy ContactSection sends them) win; otherwise resolve from
+  // siteData — the renderer's form omits recipient / siteName / branding. Only
+  // hit the (heavy, API/CDN-metered) siteDetails endpoint when the recipient
+  // wasn't supplied, so the legacy path costs no extra upstream call.
+  const site = body.contactEmail?.trim() ? null : await resolveSiteContact();
+
+  const to = (body.contactEmail?.trim() || site?.email || "").trim();
   if (!to) {
     return NextResponse.json(
       { error: "No contact email configured" },
       { status: 500 }
     );
   }
+
+  const siteName = body.siteName?.trim() || site?.siteName || "Vivreal Site";
+  const branding = body.branding ?? site?.branding;
+  const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding };
 
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
@@ -271,10 +333,11 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         name,
-        to,
         message,
-        siteName: siteName || "Vivreal Site",
-        customHtml: buildBrandedEmail(body),
+        siteName,
+        contactEmail: to,
+        customerEmail,
+        customHtml: buildBrandedEmail(enriched),
       }),
     });
 
