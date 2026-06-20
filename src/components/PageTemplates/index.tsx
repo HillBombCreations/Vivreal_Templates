@@ -1,5 +1,4 @@
 export { default as ShowsPageWrapper } from "./ShowsPageWrapper";
-export { default as FormClient } from "./FormClient";
 export { default as StaticPage } from "./StaticPage";
 export { default as SubscribeClient } from "./SubscribeClient";
 export { default as ProductsClient } from "./ProductsClient";
