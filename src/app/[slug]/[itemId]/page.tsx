@@ -1,11 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { CTASectionTemplate } from "@/components/RendererExports";
+import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
-import { ArrowLeft, Calendar, MapPin } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
@@ -13,10 +13,10 @@ import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
 import { getIntegrationItems } from "@/lib/api/collections";
-import MemberDetail from "@/components/PageTemplates/MemberDetail";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
 import type {
+  DetailItem,
   DetailPageConfig,
   DetailSection,
   PageCtaConfig as RendererPageCtaConfig,
@@ -40,8 +40,6 @@ export default async function DynamicItemPage({ params }: Props) {
 
   // Guard: if detail pages are explicitly disabled for this page, return 404
   if (pageConfig.detailPage?.enabled === false) return notFound();
-
-  const primary = siteData?.primary || "#000000";
 
   // Show/event detail
   if (pageConfig.format === "shows") {
@@ -89,92 +87,14 @@ export default async function DynamicItemPage({ params }: Props) {
       <>
         <JsonLd schema={showJsonLd} />
         <Navbar />
-        <main className="pt-24 md:pt-32 pb-20 md:pb-32 max-w-6xl mx-auto px-4 prose prose-primary prose-headings:font-display prose-headings:font-bold animate-fade-in">
-          <Link
-            href={`/${slug}`}
-            className="inline-flex items-center gap-1 mb-8 hover:underline"
-            style={{ color: primary }}
-          >
-            <ArrowLeft size={16} /> All content
-          </Link>
-
-          <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
-            {show.title}
-          </h1>
-
-          <div className="text-gray-600 text-sm mb-6 flex flex-wrap items-center gap-4">
-            <div className="flex flex-col gap-1">
-              {show.date && (
-                <span className="inline-flex items-center gap-1.5">
-                  <Calendar size={14} />
-                  {new Intl.DateTimeFormat("en-US", {
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  }).format(new Date(show.date))}
-                  {show.time ? ` at ${show.time}` : ""}
-                </span>
-              )}
-              {show.location && (
-                <span className="inline-flex items-center gap-1.5">
-                  <MapPin size={14} />
-                  {show.location}
-                </span>
-              )}
-            </div>
-            {show.ticketsUrl &&
-              (!show.date || new Date(show.date) >= new Date()) && (
-                <a
-                  href={show.ticketsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="ml-auto px-5 py-2.5 text-white text-sm font-semibold rounded-lg transition-colors hover:opacity-90"
-                  style={{ backgroundColor: primary }}
-                >
-                  Get Tickets
-                </a>
-              )}
-          </div>
-
-          {(show.imageUrl || show.image) && show.description ? (
-            <div className="flex flex-col md:flex-row gap-8">
-              <div className="md:w-1/2 flex-shrink-0">
-                <Image
-                  src={show.imageUrl || show.image || "/logo.png"}
-                  alt={show.title || "Content image"}
-                  width={800}
-                  height={400}
-                  priority
-                  className="w-full h-auto rounded-2xl object-cover shadow-sm"
-                />
-              </div>
-              <div className="text-lg">
-                <div dangerouslySetInnerHTML={{ __html: show.description }} />
-              </div>
-            </div>
-          ) : (
-            <>
-              {(show.imageUrl || show.image) && (
-                <div className="max-w-2xl">
-                  <Image
-                    src={show.imageUrl || show.image || "/logo.png"}
-                    alt={show.title || "Content image"}
-                    width={800}
-                    height={400}
-                    priority
-                    className="w-full h-auto rounded-2xl object-cover shadow-sm"
-                  />
-                </div>
-              )}
-              {show.description && (
-                <div className="text-lg mt-6">
-                  <div dangerouslySetInnerHTML={{ __html: show.description }} />
-                </div>
-              )}
-            </>
-          )}
-        </main>
-        <CTASectionTemplate siteData={siteData as unknown as RendererSiteData} />
+        <DetailPageTemplate
+          slug={slug}
+          format="shows"
+          item={show as unknown as DetailItem}
+          siteData={siteData as unknown as RendererSiteData}
+          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+        />
         <Footer />
       </>
     );
@@ -239,11 +159,14 @@ export default async function DynamicItemPage({ params }: Props) {
       <>
         <JsonLd schema={memberJsonLd} />
         <Navbar />
-        <MemberDetail
-          member={member}
-          siteData={siteData}
-          tiktokEmbeds={tiktokEmbeds}
-          backSlug={slug}
+        <DetailPageTemplate
+          slug={slug}
+          format="team"
+          item={member as unknown as DetailItem}
+          socialEmbeds={tiktokEmbeds}
+          siteData={siteData as unknown as RendererSiteData}
+          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
         />
         <Footer />
       </>
