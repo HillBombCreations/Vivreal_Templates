@@ -50,7 +50,14 @@ export async function createReview(data: ReviewData): Promise<boolean> {
           email: data.email,
           name: data.name,
           review: data.review,
+          // Numeric (decimal) — the backend stores rating as a number; the
+          // renderer/contract send 4.5 etc. Do not stringify.
           rating: data.rating,
+          // Honeypot rides inside objectValue (the backend validator only
+          // accepts collectionId/type/objectValue). The service reads
+          // objectValue.company_website, rejects if non-empty, and strips it
+          // before persisting.
+          company_website: data.company_website ?? '',
         },
       }),
     });

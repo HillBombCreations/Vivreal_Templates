@@ -42,4 +42,11 @@ export interface ContentLayoutProps {
   emptyMessage?: string;
   /** Page-level labels for layouts that need hero/page config */
   pageLabels?: Record<string, unknown>;
+  /**
+   * Per-section configuration carried from `PageCollectionBinding.sectionConfig`.
+   * Opaque here; consumed by individual layouts (e.g. `ReviewsLayout` reads
+   * `ratingIcon` / `ratingMax` / `ratingField`). Mirrors the renderer's
+   * `ContentLayoutProps.sectionConfig`.
+   */
+  sectionConfig?: Record<string, unknown>;
 }

@@ -3,7 +3,9 @@ import type { HomeSection, HomeSectionConfig, SiteData } from "@/types/SiteData"
 // Showcase sections
 import HighlightsSection from "./HighlightsSection";
 import Testimonials from "./Testimonials";
-import EmailPopup from "./EmailPopup";
+// NOTE: EmailPopup is NOT a composable body section. CC9 moved it to site chrome
+// (mounted in app/layout.tsx) so it can target any route + carry the authored
+// emailPopup config. It is intentionally absent from this section registry.
 
 // Ecommerce sections
 import HeroSectionEcommerce from "./HeroSectionEcommerce";
@@ -31,8 +33,6 @@ export function HomeSectionRenderer({ section, siteData, prefetchedData }: HomeS
       return <HighlightsSection {...props} />;
     case "testimonials":
       return <Testimonials {...props} />;
-    case "email-popup":
-      return <EmailPopup {...props} />;
     case "hero-ecommerce":
       return <HeroSectionEcommerce {...props} />;
     case "product-showcase":

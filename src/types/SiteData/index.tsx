@@ -1,5 +1,76 @@
 import type { MetadataRoute } from 'next';
-import type { NavMenuItem, NavbarCta, FooterColumn, FooterLegal } from '@hillbombcreations/site-renderer';
+import type {
+  NavMenuItem,
+  NavbarCta,
+  FooterColumn,
+  FooterLegal,
+  FooterBrand,
+  NavbarBrand,
+  CartIcon,
+  EmailPopupConfig,
+  SocialLink as RendererSocialLink,
+  Block,
+} from '@hillbombcreations/site-renderer';
+
+/**
+ * Per-block media descriptor — mirrors the renderer's `PageMediaDescriptor`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:236-240`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ */
+interface PageMediaDescriptor {
+  name?: string;
+  key?: string;
+  type?: string;
+}
+
+/**
+ * Hero background configuration — mirrors the renderer's `HeroBackground`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:251-264`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ */
+interface HeroBackground {
+  type: 'gradient' | 'image' | 'video';
+  image?: PageMediaDescriptor;
+  video?: PageMediaDescriptor;
+  poster?: PageMediaDescriptor;
+  overlay?: number;
+}
+
+/**
+ * Universal page hero struct — mirrors the renderer's `PageHero`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:275-287`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ *
+ * `heroImage` is the optional SIDE/feature image (NOT the background).
+ */
+export interface PageHero {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  heroImage?: PageMediaDescriptor;
+  buttonLabel?: string;
+  buttonLink?: string;
+  partnerTagline?: string;
+  trustIndicators?: { icon: string; text: string }[];
+  background?: HeroBackground;
+}
+
+/**
+ * Group B — a brand-override logo as delivered to the Templates wrapper. The
+ * renderer cannot sign URLs, so the WRAPPER signs. Brand override stores a bare
+ * `logoKey`; the backend (VR_Client_API getSiteDetails) signs it and delivers a
+ * sibling media object here (mirroring how `siteData.logo` arrives pre-signed
+ * with `currentFile.source`). Until the backend lands that, `logo` is absent and
+ * the wrapper falls back to inheriting the businessInfo logo.
+ */
+export interface BrandLogoMedia {
+    key?: string;
+    type?: string;
+    currentFile?: { source: string };
+}
 
 export interface Businessinfo {
     address?: {
@@ -61,6 +132,22 @@ export interface PageConfig {
     collections?: PageCollectionBinding[];
     integrations?: PageIntegrationBinding[];
     labels: Record<string, string>;
+    /**
+     * Dedicated universal hero struct (Group A §1 — blocks-unification ph.0).
+     * Mirror of the renderer's `PageHero` (`vivreal-site-renderer/src/types/SiteData.ts:302`).
+     * Absent on legacy pages not yet backfilled; the renderer falls back to `page.labels`
+     * for copy derivation. Ph.1 prefetch reads this via block bindings, not this field.
+     */
+    hero?: PageHero;
+    /**
+     * Authored building-block composition (blocks-unification ph.1 KEYSTONE).
+     * When present + non-empty, `collectBindingTargets` enumerates bindings from
+     * these blocks instead of the legacy `collections`/`integrations` arrays.
+     * `Block` is imported from `@hillbombcreations/site-renderer`
+     * (`vivreal-site-renderer/src/types/Block.ts`).
+     * Absent ⇒ legacy `getPageBindingsByRole` path runs unchanged (back-compat fallback).
+     */
+    blocks?: Block[];
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
     cta?: PageCtaConfig;
@@ -141,13 +228,35 @@ export interface SiteData {
     navigation?: {
         menuItems?: NavMenuItem[] | null;
         cta?: NavbarCta | null;
+        /**
+         * Group B — per-field inherit/override header brand. ABSENT key ⇒ inherit
+         * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
+         * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
+         */
+        brand?: (NavbarBrand & { logo?: BrandLogoMedia }) | null;
+        /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
+        cartIcon?: CartIcon | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
         columns?: FooterColumn[] | null;
         legal?: FooterLegal | null;
         hidePoweredBy?: boolean | null;
+        /**
+         * Group B — per-field inherit/override footer brand (logo + name + email).
+         * Same presence-means-override semantics as the header brand.
+         */
+        brand?: (FooterBrand & { logo?: BrandLogoMedia }) | null;
+        /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
+        socialLinks?: RendererSocialLink[] | null;
     } | null;
+    /**
+     * CC9 — Studio-authored email-capture popup config. Lazy: null/absent ⇒ the
+     * EmailPopup wrapper falls back to legacy behavior (implicit-on iff a
+     * subscribers collection exists, hardcoded copy, 3000ms, 24h, home-only).
+     * Plumbed through VR_Client_API getSiteDetails → getSiteData → here.
+     */
+    emailPopup?: EmailPopupConfig | null;
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
 }
