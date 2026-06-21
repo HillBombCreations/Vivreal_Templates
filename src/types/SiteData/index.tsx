@@ -9,7 +9,54 @@ import type {
   CartIcon,
   EmailPopupConfig,
   SocialLink as RendererSocialLink,
+  Block,
 } from '@hillbombcreations/site-renderer';
+
+/**
+ * Per-block media descriptor — mirrors the renderer's `PageMediaDescriptor`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:236-240`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ */
+interface PageMediaDescriptor {
+  name?: string;
+  key?: string;
+  type?: string;
+}
+
+/**
+ * Hero background configuration — mirrors the renderer's `HeroBackground`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:251-264`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ */
+interface HeroBackground {
+  type: 'gradient' | 'image' | 'video';
+  image?: PageMediaDescriptor;
+  video?: PageMediaDescriptor;
+  poster?: PageMediaDescriptor;
+  overlay?: number;
+}
+
+/**
+ * Universal page hero struct — mirrors the renderer's `PageHero`
+ * (`vivreal-site-renderer/src/types/SiteData.ts:275-287`).
+ * Re-declared here because the renderer package does not re-export it from index.ts.
+ * Keep in sync if the renderer shape changes.
+ *
+ * `heroImage` is the optional SIDE/feature image (NOT the background).
+ */
+export interface PageHero {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  heroImage?: PageMediaDescriptor;
+  buttonLabel?: string;
+  buttonLink?: string;
+  partnerTagline?: string;
+  trustIndicators?: { icon: string; text: string }[];
+  background?: HeroBackground;
+}
 
 /**
  * Group B — a brand-override logo as delivered to the Templates wrapper. The
@@ -85,6 +132,22 @@ export interface PageConfig {
     collections?: PageCollectionBinding[];
     integrations?: PageIntegrationBinding[];
     labels: Record<string, string>;
+    /**
+     * Dedicated universal hero struct (Group A §1 — blocks-unification ph.0).
+     * Mirror of the renderer's `PageHero` (`vivreal-site-renderer/src/types/SiteData.ts:302`).
+     * Absent on legacy pages not yet backfilled; the renderer falls back to `page.labels`
+     * for copy derivation. Ph.1 prefetch reads this via block bindings, not this field.
+     */
+    hero?: PageHero;
+    /**
+     * Authored building-block composition (blocks-unification ph.1 KEYSTONE).
+     * When present + non-empty, `collectBindingTargets` enumerates bindings from
+     * these blocks instead of the legacy `collections`/`integrations` arrays.
+     * `Block` is imported from `@hillbombcreations/site-renderer`
+     * (`vivreal-site-renderer/src/types/Block.ts`).
+     * Absent ⇒ legacy `getPageBindingsByRole` path runs unchanged (back-compat fallback).
+     */
+    blocks?: Block[];
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
     cta?: PageCtaConfig;
