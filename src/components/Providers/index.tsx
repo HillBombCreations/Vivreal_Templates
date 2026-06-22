@@ -48,6 +48,16 @@ const Providers = ({
             (p.integrations ?? []).some(
                 (i) => (i.type ?? i.name ?? '').toLowerCase() === 'stripe'
             )
+        ) ||
+        // SP-4: a page may record its stripe integration only in a block binding
+        // (after the legacy integrations[] array is stripped). Detect that too so
+        // the cart stays wired.
+        pages.some((p) =>
+            (p.blocks ?? []).some((b) =>
+                (b?.config?.bindings ?? []).some(
+                    (bd) => (bd?.integrationProvider ?? '').toLowerCase() === 'stripe'
+                )
+            )
         );
 
     const content = (
