@@ -150,6 +150,20 @@ export const getPageLabel = (
 
 /**
  * Helper to get a collection ID from page config, falling back to env var.
+ *
+ * SP-6 Task 1 (D-E, additive superset): resolution order:
+ *   1. Page-template block binding (blocks-first, post-SP-3 backfill)
+ *   2. Legacy page.collectionId (pre-SP-7 fallback)
+ *   3. Legacy page.collections[0].collectionId (pre-SP-7 fallback)
+ *   4. Env-var fallback (Comedy Collective / EastTenn SHOWS_ID / TEAMMEMBERS_ID)
+ *
+ * The block path picks the CONTENT binding — the first page-template block's
+ * first binding that carries a collectionId (skips filter/secondary bindings).
+ * Shows/team page-templates carry a single content binding; products uses a
+ * different reader (env SITE_ID), so the single-binding assumption holds here.
+ *
+ * Un-migrated sites (no blocks) behave identically to before this change.
+ * SP-7 can safely $unset collectionId + collections once all sites are backfilled.
  */
 export const getPageCollectionId = (
   siteData: SiteData,
@@ -157,8 +171,17 @@ export const getPageCollectionId = (
   envFallback: string
 ): string => {
   const page = siteData.pageConfigs?.find((p) => p.name === pageName);
-  // Support both old format (collectionId on page) and new universal format (collections array)
-  return page?.collectionId || page?.collections?.[0]?.collectionId || envFallback;
+  if (!page) return envFallback;
+
+  // 1. Block binding — read first page-template block's first content binding.
+  const blockCollectionId = page.blocks
+    ?.find((b) => b?.type?.kind === 'page-template')
+    ?.config?.bindings
+    ?.find((bd) => bd.collectionId)
+    ?.collectionId;
+
+  // Additive superset: block → legacy collectionId → legacy collections → env.
+  return blockCollectionId || page.collectionId || page.collections?.[0]?.collectionId || envFallback;
 };
 
 /**

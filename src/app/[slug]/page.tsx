@@ -1,22 +1,17 @@
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import { CTASectionTemplate, MenuPage } from "@/components/RendererExports";
-import type {
-  SiteData as RendererSiteData,
-  MenuCategory,
-  MenuItem,
-} from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { getPageBySlug } from "@/lib/pages";
-import { getPageData } from "@/lib/api/pageData";
-import ContentRenderer from "@/components/ContentRenderer";
-import PageShell from "@/components/PageShell";
-import { getCollectionItems } from "@/lib/api/collections";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
 // component file is retained until it is retired post-dogfood validation.
-import SubscribeClient from "@/components/PageTemplates/SubscribeClient";
+// SP-6: SubscribeClient now injected via composePage components override.
+// SP-6: this file no longer imports getPageData/ContentRenderer/PageShell/MenuPage/
+// getCollectionItems (the legacy arms that used them were migrated to composePage).
+// Those module files still exist (used elsewhere or pending Task 9 deletion) but are
+// no longer referenced HERE.
+import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
@@ -29,6 +24,21 @@ export const revalidate = 0;
 // at a time, parity-gated; any format NOT listed here keeps the legacy per-format
 // JSX below. The live site and the Studio preview both render listed formats
 // through the same composePage(), so they can no longer drift.
+//
+// SP-6 additions:
+//   "menu"      — Task 2: composePage reads buildMenuSections (legacy fallback)
+//                 or the menu page-template block (blocks-first). CTA: rendered only
+//                 when page.cta exists (legacy default-on band dropped — 0 live pages).
+//   "subscribe" — Task 3: composePage with synthesized subscribe block + injected
+//                 SubscribeClientAdapter. buildSections dispatch returns [] for
+//                 subscribe (by design), so the block path is MANDATORY.
+//   "standard"  — Task 5 (OQ-3 decision a): add known generic format strings
+//                 incrementally. 0 live generic pages today (DB verified 2026-06-21).
+//                 Fall-through to buildGenericSections (legacy) or block path.
+//
+// NOTE: "subscribers" is NOT added here — it must remain unreachable as a route.
+// Task 5 adds an explicit notFound() guard before the composePage render to
+// enforce this even after Task 8 gives the synthetic page a subscribe block.
 const COMPOSE_FORMATS = new Set<string>([
   "static",
   "shows",
@@ -44,6 +54,14 @@ const COMPOSE_FORMATS = new Set<string>([
   // no submitMode (no CC8 backfill yet) composes to the legacy contact form
   // (email path) — graceful degradation, not a crash. See FormClient (retired).
   "form",
+  // SP-6 Task 2 — menu arm migration
+  "menu",
+  // SP-6 Task 3 — subscribe arm migration
+  "subscribe",
+  // SP-6 Task 5 — generic arm migration (OQ-3 decision a: incremental allowlist)
+  "standard",
+  "list",
+  "grid",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -70,10 +88,22 @@ export default async function DynamicPage({
   const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
   const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;
 
-  // Composed formats (Plan 4) — render through the same composePage() the Studio
-  // preview uses. Handled first so static can render with pageConfig undefined
+  // OQ-5 guard (SP-6 Task 5, reviewer Concern #2): the VR_Client_API synthetic
+  // "subscribers" page must never be a navigable route — it exists solely so
+  // EmailPopup can find the subscribers collection ID. Once Task 8 gives the
+  // synthetic page a subscribe block, the blocks-first path in buildSections
+  // short-circuits on blocks.length>0 and would render the subscribe form at
+  // /subscribers instead of 404ing. The explicit guard here keeps /subscribers
+  // unreachable as a route regardless of what the synthetic page carries, and
+  // prevents future regressions if "subscribers" is accidentally added to
+  // COMPOSE_FORMATS or the dispatch fall-through is restructured.
+  if (format === "subscribers") return notFound();
+
+  // Composed formats (Plan 4 + SP-6) — render through the same composePage() the
+  // Studio preview uses. Handled first so static can render with pageConfig undefined
   // (privacy/terms always exist even without a portal page config).
   if (composeFormat(format)) {
+
     let composedPage: PageConfig;
     if (format === "static") {
       // Static (privacy/terms): resolve labels via getPageLabel exactly as the
@@ -87,10 +117,61 @@ export default async function DynamicPage({
       composedPage = pageConfig
         ? { ...pageConfig, labels }
         : { name, slug, format, collectionId: null, labels };
+    } else if (format === "subscribe") {
+      // SP-6 Task 3 — subscribe arm migration.
+      //
+      // buildSections dispatch returns [] for format:'subscribe' by design
+      // (the consumer owns the form injection). The block path is MANDATORY here:
+      // we must ensure composedPage carries a subscribe page-template block so
+      // mapBlocks routes through the SubscribePage mapper (blocks.ts:286).
+      //
+      // Additive superset: if the page already has a subscribe block (authored or
+      // SP-3-backfilled), pass it through unchanged. If not (legacy collectionId
+      // path), synthesize a one-block composedPage — same pattern as the static
+      // synthesis above. SP-7 will $unset collectionId after this migration lands.
+      const hasSubscribeBlock = (pageConfig?.blocks ?? []).some(
+        (b) => b?.type?.kind === "page-template" && b?.type?.dispatchId === "subscribe",
+      );
+      if (!hasSubscribeBlock) {
+        // Resolve the collection id via the legacy fields (additive: these still
+        // exist until SP-7 $unsets them; the block binding is the SP-6+ path).
+        const legacyCollectionId =
+          pageConfig?.collectionId ?? pageConfig?.collections?.[0]?.collectionId ?? "";
+        composedPage = {
+          ...(pageConfig ?? { name, slug, format, collectionId: null, labels: {} }),
+          blocks: [
+            {
+              id: `subscribe-synthesized-0`,
+              type: { kind: "page-template" as const, dispatchId: "subscribe" },
+              order: 0,
+              enabled: true,
+              config: {
+                bindings: [
+                  { collectionId: legacyCollectionId || undefined, role: "primary" as const },
+                ],
+              },
+            },
+          ],
+        };
+      } else {
+        composedPage = pageConfig!;
+      }
     } else {
-      // Other composed formats (shows, team, products, checkout) always have a
-      // portal page config (reached before the !pageConfig notFound guard below).
-      // Pass it straight through — composePage owns their label defaults + shaping.
+      // All other composed formats (shows, team, products, checkout, menu,
+      // schedule, form, generic) always have a portal page config (reached before
+      // the !pageConfig notFound guard below). Pass through — composePage owns
+      // their label defaults + shaping.
+      //
+      // menu: buildMenuSections is the dispatch fallback (legacy collections)
+      //   OR the menu page-template block (blocks-first, post-SP-3). CTA note:
+      //   buildMenuSections appends maybeCtaSection, which renders ONLY when page.cta
+      //   exists/enabled. The legacy arm rendered a default-on CTA band even without a
+      //   cta field — so a cta-less menu page loses that default band. Accepted: 0 live
+      //   menu pages, and an empty default CTA pointing nowhere is low value.
+      // generic (standard/list/grid): buildGenericSections is the dispatch fallback
+      //   OR layout/collection blocks (blocks-first, post-SP-3). Sidebar drops for
+      //   free — buildGenericSections flattens it into the linear body (D-B audit:
+      //   0 sidebar-role bindings on any live page; safe to drop the two-column mode).
       composedPage = pageConfig!;
     }
 
@@ -101,7 +182,16 @@ export default async function DynamicPage({
     let productQuery:
       | { filters?: Record<string, string>; search?: string; sort?: string }
       | undefined;
-    let components: { ProductsPage: typeof ProductsPageComposed } | undefined;
+    // Components override: ProductsPage (B1) + SubscribePage (SP-6 Task 3).
+    // Both may be set independently (products and subscribe are mutually exclusive
+    // format paths, so at most one will be non-undefined per render).
+    let components:
+      | {
+          ProductsPage?: typeof ProductsPageComposed;
+          SubscribePage?: typeof SubscribeClientAdapter;
+        }
+      | undefined;
+
     if (format === "products") {
       const sp = (await searchParams) ?? {};
       const filters: Record<string, string> = {};
@@ -116,18 +206,79 @@ export default async function DynamicPage({
         sort: typeof sp.sort === "string" ? sp.sort : undefined,
       };
       components = { ProductsPage: ProductsPageComposed };
+    } else if (format === "subscribe") {
+      // SP-6 Task 3: inject the live SubscribeClient (form + API wiring) via the
+      // SubscribeClientAdapter (which bridges the labels type narrowing). composePage
+      // passes CollectionId + labels from the shaped subscribe payload to the adapter.
+      components = { SubscribePage: SubscribeClientAdapter };
     }
 
-    const { input } = await buildPageContext({
+    const { input, isEmpty } = await buildPageContext({
       siteData,
       page: composedPage,
       isHome: false,
       productQuery,
     });
 
+    // SP-6 Task 5 (OQ-5 complement): generic-format empty pages → notFound().
+    // Mirrors the legacy guard at the old generic arm (:243). Only applies to
+    // formats that fall through to buildGenericSections (not static/checkout/shows
+    // etc — those have non-empty content by definition or their own empty handling).
+    // buildPageContext.isEmpty already excludes static/checkout-success/checkout-cancel.
+    if (isEmpty && (format === "standard" || format === "list" || format === "grid")) {
+      return notFound();
+    }
+
+    // SP-6 Task 5 — Concern-3 transitional title band (B-wrapper fallback).
+    //
+    // buildGenericSections emits flat layout sections but NO page-level title band
+    // (the legacy PageShell provided it). Per the epic model (B-author), the SP-3
+    // backfill will emit a leading Section Header block that composePage renders
+    // as the title — but until a generic page is backfilled, the title would
+    // vanish. This guard self-disables once the page has a section-header block:
+    //
+    //   - Show the fallback band ONLY when:
+    //       (a) the format is generic (standard/list/grid)
+    //       (b) the page has a labels.title
+    //       (c) the page's blocks[] does NOT already lead with a section-header
+    //
+    // Any section-header block anywhere in blocks[] (not just leading) suppresses
+    // the fallback, because post-backfill the block owns the heading role.
+    const isGenericFormat = format === "standard" || format === "list" || format === "grid";
+    const hasLabelTitle = !!(composedPage.labels?.title);
+    const hasSectionHeaderBlock = (composedPage.blocks ?? []).some(
+      // A Section Header block has type.kind:'static' + type.dispatchId:'section-header'
+      // (renderer registry.js:152, defaultBlocks.js:100). 'section-header' is a
+      // dispatchId, NOT a BlockKind — so match on dispatchId. Matching kind here would
+      // never fire → double-title once SP-3 backfills the leading Section Header.
+      (b) => b?.type?.dispatchId === "section-header",
+    );
+    const showTransitionalTitleBand = isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock;
+
     return (
       <>
         <Navbar />
+        {showTransitionalTitleBand && (
+          // Transitional title band: renders the legacy page.labels.title/subtitle
+          // so generic pages that haven't been SP-3-backfilled still show their H1.
+          // Self-disables once the page carries a section-header block (B-author model).
+          // Matches the PageShell header styling (content-grid pt-28 pb-0).
+          <div className="content-grid pt-28 pb-0">
+            <header className="mb-8">
+              <h1
+                className="text-3xl md:text-4xl font-bold tracking-tight"
+                style={{ color: "var(--text-primary)" }}
+              >
+                {composedPage.labels.title}
+              </h1>
+              {composedPage.labels.subtitle && (
+                <p className="mt-2 text-lg text-muted-foreground">
+                  {composedPage.labels.subtitle}
+                </p>
+              )}
+            </header>
+          </div>
+        )}
         {composePage(
           components
             ? { ...input, options: { ...input.options!, components } }
@@ -138,139 +289,18 @@ export default async function DynamicPage({
     );
   }
 
-  // Beyond this point pageConfig is always defined (non-static formats require a page config)
+  // Beyond this point pageConfig is always defined (non-static formats require a page config).
+  // SP-6: menu/subscribe/standard/list/grid are now in COMPOSE_FORMATS and handled above.
   if (!pageConfig) return notFound();
-
-  // Per-page CTA: enabled by default, controllable from portal
-  const showCta = pageConfig.cta?.enabled !== false;
-  const ctaConfig = pageConfig.cta ?? {};
-
-  // Restaurant menu pages — menu format (Iter 5)
-  // Convention: first collection binding is Menu Categories (filter nav),
-  // second binding is Menu Items (the dishes). Matches the restaurant
-  // blueprint seeded by VR_Secure_API.buildRestaurantPages.
-  if (format === "menu") {
-    const bindings = pageConfig.collections ?? [];
-    // Find by role or name — primary binding = items, supplemental = categories.
-    const categoriesBinding = bindings.find(
-      (b) => (b.name ?? '').toLowerCase().includes('categor'),
-    ) ?? bindings[0];
-    const itemsBinding = bindings.find(
-      (b) => (b.name ?? '').toLowerCase().includes('item'),
-    ) ?? bindings[bindings.length - 1];
-
-    const categoriesCollectionId = categoriesBinding?.collectionId || '';
-    const itemsCollectionId = itemsBinding?.collectionId || '';
-
-    const [categoriesRes, itemsRes] = await Promise.all([
-      categoriesCollectionId
-        ? getCollectionItems(categoriesCollectionId)
-        : Promise.resolve({ items: [], totalCount: 0 }),
-      itemsCollectionId
-        ? getCollectionItems(itemsCollectionId)
-        : Promise.resolve({ items: [], totalCount: 0 }),
-    ]);
-
-    // Map raw ContentItems to the MenuPage shape. Keep the mapping narrow —
-    // the renderer doesn't know about CMS internals.
-    const categories: MenuCategory[] = categoriesRes.items.map((raw, idx) => {
-      const r = raw as unknown as Record<string, unknown>;
-      return {
-        id: typeof r.id === 'string' ? r.id : `cat-${idx}`,
-        name: typeof r.name === 'string' ? r.name : `Category ${idx + 1}`,
-        order: typeof r.order === 'number' ? r.order : idx,
-        icon: typeof r.icon === 'string' ? r.icon : undefined,
-        description: typeof r.description === 'string' ? r.description : undefined,
-      };
-    });
-
-    const items: MenuItem[] = itemsRes.items.map((raw, idx) => {
-      const r = raw as unknown as Record<string, unknown>;
-      const dietary = Array.isArray(r.dietaryTags)
-        ? (r.dietaryTags as unknown[]).filter((t): t is string => typeof t === 'string')
-        : undefined;
-      return {
-        id: typeof r.id === 'string' ? r.id : `item-${idx}`,
-        name: typeof r.name === 'string' ? r.name : 'Untitled',
-        description: typeof r.description === 'string' ? r.description : undefined,
-        price: typeof r.price === 'number' ? r.price : undefined,
-        priceDisplay: typeof r.priceDisplay === 'string' ? r.priceDisplay : undefined,
-        category: typeof r.category === 'string' ? r.category : undefined,
-        dietaryTags: dietary,
-      };
-    });
-
-    return (
-      <>
-        <Navbar />
-        <MenuPage
-          categories={categories}
-          items={items}
-          title={pageConfig.labels?.title as string | undefined}
-          subtitle={pageConfig.labels?.subtitle as string | undefined}
-        />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
 
   // CC8 Phase 4: form/review pages are now composed (see COMPOSE_FORMATS +
   // the composeFormat() block above). The legacy <FormClient> branch is removed
   // from the routing path here; FormClient itself is retired in a SEPARATE
   // commit after dogfood validation (publish-gate phasing). No fallback cycle.
 
-  // Subscribe / newsletter pages
-  if (format === "subscribe") {
-    return (
-      <>
-        <Navbar />
-        <SubscribeClient
-          collectionId={pageConfig.collectionId ?? ""}
-          labels={pageConfig.labels ?? {}}
-        />
-        {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-        <Footer />
-      </>
-    );
-  }
-
-  // Generic binding-driven pages (list, grid, standard, or any custom format)
-  const pageData = await getPageData(pageConfig);
-  const detailEnabled = pageConfig.detailPage?.enabled !== false;
-  const hasAnyContent = [...pageData.primary, ...pageData.secondary, ...pageData.supplemental, ...pageData.sidebar].some(s => s.items.length > 0);
-
-  if (!hasAnyContent) return notFound();
-
-  return (
-    <>
-      <Navbar />
-      <PageShell
-        title={pageConfig.labels?.title}
-        subtitle={pageConfig.labels?.subtitle}
-        sidebar={
-          pageData.sidebar.length > 0
-            ? <>{pageData.sidebar.map((s, i) => (
-                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={s.sectionConfig} />
-              ))}</>
-            : undefined
-        }
-        supplemental={
-          pageData.supplemental.length > 0
-            ? <>{pageData.supplemental.map((s, i) => (
-                <ContentRenderer key={i} items={s.items} displayAs={s.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={s.sectionConfig} />
-              ))}</>
-            : undefined
-        }
-      >
-        {[...pageData.primary, ...pageData.secondary].map((section, i) => (
-          <ContentRenderer key={i} items={section.items} displayAs={section.displayAs} slug={slug} detailEnabled={detailEnabled} sectionConfig={section.sectionConfig} />
-        ))}
-      </PageShell>
-      {showCta && <CTASectionTemplate config={ctaConfig} siteData={siteData as unknown as RendererSiteData} />}
-      <Footer />
-    </>
-  );
+  // All formats handled by COMPOSE_FORMATS or the detail route below.
+  // Any format that reaches this point falls through to notFound().
+  return notFound();
 }
 
 const STATIC_PAGE_TITLES: Record<string, string> = {
