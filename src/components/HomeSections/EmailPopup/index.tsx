@@ -70,11 +70,31 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
     return isHome;
   })();
 
-  // ── Resolve collectionId: explicit config, or the subscribers page's id.
+  // ── Resolve collectionId. Precedence (per SP-6 Task 6 / OQ-7):
+  //   1. cfg.collectionId — Studio-authored EmailPopup override. MUST stay FIRST:
+  //      demoting it would silently re-target the live popup to the wrong list on
+  //      any site that set an explicit override (reviewer Concern #1).
+  //   2. subscribe block binding on the synthetic subscribers page (D-G, Task 8).
+  //      After VR_Client_API Task 8 deploys, the synthetic page carries a
+  //      page-template:subscribe block whose binding.collectionId matches the
+  //      legacy collectionId field exactly — this path becomes the canonical read.
+  //   3. Legacy subPage.collectionId — fallback through the SP-7 $unset window.
+  //      Before Task 8 deploys, the block lookup misses and this leg keeps the
+  //      live popup working. After Task 8, both legs return the same value; the
+  //      block leg wins first, the legacy leg remains as a belt-and-suspenders
+  //      fallback until SP-7 $unsets it.
+  //   4. "" — no subscribers collection found; subscribeUser is a no-op.
+  const subPage = siteData?.pageConfigs?.find((p) => p.format === "subscribers");
   const collectionId =
-    cfg.collectionId ||
-    siteData?.pageConfigs?.find((p) => p.format === "subscribers")
-      ?.collectionId ||
+    cfg.collectionId ??
+    subPage?.blocks
+      ?.find(
+        (b) =>
+          b?.type?.kind === "page-template" &&
+          b?.type?.dispatchId === "subscribe",
+      )
+      ?.config?.bindings?.find((bd) => bd.collectionId)?.collectionId ??
+    subPage?.collectionId ??
     "";
 
   // Guard so trigger listeners can't fire after we've decided to open / unmount.
