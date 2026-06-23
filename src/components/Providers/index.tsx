@@ -60,8 +60,16 @@ const Providers = ({
             )
         );
 
+    // S2/OD#3: pass the Maps API key so keyed Google Maps Embed API URLs
+    // are used in the schedule page's map view. Falls back to the keyless embed
+    // when the env var is not configured — nothing breaks.
+    // `mapsApiKey` is added to `NextSiteRendererProvider` in the renderer working
+    // tree but not yet in the installed 1.17.0 package. Cast required until the
+    // package is bumped. Remove the cast + eslint-disable when bumped.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const NextProvider = NextSiteRendererProvider as any;
     const content = (
-        <NextSiteRendererProvider>
+        <NextProvider mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}>
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
             <AppToaster />
@@ -69,7 +77,7 @@ const Providers = ({
             {children}
         </TooltipProvider>
         </QueryClientProvider>
-        </NextSiteRendererProvider>
+        </NextProvider>
     );
 
     return (

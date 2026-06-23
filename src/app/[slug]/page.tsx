@@ -16,7 +16,10 @@ import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
+import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import type { PageConfig } from "@/types/SiteData";
+// S2/OD#3 — schedule view type for ?view= param validation.
+import type { ScheduleView } from "@hillbombcreations/site-renderer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,6 +45,11 @@ export const revalidate = 0;
 // enforce this even after Task 8 gives the synthetic page a subscribe block.
 const COMPOSE_FORMATS = new Set<string>([
   "static",
+  // Batch 4 (item 12b) — the block-composed About page type. Falls through to the
+  // generic `else` branch below (pageConfig pass-through) → composePage renders its
+  // section-header + about blocks via mapBlocks. Without this entry an About page
+  // (format:'about') is not a recognized route and 404s (the /about-us regression).
+  "about",
   "shows",
   "team",
   "checkout-success",
@@ -183,16 +191,20 @@ export default async function DynamicPage({
     let productQuery:
       | { filters?: Record<string, string>; search?: string; sort?: string }
       | undefined;
-    // Components override: ProductsPage (B1) + SubscribePage (SP-6 Task 3).
-    // Both may be set independently (products and subscribe are mutually exclusive
-    // format paths, so at most one will be non-undefined per render).
-    let components:
-      | {
-          ProductsPage?: typeof ProductsPageComposed;
-          CoordinatedProducts?: typeof CoordinatedProductsComposed;
-          SubscribePage?: typeof SubscribeClientAdapter;
-        }
-      | undefined;
+    // Components override: ProductsPage (B1) + SubscribePage (SP-6 Task 3)
+    // + CoordinatedSchedule (S2).
+    // Formats are mutually exclusive so at most one override set fires per render.
+    // `as any` on the type is required for CoordinatedSchedule: the key is defined
+    // in the renderer working tree but not yet in the installed 1.17.0 package's
+    // CompositionComponentOverrides. Remove the cast when the package is bumped.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let components: any;
+
+    // S2/OD#3 — schedule active view from `?view=` searchParam.
+    // Validated against the three legal values (agenda|month|map); any other
+    // value is dropped (undefined → provider uses pageConfig.defaultView).
+    // Only parsed for schedule format to avoid touching other routes.
+    let scheduleView: ScheduleView | undefined;
 
     if (format === "products") {
       const sp = (await searchParams) ?? {};
@@ -216,6 +228,21 @@ export default async function DynamicPage({
       components = {
         ProductsPage: ProductsPageComposed,
         CoordinatedProducts: CoordinatedProductsComposed,
+      };
+    } else if (format === "schedule") {
+      // S2/OD#3: wire the coordinated schedule override (URL-sync + initialView).
+      // The monolith page-template arm (SchedulePage, via renderPageTemplate) also
+      // exists for legacy non-atomized schedule pages — the `CoordinatedSchedule`
+      // override fires ONLY when the page carries a group(coordinated:'schedule').
+      // Both can be set; only one arm fires per render depending on the page topology.
+      const sp = (await searchParams) ?? {};
+      const viewParam = typeof sp.view === "string" ? sp.view : undefined;
+      // Validate against the three legal values — drop anything else.
+      if (viewParam === "agenda" || viewParam === "month" || viewParam === "map") {
+        scheduleView = viewParam;
+      }
+      components = {
+        CoordinatedSchedule: CoordinatedScheduleComposed,
       };
     } else if (format === "subscribe") {
       // SP-6 Task 3: inject the live SubscribeClient (form + API wiring) via the
@@ -291,8 +318,21 @@ export default async function DynamicPage({
           </div>
         )}
         {composePage(
-          components
-            ? { ...input, options: { ...input.options!, components } }
+          components || scheduleView
+            ? {
+                ...input,
+                options: {
+                  ...input.options!,
+                  ...(components ? { components } : {}),
+                  // S2/OD#3: thread the validated ?view= param so the coordinated
+                  // schedule arm can pass it as `initialView` to the override.
+                  // Cast required: `scheduleView` is added to CompositionOptions in
+                  // the renderer working tree but not yet in the installed 1.17.0
+                  // package. This cast is removed when the package is bumped.
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  ...(scheduleView ? { scheduleView } as any : {}),
+                },
+              }
             : input,
         )}
         <Footer />
