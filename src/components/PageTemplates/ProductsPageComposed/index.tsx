@@ -1,7 +1,5 @@
 "use client";
 
-import { useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 import { ProductsPage } from "@hillbombcreations/site-renderer";
 import type {
   ContentItem,
@@ -10,8 +8,7 @@ import type {
 } from "@hillbombcreations/site-renderer";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import SiteRendererBridge from "@/components/SiteRendererBridge";
-
-const ITEMS_PER_PAGE = 15;
+import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsLiveAdapters";
 
 /**
  * Live ProductsPage injected into composePage via `CompositionOptions.components`
@@ -26,6 +23,10 @@ const ITEMS_PER_PAGE = 15;
  * those same params to `items`) and routes filter/sort/search changes back to
  * the URL. This is the composePage analog of `ProductsPageClient`, which it
  * supersedes for migrated routes (legacy client kept as the rollback path).
+ *
+ * The controlled-query / detail-routing / pagination wiring is shared with the
+ * atomized `CoordinatedProductsComposed` via `useProductsLiveAdapters`, so the
+ * monolith and the coordinated topology stay byte-for-byte live-identical.
  */
 export default function ProductsPageComposed({
   items,
@@ -36,10 +37,8 @@ export default function ProductsPageComposed({
   detailEnabled = true,
   sectionConfig,
 }: ProductsPageProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const siteData = useSiteData();
-  const [isPending, startTransition] = useTransition();
+  const adapters = useProductsLiveAdapters({ slug, detailEnabled });
 
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
 
@@ -49,39 +48,6 @@ export default function ProductsPageComposed({
   const itemsWithFallback: ContentItem[] = items.map((it) =>
     it.imageUrl ? it : { ...it, imageUrl: siteLogo },
   );
-
-  // Seed the controls from the URL — the server already filtered `items` by
-  // exactly these params (f_<key> / search / sort).
-  const initialFilters: Record<string, string> = {};
-  for (const [key, val] of searchParams.entries()) {
-    if (key.startsWith("f_") && val) initialFilters[key.slice(2)] = val;
-  }
-  const initialSearch = searchParams.get("search") ?? undefined;
-  const initialSort = searchParams.get("sort") ?? undefined;
-
-  // Replicates the legacy ProductsPageClient query replacement: build
-  // f_<key> / search / sort params and router.replace inside a transition so
-  // the renderer can disable controls while the server refetch is pending.
-  const replaceProductsQuery = (next: {
-    filters: Record<string, string>;
-    sort: string;
-    search: string;
-  }) => {
-    const params = new URLSearchParams();
-    for (const [key, val] of Object.entries(next.filters)) {
-      if (key && val) params.set(`f_${key}`, val);
-    }
-    if (next.search?.trim()) params.set("search", next.search.trim());
-    if (next.sort && next.sort !== "featured") params.set("sort", next.sort);
-
-    const qs = params.toString();
-    // scroll: false — a filter/sort/search change must NOT reposition the
-    // viewport. Without it, Next.js App Router scrolls to the top on every
-    // navigation, so each filter click jarringly jumps the user back up.
-    startTransition(() =>
-      router.replace(qs ? `/${slug}?${qs}` : `/${slug}`, { scroll: false }),
-    );
-  };
 
   return (
     <SiteRendererBridge>
@@ -93,17 +59,13 @@ export default function ProductsPageComposed({
         displayAs={displayAs}
         sectionConfig={sectionConfig}
         siteData={siteData as unknown as RendererSiteData}
-        initialFilters={initialFilters}
-        initialSort={initialSort}
-        initialSearch={initialSearch}
-        onQueryChange={replaceProductsQuery}
-        itemsPerPage={ITEMS_PER_PAGE}
-        loading={isPending}
-        onProductClick={
-          detailEnabled
-            ? (item) => router.push(`/${slug}/${encodeURIComponent(item.id)}`)
-            : undefined
-        }
+        initialFilters={adapters.initialFilters}
+        initialSort={adapters.initialSort}
+        initialSearch={adapters.initialSearch}
+        onQueryChange={adapters.onQueryChange}
+        itemsPerPage={adapters.itemsPerPage}
+        loading={adapters.loading}
+        onProductClick={adapters.onProductClick}
       />
     </SiteRendererBridge>
   );
