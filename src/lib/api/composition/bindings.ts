@@ -31,16 +31,24 @@ function collectFromBlocks(
   integrationTypes: Set<string>,
 ): void {
   for (const block of blocks) {
+    // Live CMS block data can omit `config` even though the published Block type
+    // declares it required (e.g. coordinated-products group children authored
+    // without a binding). Skip such blocks defensively — they contribute no
+    // bindings and no children — rather than dereferencing `undefined.config`.
+    // Mirrors the optional-chaining block reads in `getPageCollectionId`.
+    const config = block?.config;
+    if (!config) continue;
+
     // Recurse into group-kind children (D-B nesting: group blocks carry
     // config.children[] which are full Block objects mapped recursively).
     // Cast kind to string: 'group' is not in the published BlockKind union yet
     // (ph.0 adds it in the renderer source; published ^1.11.0 lacks it). The
     // cast is safe — unknown kinds are simply ignored by all other branches.
-    if ((block.type.kind as string) === 'group' && Array.isArray(block.config.children)) {
-      collectFromBlocks(block.config.children as Block[], collectionIds, integrationTypes);
+    if ((block.type?.kind as string) === 'group' && Array.isArray(config.children)) {
+      collectFromBlocks(config.children as Block[], collectionIds, integrationTypes);
     }
 
-    for (const binding of block.config.bindings ?? []) {
+    for (const binding of config.bindings ?? []) {
       if (binding.collectionId) {
         collectionIds.add(binding.collectionId);
       }
