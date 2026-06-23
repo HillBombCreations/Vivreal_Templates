@@ -15,6 +15,7 @@ import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAd
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
+import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
 import type { PageConfig } from "@/types/SiteData";
 
 export const dynamic = "force-dynamic";
@@ -188,6 +189,7 @@ export default async function DynamicPage({
     let components:
       | {
           ProductsPage?: typeof ProductsPageComposed;
+          CoordinatedProducts?: typeof CoordinatedProductsComposed;
           SubscribePage?: typeof SubscribeClientAdapter;
         }
       | undefined;
@@ -205,7 +207,16 @@ export default async function DynamicPage({
         search: typeof sp.search === "string" ? sp.search : undefined,
         sort: typeof sp.sort === "string" ? sp.sort : undefined,
       };
-      components = { ProductsPage: ProductsPageComposed };
+      // Wire BOTH products topologies live (G4 part ①): the monolith
+      // page-template via ProductsPage, AND the atomized
+      // group(coordinated:'products') via CoordinatedProducts. A products page
+      // renders through exactly one arm depending on whether its blocks contain
+      // the coordinated group — both overrides set, only one fires. The Studio
+      // preview (which never passes these overrides) stays bare/uncontrolled.
+      components = {
+        ProductsPage: ProductsPageComposed,
+        CoordinatedProducts: CoordinatedProductsComposed,
+      };
     } else if (format === "subscribe") {
       // SP-6 Task 3: inject the live SubscribeClient (form + API wiring) via the
       // SubscribeClientAdapter (which bridges the labels type narrowing). composePage
