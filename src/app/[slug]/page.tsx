@@ -165,11 +165,81 @@ export default async function DynamicPage({
       } else {
         composedPage = pageConfig!;
       }
+    } else if (format === "checkout-success" || format === "checkout-cancel") {
+      // Checkout result pages (Items 4/6 fix).
+      //
+      // buildSections delegates unconditionally to mapBlocks (ph.6). The
+      // checkout-status page-template block produces the CheckoutSection that
+      // CheckoutResultTemplate renders. Existing production pages were seeded with
+      // checkout-status blocks in the Phase-B backfill before GATE-1, so they
+      // already carry one and we pass them through unchanged.
+      //
+      // A freshly-created checkout page has NO checkout-status block, so mapBlocks
+      // produces [] and the page renders empty. Fix: synthesize a checkout-status
+      // block at READ TIME when none exists, populating config.labels from the page's
+      // authored page.labels (heading/body/buttonLabel). This is the same additive-
+      // superset pattern used by the subscribe arm above — no migration needed.
+      //
+      // Guard: only synthesize when no checkout-status block is already stored.
+      // When one exists (seeded pages + any future authored blocks), pass the page
+      // through unchanged but ensure its config.labels reflect the current page.labels
+      // so a user's copy edits in CheckoutLabelsEditor are visible immediately.
+      const existingBlock = (pageConfig?.blocks ?? []).find(
+        (b) => b?.type?.kind === "page-template" && b?.type?.dispatchId === "checkout-status",
+      );
+      if (!existingBlock) {
+        // No stored checkout-status block — synthesize one from page.labels.
+        const pageLabels = pageConfig?.labels ?? {};
+        composedPage = {
+          ...(pageConfig ?? { name, slug, format, collectionId: null, labels: {} }),
+          blocks: [
+            {
+              id: "checkout-status-synthesized-0",
+              type: { kind: "page-template" as const, dispatchId: "checkout-status" },
+              order: 0,
+              enabled: true,
+              config: {
+                labels: {
+                  success: format === "checkout-success",
+                  heading: pageLabels.heading ?? "",
+                  body: pageLabels.body ?? "",
+                  buttonLabel: pageLabels.buttonLabel ?? "",
+                },
+              },
+            },
+          ],
+        };
+      } else {
+        // Stored checkout-status block exists. Overlay its config.labels with the
+        // current page.labels so copy edits from CheckoutLabelsEditor are reflected
+        // without requiring a separate block-level save. The block id/order are
+        // preserved; this overlay is read-only (never persisted).
+        const pageLabels = pageConfig!.labels ?? {};
+        const patchedBlock: typeof existingBlock = {
+          ...existingBlock,
+          config: {
+            ...existingBlock.config,
+            labels: {
+              ...((existingBlock.config?.labels as Record<string, unknown>) ?? {}),
+              success: format === "checkout-success",
+              heading: pageLabels.heading ?? (existingBlock.config?.labels as Record<string, unknown>)?.heading ?? "",
+              body: pageLabels.body ?? (existingBlock.config?.labels as Record<string, unknown>)?.body ?? "",
+              buttonLabel: pageLabels.buttonLabel ?? (existingBlock.config?.labels as Record<string, unknown>)?.buttonLabel ?? "",
+            },
+          },
+        };
+        composedPage = {
+          ...pageConfig!,
+          blocks: (pageConfig!.blocks ?? []).map((b) =>
+            b === existingBlock ? patchedBlock : b,
+          ),
+        };
+      }
     } else {
-      // All other composed formats (shows, team, products, checkout, menu,
-      // schedule, form, generic) always have a portal page config (reached before
-      // the !pageConfig notFound guard below). Pass through — composePage owns
-      // their label defaults + shaping.
+      // All other composed formats (shows, team, products, menu, schedule, form,
+      // generic) always have a portal page config (reached before the !pageConfig
+      // notFound guard below). Pass through — composePage owns their label
+      // defaults + shaping.
       //
       // menu: buildMenuSections is the dispatch fallback (legacy collections)
       //   OR the menu page-template block (blocks-first, post-SP-3). CTA note:
