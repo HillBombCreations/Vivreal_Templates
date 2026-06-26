@@ -6,6 +6,9 @@ export interface Product {
     price: Variantable<string>;
     description: Variantable<string>;
     imageUrl: Variantable<string>;
+    /** Responsive srcset of the PRIMARY image's resized variants (when the CMS
+     *  has generated derivatives). Mirrors `imageUrl`'s variant shape. */
+    imageSrcSet?: Variantable<string>;
     /**
      * Ordered product gallery image URLs — `string[]` for non-variant products,
      * `{ variant: string[] }` for variant products. Empty/absent ⇒ the detail
@@ -42,7 +45,7 @@ export interface Product {
     saleEnd?: string;
 }
 
-export type ProductVariantKey = "name" | "price" | "description" | "imageUrl";
+export type ProductVariantKey = "name" | "price" | "description" | "imageUrl" | "imageSrcSet";
 
 export interface Filter {
     title: string;
