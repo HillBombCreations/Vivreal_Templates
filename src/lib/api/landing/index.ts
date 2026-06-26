@@ -1,6 +1,6 @@
 import "server-only";
 import { clientFetchSafe } from "../client";
-import { getSignedUrl } from "../media";
+import { getSignedUrl, getSrcSet } from "../media";
 import type { LandingSections, ProductShowcaseItem, OfferingItem } from "@/types/Landing";
 
 interface CollectionObjectsResponse {
@@ -16,7 +16,8 @@ function unwrapItems(raw: CollectionObjectsResponse | Record<string, unknown>[])
 function flattenObject(raw: Record<string, unknown>): Record<string, unknown> {
   const obj = (raw.objectValue ?? raw) as Record<string, unknown>;
   const imageUrl = getSignedUrl(obj.image) || (obj.imageUrl as string) || "";
-  return { ...obj, imageUrl };
+  const imageSrcSet = getSrcSet(obj.image) || "";
+  return { ...obj, imageUrl, imageSrcSet };
 }
 
 export async function getLandingSections(collectionId: string): Promise<LandingSections> {

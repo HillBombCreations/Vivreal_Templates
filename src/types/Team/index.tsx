@@ -12,6 +12,8 @@ export type TeamData = {
   id: string;
   image?: string;
   imageUrl?: string;
+  /** Responsive srcset of the headshot's resized variants (empty when no derivatives). */
+  imageSrcSet?: string;
   socialLinks?: SocialLinks;
 };
 

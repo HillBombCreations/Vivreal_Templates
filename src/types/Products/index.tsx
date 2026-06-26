@@ -6,12 +6,22 @@ export interface Product {
     price: Variantable<string>;
     description: Variantable<string>;
     imageUrl: Variantable<string>;
+    /** Responsive srcset of the PRIMARY image's resized variants (when the CMS
+     *  has generated derivatives). Mirrors `imageUrl`'s variant shape. */
+    imageSrcSet?: Variantable<string>;
     /**
      * Ordered product gallery image URLs — `string[]` for non-variant products,
      * `{ variant: string[] }` for variant products. Empty/absent ⇒ the detail
      * hero falls back to the single `imageUrl` (legacy behavior).
      */
     gallery?: Variantable<string[]>;
+    /**
+     * Per-gallery-image responsive srcset, index-aligned to a FLAT `gallery`
+     * (string[]). Only populated for non-variant products — variant galleries
+     * carry no flat srcset (the renderer detects the variant shape and skips).
+     * Absent ⇒ gallery images fall back to their single source.
+     */
+    gallerySrcSet?: string[];
     link?: string;
     productType?: string;
     buttonLabel?: string;
@@ -42,7 +52,7 @@ export interface Product {
     saleEnd?: string;
 }
 
-export type ProductVariantKey = "name" | "price" | "description" | "imageUrl";
+export type ProductVariantKey = "name" | "price" | "description" | "imageUrl" | "imageSrcSet";
 
 export interface Filter {
     title: string;

@@ -6,6 +6,8 @@ export interface LandingSection {
     subtitle?: string;
     buttonLabel?: string;
     imageUrl?: string;
+    /** Responsive srcset of the section image's resized variants (empty when no derivatives). */
+    imageSrcSet?: string;
     sectionName?: string;
     [key: string]: unknown;
 }
@@ -15,6 +17,8 @@ export interface ProductShowcaseItem {
     title: string;
     description: string;
     imageUrl: string;
+    /** Responsive srcset of the showcase image's resized variants (empty when no derivatives). */
+    imageSrcSet?: string;
     "product-type"?: string;
     buttonLabel?: string;
 }
@@ -25,6 +29,8 @@ export interface OfferingItem {
     description: string;
     icon?: string;
     imageUrl?: string;
+    /** Responsive srcset of the offering image's resized variants (empty when no derivatives). */
+    imageSrcSet?: string;
 }
 
 export type LandingSections = Record<string, LandingSection>;

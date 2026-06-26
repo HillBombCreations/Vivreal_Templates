@@ -7,6 +7,11 @@ export interface ContentItem {
   description?: string;
   /** Image URL (signed CDN URL from VR_Client_API) */
   imageUrl?: string;
+  /** Responsive srcset of the image's resized variants (empty/absent when no
+   *  derivatives). Mirrors the renderer ContentItem field of the same name. */
+  imageSrcSet?: string;
+  /** `sizes` hint paired with `imageSrcSet`. */
+  imageSizes?: string;
   /** Price string (products) */
   price?: string;
   /** Date (shows/events) */

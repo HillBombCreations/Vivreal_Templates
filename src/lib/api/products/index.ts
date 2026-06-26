@@ -1,6 +1,6 @@
 import "server-only";
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from "../client";
-import { getSignedUrl } from "../media";
+import { getSignedUrl, getSrcSet } from "../media";
 import type { Product, Filter, Variantable } from "@/types/Products";
 
 const SITE_ID = process.env.SITE_ID || "";
@@ -107,10 +107,92 @@ function resolveProductImages(item: Record<string, unknown>): ResolvedProductIma
   return empty;
 }
 
+/**
+ * Resolve the PRIMARY image's responsive `srcset`, mirroring
+ * `resolveProductImages`'s primary-selection logic (same shapes + single-key
+ * collapse). Returns the srcset of the first descriptor that has one as a
+ * `Variantable<string>`; '' when no derivatives exist (renderer then falls back
+ * to `imageUrl`).
+ */
+function resolvePrimarySrcSet(item: Record<string, unknown>): Variantable<string> {
+  const objectValue = item.objectValue as Record<string, unknown> | undefined;
+  const productImage = objectValue?.productImage;
+  if (!productImage) return "";
+
+  // Flat gallery array → first descriptor that has a signed source.
+  if (Array.isArray(productImage)) {
+    for (const d of productImage) {
+      if (getSignedUrl(d)) return getSrcSet(d);
+    }
+    return "";
+  }
+
+  if (typeof productImage === "object") {
+    const pi = productImage as Record<string, unknown>;
+    // Simple product — currentFile directly on the field.
+    if ((pi.currentFile as Record<string, string> | undefined)?.source) return getSrcSet(pi);
+
+    // Variant product — first sourced descriptor per variant key (mirrors the
+    // primaryMap built in resolveProductImages).
+    const map: Record<string, string> = {};
+    for (const key of Object.keys(pi)) {
+      const val = pi[key];
+      const arr = Array.isArray(val) ? val : [val];
+      for (const d of arr) {
+        if (getSignedUrl(d)) { map[key] = getSrcSet(d); break; }
+      }
+    }
+    const keys = Object.keys(map);
+    if (keys.length === 0) return "";
+    if (keys.length === 1) return map[keys[0]];
+    return map;
+  }
+
+  return "";
+}
+
+/**
+ * Resolve the gallery's per-image srcset, INDEX-ALIGNED to a FLAT gallery — the
+ * only shape `DetailProductData.gallerySrcSet` (string[]) supports. The push
+ * condition mirrors {@link extractSources} exactly (`getSignedUrl(d)` truthy),
+ * so position i here pairs with position i of `gallery`. Empty string fills a
+ * sourced-but-derivative-less descriptor, preserving alignment. Variant
+ * galleries return undefined — the renderer detects the variant shape and skips
+ * srcset there.
+ */
+function resolveGallerySrcSet(item: Record<string, unknown>): string[] | undefined {
+  const objectValue = item.objectValue as Record<string, unknown> | undefined;
+  const productImage = objectValue?.productImage;
+  if (!productImage) return undefined;
+
+  // Flat gallery array — align to extractSources (sourced descriptors only).
+  if (Array.isArray(productImage)) {
+    const out: string[] = [];
+    for (const d of productImage) {
+      if (getSignedUrl(d)) out.push(getSrcSet(d) || "");
+    }
+    return out.length ? out : undefined;
+  }
+
+  // Simple single-image product — currentFile directly on the field
+  // (gallery === [directCf], so a single-element srcset aligns).
+  if (typeof productImage === "object") {
+    const pi = productImage as Record<string, unknown>;
+    if ((pi.currentFile as Record<string, string> | undefined)?.source) {
+      return [getSrcSet(pi) || ""];
+    }
+  }
+
+  // Variant products → no flat gallerySrcSet.
+  return undefined;
+}
+
 function transformProduct(raw: Record<string, unknown>): Product {
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
   const usingVariant = raw.usingVariant as Product["usingVariant"] | undefined;
   const { primary, gallery } = resolveProductImages(raw);
+  const imageSrcSet = resolvePrimarySrcSet(raw);
+  const gallerySrcSet = resolveGallerySrcSet(raw);
 
   return {
     _id: String(raw._id ?? ""),
@@ -118,7 +200,9 @@ function transformProduct(raw: Record<string, unknown>): Product {
     price: (objectValue.price as Product["price"]) ?? "",
     description: (objectValue.description as Product["description"]) ?? "",
     imageUrl: primary || ((objectValue.imageUrl as Product["imageUrl"]) ?? "") as Product["imageUrl"],
+    imageSrcSet,
     gallery,
+    gallerySrcSet,
     link: (objectValue.link as string) ?? undefined,
     productType: (objectValue.productType as string) ?? undefined,
     buttonLabel: (objectValue.buttonLabel as string) ?? undefined,

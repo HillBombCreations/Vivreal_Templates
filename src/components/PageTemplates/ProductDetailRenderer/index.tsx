@@ -39,9 +39,17 @@ function templatesProductToRenderer(product: Product, siteLogo: string): DetailP
     // Fall back to the site logo when the product has no image — matches the
     // products list (ProductsPageClient).
     imageUrl: product.imageUrl || siteLogo,
+    // srcset only for the non-variant (flat string) image — when imageUrl is a
+    // variant map (or the siteLogo fallback) there is no flat derivative set.
+    imageSrcSet:
+      typeof product.imageUrl === "string" && typeof product.imageSrcSet === "string"
+        ? product.imageSrcSet || undefined
+        : undefined,
     // Gallery has NO siteLogo fallback: an empty gallery signals the hero to
     // use the single-image (imageUrl) path. Only real galleries populate it.
     gallery: product.gallery,
+    // Index-aligned only for a FLAT gallery (variant galleries carry no flat srcset).
+    gallerySrcSet: Array.isArray(product.gallery) ? product.gallerySrcSet : undefined,
     link: product.link,
     productType: product.productType,
     buttonLabel: product.buttonLabel,
