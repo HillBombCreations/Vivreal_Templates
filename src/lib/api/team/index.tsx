@@ -1,7 +1,7 @@
 import 'server-only';
 import type { TeamData, CMSTeamData } from '@/types/Team';
 import { clientFetchSafe } from '@/lib/api/client';
-import { getSignedUrl } from '@/lib/api/media';
+import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
 
@@ -28,6 +28,7 @@ export async function getTeamMembers(collectionId?: string): Promise<TeamData[]>
     id: item._id,
     image: getSignedUrl(item.objectValue.headshot),
     imageUrl: getSignedUrl(item.objectValue.headshot),
+    imageSrcSet: getSrcSet(item.objectValue.headshot) || undefined,
     socialLinks: item.objectValue.socialLinks,
   }));
 }

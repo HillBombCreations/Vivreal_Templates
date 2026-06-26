@@ -151,11 +151,48 @@ function resolvePrimarySrcSet(item: Record<string, unknown>): Variantable<string
   return "";
 }
 
+/**
+ * Resolve the gallery's per-image srcset, INDEX-ALIGNED to a FLAT gallery — the
+ * only shape `DetailProductData.gallerySrcSet` (string[]) supports. The push
+ * condition mirrors {@link extractSources} exactly (`getSignedUrl(d)` truthy),
+ * so position i here pairs with position i of `gallery`. Empty string fills a
+ * sourced-but-derivative-less descriptor, preserving alignment. Variant
+ * galleries return undefined — the renderer detects the variant shape and skips
+ * srcset there.
+ */
+function resolveGallerySrcSet(item: Record<string, unknown>): string[] | undefined {
+  const objectValue = item.objectValue as Record<string, unknown> | undefined;
+  const productImage = objectValue?.productImage;
+  if (!productImage) return undefined;
+
+  // Flat gallery array — align to extractSources (sourced descriptors only).
+  if (Array.isArray(productImage)) {
+    const out: string[] = [];
+    for (const d of productImage) {
+      if (getSignedUrl(d)) out.push(getSrcSet(d) || "");
+    }
+    return out.length ? out : undefined;
+  }
+
+  // Simple single-image product — currentFile directly on the field
+  // (gallery === [directCf], so a single-element srcset aligns).
+  if (typeof productImage === "object") {
+    const pi = productImage as Record<string, unknown>;
+    if ((pi.currentFile as Record<string, string> | undefined)?.source) {
+      return [getSrcSet(pi) || ""];
+    }
+  }
+
+  // Variant products → no flat gallerySrcSet.
+  return undefined;
+}
+
 function transformProduct(raw: Record<string, unknown>): Product {
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
   const usingVariant = raw.usingVariant as Product["usingVariant"] | undefined;
   const { primary, gallery } = resolveProductImages(raw);
   const imageSrcSet = resolvePrimarySrcSet(raw);
+  const gallerySrcSet = resolveGallerySrcSet(raw);
 
   return {
     _id: String(raw._id ?? ""),
@@ -165,6 +202,7 @@ function transformProduct(raw: Record<string, unknown>): Product {
     imageUrl: primary || ((objectValue.imageUrl as Product["imageUrl"]) ?? "") as Product["imageUrl"],
     imageSrcSet,
     gallery,
+    gallerySrcSet,
     link: (objectValue.link as string) ?? undefined,
     productType: (objectValue.productType as string) ?? undefined,
     buttonLabel: (objectValue.buttonLabel as string) ?? undefined,
