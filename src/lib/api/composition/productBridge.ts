@@ -43,6 +43,7 @@ export async function getProductsAsContentItems(opts: {
       title: getSafeFieldValue(product, 'name', defaultVariant) ?? '',
       description: getSafeFieldValue(product, 'description', defaultVariant) ?? '',
       imageUrl: getSafeFieldValue(product, 'imageUrl', defaultVariant) || undefined,
+      imageSrcSet: getSafeFieldValue(product, 'imageSrcSet', defaultVariant) || undefined,
       price: getSafeFieldValue(product, 'price', defaultVariant) ?? undefined,
       source: 'integration' as const,
       integrationType: opts.integrationType,
