@@ -15,6 +15,13 @@ export interface Product {
      * hero falls back to the single `imageUrl` (legacy behavior).
      */
     gallery?: Variantable<string[]>;
+    /**
+     * Per-gallery-image responsive srcset, index-aligned to a FLAT `gallery`
+     * (string[]). Only populated for non-variant products — variant galleries
+     * carry no flat srcset (the renderer detects the variant shape and skips).
+     * Absent ⇒ gallery images fall back to their single source.
+     */
+    gallerySrcSet?: string[];
     link?: string;
     productType?: string;
     buttonLabel?: string;

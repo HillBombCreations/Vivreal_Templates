@@ -1,7 +1,7 @@
 import 'server-only';
 import type { ShowData, CMSShowData } from '@/types/Shows';
 import { clientFetchSafe } from '@/lib/api/client';
-import { getSignedUrl } from '@/lib/api/media';
+import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 
@@ -26,6 +26,7 @@ function mapShow(item: CMSShowData): ShowData {
     ticketsUrl: item.objectValue.tickets_url,
     image: getSignedUrl(item.objectValue.poster),
     imageUrl: getSignedUrl(item.objectValue.poster),
+    imageSrcSet: getSrcSet(item.objectValue.poster) || undefined,
   };
 }
 

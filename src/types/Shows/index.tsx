@@ -8,6 +8,8 @@ export type ShowData = {
   time?: string;
   image?: string;
   imageUrl?: string;
+  /** Responsive srcset of the poster's resized variants (empty when no derivatives). */
+  imageSrcSet?: string;
   location?: string;
   ticketsUrl?: string;
 };

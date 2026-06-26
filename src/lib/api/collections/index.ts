@@ -7,7 +7,7 @@
 import 'server-only';
 
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '../client';
-import { getSignedUrl } from '../media';
+import { getSignedUrl, getSrcSet } from '../media';
 import type { ContentItem } from '@/types/ContentItem';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -82,19 +82,19 @@ const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thu
  * for the blueprint schemas), then scan every field and return the first whose
  * value is a media descriptor.
  */
-function resolveImage(objectValue: Record<string, unknown>): string {
+function resolveImage(objectValue: Record<string, unknown>): { url: string; srcset: string } {
   // 1. Priority hint — keeps the existing pick for known blueprint fields.
   for (const field of PREFERRED_IMAGE_FIELDS) {
     const url = getSignedUrl(objectValue[field]);
-    if (url) return url;
+    if (url) return { url, srcset: getSrcSet(objectValue[field]) };
   }
   // 2. Type-based fallback — any field whose value is a media descriptor,
   //    covering arbitrary user-defined schema keys.
   for (const value of Object.values(objectValue)) {
     const url = getSignedUrl(value);
-    if (url) return url;
+    if (url) return { url, srcset: getSrcSet(value) };
   }
-  return '';
+  return { url: '', srcset: '' };
 }
 
 /**
@@ -145,13 +145,14 @@ function toContentItem(
   const price = objectValue.price;
   const date = objectValue.date ?? raw.publishDate;
   const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
-  const imageUrl = resolveImage(objectValue);
+  const { url: imageUrl, srcset: imageSrcSet } = resolveImage(objectValue);
 
   return {
     id: String(raw._id ?? ''),
     title,
     description: description != null ? String(description) : undefined,
     imageUrl: imageUrl || undefined,
+    imageSrcSet: imageSrcSet || undefined,
     price: price != null ? String(price) : undefined,
     date: date != null ? String(date) : undefined,
     tags,
