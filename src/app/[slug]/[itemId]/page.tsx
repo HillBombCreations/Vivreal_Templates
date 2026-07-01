@@ -13,6 +13,7 @@ import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
 import { getIntegrationItems } from "@/lib/api/collections";
+import { renderComposedPage } from "@/lib/renderComposedPage";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
 import type {
@@ -35,6 +36,28 @@ export default async function DynamicItemPage({ params }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
+
+  // CP-11: Resolve depth-2 nested sub-pages (e.g. /features/ai-sites) that the
+  // migrator emits as pageConfig.slug="features/ai-sites". Next.js matches the
+  // URL as [slug]="features" / [itemId]="ai-sites". Join the two segments and
+  // check against pageConfigs BEFORE the single-segment !pageConfig guard.
+  //
+  // Disambiguation guarantee: collection items (blog posts, shows, products, team
+  // members) are NEVER stored as pageConfigs, so getPageBySlug(siteData,
+  // "blog/<post>") always returns undefined and the existing detail-item logic
+  // below runs unchanged.
+  const nestedSlug = `${slug}/${itemId}`;
+  const nestedPage = getPageBySlug(siteData, nestedSlug);
+  if (nestedPage) {
+    // Defensive guard: interactive/collection formats never appear as nested page
+    // configs. If one somehow does, return notFound() rather than misrender.
+    const NON_NESTABLE_FORMATS = new Set([
+      "products", "schedule", "menu", "subscribe",
+      "checkout-success", "checkout-cancel", "home", "shows", "team",
+    ]);
+    if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
+    return renderComposedPage({ siteData, composedPage: nestedPage });
+  }
 
   if (!pageConfig) return notFound();
 
@@ -283,8 +306,19 @@ export default async function DynamicItemPage({ params }: Props) {
 export async function generateMetadata({ params }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
-  const pageConfig = getPageBySlug(siteData, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
+
+  // CP-11: metadata for nested sub-pages resolved via the joined slug.
+  const nestedPage = getPageBySlug(siteData, `${slug}/${itemId}`);
+  if (nestedPage) {
+    const title = nestedPage.labels?.title || nestedPage.name;
+    return {
+      title: `${title} | ${siteName}`,
+      description: nestedPage.labels?.subtitle || `${title} — ${siteName}`,
+    };
+  }
+
+  const pageConfig = getPageBySlug(siteData, slug);
 
   if (!pageConfig) {
     return { title: `Not Found | ${siteName}` };

@@ -257,6 +257,18 @@ export interface SiteData {
      * Plumbed through VR_Client_API getSiteDetails → getSiteData → here.
      */
     emailPopup?: EmailPopupConfig | null;
+    /**
+     * Chrome dark/light mode. When `'dark'`, the three chrome zones — Navbar,
+     * Hero/banner, and Footer — render with `var(--surface-alt)` background and
+     * `var(--text-inverse)` text. Body content blocks stay on `surface`.
+     *
+     * Lives at the flat top level of `siteData` (getSiteData spreads
+     * `...raw.siteDetails.values`, so DB-stored fields land here, not under
+     * a `theme` sub-object). Read as `siteData.chrome`, same as `siteData.primary`.
+     *
+     * Absent / `'light'` ⇒ existing light behavior (no regression).
+     */
+    chrome?: 'dark' | 'light';
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
 }
