@@ -12,6 +12,7 @@ import { getPageBySlug } from "@/lib/pages";
 // Those module files still exist (used elsewhere or pending Task 9 deletion) but are
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
+import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
@@ -126,6 +127,8 @@ export default async function DynamicPage({
       composedPage = pageConfig
         ? { ...pageConfig, labels }
         : { name, slug, format, collectionId: null, labels };
+      // Delegate to the shared helper so [slug] and [slug]/[itemId] cannot drift.
+      return renderComposedPage({ siteData, composedPage });
     } else if (format === "subscribe") {
       // SP-6 Task 3 — subscribe arm migration.
       //
@@ -252,6 +255,17 @@ export default async function DynamicPage({
       //   free — buildGenericSections flattens it into the linear body (D-B audit:
       //   0 sidebar-role bindings on any live page; safe to drop the two-column mode).
       composedPage = pageConfig!;
+      // CP-11: Delegate generic composed formats (about/standard/list/grid) to the
+      // shared helper so [slug]/page.tsx and [slug]/[itemId]/page.tsx cannot drift.
+      // Shows/team/products/schedule/form/menu remain in the code path below.
+      if (
+        format === "about" ||
+        format === "standard" ||
+        format === "list" ||
+        format === "grid"
+      ) {
+        return renderComposedPage({ siteData, composedPage });
+      }
     }
 
     // Products controlled query: parse f_<key>/search/sort from the URL so the

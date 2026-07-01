@@ -44,6 +44,7 @@ const Navbar = async () => {
       menuItems={siteData?.navigation?.menuItems ?? null}
       cta={siteData?.navigation?.cta ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
+      chrome={siteData?.chrome as 'dark' | 'light' | undefined}
     />
   );
 };

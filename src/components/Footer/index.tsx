@@ -71,6 +71,7 @@ const Footer = async () => {
       legal={siteData?.footer?.legal ?? null}
       footerPages={footerPages}
       pageConfigs={pageConfigs}
+      chrome={siteData?.chrome as 'dark' | 'light' | undefined}
     />
   );
 };
