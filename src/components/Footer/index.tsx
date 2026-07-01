@@ -1,4 +1,3 @@
-import type { ComponentProps, ComponentType } from 'react';
 import {
   Footer as RendererFooter,
   deriveNav,
@@ -7,16 +6,6 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
-
-// renderer-chrome compat: the published renderer (1.18.x) doesn't declare
-// `chrome` on FooterProps yet — dark-chrome ships with the studio-parity
-// renderer release. Widen the prop type so the template compiles against
-// 1.18.x; at runtime 1.18.x destructures known props only, so the extra prop
-// is a no-op (footer renders light chrome until the renderer is bumped).
-// Remove this cast once the dependency declares `chrome` natively.
-const FooterWithChrome = RendererFooter as ComponentType<
-  ComponentProps<typeof RendererFooter> & { chrome?: 'dark' | 'light' }
->;
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
@@ -69,7 +58,7 @@ const Footer = async () => {
     (siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }));
 
   return (
-    <FooterWithChrome
+    <RendererFooter
       siteName={siteName}
       logoUrl={logoUrl}
       email={email}
