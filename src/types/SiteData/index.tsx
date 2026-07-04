@@ -155,6 +155,24 @@ export interface PageConfig {
         enabled?: boolean;
         integrations?: PageIntegrationBinding[];
     };
+    /**
+     * Studio-authored SEO text overrides (optional). `PageSchema` is
+     * `strict:false`, so this round-trips through VR_Client_API untouched — no
+     * migration needed. Absent ⇒ the label/name-derived metadata defaults apply
+     * (no regression).
+     *   - `metaTitle`: exact `<title>` / `og:title` (NOT suffixed with the site
+     *     name — the author owns the full string).
+     *   - `metaDescription`: exact meta description / `og:description`.
+     *
+     * The per-page OG *image* is authored separately as a media descriptor under
+     * `labels.ogImage` (VR_Client_API signs it into `.currentFile.source`, same
+     * as `logo`/`heroImage`); the `/og/[slug]` route proxies it, falling back to
+     * a generated branded card when absent.
+     */
+    seo?: {
+        metaTitle?: string;
+        metaDescription?: string;
+    };
 }
 
 export interface HomeSectionConfig {

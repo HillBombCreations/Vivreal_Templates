@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
+import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -453,10 +454,38 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     return { title: `Not Found | ${siteName}` };
   }
 
-  const title = pageConfig?.labels?.title || pageConfig?.name || STATIC_PAGE_TITLES[slug];
+  // Studio-authored SEO overrides take precedence over the label/name-derived
+  // defaults. `metaTitle` is the exact title (author owns the full string, so it
+  // is NOT suffixed with the site name); the derived title keeps the "| site"
+  // suffix for a sensible default.
+  const seo = pageConfig?.seo;
+  const derivedTitle =
+    pageConfig?.labels?.title || pageConfig?.name || STATIC_PAGE_TITLES[slug] || slug;
+  const title = seo?.metaTitle || `${derivedTitle} | ${siteName}`;
+  const description =
+    seo?.metaDescription ||
+    pageConfig?.labels?.subtitle ||
+    `${derivedTitle} — ${siteName}`;
+
+  const origin = resolveSiteOrigin(siteData);
+  const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {
-    title: `${title} | ${siteName}`,
-    description: pageConfig?.labels?.subtitle || `${title} — ${siteName}`,
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `${origin}/${slug}`,
+      type: "website",
+      siteName,
+      images: [ogImageUrl],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImageUrl],
+    },
   };
 }

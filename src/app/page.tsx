@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
+import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
@@ -62,23 +63,33 @@ export default function HomePage() {
 export const generateMetadata = async () => {
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "Home";
-  const domain = siteData?.domainName || "";
+  // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
+  // block (if any) drives the Studio-editable overrides.
+  const seo = siteData?.homePageConfig?.seo;
+  const origin = resolveSiteOrigin(siteData);
+  const ogImageUrl = buildOgImageUrl(origin, "home");
+
+  const title = seo?.metaTitle || siteName;
+  const description =
+    seo?.metaDescription ||
+    `Welcome to ${siteName}. Discover our latest content, events, and more.`;
 
   return {
-    title: siteName,
-    description: `Welcome to ${siteName}. Discover our latest content, events, and more.`,
-    ...(domain && {
-      openGraph: {
-        title: siteName,
-        description: `Welcome to ${siteName}. Discover our latest content, events, and more.`,
-        url: `https://${domain}/`,
-        type: "website",
-      },
-      twitter: {
-        card: "summary_large_image",
-        title: siteName,
-        description: `Welcome to ${siteName}. Discover our latest content, events, and more.`,
-      },
-    }),
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: `${origin}/`,
+      type: "website",
+      siteName,
+      images: [ogImageUrl],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImageUrl],
+    },
   };
 };
