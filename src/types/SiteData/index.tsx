@@ -191,6 +191,14 @@ export interface HomeSection {
 export interface SiteData {
     primary?: string;
     domainName?: string;
+    /**
+     * Deployed URL info from the Client API. `live_url` is the site's actual
+     * live origin (subdomain like https://<sub>.vivreal.io, or the custom
+     * domain once live) — set on every deployed site, unlike `domainName`
+     * (custom domain only, absent on subdomain sites). Used as the canonical
+     * origin fallback for metadata when NEXT_PUBLIC_SITE_URL isn't set.
+     */
+    domainInformation?: { live_url?: string };
     name?: string;
     businessInfo?: Businessinfo;
     socialLinks?: SocialLink[];
