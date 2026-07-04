@@ -14,10 +14,18 @@ import type { SiteData } from '@/types/SiteData';
  * `metadataBase`).
  */
 export function resolveSiteOrigin(
-  siteData?: Pick<SiteData, 'domainName'> | null,
+  siteData?: Pick<SiteData, 'domainName' | 'domainInformation'> | null,
 ): string {
   const envUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (envUrl) return envUrl.replace(/\/+$/, '');
+  // The deployed `live_url` is set on every site (subdomain like
+  // https://<sub>.vivreal.io, or the custom domain once live), so it's the
+  // reliable canonical origin when NEXT_PUBLIC_SITE_URL isn't configured on the
+  // Amplify app (e.g. migrator-created sites). Prefer it over `domainName`,
+  // which is absent on subdomain-only sites — the case that made og:image
+  // resolve to http://localhost:3000 via the default metadataBase.
+  const liveUrl = siteData?.domainInformation?.live_url?.trim();
+  if (liveUrl) return liveUrl.replace(/\/+$/, '');
   const domain = siteData?.domainName?.trim();
   return domain ? `https://${domain.replace(/\/+$/, '')}` : '';
 }
