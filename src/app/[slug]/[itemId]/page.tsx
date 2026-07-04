@@ -7,6 +7,7 @@ import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { ArrowLeft } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
+import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
@@ -98,7 +99,10 @@ export default async function DynamicItemPage({ params }: Props) {
       format: 'shows',
       title: show.title,
       description: show.description?.replace(/<[^>]*>/g, '').slice(0, 500),
-      imageUrl: show.imageUrl || show.image || undefined,
+      // Strip CloudFront signing params before embedding in long-lived JSON-LD
+      // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
+      // team branch already applies to member images.
+      imageUrl: unsignMediaUrl(show.imageUrl || show.image || undefined),
       url: siteData.domainName
         ? `https://${siteData.domainName}/${slug}/${itemId}`
         : undefined,
@@ -307,14 +311,36 @@ export async function generateMetadata({ params }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
+  const origin = resolveSiteOrigin(siteData);
 
   // CP-11: metadata for nested sub-pages resolved via the joined slug.
   const nestedPage = getPageBySlug(siteData, `${slug}/${itemId}`);
   if (nestedPage) {
-    const title = nestedPage.labels?.title || nestedPage.name;
+    const seo = nestedPage.seo;
+    const derived = nestedPage.labels?.title || nestedPage.name;
+    const title = seo?.metaTitle || `${derived} | ${siteName}`;
+    const description =
+      seo?.metaDescription || nestedPage.labels?.subtitle || `${derived} — ${siteName}`;
+    // OG route is a single dynamic segment; use the first URL segment so it
+    // always resolves (nested pages fall back to the site card).
+    const ogImageUrl = buildOgImageUrl(origin, slug);
     return {
-      title: `${title} | ${siteName}`,
-      description: nestedPage.labels?.subtitle || `${title} — ${siteName}`,
+      title,
+      description,
+      openGraph: {
+        title,
+        description,
+        url: `${origin}/${slug}/${itemId}`,
+        type: "website",
+        siteName,
+        images: [ogImageUrl],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: [ogImageUrl],
+      },
     };
   }
 
@@ -324,46 +350,95 @@ export async function generateMetadata({ params }: Props) {
     return { title: `Not Found | ${siteName}` };
   }
 
+  // Detail items inherit the parent page's Studio SEO text + OG image. The OG
+  // image points at the stable `/og/[slug]` route (which proxies the page's
+  // uploaded image, else a branded card) rather than the item's own media URL:
+  // item media is a CloudFront-signed URL that 403s after the 300s signature TTL
+  // (the pre-existing bug this replaces). The OG route re-signs on every request,
+  // so its URL never expires in crawler caches.
+  const seo = pageConfig.seo;
+  const ogImageUrl = buildOgImageUrl(origin, slug);
+  const itemUrl = `${origin}/${slug}/${itemId}`;
+
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
     const show = await getShowById(itemId, collectionId);
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
-    const domain = siteData?.domainName || "";
+    const cleanDesc = show.description?.replace(/<[^>]*>/g, "").slice(0, 160);
+    const title = seo?.metaTitle || `${show.title} | ${siteName}`;
+    const description = seo?.metaDescription || cleanDesc || `${show.title} — ${siteName}`;
     return {
-      title: `${show.title} | ${siteName}`,
-      description: show.description?.replace(/<[^>]*>/g, "").slice(0, 160),
-      ...(domain && {
-        openGraph: {
-          title: show.title,
-          description: show.description?.replace(/<[^>]*>/g, "").slice(0, 160),
-          url: `https://${domain}/${slug}/${itemId}`,
-          images: show.imageUrl
-            ? [{ url: show.imageUrl, width: 1200, height: 630, alt: show.title }]
-            : [],
-          type: "article",
-        },
-        twitter: {
-          card: "summary_large_image",
-          title: show.title,
-          description: show.description?.replace(/<[^>]*>/g, "").slice(0, 160),
-          images: show.imageUrl ? [show.imageUrl] : [],
-        },
-      }),
+      title,
+      description,
+      openGraph: {
+        title,
+        description,
+        url: itemUrl,
+        type: "article",
+        siteName,
+        images: [ogImageUrl],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: [ogImageUrl],
+      },
     };
   }
 
   if (pageConfig.format === "team") {
     const teamMembers = await getTeamMembers();
     const member = teamMembers.find((m) => m.id === itemId);
+    const name = member?.name;
+    const title =
+      seo?.metaTitle || (name ? `${name} | ${siteName}` : `Team Member | ${siteName}`);
+    const description =
+      seo?.metaDescription ||
+      (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
     return {
-      title: member ? `${member.name} | ${siteName}` : `Team Member | ${siteName}`,
-      description: member
-        ? `Learn more about ${member.name} at ${siteName}.`
-        : `Team member at ${siteName}.`,
+      title,
+      description,
+      openGraph: {
+        title,
+        description,
+        url: itemUrl,
+        type: "article",
+        siteName,
+        images: [ogImageUrl],
+      },
+      twitter: {
+        card: "summary_large_image",
+        title,
+        description,
+        images: [ogImageUrl],
+      },
     };
   }
 
-  return { title: `${pageConfig.name} | ${siteName}` };
+  // Products + any other item detail. Kept lightweight (no per-item fetch): the
+  // section name is the sensible default title. `seo` still overrides.
+  const title = seo?.metaTitle || `${pageConfig.name} | ${siteName}`;
+  const description =
+    seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} — ${siteName}`;
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      url: itemUrl,
+      type: "article",
+      siteName,
+      images: [ogImageUrl],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImageUrl],
+    },
+  };
 }
