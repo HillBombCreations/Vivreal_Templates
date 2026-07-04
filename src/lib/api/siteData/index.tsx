@@ -53,7 +53,7 @@ interface SiteDetailsResponse {
   };
   name: string;
   domainName: string;
-  domainInformation?: object;
+  domainInformation?: { live_url?: string };
   businessInfo?: SiteData['businessInfo'];
   aboutSection?: SiteData['aboutSection'];
   socialLinks?: SiteData['socialLinks'];
@@ -115,6 +115,11 @@ export const getSiteData = async (): Promise<SiteData> => {
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
+    // Thread domainInformation through so resolveSiteOrigin can use `live_url`
+    // (the deployed origin, set on every site) for metadata/OG absolute URLs —
+    // without it, subdomain sites lacking NEXT_PUBLIC_SITE_URL fell back to
+    // localhost via the default metadataBase.
+    domainInformation: raw.domainInformation,
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
