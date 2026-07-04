@@ -1,14 +1,42 @@
 import { ReactNode, ViewTransition } from 'react';
+import type { Metadata } from 'next';
 import '@/styles/globals.css';
 import '@hillbombcreations/site-renderer/styles/content-grid.css';
 import '@hillbombcreations/site-renderer/styles/animations.css';
 import { getSiteData } from '@/lib/api/siteData';
+import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { isQuotaError } from '@/lib/api/client';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
+
+/**
+ * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
+ * resolve to absolute and Next's "metadataBase is not set" warning is silenced.
+ * Origin prefers `NEXT_PUBLIC_SITE_URL` (canonical per-site; CloudFront rewrites
+ * Host, so request-derived origins are unreliable), falling back to the API
+ * domain.
+ *
+ * Deliberately NO `title.template` here: Studio-authored `seo.metaTitle` must be
+ * the EXACT title (the author owns the full string, un-suffixed). A parent
+ * template would force `{ absolute }` gymnastics on every page and risk
+ * double-wrapping `og:title`. Each page emits its own complete title instead.
+ *
+ * Guarded so metadata generation never throws the layout's quota path — a
+ * 402 from getSiteData still renders <QuotaExceeded /> via the component below.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  try {
+    const siteData = await getSiteData();
+    const origin = resolveSiteOrigin(siteData);
+    return origin ? { metadataBase: new URL(origin) } : {};
+  } catch {
+    const envOrigin = resolveSiteOrigin(null);
+    return envOrigin ? { metadataBase: new URL(envOrigin) } : {};
+  }
+}
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
