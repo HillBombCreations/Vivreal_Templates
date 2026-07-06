@@ -72,6 +72,19 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                           hideOnPages={['/reservations']}
                       />
                   )}
+                  {/* #3 — site-wide "get in touch" FAB, config-driven from
+                      siteData.floatingCta (migrated marketing sites). Links to the
+                      site's contact route; absent config ⇒ nothing renders. */}
+                  {siteData.floatingCta?.label && siteData.floatingCta?.link && (
+                      <FloatingCta
+                          label={siteData.floatingCta.label}
+                          link={siteData.floatingCta.link}
+                          icon={siteData.floatingCta.icon}
+                          showAfterScroll={siteData.floatingCta.showAfterScroll ?? 400}
+                          position={siteData.floatingCta.position}
+                          hideOnPages={siteData.floatingCta.hideOnPages ?? [siteData.floatingCta.link]}
+                      />
+                  )}
                   {/*
                     CC9 — Email-capture popup. Mounted at the layout (NOT the home
                     route) so per-page targeting is structurally possible. The
