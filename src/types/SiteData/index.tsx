@@ -314,6 +314,21 @@ export interface SiteData {
      * existing default favicon behavior is unchanged (byte-identical no-op).
      */
     favicon?: string;
+    /**
+     * Per-site font theming — the migrated site's captured primary typeface
+     * (e.g. `'Geist'`), normalized by the migrator from the crawled font stack
+     * (`capture.brand.fonts[0]`; see Vivreal_Site_Migrator's `normalizeFontFamily`).
+     * Stored flat on the site doc (same precedent as `favicon`/`chrome`) via
+     * `theme.fontFamily` -> `siteDetailsVal.fontFamily`. A single family covers
+     * BOTH `--font-display` and `--font-body` — migrated sites capture one
+     * site-wide typeface, not a display/body pairing. Absent ⇒ the root layout
+     * applies no font override, so the site renders with the existing hardcoded
+     * Outfit default (byte-identical to pre-feature behavior). Distinct from the
+     * separate Studio-authored `typography` (displayFamily/bodyFamily pairing,
+     * read in Providers) — that client-side override still wins post-hydration
+     * when present.
+     */
+    fontFamily?: string;
 }
 
 export type Pages = {
