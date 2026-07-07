@@ -26,12 +26,21 @@ import EmailPopup from '@/components/HomeSections/EmailPopup';
  *
  * Guarded so metadata generation never throws the layout's quota path — a
  * 402 from getSiteData still renders <QuotaExceeded /> via the component below.
+ *
+ * Brand-asset hardening: `icons` is set from `siteData.favicon` ONLY when present
+ * (migrated sites carrying a captured favicon/brand-mark). Absent `favicon` ⇒ no
+ * `icons` key at all — Next's own default favicon resolution (e.g. an
+ * app/favicon.ico convention file) is untouched, so every existing site renders
+ * byte-identically to before this change.
  */
 export async function generateMetadata(): Promise<Metadata> {
   try {
     const siteData = await getSiteData();
     const origin = resolveSiteOrigin(siteData);
-    return origin ? { metadataBase: new URL(origin) } : {};
+    return {
+      ...(origin && { metadataBase: new URL(origin) }),
+      ...(siteData.favicon && { icons: { icon: siteData.favicon } }),
+    };
   } catch {
     const envOrigin = resolveSiteOrigin(null);
     return envOrigin ? { metadataBase: new URL(envOrigin) } : {};

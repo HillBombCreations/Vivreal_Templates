@@ -10,6 +10,7 @@ import type {
   EmailPopupConfig,
   SocialLink as RendererSocialLink,
   Block,
+  FloatingCtaConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -297,6 +298,22 @@ export interface SiteData {
     chrome?: 'dark' | 'light';
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
+    /**
+     * Site-wide "get in touch" floating action button (parity #3). Stored flat on
+     * the site doc (like `chrome` / `emailPopup`); the root layout mounts
+     * {@link FloatingCta} from it. Absent ⇒ no FAB (back-compat).
+     * Mirror of the renderer's `FloatingCtaConfig` (re-imported here, same
+     * precedent as the other renderer-shaped fields above).
+     */
+    floatingCta?: FloatingCtaConfig;
+    /**
+     * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
+     * (same precedent as `chrome`/`floatingCta`; plain string, not a media
+     * descriptor — the migrator persists it verbatim, no S3 upload/signing).
+     * Absent ⇒ the root layout emits no `icons` metadata override, so Next's
+     * existing default favicon behavior is unchanged (byte-identical no-op).
+     */
+    favicon?: string;
 }
 
 export type Pages = {
