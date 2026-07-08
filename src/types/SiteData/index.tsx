@@ -276,10 +276,12 @@ export interface SiteData {
         legal?: FooterLegal | null;
         hidePoweredBy?: boolean | null;
         /**
-         * Group B — per-field inherit/override footer brand (logo + name + email).
-         * Same presence-means-override semantics as the header brand.
+         * Group B — per-field inherit/override footer brand (logo + name + email
+         * + description). Same presence-means-override semantics as the header
+         * brand. `description` is widened locally until the renderer publishes
+         * FooterBrand.description (Wave D) — drop the intersection member then.
          */
-        brand?: (FooterBrand & { logo?: BrandLogoMedia }) | null;
+        brand?: (FooterBrand & { logo?: BrandLogoMedia; description?: string }) | null;
         /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
         socialLinks?: RendererSocialLink[] | null;
     } | null;

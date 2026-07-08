@@ -41,6 +41,10 @@ const Footer = async () => {
 
   const siteName = has('name') ? (brand!.name ?? '') : businessName;
   const email = has('email') ? (brand!.email ?? '') : businessEmail;
+  // Wave D — footer tagline: brand override wins, else businessInfo.description.
+  const description = has('description')
+    ? (brand!.description ?? '')
+    : siteData?.businessInfo?.description;
   // Override logo: sign the backend-delivered media object for brand.logoKey.
   // When the override key is present but no signed media object is delivered yet
   // (backend signing pending), an empty string renders no logo (honored override).
@@ -73,6 +77,9 @@ const Footer = async () => {
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       newsletter={siteData?.footerNewsletter ?? null}
+      // Wave D: `description` lands in FooterProps on the next renderer bump —
+      // drop this spread-cast then and pass it as a plain prop.
+      {...({ description: description ?? null } as Record<string, unknown>)}
     />
   );
 };
