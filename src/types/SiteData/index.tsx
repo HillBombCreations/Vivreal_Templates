@@ -286,6 +286,10 @@ export interface SiteData {
         brand?: (FooterBrand & { logo?: BrandLogoMedia; description?: string }) | null;
         /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
         socialLinks?: RendererSocialLink[] | null;
+        /** Owner pass 2 — 'icons' = glyph row in the brand column (vs the default Follow-Us text column). */
+        socialStyle?: 'column' | 'icons' | null;
+        /** Owner pass 2 — 'bar' = full-width "Stay in the loop" bar above the legal strip. */
+        newsletterPlacement?: 'brand' | 'bar' | null;
     } | null;
     /**
      * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the

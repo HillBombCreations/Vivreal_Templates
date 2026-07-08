@@ -77,9 +77,13 @@ const Footer = async () => {
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       newsletter={siteData?.footerNewsletter ?? null}
-      // Wave D: `description` lands in FooterProps on the next renderer bump —
-      // drop this spread-cast then and pass it as a plain prop.
-      {...({ description: description ?? null } as Record<string, unknown>)}
+      // Wave D + owner pass 2: these land in FooterProps on the next renderer
+      // bump — drop this spread-cast then and pass them as plain props.
+      {...({
+        description: description ?? null,
+        socialStyle: siteData?.footer?.socialStyle ?? undefined,
+        newsletterPlacement: siteData?.footer?.newsletterPlacement ?? undefined,
+      } as Record<string, unknown>)}
     />
   );
 };
