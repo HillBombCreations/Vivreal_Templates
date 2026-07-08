@@ -349,6 +349,21 @@ export interface SiteData {
      * when present.
      */
     fontFamily?: string;
+    /**
+     * Per-site web-analytics config (migration continuity + portal-editable).
+     * Stored flat inside `siteDetails.values` (same precedent as `favicon`/
+     * `fontFamily`/`chrome`), so it round-trips through `getSiteData`'s
+     * `...siteDetails.values` spread with no VR_Client_API change. The migrator
+     * captures the SOURCE site's existing tag id so a migrated site keeps
+     * reporting to the customer's own property; the portal Sites screen edits it.
+     * Absent/null ⇒ the layout emits NO analytics tag (byte-identical no-op).
+     * `trackingId` is the GA4 measurement id (`G-XXXX`), the Plausible
+     * data-domain, or the Fathom site id, per `provider`.
+     */
+    analytics?: {
+        provider?: 'google_analytics' | 'plausible' | 'fathom';
+        trackingId?: string;
+    } | null;
 }
 
 export type Pages = {

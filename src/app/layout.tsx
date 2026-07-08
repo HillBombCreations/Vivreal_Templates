@@ -11,6 +11,7 @@ import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
+import SiteAnalytics from '@/components/SiteAnalytics';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 /**
@@ -67,6 +68,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               {/* Structured data for classic crawlers + AI assistants. Emitted
                   here so every page inherits site-level Organization/WebSite. */}
               <JsonLd schema={siteSchema} />
+              {/* Per-site web-analytics tag (migration continuity + portal-
+                  editable). Reads siteData.analytics; absent ⇒ nothing renders
+                  (byte-identical no-op for every existing site). */}
+              <SiteAnalytics analytics={siteData.analytics} />
               {siteFont?.googleFontsHref && (
                   <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
               )}
