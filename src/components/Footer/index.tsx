@@ -72,7 +72,7 @@ const Footer = async () => {
       footerPages={footerPages}
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
-      newsletter={siteData?.footer?.newsletter ?? null}
+      newsletter={siteData?.footerNewsletter ?? null}
     />
   );
 };

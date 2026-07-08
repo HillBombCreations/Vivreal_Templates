@@ -2,12 +2,14 @@ import type { MetadataRoute } from 'next';
 import type {
   NavMenuItem,
   NavbarCta,
+  NavbarHeaderStyle,
   FooterColumn,
   FooterLegal,
   FooterBrand,
   NavbarBrand,
   CartIcon,
   EmailPopupConfig,
+  EmailCaptureConfig,
   SocialLink as RendererSocialLink,
   Block,
   FloatingCtaConfig,
@@ -263,6 +265,10 @@ export interface SiteData {
         brand?: (NavbarBrand & { logo?: BrandLogoMedia }) | null;
         /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
         cartIcon?: CartIcon | null;
+        /** Header scroll treatment. null/absent ⇒ 'solid' (today's behavior). */
+        headerStyle?: NavbarHeaderStyle | null;
+        /** Secondary low-emphasis CTA left of the primary `cta` (e.g. "Log in"). */
+        secondaryCta?: NavbarCta | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
@@ -277,6 +283,11 @@ export interface SiteData {
         /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
         socialLinks?: RendererSocialLink[] | null;
     } | null;
+    /**
+     * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the
+     * renderer's `SiteData.footerNewsletter` (not nested under `footer`).
+     */
+    footerNewsletter?: EmailCaptureConfig | null;
     /**
      * CC9 — Studio-authored email-capture popup config. Lazy: null/absent ⇒ the
      * EmailPopup wrapper falls back to legacy behavior (implicit-on iff a

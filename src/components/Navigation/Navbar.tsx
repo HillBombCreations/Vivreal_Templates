@@ -43,6 +43,8 @@ const Navbar = async () => {
       pageConfigs={pageConfigs}
       menuItems={siteData?.navigation?.menuItems ?? null}
       cta={siteData?.navigation?.cta ?? null}
+      secondaryCta={siteData?.navigation?.secondaryCta ?? null}
+      headerStyle={siteData?.navigation?.headerStyle ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
     />
