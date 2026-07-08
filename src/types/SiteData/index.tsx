@@ -269,6 +269,8 @@ export interface SiteData {
         headerStyle?: NavbarHeaderStyle | null;
         /** Secondary low-emphasis CTA left of the primary `cta` (e.g. "Log in"). */
         secondaryCta?: NavbarCta | null;
+        /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
+        headerWidth?: 'contained' | 'full' | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
