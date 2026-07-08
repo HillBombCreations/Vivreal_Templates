@@ -83,6 +83,7 @@ const Footer = async () => {
         description: description ?? null,
         socialStyle: siteData?.footer?.socialStyle ?? undefined,
         newsletterPlacement: siteData?.footer?.newsletterPlacement ?? undefined,
+        logoFilter: siteData?.footer?.brand?.logoFilter ?? null,
       } as Record<string, unknown>)}
     />
   );

@@ -45,9 +45,12 @@ const Navbar = async () => {
       cta={siteData?.navigation?.cta ?? null}
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
-      // headerWidth lands in NavbarProps on the next renderer bump — drop the
-      // spread-cast then and pass it as a plain prop.
-      {...({ headerWidth: siteData?.navigation?.headerWidth ?? null } as Record<string, unknown>)}
+      // headerWidth/logoHeight land in NavbarProps on the next renderer bump —
+      // drop the spread-cast then and pass them as plain props.
+      {...({
+        headerWidth: siteData?.navigation?.headerWidth ?? null,
+        logoHeight: siteData?.navigation?.brand?.logoHeight ?? null,
+      } as Record<string, unknown>)}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
     />

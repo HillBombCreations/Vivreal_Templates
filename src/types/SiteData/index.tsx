@@ -262,7 +262,8 @@ export interface SiteData {
          * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
          * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
          */
-        brand?: (NavbarBrand & { logo?: BrandLogoMedia }) | null;
+        /** `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight. */
+        brand?: (NavbarBrand & { logo?: BrandLogoMedia; logoHeight?: number }) | null;
         /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
         cartIcon?: CartIcon | null;
         /** Header scroll treatment. null/absent ⇒ 'solid' (today's behavior). */
@@ -283,7 +284,7 @@ export interface SiteData {
          * brand. `description` is widened locally until the renderer publishes
          * FooterBrand.description (Wave D) — drop the intersection member then.
          */
-        brand?: (FooterBrand & { logo?: BrandLogoMedia; description?: string }) | null;
+        brand?: (FooterBrand & { logo?: BrandLogoMedia; description?: string; logoFilter?: string }) | null;
         /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
         socialLinks?: RendererSocialLink[] | null;
         /** Owner pass 2 — 'icons' = glyph row in the brand column (vs the default Follow-Us text column). */
