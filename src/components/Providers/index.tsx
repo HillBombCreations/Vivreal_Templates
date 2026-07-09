@@ -11,6 +11,7 @@ import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
+import { subscribeUser } from '@/lib/api/subscribe/client';
 
 const queryClient = new QueryClient();
 
@@ -66,10 +67,25 @@ const Providers = ({
     // `mapsApiKey` is added to `NextSiteRendererProvider` in the renderer working
     // tree but not yet in the installed 1.17.0 package. Cast required until the
     // package is bumped. Remove the cast + eslint-disable when bumped.
+    // Inline email-capture (hero #4 / footer #9): resolve the site's subscribers
+    // collection once and inject a subscribe handler so hero + footer land in the
+    // SAME list as the popup (mirrors EmailPopup's collectionId resolution). No
+    // subscribers collection ⇒ '' ⇒ subscribeUser is a no-op.
+    const subPage = pages.find((p) => p.format === 'subscribers');
+    const subscribersCollectionId =
+        subPage?.blocks?.find(
+            (b) => b?.type?.kind === 'page-template' && b?.type?.dispatchId === 'subscribe',
+        )?.config?.bindings?.find((bd) => bd.collectionId)?.collectionId ??
+        subPage?.collectionId ??
+        '';
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const NextProvider = NextSiteRendererProvider as any;
     const content = (
-        <NextProvider mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}>
+        <NextProvider
+            mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+            onSubscribe={async (email: string) => subscribeUser(email, subscribersCollectionId)}
+        >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
             <AppToaster />

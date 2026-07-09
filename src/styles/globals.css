@@ -67,6 +67,26 @@
     font-family: var(--font-display);
   }
 
+  /* Per-site font theming — the renderer applies `className="font-display"` /
+     `"font-body"` on several components expecting a Tailwind `font-*` utility
+     backed by these vars. Tailwind v4 only generates a `font-*` utility for a
+     name declared inside an `@theme {}` block; this file sets the vars as
+     plain `:root` custom properties (see above), so that namespace is never
+     registered and those classes would otherwise emit no CSS. Hand-authored
+     here (same precedent as `.font-brand` immediately above) so the classes
+     work today. Also shipped in the renderer's own
+     `styles/content-grid.css` (the platform-level fix — same two rules) so
+     any consumer gets this for free once the renderer package is bumped;
+     kept here too so it takes effect immediately without waiting on that
+     publish. Purely additive: --font-display/--font-body already resolve to
+     Outfit by default, so this changes nothing for a site with no override. */
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+
   body {
     background-color: hsl(var(--background));
     color: hsl(var(--foreground));
