@@ -2,14 +2,17 @@ import type { MetadataRoute } from 'next';
 import type {
   NavMenuItem,
   NavbarCta,
+  NavbarHeaderStyle,
   FooterColumn,
   FooterLegal,
   FooterBrand,
   NavbarBrand,
   CartIcon,
   EmailPopupConfig,
+  EmailCaptureConfig,
   SocialLink as RendererSocialLink,
   Block,
+  FloatingCtaConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -259,9 +262,16 @@ export interface SiteData {
          * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
          * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
          */
-        brand?: (NavbarBrand & { logo?: BrandLogoMedia }) | null;
+        /** `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight. */
+        brand?: (NavbarBrand & { logo?: BrandLogoMedia; logoHeight?: number }) | null;
         /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
         cartIcon?: CartIcon | null;
+        /** Header scroll treatment. null/absent ⇒ 'solid' (today's behavior). */
+        headerStyle?: NavbarHeaderStyle | null;
+        /** Secondary low-emphasis CTA left of the primary `cta` (e.g. "Log in"). */
+        secondaryCta?: NavbarCta | null;
+        /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
+        headerWidth?: 'contained' | 'full' | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
@@ -269,13 +279,24 @@ export interface SiteData {
         legal?: FooterLegal | null;
         hidePoweredBy?: boolean | null;
         /**
-         * Group B — per-field inherit/override footer brand (logo + name + email).
-         * Same presence-means-override semantics as the header brand.
+         * Group B — per-field inherit/override footer brand (logo + name + email
+         * + description). Same presence-means-override semantics as the header
+         * brand. `description` is widened locally until the renderer publishes
+         * FooterBrand.description (Wave D) — drop the intersection member then.
          */
-        brand?: (FooterBrand & { logo?: BrandLogoMedia }) | null;
+        brand?: (FooterBrand & { logo?: BrandLogoMedia; description?: string; logoFilter?: string }) | null;
         /** Group B — footer social-link overrides. Absent/null ⇒ falls back to siteData.socialLinks. */
         socialLinks?: RendererSocialLink[] | null;
+        /** Owner pass 2 — 'icons' = glyph row in the brand column (vs the default Follow-Us text column). */
+        socialStyle?: 'column' | 'icons' | null;
+        /** Owner pass 2 — 'bar' = full-width "Stay in the loop" bar above the legal strip. */
+        newsletterPlacement?: 'brand' | 'bar' | null;
     } | null;
+    /**
+     * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the
+     * renderer's `SiteData.footerNewsletter` (not nested under `footer`).
+     */
+    footerNewsletter?: EmailCaptureConfig | null;
     /**
      * CC9 — Studio-authored email-capture popup config. Lazy: null/absent ⇒ the
      * EmailPopup wrapper falls back to legacy behavior (implicit-on iff a
@@ -297,6 +318,52 @@ export interface SiteData {
     chrome?: 'dark' | 'light';
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
+    /**
+     * Site-wide "get in touch" floating action button (parity #3). Stored flat on
+     * the site doc (like `chrome` / `emailPopup`); the root layout mounts
+     * {@link FloatingCta} from it. Absent ⇒ no FAB (back-compat).
+     * Mirror of the renderer's `FloatingCtaConfig` (re-imported here, same
+     * precedent as the other renderer-shaped fields above).
+     */
+    floatingCta?: FloatingCtaConfig;
+    /**
+     * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
+     * (same precedent as `chrome`/`floatingCta`; plain string, not a media
+     * descriptor — the migrator persists it verbatim, no S3 upload/signing).
+     * Absent ⇒ the root layout emits no `icons` metadata override, so Next's
+     * existing default favicon behavior is unchanged (byte-identical no-op).
+     */
+    favicon?: string;
+    /**
+     * Per-site font theming — the migrated site's captured primary typeface
+     * (e.g. `'Geist'`), normalized by the migrator from the crawled font stack
+     * (`capture.brand.fonts[0]`; see Vivreal_Site_Migrator's `normalizeFontFamily`).
+     * Stored flat on the site doc (same precedent as `favicon`/`chrome`) via
+     * `theme.fontFamily` -> `siteDetailsVal.fontFamily`. A single family covers
+     * BOTH `--font-display` and `--font-body` — migrated sites capture one
+     * site-wide typeface, not a display/body pairing. Absent ⇒ the root layout
+     * applies no font override, so the site renders with the existing hardcoded
+     * Outfit default (byte-identical to pre-feature behavior). Distinct from the
+     * separate Studio-authored `typography` (displayFamily/bodyFamily pairing,
+     * read in Providers) — that client-side override still wins post-hydration
+     * when present.
+     */
+    fontFamily?: string;
+    /**
+     * Per-site web-analytics config (migration continuity + portal-editable).
+     * Stored flat inside `siteDetails.values` (same precedent as `favicon`/
+     * `fontFamily`/`chrome`), so it round-trips through `getSiteData`'s
+     * `...siteDetails.values` spread with no VR_Client_API change. The migrator
+     * captures the SOURCE site's existing tag id so a migrated site keeps
+     * reporting to the customer's own property; the portal Sites screen edits it.
+     * Absent/null ⇒ the layout emits NO analytics tag (byte-identical no-op).
+     * `trackingId` is the GA4 measurement id (`G-XXXX`), the Plausible
+     * data-domain, or the Fathom site id, per `provider`.
+     */
+    analytics?: {
+        provider?: 'google_analytics' | 'plausible' | 'fathom';
+        trackingId?: string;
+    } | null;
 }
 
 export type Pages = {
