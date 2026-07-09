@@ -12,6 +12,7 @@ import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
+import SiteBeacon from '@/components/SiteBeacon';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 /**
@@ -124,6 +125,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                     home-only mount. See EmailPopup wrapper for the resolution.
                   */}
                   <EmailPopup config={siteData.emailPopup ?? {}} siteData={siteData} />
+                  {/* Vivreal first-party analytics beacon (cookieless). Fires only
+                      on real deployed sites (SITE_ID set + != 'preview'); collection
+                      is ON by default for every site (basic analytics is bundled). */}
+                  <SiteBeacon siteId={process.env.SITE_ID ?? ''} />
               </Providers>
           </body>
       </html>
