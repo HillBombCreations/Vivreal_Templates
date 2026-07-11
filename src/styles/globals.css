@@ -253,3 +253,48 @@
     animation: slide-in-left 0.35s ease-out;
   }
 }
+
+/* ── Per-site visual density — styling-parity "compact" variant ──────────────
+   Opt-in ONLY: theme.styleVariant='compact' → Providers stamps
+   [data-style-variant="compact"] on the root. Retargets the renderer's default
+   (larger) heading scale to the more restrained scale of a source site like
+   vivreal.io. Scoped to the attribute, so every other customer site is
+   byte-identical (no attribute ⇒ these rules never match).
+
+   Values are MEASURED from live vivreal.io (getComputedStyle at 1280 AND 375),
+   not eyeballed. The facts that shaped the (deliberately narrow) rules below:
+   • Hero h1 is a CONSTANT 36px on live at EVERY breakpoint (the renderer scales
+     it to 60px at lg) → pin 36px at all widths.
+   • Section h2 on live is 30px mobile / 36px desktop. The renderer's `md:text-4xl`
+     h2 ALREADY matches that exactly; only its `md:text-5xl` variant overshoots at
+     desktop (48px). So the shrink is scoped to md:text-5xl AND desktop-only — a
+     blanket `h2{36px}` would wrongly ENLARGE every mobile section heading 30→36.
+   • Card h3 (`md:text-2xl`): live renders a constant BOLD 24px; the renderer is
+     semibold and shrinks to 20px on mobile → pin 24px/bold at all widths. */
+[data-style-variant="compact"] h1 {
+  font-size: 2.25rem !important;   /* 36px (renderer default ~60px at lg) */
+  line-height: 2.5rem !important;  /* 40px */
+  letter-spacing: -0.03em !important;
+}
+/* Only the oversized md:text-5xl section headings, and only at ≥768px where that
+   utility raises them to 48px; mobile (text-3xl, 30px) already matches live. */
+@media (min-width: 768px) {
+  [data-style-variant="compact"] h2.md\:text-5xl {
+    font-size: 2.25rem !important;   /* 36px (was 48px) */
+    line-height: 2.5rem !important;  /* 40px */
+  }
+}
+/* Card titles: pin to live's constant bold 24px (renderer = semibold, 20→24px). */
+[data-style-variant="compact"] h3.md\:text-2xl {
+  font-size: 1.5rem !important;    /* 24px */
+  line-height: 2rem !important;    /* 32px */
+  font-weight: 700 !important;
+}
+/* Hero email-capture CTA: live renders a white pill (primary text) on the dark
+   hero; the renderer default is a solid-primary fill. Target only the inline
+   (hero) EmailCaptureInline variant — class py-2.5 — so the footer 'minimal'
+   button (py-2) keeps its treatment. */
+[data-style-variant="compact"] button[type="submit"].py-2\.5 {
+  background: #ffffff !important;
+  color: var(--primary, #365b99) !important;
+}

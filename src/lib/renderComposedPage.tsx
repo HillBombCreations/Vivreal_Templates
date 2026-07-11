@@ -4,6 +4,7 @@ import Navbar from '@/components/Navigation/Navbar';
 import Footer from '@/components/Footer';
 import { composePage } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
+import { willRenderHeroBanner } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 
 // Formats that trigger isEmpty → notFound(). Mirrors [slug]/page.tsx SP-6 Task 5.
@@ -55,7 +56,18 @@ export async function renderComposedPage({
   const hasSectionHeaderBlock = (composedPage.blocks ?? []).some(
     (b) => b?.type?.dispatchId === 'section-header',
   );
-  const showTransitionalTitleBand = isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock;
+  // Part 2 dedupe (2026-07-10): a standard page authored with BOTH
+  // labels.buttonLabel + labels.buttonLink gets a synthetic hero banner from
+  // the renderer's mapBlocks (composePage below, kind:'banner') that ALREADY
+  // renders this same labels.title + subtitle + button. Without this guard the
+  // bare title band ABOVE the banner double-renders the same title (confirmed
+  // on /studio-demo: "Build a site in under 60 seconds" appeared twice — once
+  // bare/button-less here, once correctly inside the banner with its button).
+  // A page without both fields is unaffected — same band as today. See
+  // `heroBanner.ts` for the shared gate (kept in lockstep with the renderer's
+  // own condition, single source of truth for both page wrappers).
+  const showTransitionalTitleBand =
+    isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock && !willRenderHeroBanner(composedPage);
 
   // Dark-chrome transitional title band: when siteData.chrome === 'dark', the
   // band gets a full-width navy gradient (matching BannerLayout / SectionHeaderBlock
