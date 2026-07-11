@@ -41,6 +41,15 @@ const Providers = ({
         if (typography?.bodyFamily) {
             document.documentElement.style.setProperty('--font-body', typography.bodyFamily);
         }
+        // Per-site visual-density override (styling parity). When the site opts into
+        // 'compact', stamp the root so globals.css can scope the smaller heading
+        // scale + lighter hero CTA to THIS site only. Absent ⇒ removed ⇒ default look.
+        const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
+        if (styleVariant) {
+            document.documentElement.setAttribute('data-style-variant', styleVariant);
+        } else {
+            document.documentElement.removeAttribute('data-style-variant');
+        }
     }, [siteData]);
 
     const pages = siteData.pageConfigs ?? [];
