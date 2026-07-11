@@ -16,6 +16,7 @@ import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAd
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import { willRenderHeroBanner } from "@/lib/heroBanner";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
@@ -376,7 +377,15 @@ export default async function DynamicPage({
       // never fire → double-title once SP-3 backfills the leading Section Header.
       (b) => b?.type?.dispatchId === "section-header",
     );
-    const showTransitionalTitleBand = isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock;
+    // Part 2 dedupe (2026-07-10) — mirrors the identical fix in renderComposedPage.tsx
+    // (this arm is currently unreachable for standard/list/grid, which return early via
+    // renderComposedPage above; kept in lockstep per this file's own "cannot drift"
+    // contract in case that early-return ever narrows). See `heroBanner.ts` for the
+    // shared gate + full rationale: a synthetic hero banner (renderer mapBlocks)
+    // already renders labels.title + subtitle + button, so the bare title band here
+    // must self-disable.
+    const showTransitionalTitleBand =
+      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock && !willRenderHeroBanner(composedPage);
 
     return (
       <>
