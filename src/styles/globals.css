@@ -88,8 +88,14 @@
   }
 
   body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
+    /* Honor the renderer's theme tokens (--surface / --text-primary) when a
+       migrated site injects them, falling back to the shadcn --background /
+       --foreground for non-migrated pages. Without this, a dark-theme site
+       (surface #0a0a0a) rendered on a hardcoded white body because --background
+       stayed 0 0% 100% — the dark-theme parity miss. Fallback keeps light sites
+       byte-identical. */
+    background-color: var(--surface, hsl(var(--background)));
+    color: var(--text-primary, hsl(var(--foreground)));
     font-family: var(--font-body);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
