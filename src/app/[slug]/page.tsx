@@ -74,6 +74,10 @@ const COMPOSE_FORMATS = new Set<string>([
   "standard",
   "list",
   "grid",
+  // collection-list → renderer `collection` page-template (filterable/searchable/
+  // sortable catalog grid, no commerce). Without this entry a collection-list page
+  // (e.g. an off-site-checkout product catalog) is unrecognized and 404s.
+  "collection-list",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -264,7 +268,8 @@ export default async function DynamicPage({
         format === "about" ||
         format === "standard" ||
         format === "list" ||
-        format === "grid"
+        format === "grid" ||
+        format === "collection-list"
       ) {
         return renderComposedPage({ siteData, composedPage });
       }
