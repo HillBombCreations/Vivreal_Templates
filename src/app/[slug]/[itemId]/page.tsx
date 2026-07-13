@@ -13,7 +13,7 @@ import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
-import { getIntegrationItems } from "@/lib/api/collections";
+import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
@@ -299,6 +299,57 @@ export default async function DynamicItemPage({ params }: Props) {
           </div>
         )}
         <CTASectionTemplate siteData={siteData as unknown as RendererSiteData} />
+        <Footer />
+      </>
+    );
+  }
+
+  // Generic CMS collection-list item detail (products, menu/catalog entries, etc.).
+  // A collection-list grid links each card to /<slug>/<mongoId>; without this arm
+  // every such click falls through to notFound() below (there is no products/
+  // shows/team format match for a plain CMS collection). Fetch the page's primary
+  // collection object by id and render the renderer's generic hero/content/cta
+  // detail (resolveDetailSections falls back to the generic default for this
+  // format).
+  if (pageConfig.format === "collection-list") {
+    const collectionId = getPageCollectionId(siteData, pageConfig.name, "");
+    if (!collectionId) return notFound();
+
+    const { items } = await getCollectionItems(collectionId, { limit: 200 });
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return notFound();
+
+    const cleanDesc =
+      typeof item.description === "string"
+        ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
+        : undefined;
+    const itemJsonLd = buildDetailJsonLd({
+      format: "products",
+      title: item.title || pageConfig.name,
+      description: cleanDesc,
+      // Strip CloudFront signing params before embedding in long-lived JSON-LD
+      // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
+      // shows/team branches apply to their media.
+      imageUrl: unsignMediaUrl(item.imageUrl),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
+      price: typeof item.price === "string" ? item.price : undefined,
+      sku: item.id,
+    });
+
+    return (
+      <>
+        <JsonLd schema={itemJsonLd} />
+        <Navbar />
+        <DetailPageTemplate
+          slug={slug}
+          format={pageConfig.format}
+          item={item as unknown as DetailItem}
+          siteData={siteData as unknown as RendererSiteData}
+          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+        />
         <Footer />
       </>
     );
