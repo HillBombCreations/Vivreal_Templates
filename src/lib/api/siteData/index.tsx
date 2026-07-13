@@ -9,6 +9,7 @@ import type {
 } from '@/types/SiteData';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { isDemoSite } from '@/lib/seo/demoSafety';
+import { buildSitemapEntries } from '@/lib/seo/sitemap';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -271,31 +272,8 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // src/lib/seo/demoSafety.ts.
   if (isDemoSite(raw.siteDetails?.values)) return [];
 
-  const domainName = raw.domainName ?? '';
-  if (!domainName) return [];
-
-  const pages = raw.siteDetails?.values?.pages ?? {};
-  const pageKeys = Object.keys(pages);
-
-  const siteMap: MetadataRoute.Sitemap = [
-    {
-      url: `https://${domainName}`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: 1.0,
-    },
-  ];
-
-  pageKeys.forEach((slug, idx) => {
-    const page = slug.replace(/^\/+/, '');
-    const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / pageKeys.length));
-    siteMap.push({
-      url: `https://${domainName}/${page}`,
-      lastModified: new Date(),
-      changeFrequency: 'monthly',
-      priority: Number(priority.toFixed(2)),
-    });
-  });
-
-  return siteMap;
+  // Build from the AUTHORITATIVE top-level page list (raw.pages — what getSiteData
+  // uses), not siteDetails.values.pages (which the migrator never populates, so
+  // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
+  return buildSitemapEntries(raw.pages, raw.domainName ?? '');
 };
