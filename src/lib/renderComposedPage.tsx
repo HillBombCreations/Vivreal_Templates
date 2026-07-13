@@ -18,7 +18,7 @@ const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
  * enabled block count. All synchronous: no data fetch, so the Suspense
  * fallback below can be page-shaped from the first flush.
  */
-function skeletonPropsFor(composedPage: PageConfig) {
+export function skeletonPropsFor(composedPage: PageConfig) {
   const blocks = (composedPage.blocks ?? []).filter((b) => b?.enabled !== false);
   let displayAs: string | undefined;
   let hasFilters = false;

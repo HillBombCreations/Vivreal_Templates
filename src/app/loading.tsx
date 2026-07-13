@@ -1,17 +1,13 @@
-import { PageSkeleton } from "@hillbombcreations/site-renderer";
+import NeutralPageLoading from "@/components/NeutralPageLoading";
 
 /**
- * Home skeleton — single-sourced from the renderer's `PageSkeleton`
- * (`variant="home"`) so the live site and the Studio preview-shell boot
- * identically. Used as both the route-level `loading.tsx` fallback AND the
- * inline `<Suspense fallback={<HomeLoading/>}>` in `page.tsx` (same import).
- *
- * `variant` isn't in published renderer 1.24.0's `PageSkeletonProps` yet — it
- * lands with the `feat/test-vivreal-residual-parity` branch in
- * vivreal-site-renderer, currently unpublished. Spread-cast until that bump
- * publishes (same pattern as the old Navbar headerWidth/logoHeight cast),
- * then drop to a plain `variant="home"` prop.
+ * Root route-level fallback — shape-neutral chrome (see NeutralPageLoading
+ * for the full rationale). The home page renders its hero-shaped skeleton
+ * via its own inline Suspense boundary (app/page.tsx → HomeLoading); every
+ * other page renders its structure-derived ComposedPageSkeleton behind the
+ * page-owned boundary. This file only covers the brief window before a
+ * page's config resolves.
  */
-export default function HomeLoading() {
-  return <PageSkeleton {...({ variant: "home" } as Record<string, unknown>)} />;
+export default function RootLoading() {
+  return <NeutralPageLoading />;
 }
