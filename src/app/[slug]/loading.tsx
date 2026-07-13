@@ -1,15 +1,13 @@
-import { PageSkeleton } from "@hillbombcreations/site-renderer";
+import NeutralPageLoading from "@/components/NeutralPageLoading";
 
 /**
- * Whole-page loading skeleton — single-sourced from the renderer (1.6.0)
- * so the live site and the Studio preview-shell boot identically.
- *
- * `variant="list"` is the renderer's default (byte-identical to the bare
- * `<PageSkeleton />` call this replaces) — passed explicitly for parity with
- * the home/detail skeletons so the archetype is obvious at a glance. `variant`
- * isn't in published renderer 1.24.0's `PageSkeletonProps` yet — spread-cast
- * until that bump publishes, then drop to a plain prop.
+ * [slug] route-level fallback — shape-neutral chrome (see NeutralPageLoading
+ * for the full rationale). Every [slug] page now streams its own
+ * structure-derived skeleton (ComposedPageSkeleton) from the page component
+ * itself, where format/labels/displayAs ARE known — this file only covers
+ * the brief window before the page's cached config resolves. The old
+ * card-grid guess rendered the wrong shape for catalogs, menus, schedules.
  */
 export default function PageLoading() {
-  return <PageSkeleton {...({ variant: "list" } as Record<string, unknown>)} />;
+  return <NeutralPageLoading />;
 }
