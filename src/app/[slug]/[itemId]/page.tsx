@@ -315,7 +315,9 @@ export default async function DynamicItemPage({ params }: Props) {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, "");
     if (!collectionId) return notFound();
 
-    const { items } = await getCollectionItems(collectionId, { limit: 200 });
+    // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
+    // API 502s on larger limits, and the list view already caps at 100.
+    const { items } = await getCollectionItems(collectionId, { limit: 100 });
     const item = items.find((it) => it.id === itemId);
     if (!item) return notFound();
 
