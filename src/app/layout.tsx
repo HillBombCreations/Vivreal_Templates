@@ -50,6 +50,36 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
+/**
+ * Theme tokens SSR'd onto `<html>` so the FIRST paint — including route-level
+ * `loading.tsx` skeletons — is palette-correct. Without this, the tokens only
+ * arrive via the client-side Providers effect, so a dark-theme site (e.g.
+ * surface #0a0a0a) flashed a WHITE skeleton on every hard navigation.
+ * Whitelisted to the siteDetails theme schema's color tokens — NOT every
+ * string key on siteData (favicon is a multi-KB data URI; name/domain are not
+ * CSS values). The Providers effect remains the post-hydration authority and
+ * sets the same custom properties, so the two never disagree.
+ */
+const THEME_TOKEN_KEYS = [
+  'primary',
+  'secondary',
+  'hover',
+  'surface',
+  'surface-alt',
+  'text-primary',
+  'text-secondary',
+  'text-inverse',
+] as const;
+
+function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undefined {
+  const style: Record<string, string> = {};
+  for (const key of THEME_TOKEN_KEYS) {
+    const v = siteData[key];
+    if (typeof v === 'string' && v.trim() !== '') style[`--${key}`] = v;
+  }
+  return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
+}
+
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
     const siteData = await getSiteData();
@@ -63,8 +93,18 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // the site keeps today's hardcoded Outfit default byte-identically. See
     // src/lib/fonts/siteFont.ts for the full loading-strategy rationale.
     const siteFont = resolveSiteFont(siteData.fontFamily);
+    // SSR the palette + density BEFORE hydration (see themeVarStyle above).
+    // Providers' effect re-stamps both on the client; values are identical so
+    // hydration stays clean.
+    const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
+    const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
     return (
-      <html lang="en" className={siteFont?.variableClassName}>
+      <html
+        lang="en"
+        className={siteFont?.variableClassName}
+        style={themeStyle}
+        {...(styleVariant ? { 'data-style-variant': styleVariant } : {})}
+      >
           <head>
               {/* Structured data for classic crawlers + AI assistants. Emitted
                   here so every page inherits site-level Organization/WebSite. */}
