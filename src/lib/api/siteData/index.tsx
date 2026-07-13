@@ -8,6 +8,7 @@ import type {
   SiteData,
 } from '@/types/SiteData';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { isDemoSite } from '@/lib/seo/demoSafety';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -263,6 +264,12 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   );
 
   if (!raw) return [];
+
+  // SEO demo-safety: emit NO sitemap for a pre-cutover demo — a sitemap actively
+  // invites indexing of a near-duplicate of the prospect's real site. Cutover
+  // flips lifecycleState to 'live' and the full sitemap returns. See
+  // src/lib/seo/demoSafety.ts.
+  if (isDemoSite(raw.siteDetails?.values)) return [];
 
   const domainName = raw.domainName ?? '';
   if (!domainName) return [];

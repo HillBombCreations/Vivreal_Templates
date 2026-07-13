@@ -364,6 +364,29 @@ export interface SiteData {
         provider?: 'google_analytics' | 'plausible' | 'fathom';
         trackingId?: string;
     } | null;
+    /**
+     * Migration lifecycle state (SEO demo-safety). `'demo'` = a pre-cutover
+     * outreach/demo deployment that must NOT be indexed — it is a near-duplicate
+     * of the prospect's real site, so indexing it would create live
+     * duplicate-content exposure against them. `'live'` / absent = a normal,
+     * indexable site. Stored flat inside `siteDetails.values` (same precedent as
+     * `favicon`/`fontFamily`/`chrome`), so it round-trips through `getSiteData`'s
+     * `...siteDetails.values` spread with no VR_Client_API change. Read by
+     * `robots.tsx`, `sitemap.tsx`, and the root-layout metadata (see
+     * `src/lib/seo/demoSafety.ts`). Cutover flips it to `'live'` (or clears it)
+     * and revalidates — no rebuild. **Absent ⇒ indexable**, so every existing
+     * site is byte-identically unaffected.
+     */
+    lifecycleState?: 'demo' | 'live';
+    /**
+     * The prospect's ORIGINAL live URL, carried from the migration source
+     * (`inventory.meta.sourceUrl`). On a `demo` site the root-layout metadata
+     * emits `<link rel="canonical">` → this URL so even a crawler that reaches
+     * the demo attributes the content to the prospect's real site (SEO-signal
+     * preservation, per the plan's §4A canonical-to-source rule). Absent ⇒ no
+     * canonical override (the `noindex` alone still protects the prospect).
+     */
+    sourceUrl?: string;
 }
 
 export type Pages = {
