@@ -1,6 +1,9 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
+import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
+import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
@@ -20,7 +23,7 @@ import { willRenderHeroBanner } from "@/lib/heroBanner";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
-import type { PageConfig } from "@/types/SiteData";
+import type { PageConfig, SiteData } from "@/types/SiteData";
 // S2/OD#3 — schedule view type for ?view= param validation.
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
 
@@ -342,22 +345,6 @@ export default async function DynamicPage({
       components = { SubscribePage: SubscribeClientAdapter };
     }
 
-    const { input, isEmpty } = await buildPageContext({
-      siteData,
-      page: composedPage,
-      isHome: false,
-      productQuery,
-    });
-
-    // SP-6 Task 5 (OQ-5 complement): generic-format empty pages → notFound().
-    // Mirrors the legacy guard at the old generic arm (:243). Only applies to
-    // formats that fall through to buildGenericSections (not static/checkout/shows
-    // etc — those have non-empty content by definition or their own empty handling).
-    // buildPageContext.isEmpty already excludes static/checkout-success/checkout-cancel.
-    if (isEmpty && (format === "standard" || format === "list" || format === "grid")) {
-      return notFound();
-    }
-
     // SP-6 Task 5 — Concern-3 transitional title band (B-wrapper fallback).
     //
     // buildGenericSections emits flat layout sections but NO page-level title band
@@ -416,24 +403,21 @@ export default async function DynamicPage({
             </header>
           </div>
         )}
-        {composePage(
-          components || scheduleView
-            ? {
-                ...input,
-                options: {
-                  ...input.options!,
-                  ...(components ? { components } : {}),
-                  // S2/OD#3: thread the validated ?view= param so the coordinated
-                  // schedule arm can pass it as `initialView` to the override.
-                  // Cast required: `scheduleView` is added to CompositionOptions in
-                  // the renderer working tree but not yet in the installed 1.17.0
-                  // package. This cast is removed when the package is bumped.
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  ...(scheduleView ? { scheduleView } as any : {}),
-                },
-              }
-            : input,
-        )}
+        {/* Streaming split (2026-07-13): buildPageContext's collection fetches
+            are the slow half — they stream in behind this boundary while the
+            shell (Navbar/band/Footer) + a structure-derived skeleton flush
+            immediately. Same model as renderComposedPage; the fallback is
+            derived from the SAME composedPage config as the real render. */}
+        <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
+          <ComposedFormatBody
+            siteData={siteData}
+            composedPage={composedPage}
+            format={format}
+            productQuery={productQuery}
+            components={components}
+            scheduleView={scheduleView}
+          />
+        </Suspense>
         <Footer />
       </>
     );
@@ -451,6 +435,68 @@ export default async function DynamicPage({
   // All formats handled by COMPOSE_FORMATS or the detail route below.
   // Any format that reaches this point falls through to notFound().
   return notFound();
+}
+
+/**
+ * The slow half of the composed-format arm — buildPageContext (collection /
+ * integration fetches) + composePage. Runs behind the Suspense boundary in
+ * DynamicPage so the shell + structure-derived skeleton flush first.
+ *
+ * The generic-format isEmpty guard moved here with the fetch; it now fires
+ * mid-stream (Next emits a client-side correction to the not-found boundary).
+ * Accepted tradeoff for streaming — mirrors renderComposedPage's body.
+ */
+async function ComposedFormatBody({
+  siteData,
+  composedPage,
+  format,
+  productQuery,
+  components,
+  scheduleView,
+}: {
+  siteData: SiteData;
+  composedPage: PageConfig;
+  format: string;
+  productQuery?: { filters?: Record<string, string>; search?: string; sort?: string };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  components?: any;
+  scheduleView?: ScheduleView;
+}) {
+  const { input, isEmpty } = await buildPageContext({
+    siteData,
+    page: composedPage,
+    isHome: false,
+    productQuery,
+  });
+
+  // SP-6 Task 5 (OQ-5 complement): generic-format empty pages → notFound().
+  // Mirrors the legacy guard at the old generic arm. Only applies to formats
+  // that fall through to buildGenericSections (not static/checkout/shows etc —
+  // those have non-empty content by definition or their own empty handling).
+  // buildPageContext.isEmpty already excludes static/checkout-success/-cancel.
+  if (isEmpty && (format === "standard" || format === "list" || format === "grid")) {
+    return notFound();
+  }
+
+  return (
+    <>
+      {composePage(
+        components || scheduleView
+          ? {
+              ...input,
+              options: {
+                ...input.options!,
+                ...(components ? { components } : {}),
+                // S2/OD#3: thread the validated ?view= param so the coordinated
+                // schedule arm can pass it as `initialView` to the override.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ...(scheduleView ? ({ scheduleView } as any) : {}),
+              },
+            }
+          : input,
+      )}
+    </>
+  );
 }
 
 const STATIC_PAGE_TITLES: Record<string, string> = {
