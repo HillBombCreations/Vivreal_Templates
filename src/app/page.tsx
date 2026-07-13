@@ -5,7 +5,7 @@ import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
-import HomeLoading from "./loading";
+import HomeLoading from "@/components/HomeLoading";
 
 export const dynamic = "force-dynamic";
 
