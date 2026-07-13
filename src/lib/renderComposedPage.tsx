@@ -1,8 +1,9 @@
 import 'server-only';
+import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navigation/Navbar';
 import Footer from '@/components/Footer';
-import { composePage } from '@hillbombcreations/site-renderer';
+import { composePage, ComposedPageSkeleton } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import { willRenderHeroBanner } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -11,7 +12,42 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
 
 /**
- * Renders the generic composed-page path (about / standard / list / grid / static).
+ * Derive the structure hints ComposedPageSkeleton needs from the SAME page
+ * config that drives the real render — format, labels, the primary binding's
+ * displayAs, whether a filter (second collection) binding exists, and the
+ * enabled block count. All synchronous: no data fetch, so the Suspense
+ * fallback below can be page-shaped from the first flush.
+ */
+function skeletonPropsFor(composedPage: PageConfig) {
+  const blocks = (composedPage.blocks ?? []).filter((b) => b?.enabled !== false);
+  let displayAs: string | undefined;
+  let hasFilters = false;
+  for (const block of blocks) {
+    const bindings = (block?.config?.bindings ?? []) as Array<
+      { collectionId?: string | null; displayAs?: string } | undefined
+    >;
+    const collectionBindings = bindings.filter((bd) => !!bd?.collectionId);
+    if (collectionBindings.length === 0) continue;
+    displayAs ??= collectionBindings[0]?.displayAs;
+    // The collection block's second collection binding is the filter binding
+    // (renderer blocks.ts `case 'collection'` — primary = first, filter = second).
+    if (collectionBindings.length > 1) hasFilters = true;
+    break;
+  }
+  return {
+    format: composedPage.format,
+    labels: composedPage.labels as Record<string, unknown> | undefined,
+    // Renderer default for a collection block's primary binding is 'grid'.
+    displayAs: displayAs ?? 'grid',
+    hasFilters,
+    blockCount: blocks.length || 1,
+    slug: composedPage.slug,
+  };
+}
+
+/**
+ * Renders the generic composed-page path (about / standard / list / grid /
+ * static / collection-list).
  *
  * Shared between [slug]/page.tsx (generic + static branches) and
  * [slug]/[itemId]/page.tsx (CP-11 nested sub-page branch) so the two cannot drift.
@@ -24,33 +60,26 @@ const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
  * and interactive/detail formats (shows, team, checkout-*) must NOT be routed
  * here — they are handled by their own arms in [slug]/page.tsx.
  *
- * Mirrors the isEmpty guard (SP-6 Task 5) and the transitional title band
- * (SP-6 Task 5 Concern-3) from [slug]/page.tsx so the two cannot drift.
+ * Streaming split (2026-07-13): the shell (Navbar / transitional title band /
+ * Footer) renders SYNCHRONOUSLY — siteData + pageConfig are already resolved —
+ * while the slow part (buildPageContext's collection fetches + composePage)
+ * streams in behind a Suspense boundary whose fallback is the renderer's
+ * ComposedPageSkeleton, derived from the same composedPage config. The user
+ * sees the real navbar + real page title + a structure-matched shimmer
+ * immediately, and the content pops in without layout shift.
  */
-export async function renderComposedPage({
+export function renderComposedPage({
   siteData,
   composedPage,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
 }) {
-  const { input, isEmpty } = await buildPageContext({
-    siteData,
-    page: composedPage,
-    isHome: false,
-  });
-
   const format = composedPage.format;
-
-  // SP-6 Task 5 isEmpty guard — only fires for generic formats.
-  // Mirrors the guard in [slug]/page.tsx so the two stay in sync.
-  if (isEmpty && GENERIC_FORMATS.has(format)) {
-    return notFound();
-  }
 
   // SP-6 Task 5 Concern-3: transitional title band (B-wrapper fallback).
   // Mirrors [slug]/page.tsx exactly. Self-disables once the page carries a
-  // section-header block (B-author model).
+  // section-header block (B-author model). Synchronous — stays in the shell.
   const isGenericFormat = GENERIC_FORMATS.has(format);
   const hasLabelTitle = !!(composedPage.labels?.title);
   const hasSectionHeaderBlock = (composedPage.blocks ?? []).some(
@@ -74,6 +103,12 @@ export async function renderComposedPage({
   // dark treatment) with text-inverse text, centered layout, and generous padding.
   // Light-chrome behavior is byte-identical to the previous implementation.
   const darkChrome = siteData.chrome === 'dark';
+
+  // The transitional title band already renders the page title in the shell for
+  // generic formats — strip labels from the skeleton there so the fallback
+  // doesn't double-render the same heading while streaming.
+  const skeletonProps = skeletonPropsFor(composedPage);
+  if (showTransitionalTitleBand) skeletonProps.labels = undefined;
 
   return (
     <>
@@ -128,8 +163,42 @@ export async function renderComposedPage({
           </div>
         )
       )}
-      {composePage(input)}
+      <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
+        <ComposedPageBody siteData={siteData} composedPage={composedPage} />
+      </Suspense>
       <Footer />
     </>
   );
+}
+
+/**
+ * The slow half — collection fetches (buildPageContext) + composePage. Runs
+ * behind the Suspense boundary above so the shell + skeleton flush first.
+ *
+ * notFound() note: the isEmpty guard now fires mid-stream (after the shell
+ * flushed). Next.js handles a notFound() thrown during streaming by emitting a
+ * client-side correction to the not-found boundary — the user still lands on
+ * the 404 UI. Crawler-visible status for this edge (an EMPTY generic page) is
+ * an accepted tradeoff for streaming the 99% case.
+ */
+async function ComposedPageBody({
+  siteData,
+  composedPage,
+}: {
+  siteData: SiteData;
+  composedPage: PageConfig;
+}) {
+  const { input, isEmpty } = await buildPageContext({
+    siteData,
+    page: composedPage,
+    isHome: false,
+  });
+
+  // SP-6 Task 5 isEmpty guard — only fires for generic formats.
+  // Mirrors the guard in [slug]/page.tsx so the two stay in sync.
+  if (isEmpty && GENERIC_FORMATS.has(composedPage.format)) {
+    return notFound();
+  }
+
+  return <>{composePage(input)}</>;
 }
