@@ -12,6 +12,14 @@ export interface ContentItem {
   imageSrcSet?: string;
   /** `sizes` hint paired with `imageSrcSet`. */
   imageSizes?: string;
+  /**
+   * Art-directed responsive variants of the primary image (WS4 6.1). Each entry
+   * pairs a CSS `media` query with its own signed `src` (+ optional `srcSet`);
+   * the renderer's `ProductImage` renders them as `<picture><source media>`.
+   * Absent when the object has only a plain single-image descriptor. Mirrors the
+   * renderer ContentItem field of the same name.
+   */
+  artDirectedSources?: Array<{ media: string; src: string; srcSet?: string }>;
   /** Price string (products) */
   price?: string;
   /** Date (shows/events) */
