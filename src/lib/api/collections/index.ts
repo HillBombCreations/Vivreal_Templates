@@ -7,7 +7,7 @@
 import 'server-only';
 
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '../client';
-import { getSignedUrl, getSrcSet } from '../media';
+import { toContentItem } from './mapItem';
 import type { ContentItem } from '@/types/ContentItem';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -61,43 +61,6 @@ interface FetchResult {
 /* ------------------------------------------------------------------ */
 
 /**
- * Field names checked FIRST when resolving an object's image. This is only a
- * priority hint for disambiguation (when an object carries several media
- * fields) — NOT an allowlist. It exists to preserve the exact image currently
- * picked for the blueprint schemas; the type-based scan below resolves images
- * regardless of field name.
- */
-const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thumbnail'] as const;
-
-/**
- * Resolve the signed image URL for an object by the field's TYPE, not its name.
- *
- * Users define their own schemas, so an image can live under any key
- * (`coverArt`, `poster`, `headshot`, `mugshot`, …). VR_Client_API only
- * populates `currentFile.source` on actual media fields, so `getSignedUrl(v)`
- * returning a non-empty string is a reliable structural signal that `v` is a
- * media descriptor — independent of what the field is called.
- *
- * Order: try the preferred fields first (deterministic, back-compatible pick
- * for the blueprint schemas), then scan every field and return the first whose
- * value is a media descriptor.
- */
-function resolveImage(objectValue: Record<string, unknown>): { url: string; srcset: string } {
-  // 1. Priority hint — keeps the existing pick for known blueprint fields.
-  for (const field of PREFERRED_IMAGE_FIELDS) {
-    const url = getSignedUrl(objectValue[field]);
-    if (url) return { url, srcset: getSrcSet(objectValue[field]) };
-  }
-  // 2. Type-based fallback — any field whose value is a media descriptor,
-  //    covering arbitrary user-defined schema keys.
-  for (const value of Object.values(objectValue)) {
-    const url = getSignedUrl(value);
-    if (url) return { url, srcset: getSrcSet(value) };
-  }
-  return { url: '', srcset: '' };
-}
-
-/**
  * Handle both envelope shapes the API may return:
  *   { items: [...], totalCount: N }   — paginated
  *   [...]                             — bare array (legacy)
@@ -128,38 +91,6 @@ function buildParams(opts: FetchOpts | undefined): URLSearchParams {
     }
   }
   return params;
-}
-
-/**
- * Map a raw API object to the unified ContentItem shape.
- */
-function toContentItem(
-  raw: Record<string, unknown>,
-  source: ContentItem['source'],
-  integrationType?: string
-): ContentItem {
-  const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
-
-  const title = String(objectValue.title ?? objectValue.name ?? '');
-  const description = objectValue.description ?? objectValue.bio ?? objectValue.review;
-  const price = objectValue.price;
-  const date = objectValue.date ?? raw.publishDate;
-  const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
-  const { url: imageUrl, srcset: imageSrcSet } = resolveImage(objectValue);
-
-  return {
-    id: String(raw._id ?? ''),
-    title,
-    description: description != null ? String(description) : undefined,
-    imageUrl: imageUrl || undefined,
-    imageSrcSet: imageSrcSet || undefined,
-    price: price != null ? String(price) : undefined,
-    date: date != null ? String(date) : undefined,
-    tags,
-    source,
-    integrationType,
-    raw: objectValue as Record<string, unknown>,
-  };
 }
 
 /* ------------------------------------------------------------------ */
