@@ -12,6 +12,17 @@ const nextConfig: NextConfig = {
     viewTransition: true,
   },
   images: {
+    // Serve SVG logos through next/image. The Vivreal media pipeline stores SVGs
+    // as-is and the client API serves them as `image/svg+xml` (VR_CMS_API does
+    // NOT rasterize vectors), so a migrated inline-<svg> or CSS-background SVG
+    // logo reaches next/image as an SVG. next/image blocks SVG optimization by
+    // default (HTTP 400), which rendered such logos broken on live sites. Enable
+    // it, but neutralize the SVG-XSS vector the "dangerously" refers to: force a
+    // download disposition and a locked-down CSP that forbids scripts and
+    // sandboxes the response, so a hostile SVG cannot execute.
+    dangerouslyAllowSVG: true,
+    contentDispositionType: 'attachment',
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
     remotePatterns: [
       {
         protocol: 'https',
