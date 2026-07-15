@@ -66,7 +66,7 @@ git() {
   sub="$1"; shift || true
   case "$sub" in
     config) return 0 ;;
-    branch) printf '%s\n' "$FAKE_BRANCH_R"; return 0 ;;
+    for-each-ref) printf '%s\n' "$FAKE_REFS"; return 0 ;;
     checkout)
       br=""
       while [ "$#" -gt 0 ]; do
@@ -121,11 +121,12 @@ function runSync({
   const summaryFile = sh(join(dir, 'summary.md'));
   const scriptFile = sh(join(dir, 'run.sh'));
 
-  // `git branch -r` output includes origin/main + origin/HEAD to prove filtering.
-  const branchLines = [
-    '  origin/HEAD -> origin/main',
-    '  origin/main',
-    ...branches.map((b) => `  origin/${b}`),
+  // `git for-each-ref ... refname:lstrip=3` output (bare branch names). Includes
+  // HEAD + main to prove the whole-name filter drops exactly those two.
+  const refLines = [
+    'HEAD',
+    'main',
+    ...branches,
   ].join('\n');
 
   const preamble = [
@@ -136,7 +137,7 @@ function runSync({
     `FAKE_CONFLICTS='${conflicts.join(' ')}'`,
     `FAKE_PUSH_FAIL='${pushFail.join(' ')}'`,
     `FAKE_CHECKOUT_FAIL='${checkoutFail.join(' ')}'`,
-    `FAKE_BRANCH_R='${branchLines}'`,
+    `FAKE_REFS='${refLines}'`,
     DOUBLES,
   ].join('\n');
 
@@ -187,6 +188,19 @@ test('discovery excludes origin/main and origin/HEAD', () => {
   assert.match(r.pushLog, /OK alpha beta/);
   assert.doesNotMatch(r.pushLog, /\bmain\b/);
   assert.doesNotMatch(r.pushLog, /HEAD/);
+});
+
+// Regression guard for the substring-filter bug: a site branch whose NAME merely
+// starts with (or contains) "main" — e.g. `mainstreet-dental` — must still be
+// discovered and synced. The old `grep -v origin/main` excluded it forever because
+// its ref line `origin/mainstreet-dental` contained the substring `origin/main`.
+// Whole-name matching (grep -vxE 'main|HEAD') drops only the literal `main` ref.
+test('main-prefixed site branch (mainstreet-dental) is included and synced', () => {
+  const r = runSync({ branches: ['mainstreet-dental', 'downtown-vet'] });
+  assert.equal(r.status, 0, r.stderr || r.stdout);
+  assert.match(r.pushLog, /OK mainstreet-dental downtown-vet/); // both pushed in one batch
+  assert.equal(r.curlCalled, false, 'no failures → no webhook report');
+  assert.match(r.summary, /\| mainstreet-dental \| synced \|/);
 });
 
 test('merge conflict is isolated, aborted, and reported; other branches still sync', () => {

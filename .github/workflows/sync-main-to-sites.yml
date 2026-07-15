@@ -57,16 +57,16 @@ jobs:
           git config user.email "bot@vivreal.io"
 
           # --- Discover all non-main remote branches -----------------------------
-          # Same listing semantics as the old `discover` job: drop origin/main and
-          # origin/HEAD, strip the "origin/" prefix and leading whitespace, ignore
-          # blank lines.
+          # List each remote branch by its bare name (refname:lstrip=3 drops the
+          # refs/remotes/origin/ prefix) and drop exactly `main` and `HEAD`.
+          # Whole-name matching (grep -vxE) is deliberate: a substring filter like
+          # `grep -v origin/main` would also silently exclude any real site branch
+          # whose name merely CONTAINS "main" — e.g. `mainstreet-dental` (ref line
+          # origin/mainstreet-dental) — leaving it unsynced forever. Anchoring to the
+          # full ref name fixes that and drops the sed/whitespace handling.
           mapfile -t BRANCHES < <(
-            git branch -r \
-              | grep -v 'origin/main' \
-              | grep -v 'origin/HEAD' \
-              | sed 's|origin/||' \
-              | sed 's/^[ \t]*//' \
-              | grep -v '^$'
+            git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin \
+              | grep -vxE 'main|HEAD'
           )
           echo "Discovered ${#BRANCHES[@]} site branch(es) to sync."
 
