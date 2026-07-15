@@ -21,7 +21,10 @@ const Navbar = async () => {
   const siteData = await getSiteData();
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
-  const businessLogoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  // No logo ⇒ '' (renderer NavbarView gates the <img> on truthiness → name-only
+  // wordmark). '/logo.png' does not exist in public/, so the old fallback
+  // rendered a broken image on every logo-less site.
+  const businessLogoUrl = getSignedUrl(siteData?.logo) || '';
 
   // Per-field inherit/override (presence-means-override; see Footer wrapper).
   const brand = siteData?.navigation?.brand ?? undefined;

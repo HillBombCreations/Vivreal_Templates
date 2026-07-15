@@ -28,7 +28,10 @@ const Footer = async () => {
   const siteData = await getSiteData();
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
-  const businessLogoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  // No logo ⇒ '' (the renderer gates the footer <img> on truthiness → name-only).
+  // '/logo.png' does not exist in public/ — the old fallback rendered a broken
+  // image on every logo-less site.
+  const businessLogoUrl = getSignedUrl(siteData?.logo) || '';
   const businessEmail = siteData?.businessInfo?.contactInfo?.email;
 
   // Per-field inherit/override. A key being PRESENT on `brand` (even "") is an
