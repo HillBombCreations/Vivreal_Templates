@@ -50,10 +50,14 @@ export default async function DynamicItemPage({ params }: Props) {
   const nestedSlug = `${slug}/${itemId}`;
   const nestedPage = getPageBySlug(siteData, nestedSlug);
   if (nestedPage) {
-    // Defensive guard: interactive/collection formats never appear as nested page
-    // configs. If one somehow does, return notFound() rather than misrender.
+    // Defensive guard: formats needing runtime component overrides or their own
+    // interactive arms never render via renderComposedPage. If one appears nested,
+    // return notFound() rather than misrender. `menu` is deliberately NOT here:
+    // a menu page composes with no overrides (ComposedFormatBody ≡ ComposedPageBody
+    // for it), and migrated location-scoped menus ship 2-segment slugs like
+    // "moraga/dinner" (Breweries template, Gate-2 2026-07-15).
     const NON_NESTABLE_FORMATS = new Set([
-      "products", "schedule", "menu", "subscribe",
+      "products", "schedule", "subscribe",
       "checkout-success", "checkout-cancel", "home", "shows", "team",
     ]);
     if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
