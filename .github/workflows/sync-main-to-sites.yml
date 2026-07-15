@@ -37,9 +37,63 @@ jobs:
           token: ${{ secrets.TOKEN_FOR_GITHUIB }}
 
       - name: Merge main into ${{ matrix.branch }}
+        id: merge
         run: |
           git config user.name "Vivreal Bot"
           git config user.email "bot@vivreal.io"
           git checkout ${{ matrix.branch }}
           git merge origin/main --no-edit -m "chore: sync main → ${{ matrix.branch }}"
-          git push origin ${{ matrix.branch }}
+
+      - name: Push ${{ matrix.branch }}
+        id: push
+        run: git push origin ${{ matrix.branch }}
+
+      # If the merge (conflict) or the push failed for THIS branch, tell the portal so
+      # VR_Secure_API can flip the affected site's deployment.status to "sync_conflict"
+      # and a human gets alerted — instead of the branch silently stopping getting
+      # template updates. Runs only on this branch's failure (fail-fast: false keeps the
+      # other branches going). Best-effort: a webhook error must never mask, or escalate,
+      # the real sync failure.
+      - name: Report sync failure to portal
+        if: failure()
+        continue-on-error: true
+        env:
+          TEMPLATE_SYNC_WEBHOOK_URL: ${{ secrets.TEMPLATE_SYNC_WEBHOOK_URL }}
+          TEMPLATE_SYNC_WEBHOOK_SECRET: ${{ secrets.TEMPLATE_SYNC_WEBHOOK_SECRET }}
+          BRANCH: ${{ matrix.branch }}
+          MERGE_OUTCOME: ${{ steps.merge.outcome }}
+          PUSH_OUTCOME: ${{ steps.push.outcome }}
+          TEMPLATE_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$TEMPLATE_SYNC_WEBHOOK_URL" ] || [ -z "$TEMPLATE_SYNC_WEBHOOK_SECRET" ]; then
+            echo "::warning::TEMPLATE_SYNC_WEBHOOK_URL/SECRET not configured — cannot report sync failure for $BRANCH"
+            exit 0
+          fi
+
+          # Distinguish a real merge conflict from a push failure from everything else
+          # (e.g. the checkout step itself failing, leaving merge/push "skipped" rather
+          # than "failure"). Either way the portal marks the site for human attention —
+          # the reason is carried for logs/triage only.
+          if [ "$MERGE_OUTCOME" = "failure" ]; then
+            REASON="merge_conflict"
+          elif [ "$PUSH_OUTCOME" = "failure" ]; then
+            REASON="push_failure"
+          else
+            REASON="infra_failure"
+          fi
+          echo "Reporting $REASON for branch $BRANCH to portal webhook"
+
+          # Build the JSON with jq so branch names are safely escaped (jq is already a
+          # dependency of the discover job on GitHub-hosted runners).
+          PAYLOAD=$(jq -nc \
+            --arg template "$TEMPLATE_REPO" \
+            --arg branch "$BRANCH" \
+            --arg reason "$REASON" \
+            '{template: $template, conflicts: [$branch], synced: [], reason: $reason}')
+
+          curl --fail-with-body --max-time 15 \
+            -X POST "$TEMPLATE_SYNC_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: $TEMPLATE_SYNC_WEBHOOK_SECRET" \
+            -d "$PAYLOAD" \
+            || echo "::warning::sync-conflict webhook POST failed for $BRANCH (best-effort, ignored)"
