@@ -1,5 +1,28 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Release channels
+
+Every customer site's Amplify app builds from a single shared branch — there are
+no per-site branches. Two channels matter:
+
+- **`main`** — integration. Merge day-to-day template work here. Merging to
+  `main` does **not** touch any live site.
+- **`stable`** — the release channel. Every customer site's Amplify app is bound
+  to `stable`; a push to `stable` rebuilds all of them.
+- **`beta`** — reserved for a future opt-in channel (volunteer sites). Not wired
+  up yet.
+
+**Promotion (`main` → `stable`) is a manual, fast-forward-only step.** Run the
+**Promote main to stable** workflow (`.github/workflows/promote-stable.yml`) from
+the Actions tab (`workflow_dispatch`). It refuses to run unless `stable` is a
+strict ancestor of `main` (i.e. a real fast-forward), and reports the old → new
+`stable` SHA in the run summary. There is no automatic promotion on merge — that
+is deliberate, so shipping to every site is always an explicit decision.
+
+**Per-site emergency hold.** To pin one site while promoting the rest, disable
+that Amplify app's branch auto-build, then start builds explicitly with
+`start-job` only when you want that site to pick up `stable`.
+
 ## Getting Started
 
 First, run the development server:
