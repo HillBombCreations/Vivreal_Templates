@@ -93,7 +93,8 @@ const Providers = ({
     const content = (
         <NextProvider
             mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-            onSubscribe={async (email: string) => subscribeUser(email, subscribersCollectionId)}
+            onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) =>
+                subscribeUser(email, subscribersCollectionId, fields)}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>

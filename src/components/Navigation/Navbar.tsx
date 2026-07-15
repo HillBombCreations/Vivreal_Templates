@@ -59,6 +59,9 @@ const Navbar = async () => {
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
+      // Site-level announcement strip — rendered by the renderer INSIDE the
+      // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
+      announcement={siteData?.announcement ?? null}
     />
   );
 };

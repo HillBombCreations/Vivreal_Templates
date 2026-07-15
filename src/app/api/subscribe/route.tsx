@@ -5,9 +5,28 @@ function isValidEmail(email: unknown): email is string {
   return typeof email === "string" && /\S+@\S+\.\S+/.test(email);
 }
 
+/**
+ * Sanitize optional extra subscriber attributes (e.g. the footer newsletter's
+ * { location } select): a flat object, string values only, small and capped —
+ * anything else is dropped silently (the email subscription still succeeds).
+ */
+function sanitizeFields(raw: unknown): Record<string, string> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out: Record<string, string> = {};
+  let count = 0;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    if (key === "email" || key === "collectionId" || key === "type") continue;
+    if (key.length > 40 || value.length > 200) continue;
+    out[key] = value;
+    if (++count >= 8) break;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export async function POST(req: Request) {
   try {
-    const { email, collectionId } = await req.json();
+    const { email, collectionId, fields } = await req.json();
 
     if (!isValidEmail(email)) {
       return NextResponse.json(
@@ -23,7 +42,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const ok = await subscribeUser(email, collectionId);
+    const ok = await subscribeUser(email, collectionId, sanitizeFields(fields));
     if (!ok) {
       return NextResponse.json(
         { success: false, message: "Subscribe failed." },

@@ -13,6 +13,7 @@ import type {
   SocialLink as RendererSocialLink,
   Block,
   FloatingCtaConfig,
+  AnnouncementStripConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -338,6 +339,12 @@ export interface SiteData {
      * precedent as the other renderer-shaped fields above).
      */
     floatingCta?: FloatingCtaConfig;
+    /**
+     * Site-level announcement/promo strip. Stored flat on the site doc (like
+     * `chrome` / `emailPopup`); the Navbar server shell threads it into the
+     * renderer's fixed header. Absent/null ⇒ no strip (back-compat).
+     */
+    announcement?: AnnouncementStripConfig | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media

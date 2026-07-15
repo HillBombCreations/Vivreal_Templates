@@ -70,6 +70,8 @@ interface SiteDetailsResponse {
   // CC9 — Studio-authored email-capture popup config. Returned by VR_Client_API
   // getSiteDetails (null/absent ⇒ legacy popup behavior).
   emailPopup?: SiteData['emailPopup'];
+  // Site-level announcement/promo strip (null/absent ⇒ no strip).
+  announcement?: SiteData['announcement'];
   tier?: string;
 }
 
@@ -136,6 +138,11 @@ export const getSiteData = async (): Promise<SiteData> => {
     footer: raw.footer ?? null,
     // CC9 — Studio-authored email-capture popup config (null ⇒ legacy behavior).
     emailPopup: raw.emailPopup ?? null,
+    // Announcement strip: top-level response field wins (emailPopup precedent);
+    // falls back to a values-carried config so neither storage location
+    // silently nulls it (the emailPopup values-only-emit gotcha).
+    announcement:
+      raw.announcement ?? (raw.siteDetails.values as SiteData).announcement ?? null,
     tier: raw.tier,
   };
 };
