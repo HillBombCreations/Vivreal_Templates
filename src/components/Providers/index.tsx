@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster as AppToaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { SiteData } from '@/types/SiteData';
+import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
@@ -30,6 +31,12 @@ const Providers = ({
                     document.documentElement.style.setProperty(`--${key}`, value);
                 }
             });
+            // Derived token (mirrors layout.tsx SSR emission): the AA-on-white
+            // accent variant for rich-text links / accent-as-text surfaces.
+            const readable = readableAccentOnWhite(siteData.primary);
+            if (readable) {
+                document.documentElement.style.setProperty('--accent-readable', readable);
+            }
         }
         // Typography is an object (skipped by the string loop above) — map the
         // Studio's Branding preset onto the font CSS vars consumed by

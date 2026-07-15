@@ -7,6 +7,7 @@ import { getSiteData } from '@/lib/api/siteData';
 import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
+import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta } from '@/components/RendererExports';
@@ -77,6 +78,12 @@ function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undef
     const v = siteData[key];
     if (typeof v === 'string' && v.trim() !== '') style[`--${key}`] = v;
   }
+  // Derived token — the AA-on-white variant of the brand accent, consumed by
+  // the renderer's rich-text link rule (`.vr-rich a`) and any accent-as-text
+  // surface. Only emitted for parseable hex primaries; the CSS falls back to
+  // `--primary` otherwise (byte-identical for non-hex/absent primaries).
+  const readable = readableAccentOnWhite(style['--primary']);
+  if (readable) style['--accent-readable'] = readable;
   return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
 }
 
