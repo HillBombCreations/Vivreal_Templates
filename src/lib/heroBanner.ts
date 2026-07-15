@@ -22,10 +22,22 @@ import type { PageConfig } from "@/types/SiteData";
  * copy-drift that let the double-title bug through in the first place.
  */
 export function willRenderHeroBanner(page: Pick<PageConfig, "labels" | "blocks">): boolean {
-  const hasHomeSectionBlock = (page.blocks ?? []).some(
-    (b) => b?.type?.kind === "home-section",
-  );
   const buttonLabel = (page.labels?.buttonLabel ?? "").trim();
   const buttonLink = (page.labels?.buttonLink ?? "").trim();
-  return !hasHomeSectionBlock && !!buttonLabel && !!buttonLink;
+  return !hasHomeSectionBlock(page) && !!buttonLabel && !!buttonLink;
+}
+
+/**
+ * Whether the page's blocks[] contain a `kind:'home-section'` block — i.e. a
+ * real hero (the Gate-2 masthead carousel prepend, a showcase hero, …) that
+ * OWNS the page heading. The transitional title band must self-disable for
+ * these pages exactly as it does for a section-header block: the hero renders
+ * `page.hero.title` (renderer `resolveHero`), so the bare band above it would
+ * double-render the H1 AND push the full-bleed masthead off the top of the
+ * page (breaking the transparent-header-over-hero state). Same single-source
+ * rationale as {@link willRenderHeroBanner} — both page wrappers import this
+ * rather than re-deriving it inline.
+ */
+export function hasHomeSectionBlock(page: Pick<PageConfig, "blocks">): boolean {
+  return (page.blocks ?? []).some((b) => b?.type?.kind === "home-section");
 }

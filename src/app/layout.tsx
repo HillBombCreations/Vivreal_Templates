@@ -93,6 +93,12 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // the site keeps today's hardcoded Outfit default byte-identically. See
     // src/lib/fonts/siteFont.ts for the full loading-strategy rationale.
     const siteFont = resolveSiteFont(siteData.fontFamily);
+    // Gate-2 typography pairing — optional SECOND family for body copy
+    // (siteData.fontFamilyBody, e.g. Varone's Marcellus display + Montserrat
+    // body). Absent ⇒ null ⇒ --font-body keeps the display family exactly as
+    // before (byte-identical for every existing site). Only meaningful when a
+    // display font is also set (no body-only override).
+    const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody) : null;
     // SSR the palette + density BEFORE hydration (see themeVarStyle above).
     // Providers' effect re-stamps both on the client; values are identical so
     // hydration stays clean.
@@ -116,11 +122,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               {siteFont?.googleFontsHref && (
                   <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
               )}
+              {siteFontBody?.googleFontsHref && (
+                  <link rel="stylesheet" href={siteFontBody.googleFontsHref} precedence="default" />
+              )}
           </head>
           <body
               style={
                   siteFont
-                      ? ({ '--font-display': siteFont.cssValue, '--font-body': siteFont.cssValue } as CSSProperties)
+                      ? ({ '--font-display': siteFont.cssValue, '--font-body': (siteFontBody ?? siteFont).cssValue } as CSSProperties)
                       : undefined
               }
           >

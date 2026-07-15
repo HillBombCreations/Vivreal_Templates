@@ -19,7 +19,7 @@ import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAd
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
-import { willRenderHeroBanner } from "@/lib/heroBanner";
+import { willRenderHeroBanner, hasHomeSectionBlock } from "@/lib/heroBanner";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
@@ -376,8 +376,11 @@ export default async function DynamicPage({
     // shared gate + full rationale: a synthetic hero banner (renderer mapBlocks)
     // already renders labels.title + subtitle + button, so the bare title band here
     // must self-disable.
+    // Gate-2 masthead dedupe (mirrors renderComposedPage.tsx — lockstep contract):
+    // a home-section hero block owns the H1; the bare band would double-title.
     const showTransitionalTitleBand =
-      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock && !willRenderHeroBanner(composedPage);
+      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock &&
+      !hasHomeSectionBlock(composedPage) && !willRenderHeroBanner(composedPage);
 
     return (
       <>
