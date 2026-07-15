@@ -70,13 +70,16 @@ jobs:
             exit 0
           fi
 
-          # Distinguish a real merge conflict from a transient push failure (cheap via the
-          # merge step's outcome). Either way the portal marks the site for human
-          # attention — the reason is carried for logs/triage only.
+          # Distinguish a real merge conflict from a push failure from everything else
+          # (e.g. the checkout step itself failing, leaving merge/push "skipped" rather
+          # than "failure"). Either way the portal marks the site for human attention —
+          # the reason is carried for logs/triage only.
           if [ "$MERGE_OUTCOME" = "failure" ]; then
             REASON="merge_conflict"
-          else
+          elif [ "$PUSH_OUTCOME" = "failure" ]; then
             REASON="push_failure"
+          else
+            REASON="infra_failure"
           fi
           echo "Reporting $REASON for branch $BRANCH to portal webhook"
 
