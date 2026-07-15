@@ -272,6 +272,18 @@ export interface SiteData {
         secondaryCta?: NavbarCta | null;
         /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
         headerWidth?: 'contained' | 'full' | null;
+        /**
+         * Gate-2 §7 — menu pattern. null/absent/'drawer' ⇒ today's MobileNav
+         * drawer (byte-identical). 'overlay' ⇒ the renderer's full-screen
+         * OverlayNav on ALL breakpoints (Pippin pattern).
+         */
+        menuStyle?: 'drawer' | 'overlay' | null;
+        /**
+         * Gate-2 §7 — default OverlayNav background photo. Pre-signed contract
+         * (a URL string or a descriptor with inlined currentFile.source — the
+         * renderer's resolveMediaSrc reads either; it does no signing I/O).
+         */
+        overlayBackground?: { name?: string; key?: string; type?: string; currentFile?: { source?: string } } | string | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {

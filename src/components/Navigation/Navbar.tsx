@@ -48,6 +48,12 @@ const Navbar = async () => {
       cta={siteData?.navigation?.cta ?? null}
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
+      // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
+      // resolveMediaSrc reads a pre-signed URL string or an inlined
+      // currentFile.source descriptor (this shell does no signing for it — the
+      // loader/preview supply it inlined, same contract as NavMenuItem.image).
+      menuStyle={siteData?.navigation?.menuStyle ?? null}
+      overlayBackground={siteData?.navigation?.overlayBackground ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
