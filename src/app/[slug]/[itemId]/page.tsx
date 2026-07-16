@@ -361,7 +361,107 @@ export default async function DynamicItemPage({ params }: Props) {
     );
   }
 
+  // Menu item detail (Levain PDP round — bakery page-by-page gate). Gate
+  // matches the H1 doctrine the renderer's tile links follow: absent/null
+  // detailPage means detail-ON; only an explicit enabled:false 404s. (The
+  // route existing at all is new — fleet menu tiles only started LINKING here
+  // with the same renderer bump, so defaults stay coherent.) A menu page
+  // carries TWO bindings (categories + items) — resolve the ITEMS one by
+  // menuRole, mirroring the renderer's blocks.ts fallbacks;
+  // getPageCollectionId would blindly take the FIRST binding (categories).
+  if (pageConfig.format === "menu") {
+    if (pageConfig.detailPage?.enabled === false) return notFound();
+    const collectionId = findMenuItemsCollectionId(pageConfig);
+    if (!collectionId) return notFound();
+
+    const { items } = await getCollectionItems(collectionId, { limit: 100 });
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return notFound();
+
+    // Related shelf: same category first (excluding self), then the rest —
+    // href OVERRIDDEN to the item's own detail page so the shelf never
+    // follows the item-authored order link.
+    const category = (item.raw as { category?: unknown } | undefined)?.category;
+    const sameCategory = items.filter(
+      (it) =>
+        it.id !== itemId &&
+        (typeof category !== "string" ||
+          (it.raw as { category?: unknown } | undefined)?.category === category)
+    );
+    const relatedItems = sameCategory.map((it) => ({
+      ...it,
+      href: `/${slug}/${it.id}`,
+    }));
+
+    const cleanDesc =
+      typeof item.description === "string"
+        ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
+        : undefined;
+    const itemJsonLd = buildDetailJsonLd({
+      format: "products",
+      title: item.title || pageConfig.name,
+      description: cleanDesc,
+      imageUrl: unsignMediaUrl(item.imageUrl),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
+      price: typeof item.price === "string" ? item.price : undefined,
+      sku: item.id,
+    });
+
+    return (
+      <>
+        <JsonLd schema={itemJsonLd} />
+        <Navbar />
+        <DetailPageTemplate
+          slug={slug}
+          format={pageConfig.format}
+          item={item as unknown as DetailItem}
+          siteData={siteData as unknown as RendererSiteData}
+          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+          relatedItems={relatedItems}
+        />
+        <Footer />
+      </>
+    );
+  }
+
   return notFound();
+}
+
+/**
+ * Resolve the menu ITEMS collection id from a menu page's blocks. Menu pages
+ * carry a categories + items binding pair (on a monolith page-template block
+ * or a coordinated group's `menu-items` child) — mirror the renderer's
+ * blocks.ts resolution: `sectionConfig.menuRole === 'items'` wins, then a
+ * binding titled like "items", then the LAST binding (the monolith fallback).
+ */
+function findMenuItemsCollectionId(pageConfig: {
+  blocks?: unknown;
+}): string | undefined {
+  type LooseBinding = {
+    collectionId?: string;
+    title?: string;
+    sectionConfig?: { menuRole?: string };
+  };
+  type LooseBlock = {
+    type?: { kind?: string };
+    config?: { bindings?: LooseBinding[]; children?: LooseBlock[] };
+  };
+  const collect = (blocks: LooseBlock[]): LooseBinding[] =>
+    blocks.flatMap((b) => [
+      ...(b?.config?.bindings ?? []),
+      ...(Array.isArray(b?.config?.children) ? collect(b.config.children) : []),
+    ]);
+  const bindings = collect(
+    Array.isArray(pageConfig.blocks) ? (pageConfig.blocks as LooseBlock[]) : []
+  ).filter((b) => b.collectionId);
+  const itemsB =
+    bindings.find((b) => b.sectionConfig?.menuRole === "items") ??
+    bindings.find((b) => (b.title ?? "").toLowerCase().includes("item")) ??
+    bindings[bindings.length - 1];
+  return itemsB?.collectionId;
 }
 
 export async function generateMetadata({ params }: Props) {
