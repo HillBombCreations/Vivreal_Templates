@@ -370,19 +370,49 @@ export default async function DynamicItemPage({ params }: Props) {
   // menuRole, mirroring the renderer's blocks.ts fallbacks;
   // getPageCollectionId would blindly take the FIRST binding (categories).
   if (pageConfig.format === "menu") {
-    if (pageConfig.detailPage?.enabled === false) return notFound();
-    const collectionId = findMenuItemsCollectionId(pageConfig);
-    if (!collectionId) return notFound();
+    // detailPage.enabled === false already 404'd at the top-of-function H1
+    // gate — TS narrowing proves it can't recur here.
+    const { itemsCollectionId, siblingCollectionIds } =
+      resolveMenuDetailCollections(pageConfig);
+    if (!itemsCollectionId && siblingCollectionIds.length === 0)
+      return notFound();
 
-    const { items } = await getCollectionItems(collectionId, { limit: 100 });
-    const item = items.find((it) => it.id === itemId);
+    // The ITEMS binding is the primary pool; SIBLING bindings (the extra
+    // collections a menu page carries around the pair — e.g. the bakery
+    // catering page's cakes carousel, whose detail-eligible cards link here
+    // too) are searched in binding order when the item isn't a menu item.
+    // The pool the item came from feeds its related shelf.
+    type PoolItem = Awaited<
+      ReturnType<typeof getCollectionItems>
+    >["items"][number];
+    let pool: PoolItem[] = [];
+    let item: PoolItem | undefined;
+    if (itemsCollectionId) {
+      const { items } = await getCollectionItems(itemsCollectionId, {
+        limit: 100,
+      });
+      item = items.find((it) => it.id === itemId);
+      if (item) pool = items;
+    }
+    if (!item) {
+      for (const cid of siblingCollectionIds) {
+        const { items } = await getCollectionItems(cid, { limit: 100 });
+        const hit = items.find((it) => it.id === itemId);
+        if (hit) {
+          item = hit;
+          pool = items;
+          break;
+        }
+      }
+    }
     if (!item) return notFound();
 
     // Related shelf: same category first (excluding self), then the rest —
     // href OVERRIDDEN to the item's own detail page so the shelf never
-    // follows the item-authored order link.
+    // follows the item-authored order link. Sibling collections rarely carry
+    // a category field, so their whole pool matches (e.g. "More Cakes").
     const category = (item.raw as { category?: unknown } | undefined)?.category;
-    const sameCategory = items.filter(
+    const sameCategory = pool.filter(
       (it) =>
         it.id !== itemId &&
         (typeof category !== "string" ||
@@ -431,15 +461,19 @@ export default async function DynamicItemPage({ params }: Props) {
 }
 
 /**
- * Resolve the menu ITEMS collection id from a menu page's blocks. Menu pages
- * carry a categories + items binding pair (on a monolith page-template block
- * or a coordinated group's `menu-items` child) — mirror the renderer's
+ * Resolve a menu page's detail-searchable collections from its blocks. Menu
+ * pages carry a categories + items binding pair (on a monolith page-template
+ * block or a coordinated group's `menu-items` child) — mirror the renderer's
  * blocks.ts resolution: `sectionConfig.menuRole === 'items'` wins, then a
  * binding titled like "items", then the LAST binding (the monolith fallback).
+ * Every OTHER collection binding except the categories one (whose objects are
+ * category headers, never detail items) is a SIBLING pool — e.g. the bakery
+ * catering page's cakes carousel — searched when the item isn't a menu item.
  */
-function findMenuItemsCollectionId(pageConfig: {
-  blocks?: unknown;
-}): string | undefined {
+function resolveMenuDetailCollections(pageConfig: { blocks?: unknown }): {
+  itemsCollectionId: string | undefined;
+  siblingCollectionIds: string[];
+} {
   type LooseBinding = {
     collectionId?: string;
     title?: string;
@@ -461,7 +495,21 @@ function findMenuItemsCollectionId(pageConfig: {
     bindings.find((b) => b.sectionConfig?.menuRole === "items") ??
     bindings.find((b) => (b.title ?? "").toLowerCase().includes("item")) ??
     bindings[bindings.length - 1];
-  return itemsB?.collectionId;
+  const categoriesB =
+    bindings.find((b) => b.sectionConfig?.menuRole === "categories") ??
+    bindings.find((b) => (b.title ?? "").toLowerCase().includes("categor"));
+  const seen = new Set<string>();
+  const siblingCollectionIds = bindings
+    .filter(
+      (b) =>
+        b !== itemsB &&
+        b !== categoriesB &&
+        b.collectionId !== itemsB?.collectionId &&
+        b.collectionId !== categoriesB?.collectionId
+    )
+    .map((b) => b.collectionId!)
+    .filter((id) => (seen.has(id) ? false : (seen.add(id), true)));
+  return { itemsCollectionId: itemsB?.collectionId, siblingCollectionIds };
 }
 
 export async function generateMetadata({ params }: Props) {
