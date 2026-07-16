@@ -111,12 +111,17 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // hydration stays clean.
     const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
     const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
+    // Motion-signature preset (template-identity kits §6) — SSR-stamped like
+    // styleVariant so first paint gets the preset's `--motion-*` tokens from
+    // the renderer's content-grid.css; Providers re-stamps on the client.
+    const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
     return (
       <html
         lang="en"
         className={siteFont?.variableClassName}
         style={themeStyle}
         {...(styleVariant ? { 'data-style-variant': styleVariant } : {})}
+        {...(motionPreset ? { 'data-motion-preset': motionPreset } : {})}
       >
           <head>
               {/* Structured data for classic crawlers + AI assistants. Emitted

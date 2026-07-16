@@ -57,6 +57,16 @@ const Providers = ({
         } else {
             document.documentElement.removeAttribute('data-style-variant');
         }
+        // Motion-signature preset (template-identity kits §6). Same stamp
+        // pattern as styleVariant: the renderer's published content-grid.css
+        // scopes `--motion-*` token overrides to [data-motion-preset='<id>'].
+        // Absent ⇒ removed ⇒ the :root defaults (legacy Wave-F motion).
+        const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
+        if (motionPreset) {
+            document.documentElement.setAttribute('data-motion-preset', motionPreset);
+        } else {
+            document.documentElement.removeAttribute('data-motion-preset');
+        }
     }, [siteData]);
 
     const pages = siteData.pageConfigs ?? [];

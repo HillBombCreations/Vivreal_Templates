@@ -81,6 +81,13 @@ const COMPOSE_FORMATS = new Set<string>([
   // sortable catalog grid, no commerce). Without this entry a collection-list page
   // (e.g. an off-site-checkout product catalog) is unrecognized and 404s.
   "collection-list",
+  // catalog → renderer `catalog` page-template (CatalogStorefront, bakery net-new
+  // kit #1): category-rail SECTIONED browser for large categorized catalogs, no
+  // commerce. Same delegation path as collection-list (renderComposedPage).
+  "catalog",
+  // location-hub → the per-location hub page type (taproom net-new). Emits the
+  // same blocks as `standard` (renderer parity contract); same delegation path.
+  "location-hub",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -272,7 +279,9 @@ export default async function DynamicPage({
         format === "standard" ||
         format === "list" ||
         format === "grid" ||
-        format === "collection-list"
+        format === "collection-list" ||
+        format === "catalog" ||
+        format === "location-hub"
       ) {
         return renderComposedPage({ siteData, composedPage });
       }
