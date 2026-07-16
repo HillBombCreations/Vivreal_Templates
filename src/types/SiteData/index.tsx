@@ -286,6 +286,19 @@ export interface SiteData {
          * renderer's resolveMediaSrc reads either; it does no signing I/O).
          */
         overlayBackground?: { name?: string; key?: string; type?: string; currentFile?: { source?: string } } | string | null;
+        /**
+         * Bakery identity kit (Levain round) — header BAR arrangement.
+         * 'logo-center' = nav tabs LEFT, brand absolutely CENTERED, actions
+         * right. Absent/null ⇒ today's brand-left bar (byte-identical).
+         */
+        layout?: 'logo-center' | null;
+        /**
+         * Bakery identity kit (Levain round) — desktop dropdown treatment.
+         * 'cards' = full-width image-card mega panel docked under the bar
+         * (child image descriptors, pre-signed contract) with a trailing
+         * "All <label> →" link. Absent/null ⇒ the compact/rich text panel.
+         */
+        dropdownStyle?: 'cards' | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
@@ -305,6 +318,14 @@ export interface SiteData {
         socialStyle?: 'column' | 'icons' | null;
         /** Owner pass 2 — 'bar' = full-width "Stay in the loop" bar above the legal strip. */
         newsletterPlacement?: 'brand' | 'bar' | null;
+        /**
+         * Bakery identity kit (Levain round) — 'centerpiece' = centered brand +
+         * newsletter + social icons between flanking link columns over
+         * `background` (inverse text). Absent/null ⇒ today's 3-column grid.
+         */
+        variant?: 'columns' | 'centerpiece' | null;
+        /** Centerpiece background — resolved CSS color; absent ⇒ var(--primary). */
+        background?: string | null;
     } | null;
     /**
      * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the

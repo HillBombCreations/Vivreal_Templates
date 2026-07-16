@@ -87,6 +87,10 @@ const Footer = async () => {
         socialStyle: siteData?.footer?.socialStyle ?? undefined,
         newsletterPlacement: siteData?.footer?.newsletterPlacement ?? undefined,
         logoFilter: siteData?.footer?.brand?.logoFilter ?? null,
+        // Levain round — centerpiece footer (centered brand+newsletter over an
+        // authored background). Opt-in; absent keeps the grid byte-identical.
+        variant: siteData?.footer?.variant ?? null,
+        background: siteData?.footer?.background ?? null,
       } as Record<string, unknown>)}
     />
   );

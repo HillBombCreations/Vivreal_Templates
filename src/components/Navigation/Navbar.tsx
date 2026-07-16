@@ -54,6 +54,10 @@ const Navbar = async () => {
       // loader/preview supply it inlined, same contract as NavMenuItem.image).
       menuStyle={siteData?.navigation?.menuStyle ?? null}
       overlayBackground={siteData?.navigation?.overlayBackground ?? null}
+      // Levain round — logo-center bar + image-card mega dropdowns (both
+      // opt-in; null/absent keep the default bar byte-identical).
+      layout={siteData?.navigation?.layout ?? null}
+      dropdownStyle={siteData?.navigation?.dropdownStyle ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
