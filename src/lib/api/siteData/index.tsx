@@ -72,6 +72,9 @@ interface SiteDetailsResponse {
   emailPopup?: SiteData['emailPopup'];
   // Site-level announcement/promo strip (null/absent ⇒ no strip).
   announcement?: SiteData['announcement'];
+  // Utility strip — slim persistent info bar in the fixed header (identity
+  // kits §5.3; null/absent ⇒ no strip).
+  utilityStrip?: SiteData['utilityStrip'];
   tier?: string;
 }
 
@@ -143,6 +146,10 @@ export const getSiteData = async (): Promise<SiteData> => {
     // silently nulls it (the emailPopup values-only-emit gotcha).
     announcement:
       raw.announcement ?? (raw.siteDetails.values as SiteData).announcement ?? null,
+    // Utility strip: same dual-source read as announcement (top-level wins,
+    // values fallback — the emailPopup values-only-emit gotcha).
+    utilityStrip:
+      raw.utilityStrip ?? (raw.siteDetails.values as SiteData).utilityStrip ?? null,
     tier: raw.tier,
   };
 };

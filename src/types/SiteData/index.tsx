@@ -14,6 +14,7 @@ import type {
   Block,
   FloatingCtaConfig,
   AnnouncementStripConfig,
+  UtilityStripConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -345,6 +346,11 @@ export interface SiteData {
      * renderer's fixed header. Absent/null ⇒ no strip (back-compat).
      */
     announcement?: AnnouncementStripConfig | null;
+    /**
+     * Utility strip — slim persistent info bar in the fixed header (identity
+     * kits §5.3). Stored flat like announcement; null/absent ⇒ no strip.
+     */
+    utilityStrip?: UtilityStripConfig | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media

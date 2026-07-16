@@ -62,6 +62,9 @@ const Navbar = async () => {
       // Site-level announcement strip — rendered by the renderer INSIDE the
       // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
       announcement={siteData?.announcement ?? null}
+      // Utility strip (identity kits §5.3) — same in-header contract as the
+      // announcement; stacks under an 'above'-placed announcement.
+      utilityStrip={siteData?.utilityStrip ?? null}
     />
   );
 };
