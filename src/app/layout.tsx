@@ -77,6 +77,21 @@ function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undef
     const v = siteData[key];
     if (typeof v === 'string' && v.trim() !== '') style[`--${key}`] = v;
   }
+
+  // `text-secondary` is commonly left unauthored (optional in the theme schema).
+  // Leaving it unset here means every consuming component falls through to ITS
+  // OWN hardcoded fallback (`var(--text-secondary, #555)`, `#64748b`, `#6b7280`,
+  // ...) — all fixed mid-grays that go illegible on a dark/saturated brand
+  // surface (the "navy blue text on dark red" defect, 2026-07). Setting an
+  // actual `--text-secondary` here wins the CSS cascade over every component's
+  // per-call fallback, so derive one muted TOWARD the site's own surface instead
+  // of leaving the gap for a dozen different generic grays to fill in.
+  if (!style['--text-secondary']) {
+    const textPrimary = style['--text-primary'] ?? '#1c1c1c';
+    const surface = style['--surface'] ?? '#ffffff';
+    style['--text-secondary'] = `color-mix(in oklab, ${textPrimary} 55%, ${surface})`;
+  }
+
   return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
 }
 
