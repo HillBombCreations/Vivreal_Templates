@@ -91,6 +91,9 @@ const COMPOSE_FORMATS = new Set<string>([
   // craft → the savoir-faire/heritage story page type (Poilâne kit net-new).
   // Emits the same blocks as `standard` (renderer parity contract); same path.
   "craft",
+  // profile → the person-led "Meet the Maker" page type (Ansel kit net-new).
+  // Emits the same blocks as `standard` (renderer parity contract); same path.
+  "profile",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -285,7 +288,8 @@ export default async function DynamicPage({
         format === "collection-list" ||
         format === "catalog" ||
         format === "location-hub" ||
-        format === "craft"
+        format === "craft" ||
+        format === "profile"
       ) {
         return renderComposedPage({ siteData, composedPage });
       }
