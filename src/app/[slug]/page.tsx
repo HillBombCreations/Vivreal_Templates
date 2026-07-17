@@ -88,6 +88,9 @@ const COMPOSE_FORMATS = new Set<string>([
   // location-hub → the per-location hub page type (taproom net-new). Emits the
   // same blocks as `standard` (renderer parity contract); same delegation path.
   "location-hub",
+  // craft → the savoir-faire/heritage story page type (Poilâne kit net-new).
+  // Emits the same blocks as `standard` (renderer parity contract); same path.
+  "craft",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -281,7 +284,8 @@ export default async function DynamicPage({
         format === "grid" ||
         format === "collection-list" ||
         format === "catalog" ||
-        format === "location-hub"
+        format === "location-hub" ||
+        format === "craft"
       ) {
         return renderComposedPage({ siteData, composedPage });
       }
