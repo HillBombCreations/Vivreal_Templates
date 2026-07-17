@@ -10,7 +10,7 @@ import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
-import { FloatingCta } from '@/components/RendererExports';
+import { FloatingCta, FulfillmentStrip } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -163,6 +163,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                           showAfterScroll={400}
                           hideOnPages={['/reservations']}
                       />
+                  )}
+                  {/* Ansel kit (bakery template #3) — the viewport-bottom
+                      fulfillment/channel pill, config-driven from
+                      siteData.fulfillmentStrip (the FloatingCta precedent).
+                      The component itself gates on enabled/links; absent
+                      config ⇒ nothing renders. */}
+                  {siteData.fulfillmentStrip && (
+                      <FulfillmentStrip config={siteData.fulfillmentStrip} />
                   )}
                   {/* #3 — site-wide "get in touch" FAB, config-driven from
                       siteData.floatingCta (migrated marketing sites). Links to the

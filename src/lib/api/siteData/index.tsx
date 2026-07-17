@@ -75,6 +75,9 @@ interface SiteDetailsResponse {
   // Utility strip — slim persistent info bar in the fixed header (identity
   // kits §5.3; null/absent ⇒ no strip).
   utilityStrip?: SiteData['utilityStrip'];
+  // Fulfillment strip — the Ansel-kit viewport-bottom channel pill (bakery
+  // template #3; null/absent ⇒ no strip).
+  fulfillmentStrip?: SiteData['fulfillmentStrip'];
   tier?: string;
 }
 
@@ -150,6 +153,9 @@ export const getSiteData = async (): Promise<SiteData> => {
     // values fallback — the emailPopup values-only-emit gotcha).
     utilityStrip:
       raw.utilityStrip ?? (raw.siteDetails.values as SiteData).utilityStrip ?? null,
+    // Fulfillment strip (Ansel kit, bakery template #3): same dual-source read.
+    fulfillmentStrip:
+      raw.fulfillmentStrip ?? (raw.siteDetails.values as SiteData).fulfillmentStrip ?? null,
     tier: raw.tier,
   };
 };

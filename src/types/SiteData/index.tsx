@@ -15,6 +15,7 @@ import type {
   FloatingCtaConfig,
   AnnouncementStripConfig,
   UtilityStripConfig,
+  FulfillmentStripConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -277,9 +278,11 @@ export interface SiteData {
         /**
          * Gate-2 §7 — menu pattern. null/absent/'drawer' ⇒ today's MobileNav
          * drawer (byte-identical). 'overlay' ⇒ the renderer's full-screen
-         * OverlayNav on ALL breakpoints (Pippin pattern).
+         * OverlayNav on ALL breakpoints (Pippin pattern). 'card' (Ansel kit,
+         * bakery template #3) ⇒ the renderer's floating CardNav — the
+         * hamburger is the sole trigger at every breakpoint.
          */
-        menuStyle?: 'drawer' | 'overlay' | null;
+        menuStyle?: 'drawer' | 'overlay' | 'card' | null;
         /**
          * Gate-2 §7 — default OverlayNav background photo. Pre-signed contract
          * (a URL string or a descriptor with inlined currentFile.source — the
@@ -292,8 +295,26 @@ export interface SiteData {
          * right. Absent/null ⇒ today's brand-left bar (byte-identical).
          * 'editorial' (Poilâne round) = the thin boutique bar: persistent
          * hairline rule, slim row, small uppercase letter-spaced tabs.
+         * 'boutique' (Ansel kit, bakery template #3) = the utility header:
+         * stacked brandKicker lockup + centered centerLabel + right-cluster
+         * utilityNote lines. Pair with menuStyle:'card'.
          */
-        layout?: 'logo-center' | 'editorial' | null;
+        layout?: 'logo-center' | 'editorial' | 'boutique' | null;
+        /**
+         * Ansel kit — the small spaced-caps line ABOVE the siteName in the
+         * 'boutique' stacked lockup. Mirrors NavbarProps.brandKicker.
+         */
+        brandKicker?: string | null;
+        /**
+         * Ansel kit — the wide-tracked caps label centered in the 'boutique'
+         * bar (desktop; card/overlay menu only). Mirrors NavbarProps.centerLabel.
+         */
+        centerLabel?: string | null;
+        /**
+         * Ansel kit — up to two tiny info lines (address/hours) in the
+         * 'boutique' right cluster. Mirrors NavbarProps.utilityNote.
+         */
+        utilityNote?: string[] | null;
         /**
          * Bakery identity kit (Levain round) — desktop dropdown treatment.
          * 'cards' = full-width image-card mega panel docked under the bar
@@ -388,6 +409,12 @@ export interface SiteData {
      * kits §5.3). Stored flat like announcement; null/absent ⇒ no strip.
      */
     utilityStrip?: UtilityStripConfig | null;
+    /**
+     * Fulfillment strip — the Ansel-kit viewport-bottom channel pill (bakery
+     * template #3). Stored flat like utilityStrip; the root layout mounts the
+     * renderer's FulfillmentStrip from it. null/absent ⇒ no strip.
+     */
+    fulfillmentStrip?: FulfillmentStripConfig | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media

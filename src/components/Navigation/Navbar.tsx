@@ -57,6 +57,11 @@ const Navbar = async () => {
       // Levain round — logo-center bar + image-card mega dropdowns (both
       // opt-in; null/absent keep the default bar byte-identical).
       layout={siteData?.navigation?.layout ?? null}
+      // Ansel kit (bakery template #3) — the boutique utility-header extras
+      // (all boutique-only; null/absent keep every other layout byte-identical).
+      brandKicker={siteData?.navigation?.brandKicker ?? null}
+      centerLabel={siteData?.navigation?.centerLabel ?? null}
+      utilityNote={siteData?.navigation?.utilityNote ?? null}
       dropdownStyle={siteData?.navigation?.dropdownStyle ?? null}
       // REV-2 (Poilane round) — quiet uppercase text actions, right cluster.
       actions={siteData?.navigation?.actions ?? null}
