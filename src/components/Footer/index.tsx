@@ -92,9 +92,12 @@ const Footer = async () => {
         variant: siteData?.footer?.variant ?? null,
         background: siteData?.footer?.background ?? null,
         // Poilâne round — wordmark-footer extras (rotating stamp seal +
-        // service-ticker marquee). Opt-in; absent renders nothing.
+        // service-ticker marquee). Opt-in; absent renders nothing. The giant
+        // wordmark falls back to the BUSINESS name so a logo-only brand
+        // override (name:'') doesn't blank the band.
         stamp: siteData?.footer?.stamp ?? null,
         ticker: siteData?.footer?.ticker ?? null,
+        wordmarkText: businessName || null,
       } as Record<string, unknown>)}
     />
   );
