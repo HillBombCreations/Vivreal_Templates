@@ -91,6 +91,10 @@ const Footer = async () => {
         // authored background). Opt-in; absent keeps the grid byte-identical.
         variant: siteData?.footer?.variant ?? null,
         background: siteData?.footer?.background ?? null,
+        // Poilâne round — wordmark-footer extras (rotating stamp seal +
+        // service-ticker marquee). Opt-in; absent renders nothing.
+        stamp: siteData?.footer?.stamp ?? null,
+        ticker: siteData?.footer?.ticker ?? null,
       } as Record<string, unknown>)}
     />
   );

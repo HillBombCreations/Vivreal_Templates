@@ -290,8 +290,10 @@ export interface SiteData {
          * Bakery identity kit (Levain round) — header BAR arrangement.
          * 'logo-center' = nav tabs LEFT, brand absolutely CENTERED, actions
          * right. Absent/null ⇒ today's brand-left bar (byte-identical).
+         * 'editorial' (Poilâne round) = the thin boutique bar: persistent
+         * hairline rule, slim row, small uppercase letter-spaced tabs.
          */
-        layout?: 'logo-center' | null;
+        layout?: 'logo-center' | 'editorial' | null;
         /**
          * Bakery identity kit (Levain round) — desktop dropdown treatment.
          * 'cards' = full-width image-card mega panel docked under the bar
@@ -322,10 +324,18 @@ export interface SiteData {
          * Bakery identity kit (Levain round) — 'centerpiece' = centered brand +
          * newsletter + social icons between flanking link columns over
          * `background` (inverse text). Absent/null ⇒ today's 3-column grid.
+         * 'wordmark' (Poilâne round) = the LIGHT grid + giant display
+         * wordmark band (+ optional rotating `stamp` seal) + optional
+         * `ticker` service marquee docked at the footer's top edge.
          */
-        variant?: 'columns' | 'centerpiece' | null;
-        /** Centerpiece background — resolved CSS color; absent ⇒ var(--primary). */
+        variant?: 'columns' | 'centerpiece' | 'wordmark' | null;
+        /** Centerpiece background — resolved CSS color; absent ⇒ var(--primary).
+         *  Under 'wordmark' this is the LIGHT surface tint instead. */
         background?: string | null;
+        /** Poilâne round — 'wordmark' only: the circular rotating stamp seal. */
+        stamp?: { text?: string | null; label?: string | null } | null;
+        /** Poilâne round — 'wordmark' only: the service-ticker marquee items. */
+        ticker?: string[] | null;
     } | null;
     /**
      * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the
