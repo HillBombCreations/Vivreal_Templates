@@ -58,6 +58,8 @@ const Navbar = async () => {
       // opt-in; null/absent keep the default bar byte-identical).
       layout={siteData?.navigation?.layout ?? null}
       dropdownStyle={siteData?.navigation?.dropdownStyle ?? null}
+      // REV-2 (Poilane round) — quiet uppercase text actions, right cluster.
+      actions={siteData?.navigation?.actions ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}

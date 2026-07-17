@@ -300,7 +300,13 @@ export interface SiteData {
          * (child image descriptors, pre-signed contract) with a trailing
          * "All <label> →" link. Absent/null ⇒ the compact/rich text panel.
          */
-        dropdownStyle?: 'cards' | null;
+        dropdownStyle?: 'cards' | 'panel' | null;
+        /**
+         * REV-2 (heritage-editorial kit) — quiet uppercase TEXT action links
+         * in the header's right cluster (the Poilane OUR ADDRESSES / SEARCH /
+         * MY ACCOUNT language). Mirrors the renderer's NavbarProps.actions.
+         */
+        actions?: Array<{ label: string; href: string; external?: boolean; target?: '_self' | '_blank' }> | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
