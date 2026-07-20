@@ -328,6 +328,15 @@ export interface SiteData {
          * MY ACCOUNT language). Mirrors the renderer's NavbarProps.actions.
          */
         actions?: Array<{ label: string; href: string; external?: boolean; target?: '_self' | '_blank' }> | null;
+        /**
+         * Migration fidelity knob #8 — resting color of the desktop nav
+         * link/trigger text. 'accent' ⇒ theme primary; any CSS color used
+         * verbatim. Absent/null ⇒ current neutral. Mirrors the renderer's
+         * NavbarProps.navLinkColor. (Missing from this local type was the
+         * silent stable-build breaker: dev/Turbopack doesn't hard-fail type
+         * errors, `next build` does — promote job 3 FAILED fleet-wide on it.)
+         */
+        navLinkColor?: string | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
