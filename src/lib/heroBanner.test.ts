@@ -71,3 +71,16 @@ test("willRenderHeroBanner: an authored home-section:hero block suppresses the b
 test("willRenderHeroBanner: missing labels object entirely -> false (never throws)", () => {
   assert.equal(willRenderHeroBanner({} as Pick<PageConfig, "labels" | "blocks">), false);
 });
+
+test("hasHomeSectionBlock: true for a masthead hero block, false otherwise (transitional-band gate)", async () => {
+  const { hasHomeSectionBlock } = await import("./heroBanner.ts");
+  const withHero = page({
+    labels: { title: "Weddings" },
+    blocks: [
+      { id: "h", order: -1, enabled: true, type: { kind: "home-section", dispatchId: "hero" }, config: {} },
+    ],
+  });
+  assert.equal(hasHomeSectionBlock(withHero), true);
+  assert.equal(hasHomeSectionBlock(page({ labels: { title: "Weddings" }, blocks: [] })), false);
+  assert.equal(hasHomeSectionBlock({} as Pick<import("@/types/SiteData").PageConfig, "blocks">), false);
+});

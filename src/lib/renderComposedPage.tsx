@@ -5,7 +5,7 @@ import Navbar from '@/components/Navigation/Navbar';
 import Footer from '@/components/Footer';
 import { composePage, ComposedPageSkeleton } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
-import { willRenderHeroBanner } from '@/lib/heroBanner';
+import { willRenderHeroBanner, hasHomeSectionBlock } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 
 // Formats that trigger isEmpty → notFound(). Mirrors [slug]/page.tsx SP-6 Task 5.
@@ -95,8 +95,12 @@ export function renderComposedPage({
   // A page without both fields is unaffected — same band as today. See
   // `heroBanner.ts` for the shared gate (kept in lockstep with the renderer's
   // own condition, single source of truth for both page wrappers).
+  // Gate-2 masthead dedupe: a page with a real home-section hero block (the
+  // masthead-carousel prepend) renders its own H1 — the bare band above it
+  // would double-title AND push the 100svh masthead below the fold top.
   const showTransitionalTitleBand =
-    isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock && !willRenderHeroBanner(composedPage);
+    isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock &&
+    !hasHomeSectionBlock(composedPage) && !willRenderHeroBanner(composedPage);
 
   // Dark-chrome transitional title band: when siteData.chrome === 'dark', the
   // band gets a full-width navy gradient (matching BannerLayout / SectionHeaderBlock

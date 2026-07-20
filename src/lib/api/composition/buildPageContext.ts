@@ -100,11 +100,27 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   };
 
   // 5. Emptiness check for the generic-format `notFound()` parity.
+  // A FORM binding is content with zero items BY DESIGN (its collection is a
+  // write-target inquiry sink, never a read source) — a form-carrying page is
+  // never empty. Without this, a standard-format contact page (statement hero
+  // + form, the bakery-template contact addition) 404s despite rendering fine.
+  const hasFormBlock = (blocks: unknown): boolean =>
+    Array.isArray(blocks) &&
+    blocks.some((b) => {
+      const block = b as {
+        type?: { dispatchId?: string };
+        config?: { children?: unknown };
+      };
+      return (
+        block?.type?.dispatchId === 'form' || hasFormBlock(block?.config?.children)
+      );
+    });
   const isEmpty =
     !isHome &&
     page.format !== 'static' &&
     page.format !== 'checkout-success' &&
     page.format !== 'checkout-cancel' &&
+    !hasFormBlock((page as { blocks?: unknown }).blocks) &&
     [...itemsByCollection.values(), ...itemsByIntegration.values()].every((a) => a.length === 0);
 
   return { input, isEmpty };

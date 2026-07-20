@@ -13,6 +13,9 @@ import type {
   SocialLink as RendererSocialLink,
   Block,
   FloatingCtaConfig,
+  AnnouncementStripConfig,
+  UtilityStripConfig,
+  FulfillmentStripConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -272,6 +275,59 @@ export interface SiteData {
         secondaryCta?: NavbarCta | null;
         /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
         headerWidth?: 'contained' | 'full' | null;
+        /**
+         * Gate-2 §7 — menu pattern. null/absent/'drawer' ⇒ today's MobileNav
+         * drawer (byte-identical). 'overlay' ⇒ the renderer's full-screen
+         * OverlayNav on ALL breakpoints (Pippin pattern). 'card' (Ansel kit,
+         * bakery template #3) ⇒ the renderer's floating CardNav — the
+         * hamburger is the sole trigger at every breakpoint.
+         */
+        menuStyle?: 'drawer' | 'overlay' | 'card' | null;
+        /**
+         * Gate-2 §7 — default OverlayNav background photo. Pre-signed contract
+         * (a URL string or a descriptor with inlined currentFile.source — the
+         * renderer's resolveMediaSrc reads either; it does no signing I/O).
+         */
+        overlayBackground?: { name?: string; key?: string; type?: string; currentFile?: { source?: string } } | string | null;
+        /**
+         * Bakery identity kit (Levain round) — header BAR arrangement.
+         * 'logo-center' = nav tabs LEFT, brand absolutely CENTERED, actions
+         * right. Absent/null ⇒ today's brand-left bar (byte-identical).
+         * 'editorial' (Poilâne round) = the thin boutique bar: persistent
+         * hairline rule, slim row, small uppercase letter-spaced tabs.
+         * 'boutique' (Ansel kit, bakery template #3) = the utility header:
+         * stacked brandKicker lockup + centered centerLabel + right-cluster
+         * utilityNote lines. Pair with menuStyle:'card'.
+         */
+        layout?: 'logo-center' | 'editorial' | 'boutique' | null;
+        /**
+         * Ansel kit — the small spaced-caps line ABOVE the siteName in the
+         * 'boutique' stacked lockup. Mirrors NavbarProps.brandKicker.
+         */
+        brandKicker?: string | null;
+        /**
+         * Ansel kit — the wide-tracked caps label centered in the 'boutique'
+         * bar (desktop; card/overlay menu only). Mirrors NavbarProps.centerLabel.
+         */
+        centerLabel?: string | null;
+        /**
+         * Ansel kit — up to two tiny info lines (address/hours) in the
+         * 'boutique' right cluster. Mirrors NavbarProps.utilityNote.
+         */
+        utilityNote?: string[] | null;
+        /**
+         * Bakery identity kit (Levain round) — desktop dropdown treatment.
+         * 'cards' = full-width image-card mega panel docked under the bar
+         * (child image descriptors, pre-signed contract) with a trailing
+         * "All <label> →" link. Absent/null ⇒ the compact/rich text panel.
+         */
+        dropdownStyle?: 'cards' | 'panel' | null;
+        /**
+         * REV-2 (heritage-editorial kit) — quiet uppercase TEXT action links
+         * in the header's right cluster (the Poilane OUR ADDRESSES / SEARCH /
+         * MY ACCOUNT language). Mirrors the renderer's NavbarProps.actions.
+         */
+        actions?: Array<{ label: string; href: string; external?: boolean; target?: '_self' | '_blank' }> | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {
@@ -291,6 +347,22 @@ export interface SiteData {
         socialStyle?: 'column' | 'icons' | null;
         /** Owner pass 2 — 'bar' = full-width "Stay in the loop" bar above the legal strip. */
         newsletterPlacement?: 'brand' | 'bar' | null;
+        /**
+         * Bakery identity kit (Levain round) — 'centerpiece' = centered brand +
+         * newsletter + social icons between flanking link columns over
+         * `background` (inverse text). Absent/null ⇒ today's 3-column grid.
+         * 'wordmark' (Poilâne round) = the LIGHT grid + giant display
+         * wordmark band (+ optional rotating `stamp` seal) + optional
+         * `ticker` service marquee docked at the footer's top edge.
+         */
+        variant?: 'columns' | 'centerpiece' | 'wordmark' | null;
+        /** Centerpiece background — resolved CSS color; absent ⇒ var(--primary).
+         *  Under 'wordmark' this is the LIGHT surface tint instead. */
+        background?: string | null;
+        /** Poilâne round — 'wordmark' only: the circular rotating stamp seal. */
+        stamp?: { text?: string | null; label?: string | null } | null;
+        /** Poilâne round — 'wordmark' only: the service-ticker marquee items. */
+        ticker?: string[] | null;
     } | null;
     /**
      * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the
@@ -326,6 +398,23 @@ export interface SiteData {
      * precedent as the other renderer-shaped fields above).
      */
     floatingCta?: FloatingCtaConfig;
+    /**
+     * Site-level announcement/promo strip. Stored flat on the site doc (like
+     * `chrome` / `emailPopup`); the Navbar server shell threads it into the
+     * renderer's fixed header. Absent/null ⇒ no strip (back-compat).
+     */
+    announcement?: AnnouncementStripConfig | null;
+    /**
+     * Utility strip — slim persistent info bar in the fixed header (identity
+     * kits §5.3). Stored flat like announcement; null/absent ⇒ no strip.
+     */
+    utilityStrip?: UtilityStripConfig | null;
+    /**
+     * Fulfillment strip — the Ansel-kit viewport-bottom channel pill (bakery
+     * template #3). Stored flat like utilityStrip; the root layout mounts the
+     * renderer's FulfillmentStrip from it. null/absent ⇒ no strip.
+     */
+    fulfillmentStrip?: FulfillmentStripConfig | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media
