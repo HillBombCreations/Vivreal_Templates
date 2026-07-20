@@ -12,6 +12,12 @@ const nextConfig: NextConfig = {
     viewTransition: true,
   },
   images: {
+    // Pre-cutover migration previews carry source-domain media URLs
+    // (e.g. abakeshop.com/cdn/...) that aren't in remotePatterns, so next/image
+    // 400s them and pages 500 — which reads as broken/404 during QA. The env
+    // gate emits plain <img> for those local preview runs only; unset (every
+    // production/Amplify build) keeps optimization on, byte-identical config.
+    unoptimized: process.env.VIVREAL_PREVIEW_UNOPTIMIZED === '1',
     // Serve SVG logos through next/image. The Vivreal media pipeline stores SVGs
     // as-is and the client API serves them as `image/svg+xml` (VR_CMS_API does
     // NOT rasterize vectors), so a migrated inline-<svg> or CSS-background SVG
