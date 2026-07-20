@@ -63,6 +63,10 @@ const Navbar = async () => {
       centerLabel={siteData?.navigation?.centerLabel ?? null}
       utilityNote={siteData?.navigation?.utilityNote ?? null}
       dropdownStyle={siteData?.navigation?.dropdownStyle ?? null}
+      // Universal (renderer 1.32.0) — resting nav link/trigger text color
+      // ('accent' → brand primary, or a hex/rgb/hsl string). null/absent ⇒
+      // today's chrome text, byte-identical.
+      navLinkColor={siteData?.navigation?.navLinkColor ?? null}
       // REV-2 (Poilane round) — quiet uppercase text actions, right cluster.
       actions={siteData?.navigation?.actions ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
