@@ -54,6 +54,10 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       { userAgent: 'CCBot', disallow: '/' },
       { userAgent: 'Google-Extended', disallow: '/' },
     ],
-    sitemap: `https://${siteData.domainName}/sitemap.xml`,
+    // Subdomain-only sites have no custom domainName — advertising
+    // `https://undefined/sitemap.xml` (observed live) is worse than omitting.
+    ...(siteData.domainName
+      ? { sitemap: `https://${siteData.domainName}/sitemap.xml` }
+      : {}),
   };
 }
