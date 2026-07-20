@@ -65,3 +65,35 @@ test("toContentItem: container under a NON-preferred field key resolves its OWN 
   assert.equal(item.imageUrl, "https://cdn/cover.jpg");
   assert.deepEqual(item.artDirectedSources, [{ media: "(max-width: 600px)", src: "https://cdn/cover-sm.jpg" }]);
 });
+
+test("toContentItem: objectValue.link → href (item-authored card link)", () => {
+  const item = toContentItem(
+    { _id: "l1", objectValue: { title: "Weddings", link: "/denver-co-weddings" } },
+    "collection",
+  );
+  assert.equal(item.href, "/denver-co-weddings");
+});
+
+test("toContentItem: objectValue.url → href; link wins over url when both present", () => {
+  const urlOnly = toContentItem(
+    { _id: "l2", objectValue: { name: "A Vendor", url: "https://vendor.example.com" } },
+    "collection",
+  );
+  assert.equal(urlOnly.href, "https://vendor.example.com");
+
+  const both = toContentItem(
+    { _id: "l3", objectValue: { title: "Both", link: "/internal", url: "https://external.example.com" } },
+    "collection",
+  );
+  assert.equal(both.href, "/internal");
+});
+
+test("toContentItem: no link/url, blank strings, or non-string values → href undefined", () => {
+  assert.equal(toContentItem({ _id: "l4", objectValue: { title: "Plain" } }, "collection").href, undefined);
+  assert.equal(toContentItem({ _id: "l5", objectValue: { title: "Blank", url: "  " } }, "collection").href, undefined);
+  // a media descriptor object under `url` must never become href
+  assert.equal(
+    toContentItem({ _id: "l6", objectValue: { title: "Media", url: { currentFile: { source: "https://cdn/x.jpg" } } } }, "collection").href,
+    undefined,
+  );
+});

@@ -8,9 +8,10 @@ import { isDemoSite, getDemoSourceUrl } from '@/lib/seo/demoSafety';
 import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
+import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
-import { FloatingCta } from '@/components/RendererExports';
+import { FloatingCta, FulfillmentStrip } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -88,6 +89,27 @@ function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undef
     const v = siteData[key];
     if (typeof v === 'string' && v.trim() !== '') style[`--${key}`] = v;
   }
+  // Derived token — the AA-on-white variant of the brand accent, consumed by
+  // the renderer's rich-text link rule (`.vr-rich a`) and any accent-as-text
+  // surface. Only emitted for parseable hex primaries; the CSS falls back to
+  // `--primary` otherwise (byte-identical for non-hex/absent primaries).
+  const readable = readableAccentOnWhite(style['--primary']);
+  if (readable) style['--accent-readable'] = readable;
+
+  // `text-secondary` is commonly left unauthored (optional in the theme schema).
+  // Leaving it unset here means every consuming component falls through to ITS
+  // OWN hardcoded fallback (`var(--text-secondary, #555)`, `#64748b`, `#6b7280`,
+  // ...) — all fixed mid-grays that go illegible on a dark/saturated brand
+  // surface (the "navy blue text on dark red" defect, 2026-07). Setting an
+  // actual `--text-secondary` here wins the CSS cascade over every component's
+  // per-call fallback, so derive one muted TOWARD the site's own surface instead
+  // of leaving the gap for a dozen different generic grays to fill in.
+  if (!style['--text-secondary']) {
+    const textPrimary = style['--text-primary'] ?? '#1c1c1c';
+    const surface = style['--surface'] ?? '#ffffff';
+    style['--text-secondary'] = `color-mix(in oklab, ${textPrimary} 55%, ${surface})`;
+  }
+
   return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
 }
 
@@ -104,17 +126,28 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // the site keeps today's hardcoded Outfit default byte-identically. See
     // src/lib/fonts/siteFont.ts for the full loading-strategy rationale.
     const siteFont = resolveSiteFont(siteData.fontFamily);
+    // Gate-2 typography pairing — optional SECOND family for body copy
+    // (siteData.fontFamilyBody, e.g. Varone's Marcellus display + Montserrat
+    // body). Absent ⇒ null ⇒ --font-body keeps the display family exactly as
+    // before (byte-identical for every existing site). Only meaningful when a
+    // display font is also set (no body-only override).
+    const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody) : null;
     // SSR the palette + density BEFORE hydration (see themeVarStyle above).
     // Providers' effect re-stamps both on the client; values are identical so
     // hydration stays clean.
     const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
     const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
+    // Motion-signature preset (template-identity kits §6) — SSR-stamped like
+    // styleVariant so first paint gets the preset's `--motion-*` tokens from
+    // the renderer's content-grid.css; Providers re-stamps on the client.
+    const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
     return (
       <html
         lang="en"
         className={siteFont?.variableClassName}
         style={themeStyle}
         {...(styleVariant ? { 'data-style-variant': styleVariant } : {})}
+        {...(motionPreset ? { 'data-motion-preset': motionPreset } : {})}
       >
           <head>
               {/* Structured data for classic crawlers + AI assistants. Emitted
@@ -127,11 +160,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               {siteFont?.googleFontsHref && (
                   <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
               )}
+              {siteFontBody?.googleFontsHref && (
+                  <link rel="stylesheet" href={siteFontBody.googleFontsHref} precedence="default" />
+              )}
           </head>
           <body
               style={
                   siteFont
-                      ? ({ '--font-display': siteFont.cssValue, '--font-body': siteFont.cssValue } as CSSProperties)
+                      ? ({ '--font-display': siteFont.cssValue, '--font-body': (siteFontBody ?? siteFont).cssValue } as CSSProperties)
                       : undefined
               }
           >
@@ -153,6 +189,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                           showAfterScroll={400}
                           hideOnPages={['/reservations']}
                       />
+                  )}
+                  {/* Ansel kit (bakery template #3) — the viewport-bottom
+                      fulfillment/channel pill, config-driven from
+                      siteData.fulfillmentStrip (the FloatingCta precedent).
+                      The component itself gates on enabled/links; absent
+                      config ⇒ nothing renders. */}
+                  {siteData.fulfillmentStrip && (
+                      <FulfillmentStrip config={siteData.fulfillmentStrip} />
                   )}
                   {/* #3 — site-wide "get in touch" FAB, config-driven from
                       siteData.floatingCta (migrated marketing sites). Links to the

@@ -1,0 +1,85 @@
+name: Promote main to stable
+
+# Manual promotion only. Advancing the `stable` release channel is a deliberate
+# release action, never an automatic side-effect of merging to main: every
+# customer site builds from `stable`, so a promotion rebuilds every site. Run
+# this workflow from the Actions tab when integration on `main` is ready to ship.
+on:
+  workflow_dispatch:
+
+# Least privilege: the push authenticates as the GitHub App below, not the
+# default GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Serialize promotions so two concurrent runs can't race the `stable` ref.
+concurrency:
+  group: promote-stable
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      # Authenticate as the Vivreal GitHub App (contents:write on this repo)
+      # instead of a long-lived PAT. Scope the installation token to this repo
+      # only; feed it to checkout so the push below authenticates as the App.
+      - name: Mint GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.VIVREAL_GH_APP_ID }}
+          private-key: ${{ secrets.VIVREAL_GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+
+      # Full-history checkout so both channel tips are reachable for the
+      # ancestry check below.
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Fast-forward promote main → stable
+        run: |
+          set -euo pipefail
+
+          # Fetch both channel tips explicitly into remote-tracking refs so the
+          # rev-parse / ancestry check below don't depend on checkout's default
+          # fetch refspec.
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main \
+            +refs/heads/stable:refs/remotes/origin/stable
+
+          OLD_SHA="$(git rev-parse origin/stable)"
+          NEW_SHA="$(git rev-parse origin/main)"
+
+          if [ "$OLD_SHA" = "$NEW_SHA" ]; then
+            echo "stable is already at main ($NEW_SHA) — nothing to promote."
+            {
+              echo "## Promote main → stable"
+              echo ""
+              echo "No-op: \`stable\` already at \`$NEW_SHA\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # Fast-forward guard: stable must be a strict ancestor of main. If stable
+          # carries commits main does not, promotion would diverge/rewrite the
+          # channel — refuse loudly instead of forcing it.
+          if ! git merge-base --is-ancestor origin/stable origin/main; then
+            echo "::error::Refusing to promote: origin/stable ($OLD_SHA) is not an ancestor of origin/main ($NEW_SHA). Not a fast-forward — reconcile the branches before promoting."
+            exit 1
+          fi
+
+          # Fast-forward-only push of main's tip onto stable. Without --force, git
+          # also rejects a non-fast-forward push here, so this is a second guard.
+          git push origin origin/main:refs/heads/stable
+
+          echo "Promoted stable: $OLD_SHA → $NEW_SHA"
+          {
+            echo "## Promote main → stable"
+            echo ""
+            echo "Fast-forwarded \`stable\`: \`$OLD_SHA\` → \`$NEW_SHA\`."
+          } >> "$GITHUB_STEP_SUMMARY"

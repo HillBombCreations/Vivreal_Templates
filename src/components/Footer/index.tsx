@@ -28,7 +28,10 @@ const Footer = async () => {
   const siteData = await getSiteData();
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
-  const businessLogoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  // No logo ⇒ '' (the renderer gates the footer <img> on truthiness → name-only).
+  // '/logo.png' does not exist in public/ — the old fallback rendered a broken
+  // image on every logo-less site.
+  const businessLogoUrl = getSignedUrl(siteData?.logo) || '';
   const businessEmail = siteData?.businessInfo?.contactInfo?.email;
 
   // Per-field inherit/override. A key being PRESENT on `brand` (even "") is an
@@ -84,6 +87,17 @@ const Footer = async () => {
         socialStyle: siteData?.footer?.socialStyle ?? undefined,
         newsletterPlacement: siteData?.footer?.newsletterPlacement ?? undefined,
         logoFilter: siteData?.footer?.brand?.logoFilter ?? null,
+        // Levain round — centerpiece footer (centered brand+newsletter over an
+        // authored background). Opt-in; absent keeps the grid byte-identical.
+        variant: siteData?.footer?.variant ?? null,
+        background: siteData?.footer?.background ?? null,
+        // Poilâne round — wordmark-footer extras (rotating stamp seal +
+        // service-ticker marquee). Opt-in; absent renders nothing. The giant
+        // wordmark falls back to the BUSINESS name so a logo-only brand
+        // override (name:'') doesn't blank the band.
+        stamp: siteData?.footer?.stamp ?? null,
+        ticker: siteData?.footer?.ticker ?? null,
+        wordmarkText: businessName || null,
       } as Record<string, unknown>)}
     />
   );

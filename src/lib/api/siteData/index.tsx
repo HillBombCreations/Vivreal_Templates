@@ -72,6 +72,14 @@ interface SiteDetailsResponse {
   // CC9 — Studio-authored email-capture popup config. Returned by VR_Client_API
   // getSiteDetails (null/absent ⇒ legacy popup behavior).
   emailPopup?: SiteData['emailPopup'];
+  // Site-level announcement/promo strip (null/absent ⇒ no strip).
+  announcement?: SiteData['announcement'];
+  // Utility strip — slim persistent info bar in the fixed header (identity
+  // kits §5.3; null/absent ⇒ no strip).
+  utilityStrip?: SiteData['utilityStrip'];
+  // Fulfillment strip — the Ansel-kit viewport-bottom channel pill (bakery
+  // template #3; null/absent ⇒ no strip).
+  fulfillmentStrip?: SiteData['fulfillmentStrip'];
   tier?: string;
 }
 
@@ -138,6 +146,18 @@ export const getSiteData = async (): Promise<SiteData> => {
     footer: raw.footer ?? null,
     // CC9 — Studio-authored email-capture popup config (null ⇒ legacy behavior).
     emailPopup: raw.emailPopup ?? null,
+    // Announcement strip: top-level response field wins (emailPopup precedent);
+    // falls back to a values-carried config so neither storage location
+    // silently nulls it (the emailPopup values-only-emit gotcha).
+    announcement:
+      raw.announcement ?? (raw.siteDetails.values as SiteData).announcement ?? null,
+    // Utility strip: same dual-source read as announcement (top-level wins,
+    // values fallback — the emailPopup values-only-emit gotcha).
+    utilityStrip:
+      raw.utilityStrip ?? (raw.siteDetails.values as SiteData).utilityStrip ?? null,
+    // Fulfillment strip (Ansel kit, bakery template #3): same dual-source read.
+    fulfillmentStrip:
+      raw.fulfillmentStrip ?? (raw.siteDetails.values as SiteData).fulfillmentStrip ?? null,
     tier: raw.tier,
   };
 };

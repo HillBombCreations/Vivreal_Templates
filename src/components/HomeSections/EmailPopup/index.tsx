@@ -204,6 +204,10 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
       successText={copy.successText}
       errorText={copy.errorText}
       consentText={copy.consentText}
+      // Levain round — split-image layout. Pass-through only (image.src is a
+      // ready URL per the pre-signed contract); absent ⇒ centered legacy card.
+      variant={cfg.variant}
+      image={cfg.image}
       onSubscribe={async (email) => {
         const ok = await subscribeUser(email, collectionId);
         // Permanent "never again" on success, regardless of frequency mode.

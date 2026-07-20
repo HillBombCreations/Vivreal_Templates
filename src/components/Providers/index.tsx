@@ -6,6 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster as AppToaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { SiteData } from '@/types/SiteData';
+import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
@@ -30,6 +31,12 @@ const Providers = ({
                     document.documentElement.style.setProperty(`--${key}`, value);
                 }
             });
+            // Derived token (mirrors layout.tsx SSR emission): the AA-on-white
+            // accent variant for rich-text links / accent-as-text surfaces.
+            const readable = readableAccentOnWhite(siteData.primary);
+            if (readable) {
+                document.documentElement.style.setProperty('--accent-readable', readable);
+            }
         }
         // Typography is an object (skipped by the string loop above) — map the
         // Studio's Branding preset onto the font CSS vars consumed by
@@ -49,6 +56,16 @@ const Providers = ({
             document.documentElement.setAttribute('data-style-variant', styleVariant);
         } else {
             document.documentElement.removeAttribute('data-style-variant');
+        }
+        // Motion-signature preset (template-identity kits §6). Same stamp
+        // pattern as styleVariant: the renderer's published content-grid.css
+        // scopes `--motion-*` token overrides to [data-motion-preset='<id>'].
+        // Absent ⇒ removed ⇒ the :root defaults (legacy Wave-F motion).
+        const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
+        if (motionPreset) {
+            document.documentElement.setAttribute('data-motion-preset', motionPreset);
+        } else {
+            document.documentElement.removeAttribute('data-motion-preset');
         }
     }, [siteData]);
 
@@ -93,7 +110,8 @@ const Providers = ({
     const content = (
         <NextProvider
             mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-            onSubscribe={async (email: string) => subscribeUser(email, subscribersCollectionId)}
+            onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) =>
+                subscribeUser(email, subscribersCollectionId, fields)}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>

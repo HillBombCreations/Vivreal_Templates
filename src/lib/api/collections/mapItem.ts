@@ -73,6 +73,13 @@ export function toContentItem(
   const date = objectValue.date ?? raw.publishDate;
   const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
   const { url: imageUrl, srcset: imageSrcSet, artDirectedSources } = resolveImage(objectValue);
+  // Item-authored link (`link` preferred over `url`, both common blueprint field
+  // names). String fields only — a media field's descriptor object never matches.
+  // Renderer layouts use this ONLY for sections without detail pages (detail
+  // routes keep precedence in FeatureList/Cards; LinkCards always honored href),
+  // so populating it does not reroute existing detail-enabled cards.
+  const link = objectValue.link ?? objectValue.url;
+  const href = typeof link === 'string' && link.trim() ? link.trim() : undefined;
 
   return {
     id: String(raw._id ?? ''),
@@ -83,6 +90,7 @@ export function toContentItem(
     artDirectedSources: artDirectedSources.length ? artDirectedSources : undefined,
     price: price != null ? String(price) : undefined,
     date: date != null ? String(date) : undefined,
+    href,
     tags,
     source,
     integrationType,

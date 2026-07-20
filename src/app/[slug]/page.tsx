@@ -19,7 +19,7 @@ import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAd
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
-import { willRenderHeroBanner } from "@/lib/heroBanner";
+import { willRenderHeroBanner, hasHomeSectionBlock } from "@/lib/heroBanner";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
@@ -81,6 +81,19 @@ const COMPOSE_FORMATS = new Set<string>([
   // sortable catalog grid, no commerce). Without this entry a collection-list page
   // (e.g. an off-site-checkout product catalog) is unrecognized and 404s.
   "collection-list",
+  // catalog → renderer `catalog` page-template (CatalogStorefront, bakery net-new
+  // kit #1): category-rail SECTIONED browser for large categorized catalogs, no
+  // commerce. Same delegation path as collection-list (renderComposedPage).
+  "catalog",
+  // location-hub → the per-location hub page type (taproom net-new). Emits the
+  // same blocks as `standard` (renderer parity contract); same delegation path.
+  "location-hub",
+  // craft → the savoir-faire/heritage story page type (Poilâne kit net-new).
+  // Emits the same blocks as `standard` (renderer parity contract); same path.
+  "craft",
+  // profile → the person-led "Meet the Maker" page type (Ansel kit net-new).
+  // Emits the same blocks as `standard` (renderer parity contract); same path.
+  "profile",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -272,7 +285,11 @@ export default async function DynamicPage({
         format === "standard" ||
         format === "list" ||
         format === "grid" ||
-        format === "collection-list"
+        format === "collection-list" ||
+        format === "catalog" ||
+        format === "location-hub" ||
+        format === "craft" ||
+        format === "profile"
       ) {
         return renderComposedPage({ siteData, composedPage });
       }
@@ -376,8 +393,11 @@ export default async function DynamicPage({
     // shared gate + full rationale: a synthetic hero banner (renderer mapBlocks)
     // already renders labels.title + subtitle + button, so the bare title band here
     // must self-disable.
+    // Gate-2 masthead dedupe (mirrors renderComposedPage.tsx — lockstep contract):
+    // a home-section hero block owns the H1; the bare band would double-title.
     const showTransitionalTitleBand =
-      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock && !willRenderHeroBanner(composedPage);
+      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock &&
+      !hasHomeSectionBlock(composedPage) && !willRenderHeroBanner(composedPage);
 
     return (
       <>

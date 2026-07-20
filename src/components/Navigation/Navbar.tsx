@@ -21,7 +21,10 @@ const Navbar = async () => {
   const siteData = await getSiteData();
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
-  const businessLogoUrl = getSignedUrl(siteData?.logo) || '/logo.png';
+  // No logo ⇒ '' (renderer NavbarView gates the <img> on truthiness → name-only
+  // wordmark). '/logo.png' does not exist in public/, so the old fallback
+  // rendered a broken image on every logo-less site.
+  const businessLogoUrl = getSignedUrl(siteData?.logo) || '';
 
   // Per-field inherit/override (presence-means-override; see Footer wrapper).
   const brand = siteData?.navigation?.brand ?? undefined;
@@ -45,11 +48,38 @@ const Navbar = async () => {
       cta={siteData?.navigation?.cta ?? null}
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
+      // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
+      // resolveMediaSrc reads a pre-signed URL string or an inlined
+      // currentFile.source descriptor (this shell does no signing for it — the
+      // loader/preview supply it inlined, same contract as NavMenuItem.image).
+      menuStyle={siteData?.navigation?.menuStyle ?? null}
+      overlayBackground={siteData?.navigation?.overlayBackground ?? null}
+      // Levain round — logo-center bar + image-card mega dropdowns (both
+      // opt-in; null/absent keep the default bar byte-identical).
+      layout={siteData?.navigation?.layout ?? null}
+      // Ansel kit (bakery template #3) — the boutique utility-header extras
+      // (all boutique-only; null/absent keep every other layout byte-identical).
+      brandKicker={siteData?.navigation?.brandKicker ?? null}
+      centerLabel={siteData?.navigation?.centerLabel ?? null}
+      utilityNote={siteData?.navigation?.utilityNote ?? null}
+      dropdownStyle={siteData?.navigation?.dropdownStyle ?? null}
+      // Universal (renderer 1.32.0) — resting nav link/trigger text color
+      // ('accent' → brand primary, or a hex/rgb/hsl string). null/absent ⇒
+      // today's chrome text, byte-identical.
+      navLinkColor={siteData?.navigation?.navLinkColor ?? null}
+      // REV-2 (Poilane round) — quiet uppercase text actions, right cluster.
+      actions={siteData?.navigation?.actions ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
+      // Site-level announcement strip — rendered by the renderer INSIDE the
+      // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
+      announcement={siteData?.announcement ?? null}
+      // Utility strip (identity kits §5.3) — same in-header contract as the
+      // announcement; stacks under an 'above'-placed announcement.
+      utilityStrip={siteData?.utilityStrip ?? null}
     />
   );
 };
