@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { getSiteData } from '@/lib/api/siteData';
+import { isDemoSite } from '@/lib/seo/demoSafety';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,6 +21,14 @@ export const dynamic = 'force-dynamic';
  */
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const siteData = await getSiteData();
+
+  // SEO demo-safety: a pre-cutover demo site is a near-duplicate of the
+  // prospect's real site — lock every crawler out and advertise no sitemap so it
+  // can never be indexed. Cutover flips lifecycleState to 'live' and this reverts
+  // to the normal policy below. (Fail-safe: only an explicit 'demo' triggers it.)
+  if (isDemoSite(siteData)) {
+    return { rules: [{ userAgent: '*', disallow: '/' }] };
+  }
 
   return {
     rules: [
@@ -45,6 +54,10 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       { userAgent: 'CCBot', disallow: '/' },
       { userAgent: 'Google-Extended', disallow: '/' },
     ],
-    sitemap: `https://${siteData.domainName}/sitemap.xml`,
+    // Subdomain-only sites have no custom domainName — advertising
+    // `https://undefined/sitemap.xml` (observed live) is worse than omitting.
+    ...(siteData.domainName
+      ? { sitemap: `https://${siteData.domainName}/sitemap.xml` }
+      : {}),
   };
 }

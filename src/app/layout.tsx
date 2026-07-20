@@ -4,6 +4,7 @@ import '@/styles/globals.css';
 import '@hillbombcreations/site-renderer/styles/content-grid.css';
 import '@hillbombcreations/site-renderer/styles/animations.css';
 import { getSiteData } from '@/lib/api/siteData';
+import { isDemoSite, getDemoSourceUrl } from '@/lib/seo/demoSafety';
 import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
@@ -41,9 +42,19 @@ export async function generateMetadata(): Promise<Metadata> {
   try {
     const siteData = await getSiteData();
     const origin = resolveSiteOrigin(siteData);
+    // SEO demo-safety: a pre-cutover demo emits `noindex, nofollow` on every
+    // page, and points its canonical at the prospect's ORIGINAL site so any
+    // crawler that still reaches the demo attributes the content there (signal
+    // preservation, §4A). Absent a known source URL, the noindex alone protects
+    // them. Fail-safe: a non-demo (every existing site) adds neither key and is
+    // byte-identical to before.
+    const demo = isDemoSite(siteData);
+    const demoSource = demo ? getDemoSourceUrl(siteData) : '';
     return {
       ...(origin && { metadataBase: new URL(origin) }),
       ...(siteData.favicon && { icons: { icon: siteData.favicon } }),
+      ...(demo && { robots: { index: false, follow: false } }),
+      ...(demo && demoSource && { alternates: { canonical: demoSource } }),
     };
   } catch {
     const envOrigin = resolveSiteOrigin(null);

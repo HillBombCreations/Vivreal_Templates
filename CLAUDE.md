@@ -1,10 +1,10 @@
-# CLAUDE.md — Vivreal Showcase Template
+# CLAUDE.md — Vivreal Universal Site Template
 
 ## What This Is
 
-The **showcase** template — a Next.js 15 site template for content-driven businesses. It supports events/shows, team pages, reviews, and email subscriptions. Designed to be fully data-driven: all branding, content, and navigation come from the Vivreal CMS via VR_Client_API.
+The **universal** site template on `main` — a Next.js 16 site that renders ANY Vivreal customer site from Studio-authored page configs via `@hillbombcreations/site-renderer` (`composePage()` + page templates). Fully data-driven: all branding, theming, pages, content, and navigation come from the Vivreal CMS via VR_Client_API.
 
-This is a **template branch** in `Vivreal_Templates`. Each branch is a reusable template type. The EventHandler creates user site branches off template branches, and a GitHub Actions sync workflow propagates template changes to all matching user sites.
+`main` is the single template branch in `Vivreal_Templates`. The EventHandler creates user site branches off `main`, and a GitHub Actions sync workflow propagates every push to `main` to all site branches. **Never push WIP to `main`** — work on feature branches; merging to `main` ships to every live customer site.
 
 ---
 
@@ -12,8 +12,10 @@ This is a **template branch** in `Vivreal_Templates`. Each branch is a reusable 
 
 ```bash
 npm run dev          # Dev server (Turbopack)
-npm run build        # Production build
+npm run dev:linked   # Dev against local ../vivreal-site-renderer (copies build via dev-sync.js)
+npm run build        # Production build (Turbopack)
 npm run lint         # ESLint
+npm test             # Node test runner (src/**/*.test.ts)
 ```
 
 ---
@@ -22,14 +24,16 @@ npm run lint         # ESLint
 
 | Area | Choice |
 |---|---|
-| Framework | Next.js 15 (App Router) |
+| Framework | Next.js 16 (App Router, `experimental.viewTransition`) |
+| Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates, skeletons) — version in package.json |
 | Language | TypeScript 5 (strict) |
 | Styling | Tailwind CSS 4 |
 | Icons | Lucide React |
-| UI Components | Radix UI (Sheet, Tooltip, NavigationMenu) |
+| UI Components | Radix UI primitives |
 | Animations | Framer Motion |
-| Data | Server-side fetch via `clientFetch` (all API calls are server-only) |
-| State | React Context (SiteDataContext) — site branding/colors only |
+| Monitoring | `@sentry/nextjs` (sourcemap upload disabled for templates) |
+| Data | Server-side fetch via `clientFetch`/`clientFetchCached` (all API calls are server-only) |
+| State | React Context (SiteDataContext) — site branding/config only |
 
 ---
 
@@ -38,61 +42,36 @@ npm run lint         # ESLint
 ```
 src/
 ├── app/
-│   ├── page.tsx                    # Home — hero section + content listing
-│   ├── layout.tsx                  # Root layout — fetches siteData, wraps in Providers
-│   ├── shows/                      # Content listing page
-│   │   ├── page.tsx                # Server: fetches shows, splits upcoming/past
-│   │   ├── ShowPageClient.tsx      # Client: renders content grid
-│   │   └── [showId]/page.tsx       # Content detail page
-│   ├── team/                       # Team page
-│   │   ├── page.tsx                # Server: fetches team members
-│   ├── review/                     # Review submission page
-│   │   ├── page.tsx                # Server wrapper
-│   │   └── ReviewClient.tsx        # Client: review form
-│   ├── terms/page.tsx              # Static terms of service
-│   ├── api/
-│   │   ├── review/route.tsx        # POST proxy — creates review via CMS
-│   │   └── subscribe/route.tsx     # POST proxy — subscribes email via CMS
-│   ├── icon.tsx                    # Dynamic favicon from siteData
-│   └── apple-icon.tsx              # Dynamic Apple icon from siteData
+│   ├── page.tsx                    # Home — composePage(homePageConfig), welcome fallback
+│   ├── layout.tsx                  # Root layout — siteData, SSR theme vars, fonts, analytics, FABs, EmailPopup
+│   ├── [slug]/page.tsx             # Universal page route — Studio pageConfigs via composePage()
+│   │                               #   (COMPOSE_FORMATS set gates which formats use the unified pipeline)
+│   ├── [slug]/[itemId]/page.tsx    # Detail route — collection items (shows/team/products/collection-list)
+│   │                               #   + depth-2 nested pages (pageConfig.slug = "features/ai-sites")
+│   ├── og/[slug]/route.tsx         # Dynamic OG image — proxies labels.ogImage or generates a branded card
+│   ├── api/                        # Proxy routes: review, subscribe, shows, contact, checkout,
+│   │                               #   validate-coupon, revalidate (webhook cache invalidation)
+│   ├── feeds/schedule.ics/route.ts # Public iCal feed for the schedule page's Subscribe button
+│   ├── mcp/route.ts, .well-known/  # Site MCP + mcp.json + llms.txt
+│   ├── loading.tsx, [slug]/loading.tsx  # Page-shaped Suspense skeletons (palette-correct via SSR theme vars)
+│   ├── robots.tsx, sitemap.tsx
+│   └── icon.tsx, apple-icon.tsx    # Dynamic favicon from siteData
 ├── components/
-│   ├── Navigation/
-│   │   ├── Navbar.tsx              # Server: fetches nav + siteData, renders header
-│   │   ├── NavigationMenu.tsx      # Client: desktop nav with active-state underline
-│   │   ├── MobileNavigationMenuClient.tsx  # Client: mobile hamburger trigger
-│   │   └── MobileNavigationMenu.tsx        # Client: slide-out Sheet menu
-│   ├── HeroSection/
-│   │   └── index.tsx               # Client: hero banner + upcoming/past content cards
-│   ├── CTASection/index.tsx        # Client: call-to-action banner (review prompt)
-│   ├── EmailListComponent/index.tsx # Client: email subscription popup (auto-shows after 3s)
-│   ├── Footer/index.tsx            # Server: site footer with nav, social links, Vivreal badge
-│   ├── Providers/index.tsx         # Client: QueryClient, Tooltip, Toasters, CSS var injection
-│   └── ui/                         # Radix UI primitives (Button, Card, Sheet, etc.)
-├── contexts/
-│   └── SiteDataContext.tsx         # SiteData React Context
+│   ├── Navigation/, Footer/        # Chrome shells — thread Studio nav/footer config to the renderer
+│   ├── PageTemplates/              # Format-specific composed pages (products, schedule, subscribe, …)
+│   ├── HomeSections/               # Home composition sections + EmailPopup
+│   ├── SiteAnalytics/, SiteBeacon/ # Two distinct analytics paths — see Key Patterns
+│   ├── JsonLd/                     # Structured data (site + detail; strips signed-URL params)
+│   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
-│   ├── api/
-│   │   ├── client.ts               # Centralized VR_Client_API fetch with envelope unwrapping
-│   │   ├── media.ts                # getSignedUrl() — signed CloudFront URLs from API
-│   │   ├── siteData/index.tsx      # getSiteData(), getSiteMap()
-│   │   ├── shows/index.tsx         # getShows(), getShowById()
-│   │   ├── team/index.tsx          # getTeamMembers()
-│   │   ├── navigation/index.tsx    # getNavigationData()
-│   │   ├── review/index.tsx        # createReview() — server-side
-│   │   ├── review/client.tsx       # createReview() — client-side (calls /api/review)
-│   │   ├── subscribe/index.tsx     # subscribeUser() — server-side
-│   │   └── subscribe/client.tsx    # subscribeUser() — client-side (calls /api/subscribe)
-│   └── utils/
-├── types/
-│   ├── SiteData/index.tsx          # SiteData, CMSSiteData, Businessinfo, SocialLink
-│   ├── Shows/index.tsx             # ShowData, CMSShowData
-│   ├── Team/index.tsx              # TeamData, CMSTeamData
-│   ├── Navigation/index.tsx        # NavigationData, NavItem
-│   └── Reviews/index.tsx           # ReviewData
-├── data/
-│   └── mockData.ts                 # Fallback mock data (used only if API unavailable)
-└── styles/
-    └── globals.css                 # Tailwind base + CSS variables + custom utilities
+│   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers
+│   ├── og/ogImage.ts               # resolveSiteOrigin: NEXT_PUBLIC_SITE_URL → domainInformation.live_url → domainName
+│   ├── fonts/siteFont.ts           # Per-site font resolution from siteData.fontFamily
+│   ├── pages/                      # pageConfig lookup helpers (getPageBySlug, getItemHref)
+│   └── renderComposedPage.tsx      # composePage output → JSX + skeletonPropsFor()
+├── types/, contexts/, hooks/
+├── data/mockData.ts                # Fallback mock data (used only if API unavailable)
+└── styles/globals.css              # Tailwind base + CSS variables + font preset @import
 ```
 
 ---
@@ -105,6 +84,9 @@ All data fetching goes through `src/lib/api/client.ts`:
 
 1. **`clientFetch<T>(path)`** — fetches from VR_Client_API, unwraps `{ success, data, error }` envelope
 2. **`clientFetchSafe<T>(path, fallback)`** — same but returns fallback on error
+3. **`clientFetchCached<T>(path, fallback, ttl, …, tags)`** — Next.js Data Cache read. TTL from `SITE_CACHE_TTL_SECONDS` (default 60s, safe under VR_Client_API's 300s signed-URL TTL). Tag-invalidated on Studio edits via `POST /api/revalidate` (HMAC-signed webhook from VR_Secure_API). Portal preview requests (`?vivreal_preview=<token>`, relayed by middleware) bypass the cache and quota tracking.
+
+`isQuotaError()` detects 402 quota responses — the root layout renders `<QuotaExceeded />` instead of crashing.
 
 ### API Response Format
 
@@ -124,7 +106,7 @@ All media is served via CloudFront CDN (`media.vivreal.io`) with **signed URLs**
 
 VR_Client_API generates signed URLs for any media field listed in `objectValue.mediaFields` (or `siteDetails.values.mediaFields` for site data). The signed URL is returned in `currentFile.source`.
 
-**Pattern**: `getSignedUrl(item.objectValue.poster)` — extracts `currentFile.source` from any media field.
+**Pattern**: `getSignedUrl(item.objectValue.poster)` — extracts `currentFile.source` from any media field (handles variant shapes too).
 
 **Key rule**: Never build CDN URLs manually. Always use `currentFile.source` via `getSignedUrl()`.
 
@@ -133,13 +115,15 @@ VR_Client_API generates signed URLs for any media field listed in `objectValue.m
 ## Environment Variables
 
 ```env
-NEXT_PUBLIC_CLIENT_API   # VR_Client_API base URL (e.g., https://client.vivreal.io)
-API_KEY                  # API key for VR_Client_API authorization
-SITE_ID                  # MongoDB site document ID
-BUCKET_NAME              # S3 bucket name for this group (e.g., vivreal-dougskitchen)
-CDN_BASE_URL             # CDN base (default: https://media.vivreal.io)
-SHOWS_ID                 # Collection group ID for shows/content
-TEAMMEMBERS_ID           # Collection group ID for team members
+NEXT_PUBLIC_CLIENT_API         # VR_Client_API base URL (default https://client.vivreal.io)
+API_KEY                        # API key for VR_Client_API authorization
+SITE_ID                        # MongoDB site document ID; 'preview' in local/preview (disables SiteBeacon)
+NEXT_PUBLIC_SITE_URL           # Canonical per-site origin (CloudFront rewrites Host — never derive from request)
+SITE_CACHE_TTL_SECONDS         # Data Cache TTL (default 60; 86400 only after raising signed-URL TTL)
+REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verification
+NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
+NEXT_PUBLIC_SENTRY_DSN         # Sentry DSN
+SHOWS_ID / TEAMMEMBERS_ID / PARTNERS_ID  # Legacy collection-ID fallbacks (block bindings win — see getPageCollectionId)
 ```
 
 All env vars are injected by the EventHandler during Amplify deployment — they are NOT stored in this repo.
@@ -150,59 +134,73 @@ All env vars are injected by the EventHandler during Amplify deployment — they
 
 ### All Branding is Data-Driven
 
-- **Colors**: Come from `siteData` (primary, secondary, surface, etc.) — injected as CSS variables at runtime via `Providers`
-- **Logo**: `getSignedUrl(siteData.logo)` — signed CloudFront URL from API
-- **Site name**: From `siteData.businessInfo.name` or `siteData.name`
-- **Social links**: From `siteData.socialLinks[]`
-- **Contact email**: From `siteData.businessInfo.contactInfo.email`
+- **Colors**: theme tokens (`primary`, `secondary`, `hover`, `surface`, `surface-alt`, `text-*`) are SSR'd as CSS vars on `<html>` (`themeVarStyle` in layout.tsx) so first paint + skeletons are palette-correct; the Providers client effect re-stamps the same values post-hydration
+- **Fonts**: `siteData.fontFamily` → `resolveSiteFont()` — curated families map to the existing globals.css Google Fonts @import; only Geist loads via `next/font/google`; arbitrary families get a best-effort runtime `<link>`. Absent ⇒ no font wiring at all (Outfit default)
+- **Favicon**: `siteData.favicon` sets metadata `icons` only when present
+- **Style variant**: `siteData.styleVariant` → `data-style-variant` attribute on `<html>`
+- **Logo / name / social / contact**: from siteData as before, via `getSignedUrl` for media
 
 No hardcoded brand names, colors, or logos anywhere in the template.
+
+### Pages are Studio-Authored
+
+Pages come from portal page configs (`siteData.pageConfigs`), rendered by `[slug]/page.tsx` through the unified `composePage()` pipeline (formats listed in `COMPOSE_FORMATS`; unlisted formats keep legacy per-format JSX). Navigation auto-derives in `getNavigationData()` (respects `displayOnHeader`, excludes `static` pages). Collection IDs resolve blocks-first via `getPageCollectionId()`: page-template block binding → legacy `page.collectionId` → `page.collections[0]` → env fallback.
+
+Studio-authored chrome threads through the shells:
+- **Navbar**: `navigation.headerStyle`, `navigation.headerWidth`, `navigation.secondaryCta`, `navigation.brand.logoHeight`, dark/light `siteData.chrome`
+- **Footer**: `footer.socialStyle`, `footer.newsletterPlacement`, `footer.brand.logoFilter`, tagline from `footer.brand.description` (falls back to `businessInfo.description`)
 
 ### Server Components First
 
 Pages are async Server Components that fetch data and pass it to Client Components:
-- `page.tsx` → fetches data → passes to `*Client.tsx`
+- `page.tsx` → fetches data → passes to client components
 - `Navbar.tsx` and `Footer` are also Server Components (they fetch nav data)
 
 ### Metadata is Dynamic
 
-All `generateMetadata()` functions read from `getSiteData()` to build page titles, descriptions, and OG tags dynamically.
+`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution: `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>` (`resolveSiteOrigin`).
+
+### Analytics — Two Distinct Components
+
+- **`SiteAnalytics`** (server, in `<head>`): emits the customer's OWN third-party tag from `siteData.analytics` `{ provider: 'google_analytics' | 'plausible' | 'fathom', trackingId }`. Provider IDs are validated fail-closed (GA4 id is interpolated into an inline script). Absent config ⇒ renders nothing
+- **`SiteBeacon`** (client): Vivreal's first-party cookieless page-view beacon → `collect.vivreal.io/e` via `sendBeacon` (keepalive-fetch fallback). Fires only when `SITE_ID` is set and ≠ `'preview'`; every failure is swallowed — analytics must never break the site
+
+### Config-Driven Extras
+
+- `siteData.floatingCta` → site-wide get-in-touch FAB; `siteInfo.templateType === 'restaurant'` → Reserve-a-Table FAB
+- `siteData.emailPopup` → EmailPopup (mounted in layout; absent config ⇒ legacy home-only behavior)
+- Inline hero/footer email capture uses the SAME subscribe path as the popup — Providers inject `onSubscribe` into the renderer context
 
 ---
 
 ## Adding New Pages
 
-1. Create route at `src/app/{page-name}/page.tsx`
-2. Add navigation entry in `src/lib/api/navigation/index.tsx` DEFAULT_NAV array
-3. The page can fetch any collection by its ID (passed via env var)
+Pages are Studio-authored, not hardcoded: create the page config in the portal and `[slug]/page.tsx` renders it — nav, metadata, and OG image come for free. Only touch code for a genuinely new page **format**: add it to the renderer's `composePage()` and to `COMPOSE_FORMATS` in `src/app/[slug]/page.tsx`.
 
 ---
 
-## Updating `@vivreal/site-renderer`
+## Updating `@hillbombcreations/site-renderer`
 
-The shared rendering package is installed from GitHub. After changes are pushed to `vivreal-site-renderer` master:
+The renderer is published to GitHub Packages (`.npmrc` scopes `@hillbombcreations` to `npm.pkg.github.com`; auth via `NODE_AUTH_TOKEN`). To pick up a release:
 
 ```bash
-# 1. Remove the old copy + Next.js cache
-rm -rf .next node_modules/@vivreal/site-renderer
+# 1. Bump the version in package.json, then
+npm install
 
-# 2. Reinstall from GitHub (--install-links avoids symlinks that break Turbopack)
-npm install "github:HillBombCreations/vivreal-site-renderer#master" --install-links
-
-# 3. Restart dev server
-npm run dev
+# 2. Verify package-lock.json regenerated cleanly — Amplify runs `npm ci`,
+#    and a stale/partial lockfile is the most common CI failure. If npm ci
+#    reports integrity errors, delete node_modules + package-lock.json and
+#    reinstall from a clean tree.
 ```
 
-**Why `--install-links`?** Without it, npm creates a symlink for git-based deps. Turbopack cannot resolve modules through symlinks, so the build fails with "Can't resolve '@vivreal/site-renderer'". The `--install-links` flag forces a real copy.
-
-**Why clear `.next`?** Turbopack caches compiled modules aggressively. If you update the renderer and the changes don't appear, clearing `.next` forces a full recompile.
+For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 
 ---
 
 ## Template Branch Model
 
-- Each branch in `Vivreal_Templates` = one template type
-- Branches: `main` (landing), `ecommerce-v2`, `showcase` (this one)
-- User site branches are auto-created by EventHandler off template branches
-- GitHub Actions sync workflow merges template changes to all user site branches
+- `main` = the **single universal template**. There are no separate showcase/ecommerce template branches — one template renders every site type from config
+- User site branches are auto-created by EventHandler off `main`, named `<bucketname>-<site-name>` (e.g. `thecomedycollective-the-comedy-collective`), with `-ecommerce` / `-blank` variants
+- `.github/workflows/sync-main-to-sites.yml`: every push to `main` merges `main` into **every other remote branch** (auto-discovered) — this is the fleet-wide deploy mechanism
+- Do all work on feature branches; merge to `main` only when it's ready for every customer site
 - **Never commit client-specific content** — everything must be data-driven
