@@ -80,6 +80,9 @@ const Footer = async () => {
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       newsletter={siteData?.footerNewsletter ?? null}
+      // A Bakeshop feedback round (renderer 1.34.0): footer logo render height
+      // — FooterProps declares it, so it rides as a plain prop.
+      logoHeight={siteData?.footer?.brand?.logoHeight ?? null}
       // Wave D + owner pass 2: these land in FooterProps on the next renderer
       // bump — drop this spread-cast then and pass them as plain props.
       {...({
