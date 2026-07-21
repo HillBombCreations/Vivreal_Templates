@@ -1,5 +1,5 @@
 import { getSiteData } from "@/lib/api/siteData";
-import { canHidePoweredBy } from "@hillbombcreations/tier-quotas";
+import { canHidePoweredBy } from "@hillbombcreations/site-renderer";
 
 interface StaticPageProps {
   labels: { title: string; content: string };
