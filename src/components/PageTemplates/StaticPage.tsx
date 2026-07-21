@@ -1,4 +1,5 @@
 import { getSiteData } from "@/lib/api/siteData";
+import { canHidePoweredBy } from "@hillbombcreations/site-renderer";
 
 interface StaticPageProps {
   labels: { title: string; content: string };
@@ -80,6 +81,14 @@ export default async function StaticPage({ labels, pageName }: StaticPageProps) 
 
   const content = labels.content || buildDefaultContent(pageName, { businessName, email });
 
+  // Tier-gated attribution (C5): hide the "Powered by Vivreal" line only when
+  // the group opted out AND its tier is permitted to — the same rule the footer
+  // badge uses (RendererFooter). Otherwise Basic hides the footer badge but this
+  // static-page attribution still shows.
+  const showAttribution = !(
+    (siteData?.footer?.hidePoweredBy ?? false) && canHidePoweredBy(siteData?.tier)
+  );
+
   return (
     <>
       <main className="pt-24 pb-20">
@@ -89,18 +98,20 @@ export default async function StaticPage({ labels, pageName }: StaticPageProps) 
               {labels.title}
             </h1>
             <div dangerouslySetInnerHTML={{ __html: content }} />
-            <p className="text-sm text-gray-400 pt-4 border-t border-gray-100">
-              This site is powered by{" "}
-              <a
-                href="https://vivreal.io"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-gray-600 transition-colors"
-              >
-                Vivreal Templates
-              </a>
-              .
-            </p>
+            {showAttribution && (
+              <p className="text-sm text-gray-400 pt-4 border-t border-gray-100">
+                This site is powered by{" "}
+                <a
+                  href="https://vivreal.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-gray-600 transition-colors"
+                >
+                  Vivreal Templates
+                </a>
+                .
+              </p>
+            )}
           </div>
         </section>
       </main>
