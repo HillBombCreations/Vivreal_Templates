@@ -4,7 +4,7 @@ import { usePathname } from 'next/navigation';
 import { Navbar as RendererNavbar } from '@hillbombcreations/site-renderer';
 import type { NavbarProps } from '@hillbombcreations/site-renderer';
 import { useOptionalCart } from '@/contexts/CartContext';
-import { currentSlugFromPathname, isPageAllowed } from '@/lib/pageGating';
+import { normalizePageSlug, isPageAllowed } from '@hillbombcreations/site-renderer';
 
 /**
  * Client bridge for the renderer's <Navbar>. The server-side Navbar fetches
@@ -39,7 +39,7 @@ export default function NavbarChrome(
   const announcement =
     props.announcement && !isPageAllowed(
       props.announcement.pages,
-      currentSlugFromPathname(pathname),
+      normalizePageSlug(pathname),
       true,
     )
       ? null

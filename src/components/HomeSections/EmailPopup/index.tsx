@@ -6,7 +6,7 @@ import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import type { EmailPopupConfig } from "@hillbombcreations/site-renderer";
 import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
-import { currentSlugFromPathname, isPageAllowed } from "@/lib/pageGating";
+import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
 
 // REUSE the live wrapper's existing keys so users mid-cap aren't reset.
 // vivreal_subscribed = permanent "never again" (set on subscribe).
@@ -66,7 +66,7 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
   // Studio's picker stores the home page as slug `'home'` while the live home
   // route strips to `''`, so an explicit "include: Home" matched nothing and the
   // popup never appeared. `normalizeSlug` collapses both spellings.
-  const currentSlug = currentSlugFromPathname(pathname);
+  const currentSlug = normalizePageSlug(pathname);
   const isHome = currentSlug === "";
   const pageAllowed = isPageAllowed(cfg.pages, currentSlug, isHome);
 
