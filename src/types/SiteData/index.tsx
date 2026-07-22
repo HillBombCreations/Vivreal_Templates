@@ -178,6 +178,19 @@ export interface PageConfig {
     seo?: {
         metaTitle?: string;
         metaDescription?: string;
+        /**
+         * Studio W6 — hide this page from search engines. Drives
+         * `robots: { index: false, follow: false }` in the page's
+         * `generateMetadata`.
+         *
+         * The NEGATIVE is stored on purpose: indexing is the default, so an
+         * absent key must mean "indexed" — every page authored before this
+         * field existed keeps its current behavior with no backfill.
+         *
+         * This only affects crawlers. The page stays publicly reachable by URL,
+         * which is exactly what it is for (a thank-you or link-only page).
+         */
+        noindex?: boolean;
     };
 }
 
@@ -225,6 +238,25 @@ export interface SiteData {
         key: string,
         type: string,
         currentFile: {
+            source: string
+        }
+    },
+    /**
+     * Studio W10.3 — the SITE-WIDE default share image. Same signed media shape
+     * as `logo`/`heroImage`; stored under `siteDetails.values.defaultOgImage` and
+     * signed by VR_Client_API through the `values.mediaFields` registry that
+     * VR_Secure_API's site-level media lifecycle now writes for it.
+     *
+     * Consumed by `/og/[slug]` as the middle rung of the share-image fallback:
+     * the page's own `labels.ogImage` wins, this covers every page that has
+     * none, and the generated branded card is the floor. Absent ⇒ unchanged
+     * behavior (page image, else generated card).
+     */
+    defaultOgImage?: {
+        name?: string,
+        key: string,
+        type: string,
+        currentFile?: {
             source: string
         }
     },

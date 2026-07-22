@@ -114,6 +114,18 @@ export async function GET(
     // else: upstream unreachable — fall through to the generated card.
   }
 
+  // 1.5. Fall back to the SITE-WIDE default share image (Studio W10.3). Covers
+  //    every page the author did not give its own image — which is most of them
+  //    — with the brand's chosen card instead of the generated one. Same signed
+  //    descriptor shape as the per-page image, so the same proxy path applies,
+  //    including the "upstream unreachable ⇒ keep falling through" behavior. A
+  //    site with no default configured is unchanged (page image, else card).
+  const siteDefaultOg = getSignedUrl(siteData.defaultOgImage);
+  if (siteDefaultOg.startsWith('http')) {
+    const proxied = await proxyUploadedImage(siteDefaultOg);
+    if (proxied) return proxied;
+  }
+
   // 2. Generate a branded card.
   const heading = (
     pageConfig?.seo?.metaTitle ||

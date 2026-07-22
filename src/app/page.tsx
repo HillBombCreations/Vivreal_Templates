@@ -77,6 +77,11 @@ export const generateMetadata = async () => {
   return {
     title,
     description,
+    // Studio W6 — per-page search visibility (see [slug]/page.tsx). Available on
+    // home too: rare, but a site can legitimately be link-only while it is being
+    // built out, and having the toggle silently do nothing on one page would be
+    // worse than not offering it.
+    ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       title,
       description,

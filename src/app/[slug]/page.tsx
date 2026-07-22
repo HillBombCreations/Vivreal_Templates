@@ -553,6 +553,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title,
     description,
+    // Studio W6 — per-page search visibility. Emitted ONLY when the author
+    // turned it off, so a page without the field is untouched (no `robots` key
+    // at all, letting the root layout's demo-site rule stand on its own).
+    // `follow: false` rides along: a page the owner keeps out of search should
+    // not be leaking its outbound links into the graph either.
+    ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
     openGraph: {
       title,
       description,
