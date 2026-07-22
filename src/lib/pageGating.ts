@@ -14,13 +14,25 @@ import type { SiteData } from '@hillbombcreations/site-renderer';
  * only" got it on every page of their site, silently. Two copies of a rule like
  * this is how that happens again; keep it at one.
  *
- * ⚠️ There is a SECOND consumer in another repo: the portal's Studio preview
- * shell (`Vivreal_Portal_Mobile/src/app/(studio-frame)/sites/studio/preview-shell`)
- * must apply the same gate or the editor shows something the live site will not.
- * It cannot import this file. The long-term home for this resolver is the
- * RENDERER package itself (it already owns the types, and both repos depend on
- * it) — move it there at the next renderer bump and delete this. Until then,
- * any change here needs the mirror change there.
+ * ⚠️ DELETE THIS FILE ON THE NEXT RENDERER BUMP (W10.12).
+ * `@hillbombcreations/site-renderer` **1.36.0** exports `isPageAllowed` +
+ * `normalizePageSlug` + `PageGate` from its barrel (renderer commit `d176e30`,
+ * `src/chrome/pageGating.ts`) — the same rule, same semantics, same test table.
+ * It is not published yet, and publishing hits every live customer site, so
+ * this copy stays until it is. The swap is:
+ *
+ *     -import { isPageAllowed } from '@/lib/pageGating';
+ *     +import { isPageAllowed } from '@hillbombcreations/site-renderer';
+ *
+ * plus `currentSlugFromPathname(p)` → `normalizePageSlug(p)` (identical
+ * behavior; the renderer's name is route-agnostic because the portal passes a
+ * slug, not a pathname). Then delete this file and its spec.
+ *
+ * There is a SECOND consumer in another repo — the portal's Studio preview
+ * shell, `Vivreal_Portal_Mobile/src/lib/sites/pageGating.ts` — which must apply
+ * the same gate or the editor shows something the live site will not. Swap both
+ * together. Neither repo can import the other, so until the publish lands, any
+ * change here needs the mirror change there.
  */
 
 type PageGate = NonNullable<NonNullable<SiteData['announcement']>['pages']>;
