@@ -178,6 +178,19 @@ export interface PageConfig {
     seo?: {
         metaTitle?: string;
         metaDescription?: string;
+        /**
+         * Studio W6 — hide this page from search engines. Drives
+         * `robots: { index: false, follow: false }` in the page's
+         * `generateMetadata`.
+         *
+         * The NEGATIVE is stored on purpose: indexing is the default, so an
+         * absent key must mean "indexed" — every page authored before this
+         * field existed keeps its current behavior with no backfill.
+         *
+         * This only affects crawlers. The page stays publicly reachable by URL,
+         * which is exactly what it is for (a thank-you or link-only page).
+         */
+        noindex?: boolean;
     };
 }
 
