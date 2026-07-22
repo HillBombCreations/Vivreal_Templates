@@ -6,6 +6,7 @@ import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import type { EmailPopupConfig } from "@hillbombcreations/site-renderer";
 import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
+import { currentSlugFromPathname, isPageAllowed } from "@/lib/pageGating";
 
 // REUSE the live wrapper's existing keys so users mid-cap aren't reset.
 // vivreal_subscribed = permanent "never again" (set on subscribe).
@@ -55,20 +56,19 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
   const enabled = cfg.enabled ?? hasSubscribers;
 
   // ── Page-targeting. The wrapper now mounts on every route via the layout, so
-  // it MUST self-gate. ABSENT pages config ⇒ HOME-ONLY (legacy). Authored:
-  // 'all' ⇒ every page; 'include' ⇒ slug ∈ slugs; 'exclude' ⇒ slug ∉ slugs.
-  // Home route is "/" (Templates has no basePath); other pages are "/{slug}".
-  const currentSlug = (pathname ?? "/").replace(/^\/+/, "").replace(/\/+$/, "");
+  // it MUST self-gate. ABSENT pages config ⇒ HOME-ONLY (legacy), which is why
+  // `isHome` is the fallback here and `true` is the fallback for the
+  // announcement strip. Authored: 'all' ⇒ every page; 'include' ⇒ slug ∈ slugs;
+  // 'exclude' ⇒ slug ∉ slugs.
+  //
+  // Moved to the shared resolver in W10.11, when the announcement strip needed
+  // the identical rule. That also FIXED a latent bug this inline copy had: the
+  // Studio's picker stores the home page as slug `'home'` while the live home
+  // route strips to `''`, so an explicit "include: Home" matched nothing and the
+  // popup never appeared. `normalizeSlug` collapses both spellings.
+  const currentSlug = currentSlugFromPathname(pathname);
   const isHome = currentSlug === "";
-  const pageAllowed = ((): boolean => {
-    const pages = cfg.pages;
-    if (!pages?.mode) return isHome; // legacy: home-only
-    if (pages.mode === "all") return true;
-    const slugs = pages.slugs ?? [];
-    if (pages.mode === "include") return slugs.includes(currentSlug);
-    if (pages.mode === "exclude") return !slugs.includes(currentSlug);
-    return isHome;
-  })();
+  const pageAllowed = isPageAllowed(cfg.pages, currentSlug, isHome);
 
   // ── Resolve collectionId. Precedence (per SP-6 Task 6 / OQ-7):
   //   1. cfg.collectionId — Studio-authored EmailPopup override. MUST stay FIRST:
@@ -173,7 +173,9 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
     const timer = setTimeout(fire, delayMs);
     return () => clearTimeout(timer);
     // Re-evaluate when route changes (pageAllowed) or config identity changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // The exhaustive-deps disable that used to sit here is gone: it was needed
+    // when `pageAllowed` was an inline IIFE closing over `cfg.pages`. Now that
+    // the rule lives in the shared resolver, the listed deps satisfy the lint.
   }, [enabled, pageAllowed, pathname, cfg.trigger?.mode, cfg.trigger?.delayMs, cfg.trigger?.scrollPct, cfg.frequency?.mode, cfg.frequency?.days]);
 
   if (!enabled || !pageAllowed) return null;
