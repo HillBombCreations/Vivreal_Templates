@@ -241,6 +241,25 @@ export interface SiteData {
             source: string
         }
     },
+    /**
+     * Studio W10.3 — the SITE-WIDE default share image. Same signed media shape
+     * as `logo`/`heroImage`; stored under `siteDetails.values.defaultOgImage` and
+     * signed by VR_Client_API through the `values.mediaFields` registry that
+     * VR_Secure_API's site-level media lifecycle now writes for it.
+     *
+     * Consumed by `/og/[slug]` as the middle rung of the share-image fallback:
+     * the page's own `labels.ogImage` wins, this covers every page that has
+     * none, and the generated branded card is the floor. Absent ⇒ unchanged
+     * behavior (page image, else generated card).
+     */
+    defaultOgImage?: {
+        name?: string,
+        key: string,
+        type: string,
+        currentFile?: {
+            source: string
+        }
+    },
     heroImage?: {
         name?: string,
         key: string,
