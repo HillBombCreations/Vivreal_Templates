@@ -4,7 +4,7 @@
 
 The **universal** site template on `main` — a Next.js 16 site that renders ANY Vivreal customer site from Studio-authored page configs via `@hillbombcreations/site-renderer` (`composePage()` + page templates). Fully data-driven: all branding, theming, pages, content, and navigation come from the Vivreal CMS via VR_Client_API.
 
-`main` is the single template branch in `Vivreal_Templates`. The EventHandler creates user site branches off `main`, and a GitHub Actions sync workflow propagates every push to `main` to all site branches. **Never push WIP to `main`** — work on feature branches; merging to `main` ships to every live customer site.
+`Vivreal_Templates` has exactly two long-lived branches: `main` (development) and `stable` (the release channel). Every customer site's Amplify app builds from the shared `stable` branch — per-customer branches no longer exist. Releases ship via the manual `promote-stable` workflow, which fast-forwards `main` → `stable` and rebuilds the entire fleet. **Never push WIP to `main`** — work on feature branches; promote `main` → `stable` only when it's ready for every live customer site.
 
 ---
 
@@ -193,14 +193,16 @@ npm install
 #    reinstall from a clean tree.
 ```
 
+npm 10/11 prune the `@emnapi/*` transitive entries from package-lock.json, which has repeatedly broken the `stable` fleet build — test any lockfile change with a clean install (delete node_modules, then `npm ci`) before merging.
+
 For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 
 ---
 
 ## Template Branch Model
 
-- `main` = the **single universal template**. There are no separate showcase/ecommerce template branches — one template renders every site type from config
-- User site branches are auto-created by EventHandler off `main`, named `<bucketname>-<site-name>` (e.g. `thecomedycollective-the-comedy-collective`), with `-ecommerce` / `-blank` variants
-- `.github/workflows/sync-main-to-sites.yml`: every push to `main` merges `main` into **every other remote branch** (auto-discovered) — this is the fleet-wide deploy mechanism
-- Do all work on feature branches; merge to `main` only when it's ready for every customer site
+- `main` = the **single universal template** (development branch). There are no separate showcase/ecommerce template branches — one template renders every site type from config
+- `stable` = the **release channel**. Every customer site's Amplify app builds from the shared `stable` branch — per-customer site branches no longer exist
+- `.github/workflows/promote-stable.yml`: manual `workflow_dispatch` that fast-forwards `main` → `stable` (GitHub App installation token, `promote-stable` concurrency group with `cancel-in-progress: false`, `git merge-base --is-ancestor` guard + non-force push) — a promotion rebuilds the **entire fleet**
+- Do all work on feature branches, merge to `main` when integration-ready; promote `main` → `stable` only when it's ready for every customer site
 - **Never commit client-specific content** — everything must be data-driven
