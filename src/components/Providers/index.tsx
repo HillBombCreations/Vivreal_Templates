@@ -13,6 +13,7 @@ import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
 import { subscribeUser } from '@/lib/api/subscribe/client';
+import { isPaymentsProvider } from '@/lib/payments';
 
 const queryClient = new QueryClient();
 
@@ -73,16 +74,16 @@ const Providers = ({
     const hasProducts = pages.some((p) => p.format === 'products') ||
         pages.some((p) =>
             (p.integrations ?? []).some(
-                (i) => (i.type ?? i.name ?? '').toLowerCase() === 'stripe'
+                (i) => isPaymentsProvider(i.type ?? i.name)
             )
         ) ||
-        // SP-4: a page may record its stripe integration only in a block binding
+        // SP-4: a page may record its payments integration only in a block binding
         // (after the legacy integrations[] array is stripped). Detect that too so
         // the cart stays wired.
         pages.some((p) =>
             (p.blocks ?? []).some((b) =>
                 (b?.config?.bindings ?? []).some(
-                    (bd) => (bd?.integrationProvider ?? '').toLowerCase() === 'stripe'
+                    (bd) => isPaymentsProvider(bd?.integrationProvider)
                 )
             )
         );

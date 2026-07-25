@@ -31,6 +31,14 @@ export interface Product {
         values: string[];
     };
     default_price?: Variantable<string>;
+    /**
+     * Provider-agnostic checkout identifier for the `products[].price` wire
+     * slot (Stripe price id / Square variationId — VR_Client_API resolves the
+     * provider server-side). Consumers resolve `checkoutIdentifier ??
+     * default_price` so legacy Stripe products, which only carry
+     * `default_price`, behave identically.
+     */
+    checkoutIdentifier?: Variantable<string>;
     quantityOptions?: number[];
     /** Unit label beside the quantity picker — scalar, or a per-variant map (matches `price`'s keys). */
     quantityUnit?: Variantable<string>;

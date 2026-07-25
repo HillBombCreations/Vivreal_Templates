@@ -1,37 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import type { CartAdapter, DetailProductData } from "@hillbombcreations/site-renderer";
-import type { Product } from "@/types/Products";
+import type { CartAdapter } from "@hillbombcreations/site-renderer";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
 import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
-
-/**
- * Maps the renderer's `DetailProductData` back to the Templates `Product`
- * shape. The two share field names, so this is a structural narrowing — the
- * only divergence is that the renderer marks several fields optional that the
- * Templates `Product` requires, so we coalesce to sensible empties.
- */
-function rendererProductToTemplates(product: DetailProductData): Product {
-  return {
-    _id: product._id,
-    name: product.name ?? "",
-    price: product.price ?? "",
-    description: product.description ?? "",
-    imageUrl: product.imageUrl ?? "",
-    link: product.link,
-    productType: product.productType,
-    buttonLabel: product.buttonLabel,
-    usingVariant: product.usingVariant,
-    default_price: product.default_price,
-    quantityOptions: product.quantityOptions,
-    quantityUnit: product.quantityUnit,
-    stock: product.stock,
-    lowStockThreshold: product.lowStockThreshold,
-  };
-}
+import { rendererProductToTemplates } from "@/lib/cartProduct";
 
 /**
  * Builds a `CartAdapter` (the renderer's injected cart contract) backed by the
@@ -59,10 +34,11 @@ export function useCartAdapter(): CartAdapter {
 
     buyNow: async ({ product, variant, quantity }) => {
       // Mirrors ProductDetailClient.onBuyNow: build a single-item cart and
-      // hand it straight to handleCheckout (Stripe redirect).
+      // hand it straight to handleCheckout (VR_Client_API resolves the
+      // payments provider server-side and returns the hosted checkout URL).
       const templatesProduct = rendererProductToTemplates(product);
       const resolvedVariant = resolveVariant(variant, templatesProduct) ?? "default";
-      const priceID = resolveVariantableString(templatesProduct.default_price, variant) ?? "";
+      const priceID = resolveVariantableString(templatesProduct.checkoutIdentifier ?? templatesProduct.default_price, variant) ?? "";
       const name = getSafeFieldValue(templatesProduct, "name", variant) ?? "";
       const price = getSafeFieldValue(templatesProduct, "price", variant) ?? "";
       const imageUrl = getSafeFieldValue(templatesProduct, "imageUrl", variant) ?? "";
