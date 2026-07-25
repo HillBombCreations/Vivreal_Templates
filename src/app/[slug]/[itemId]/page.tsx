@@ -13,6 +13,8 @@ import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductById } from "@/lib/api/products";
+import { collectBindingTargets } from "@/lib/api/composition/bindings";
+import { isPaymentsProvider } from "@/lib/payments";
 import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
@@ -206,12 +208,19 @@ export default async function DynamicItemPage({ params }: Props) {
 
   // Product detail
   if (pageConfig.format === "products") {
-    const product = await getProductById(itemId);
+    // Resolve the page's authored payments provider (block bindings first,
+    // legacy integrations[]/collectionId fallback — reuse the composition
+    // collector rather than re-walking the shapes). No payments binding ⇒
+    // undefined ⇒ getProducts' legacy stripe default.
+    const { integrationTypes } = collectBindingTargets(pageConfig);
+    const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
+    const product = await getProductById(itemId, paymentsProvider ?? "stripe");
     if (!product) return notFound();
 
-    // Fetch supplemental integrations for the detail page (non-Stripe ones)
+    // Fetch supplemental integrations for the detail page (non-payments ones —
+    // the page's payments binding must not double-render as a supplemental feed)
     const detailIntegrations = (pageConfig.detailPage?.integrations ?? [])
-      .filter(i => (i.type ?? i.name ?? '').toLowerCase() !== 'stripe');
+      .filter(i => !isPaymentsProvider(i.type ?? i.name));
 
     const detailSupplemental = await Promise.all(
       detailIntegrations.map(async (binding) => {

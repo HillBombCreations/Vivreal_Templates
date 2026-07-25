@@ -1,6 +1,9 @@
 import type { Cart, CartItem } from "@/types/Cart";
 import type { Product } from "@/types/Products";
-import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils";
+// Explicit index.ts path (allowed by tsconfig `allowImportingTsExtensions`) so
+// this module loads under the repo's `node --test` harness, which does no
+// extensionless / directory resolution — see `checkoutIdentifier.test.ts`.
+import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 
 interface AddToCartProps {
@@ -24,7 +27,10 @@ export function handleAddToCart({
   const name = variant !== "default" ? `${baseName} (${variant})` : baseName;
   const price = getSafeFieldValue(product, "price", selectedVariant) ?? "";
   const imageUrl = getSafeFieldValue(product, "imageUrl", selectedVariant) ?? "";
-  const priceID = resolveVariantableString(product.default_price, selectedVariant) ?? "";
+  // `checkoutIdentifier ?? default_price` — provider-agnostic checkout id
+  // (Stripe price id / Square variationId); identical value on legacy Stripe
+  // products, which only carry `default_price`.
+  const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
   // Resolve the unit for THIS line's variant so the cart stores a plain string
   // (e.g. "lb"), never the whole variant→unit map.
   const unit = resolveVariantableString(product.quantityUnit, selectedVariant);

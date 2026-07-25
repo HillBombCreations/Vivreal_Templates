@@ -11,6 +11,7 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
+import { isPaymentsProvider } from '@/lib/payments';
 import { hasFormBlock, hasStaticContentBlock } from './pageEmptiness';
 
 export interface PageContextResult {
@@ -69,10 +70,11 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     ),
     Promise.all(
       integrationTypes.map(async (type) => {
-        // Route the products integration through the bridge so the gallery /
-        // variant resolution survives and the server-side filter/sort/search
-        // (controlled query) applies. Other integrations use the plain fetch.
-        if (type === 'stripe' || page.format === 'products') {
+        // Route any payments-provider integration through the bridge so the
+        // gallery / variant resolution survives and the server-side
+        // filter/sort/search (controlled query) applies. Other integrations
+        // use the plain fetch.
+        if (isPaymentsProvider(type) || page.format === 'products') {
           return [type, await getProductsAsContentItems({ integrationType: type, ...productQuery })] as const;
         }
         return [type, (await getIntegrationItems(type, { limit: 100 })).items] as const;

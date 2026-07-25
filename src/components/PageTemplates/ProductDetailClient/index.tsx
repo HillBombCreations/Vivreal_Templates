@@ -99,7 +99,7 @@ export default function ProductDetailClient({
     setLoadingCheckout(true);
     try {
       const variant = resolveVariant(selectedVariant, product) ?? "default";
-      const priceID = resolveVariantableString(product.default_price, selectedVariant) ?? "";
+      const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
       await handleCheckout({
         cart: {
           [`${product._id}_${variant}`]:
