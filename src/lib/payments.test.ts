@@ -37,3 +37,70 @@ test("isPaymentsProvider: empty / undefined / null -> false", () => {
   assert.equal(isPaymentsProvider(undefined), false);
   assert.equal(isPaymentsProvider(null), false);
 });
+
+// ── pagesNeedCart — the CartProvider mount gate ──────────────────────────
+// Found in the first live Square E2E: the inline Providers gate scanned only
+// TOP-LEVEL block bindings, but a coordinated Products group carries its
+// payments binding on the GRID CHILD (config.children[].config.bindings) —
+// so the cart never mounted on a page authored with the storefront unit and
+// every add-to-cart / Buy now silently no-opped.
+import { pagesNeedCart } from "./payments.ts";
+
+test("pagesNeedCart: page.format 'products' -> true", () => {
+  assert.equal(pagesNeedCart([{ format: "products" }]), true);
+});
+
+test("pagesNeedCart: legacy page.integrations[] payments type -> true", () => {
+  assert.equal(pagesNeedCart([{ integrations: [{ type: "square" }] }]), true);
+  assert.equal(pagesNeedCart([{ integrations: [{ name: "Stripe" }] }]), true);
+});
+
+test("pagesNeedCart: payments binding on a TOP-LEVEL block -> true", () => {
+  assert.equal(
+    pagesNeedCart([
+      { blocks: [{ config: { bindings: [{ integrationProvider: "square" }] } }] },
+    ]),
+    true,
+  );
+});
+
+test("pagesNeedCart: payments binding on a coordinated group CHILD -> true (the Square E2E gap)", () => {
+  const page = {
+    format: "catalog",
+    integrations: [],
+    blocks: [
+      { config: { bindings: [{ collectionId: "c1" }] } },
+      {
+        type: { kind: "group", dispatchId: "group" },
+        config: {
+          coordinated: "products",
+          children: [
+            { config: {} },
+            { config: {} },
+            { config: { bindings: [{ integrationProvider: "square" }] } },
+          ],
+        },
+      },
+    ],
+  };
+  assert.equal(pagesNeedCart([page]), true);
+});
+
+test("pagesNeedCart: collection-only bindings / no payments anywhere -> false", () => {
+  assert.equal(
+    pagesNeedCart([
+      { format: "catalog", blocks: [{ config: { bindings: [{ collectionId: "c1" }] } }] },
+    ]),
+    false,
+  );
+  assert.equal(pagesNeedCart([]), false);
+});
+
+test("pagesNeedCart: shopify binding does NOT mount the cart (hosted-redirect fork)", () => {
+  assert.equal(
+    pagesNeedCart([
+      { blocks: [{ config: { bindings: [{ integrationProvider: "shopify" }] } }] },
+    ]),
+    false,
+  );
+});
