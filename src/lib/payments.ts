@@ -29,3 +29,52 @@ export function isPaymentsProvider(type: string | undefined | null): boolean {
   if (!type) return false;
   return PAYMENTS_PROVIDER_TYPES.has(type.trim().toLowerCase());
 }
+
+/* ------------------------------------------------------------------ */
+/* CartProvider mount gate                                             */
+/* ------------------------------------------------------------------ */
+
+type BindingLike = { collectionId?: string; integrationProvider?: string | null };
+type BlockLike = {
+  type?: { kind?: string };
+  config?: { bindings?: BindingLike[]; children?: BlockLike[] };
+};
+export type CartGatePage = {
+  format?: string;
+  integrations?: Array<{ type?: string | null; name?: string | null }>;
+  blocks?: BlockLike[];
+};
+
+/** True when any binding in this block subtree names a payments provider. */
+function blockHasPaymentsBinding(block: BlockLike): boolean {
+  const config = block?.config;
+  if (!config) return false;
+  if ((config.bindings ?? []).some((bd) => isPaymentsProvider(bd?.integrationProvider))) {
+    return true;
+  }
+  // Recurse into group children — a coordinated Products group carries its
+  // payments binding on the GRID CHILD (config.children[].config.bindings),
+  // exactly like collectFromBlocks (composition/bindings.ts) already walks
+  // for prefetch. Scanning only top-level bindings misses it, which left the
+  // cart unmounted on storefront-unit pages (first live Square E2E).
+  return (config.children ?? []).some(blockHasPaymentsBinding);
+}
+
+/**
+ * The CartProvider mount gate: does any page need the cart wired?
+ *
+ * Three prongs, in the order they historically accreted:
+ *  1. legacy `format === 'products'` pages;
+ *  2. legacy `page.integrations[]` naming a payments provider;
+ *  3. block-authored pages whose bindings (at ANY depth, incl. coordinated
+ *     group children) name a payments provider (SP-4 + the child recursion).
+ */
+export function pagesNeedCart(pages: CartGatePage[]): boolean {
+  return (
+    pages.some((p) => p.format === "products") ||
+    pages.some((p) =>
+      (p.integrations ?? []).some((i) => isPaymentsProvider(i.type ?? i.name)),
+    ) ||
+    pages.some((p) => (p.blocks ?? []).some(blockHasPaymentsBinding))
+  );
+}

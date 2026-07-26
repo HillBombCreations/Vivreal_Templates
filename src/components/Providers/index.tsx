@@ -13,7 +13,7 @@ import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
 import { subscribeUser } from '@/lib/api/subscribe/client';
-import { isPaymentsProvider } from '@/lib/payments';
+import { pagesNeedCart, type CartGatePage } from '@/lib/payments';
 
 const queryClient = new QueryClient();
 
@@ -71,22 +71,13 @@ const Providers = ({
     }, [siteData]);
 
     const pages = siteData.pageConfigs ?? [];
-    const hasProducts = pages.some((p) => p.format === 'products') ||
-        pages.some((p) =>
-            (p.integrations ?? []).some(
-                (i) => isPaymentsProvider(i.type ?? i.name)
-            )
-        ) ||
-        // SP-4: a page may record its payments integration only in a block binding
-        // (after the legacy integrations[] array is stripped). Detect that too so
-        // the cart stays wired.
-        pages.some((p) =>
-            (p.blocks ?? []).some((b) =>
-                (b?.config?.bindings ?? []).some(
-                    (bd) => isPaymentsProvider(bd?.integrationProvider)
-                )
-            )
-        );
+    // Cart mount gate — extracted to lib/payments.ts (pagesNeedCart) so it is
+    // unit-testable. Crucially it walks bindings at ANY depth: a coordinated
+    // Products group carries its payments binding on the GRID CHILD
+    // (config.children[].config.bindings), which the old inline scan missed —
+    // the cart never mounted on storefront-unit pages and every add-to-cart
+    // silently no-opped (first live Square E2E).
+    const hasProducts = pagesNeedCart(pages as CartGatePage[]);
 
     // S2/OD#3: pass the Maps API key so keyed Google Maps Embed API URLs
     // are used in the schedule page's map view. Falls back to the keyless embed
