@@ -20,9 +20,9 @@ import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { willRenderHeroBanner, hasHomeSectionBlock } from "@/lib/heroBanner";
-import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
-import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
+import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
+import { parseProductQuery } from "@/lib/composition/productQuery";
 import type { PageConfig, SiteData } from "@/types/SiteData";
 // S2/OD#3 — schedule view type for ?view= param validation.
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
@@ -291,25 +291,44 @@ export default async function DynamicPage({
         format === "craft" ||
         format === "profile"
       ) {
-        return renderComposedPage({ siteData, composedPage });
+        // Live storefront overrides + controlled query for EVERY generic
+        // format: a products storefront group is composable on ANY page
+        // (universal page model), and without the overrides its grid renders
+        // the bare uncontrolled arm — no CartAdapter, so Add/Buy silently
+        // no-op (first live Square E2E: the catalog-format Shop page).
+        // Overrides only fire when composePage renders a storefront arm, so
+        // storefront-less pages are unaffected.
+        const sp = (await searchParams) ?? {};
+        return renderComposedPage({
+          siteData,
+          composedPage,
+          components: LIVE_PRODUCTS_OVERRIDES,
+          productQuery: parseProductQuery(sp),
+        });
       }
     }
 
-    // Products controlled query: parse f_<key>/search/sort from the URL so the
-    // builder filters server-side (VR_Client_API), and inject the live,
-    // router+cart-wired ProductsPage via the B1 component override. composePage
-    // renders the bare uncontrolled ProductsPage for the Studio preview.
-    let productQuery:
-      | { filters?: Record<string, string>; search?: string; sort?: string }
-      | undefined;
-    // Components override: ProductsPage (B1) + SubscribePage (SP-6 Task 3)
-    // + CoordinatedSchedule (S2).
-    // Formats are mutually exclusive so at most one override set fires per render.
-    // `as any` on the type is required for CoordinatedSchedule: the key is defined
-    // in the renderer working tree but not yet in the installed 1.17.0 package's
-    // CompositionComponentOverrides. Remove the cast when the package is bumped.
+    // Products controlled query — parsed for EVERY composed format (not just
+    // format:'products'): a storefront group is composable on ANY page under
+    // the universal page model, and its toolbar round-trips filter/sort/search
+    // through these URL params, so the server must honor them wherever the
+    // grid can render. Harmless for pages without a storefront (buildPageContext
+    // ignores the query when no products arm resolves).
+    const sp = (await searchParams) ?? {};
+    const productQuery = parseProductQuery(sp);
+
+    // Components override: the live storefront wrappers (BOTH products
+    // topologies — see liveProductsOverrides.ts) for every composed format,
+    // plus per-format extras (SubscribePage SP-6 Task 3, CoordinatedSchedule
+    // S2). An override only fires when composePage renders that arm, so
+    // pages without the block are unaffected. The Studio preview (which never
+    // passes these overrides) stays bare/uncontrolled. Format-gating the
+    // storefront overrides was the first-live-Square-E2E bug: a catalog-format
+    // page's Square grid rendered the bare arm and Add silently no-oped.
+    // `any`: CompositionComponentOverrides in the installed renderer can lag
+    // working-tree keys during bumps.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let components: any;
+    let components: any = { ...LIVE_PRODUCTS_OVERRIDES };
 
     // S2/OD#3 — schedule active view from `?view=` searchParam.
     // Validated against the three legal values (agenda|month|map); any other
@@ -317,49 +336,23 @@ export default async function DynamicPage({
     // Only parsed for schedule format to avoid touching other routes.
     let scheduleView: ScheduleView | undefined;
 
-    if (format === "products") {
-      const sp = (await searchParams) ?? {};
-      const filters: Record<string, string> = {};
-      for (const [key, val] of Object.entries(sp)) {
-        if (key.startsWith("f_") && typeof val === "string" && val) {
-          filters[key.slice(2)] = val;
-        }
-      }
-      productQuery = {
-        filters,
-        search: typeof sp.search === "string" ? sp.search : undefined,
-        sort: typeof sp.sort === "string" ? sp.sort : undefined,
-      };
-      // Wire BOTH products topologies live (G4 part ①): the monolith
-      // page-template via ProductsPage, AND the atomized
-      // group(coordinated:'products') via CoordinatedProducts. A products page
-      // renders through exactly one arm depending on whether its blocks contain
-      // the coordinated group — both overrides set, only one fires. The Studio
-      // preview (which never passes these overrides) stays bare/uncontrolled.
-      components = {
-        ProductsPage: ProductsPageComposed,
-        CoordinatedProducts: CoordinatedProductsComposed,
-      };
-    } else if (format === "schedule") {
+    if (format === "schedule") {
       // S2/OD#3: wire the coordinated schedule override (URL-sync + initialView).
       // The monolith page-template arm (SchedulePage, via renderPageTemplate) also
       // exists for legacy non-atomized schedule pages — the `CoordinatedSchedule`
       // override fires ONLY when the page carries a group(coordinated:'schedule').
       // Both can be set; only one arm fires per render depending on the page topology.
-      const sp = (await searchParams) ?? {};
       const viewParam = typeof sp.view === "string" ? sp.view : undefined;
       // Validate against the three legal values — drop anything else.
       if (viewParam === "agenda" || viewParam === "month" || viewParam === "map") {
         scheduleView = viewParam;
       }
-      components = {
-        CoordinatedSchedule: CoordinatedScheduleComposed,
-      };
+      components = { ...components, CoordinatedSchedule: CoordinatedScheduleComposed };
     } else if (format === "subscribe") {
       // SP-6 Task 3: inject the live SubscribeClient (form + API wiring) via the
       // SubscribeClientAdapter (which bridges the labels type narrowing). composePage
       // passes CollectionId + labels from the shaped subscribe payload to the adapter.
-      components = { SubscribePage: SubscribeClientAdapter };
+      components = { ...components, SubscribePage: SubscribeClientAdapter };
     }
 
     // SP-6 Task 5 — Concern-3 transitional title band (B-wrapper fallback).

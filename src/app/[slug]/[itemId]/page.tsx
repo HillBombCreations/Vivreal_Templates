@@ -17,6 +17,8 @@ import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
 import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
+import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
+import { parseProductQuery } from "@/lib/composition/productQuery";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
 import type {
@@ -33,9 +35,10 @@ export const fetchCache = "force-no-store";
 
 interface Props {
   params: Promise<{ slug: string; itemId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function DynamicItemPage({ params }: Props) {
+export default async function DynamicItemPage({ params, searchParams }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
@@ -63,7 +66,16 @@ export default async function DynamicItemPage({ params }: Props) {
       "checkout-success", "checkout-cancel", "home", "shows", "team",
     ]);
     if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
-    return renderComposedPage({ siteData, composedPage: nestedPage });
+    // Same live storefront overrides + controlled query as [slug]/page.tsx's
+    // generic arm — a nested sub-page can compose a storefront group too, and
+    // without the overrides its grid renders the bare (CartAdapter-less) arm.
+    const sp = (await searchParams) ?? {};
+    return renderComposedPage({
+      siteData,
+      composedPage: nestedPage,
+      components: LIVE_PRODUCTS_OVERRIDES,
+      productQuery: parseProductQuery(sp),
+    });
   }
 
   if (!pageConfig) return notFound();
@@ -206,17 +218,27 @@ export default async function DynamicItemPage({ params }: Props) {
     );
   }
 
-  // Product detail
-  if (pageConfig.format === "products") {
-    // Resolve the page's authored payments provider (block bindings first,
-    // legacy integrations[]/collectionId fallback — reuse the composition
-    // collector rather than re-walking the shapes). No payments binding ⇒
-    // undefined ⇒ getProducts' legacy stripe default.
-    const { integrationTypes } = collectBindingTargets(pageConfig);
-    const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
-    const product = await getProductById(itemId, paymentsProvider ?? "stripe");
-    if (!product) return notFound();
-
+  // Product detail — fires for format:'products' pages AND for any page whose
+  // bindings (at any depth, incl. coordinated-group children) name a payments
+  // provider: a storefront group is composable on ANY page (universal page
+  // model), and its tiles link here. First live Square E2E: the catalog-format
+  // Shop page's Square PDPs 404'd because this arm was format-gated.
+  //
+  // Provider resolution reuses the composition collector rather than
+  // re-walking the shapes; no payments binding (products format only) ⇒
+  // undefined ⇒ getProducts' legacy stripe default.
+  const { integrationTypes } = collectBindingTargets(pageConfig);
+  const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
+  const product =
+    pageConfig.format === "products" || paymentsProvider
+      ? await getProductById(itemId, paymentsProvider ?? "stripe")
+      : null;
+  // A products page has no other arm that could serve this id → 404 on a miss
+  // (unchanged). Non-products pages can carry BOTH a storefront and plain
+  // collection tiles that link to /<slug>/<itemId> — a product miss there
+  // falls through to the collection/menu arms below instead.
+  if (!product && pageConfig.format === "products") return notFound();
+  if (product) {
     // Fetch supplemental integrations for the detail page (non-payments ones —
     // the page's payments binding must not double-render as a supplemental feed)
     const detailIntegrations = (pageConfig.detailPage?.integrations ?? [])
