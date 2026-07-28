@@ -7,6 +7,17 @@ import { composePage, ComposedPageSkeleton } from '@hillbombcreations/site-rende
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import { willRenderHeroBanner, hasHomeSectionBlock } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
+import type { ProductQuery } from '@/lib/composition/productQuery';
+
+/**
+ * composePage component overrides (CompositionOptions.components). Typed
+ * loosely here for the same reason [slug]/page.tsx types its `components`
+ * local `any`: the installed renderer's CompositionComponentOverrides lags
+ * the working-tree keys during bumps. The values are always the live composed
+ * wrappers (see liveProductsOverrides.ts).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ComposeComponents = any;
 
 // Formats that trigger isEmpty → notFound(). Mirrors [slug]/page.tsx SP-6 Task 5.
 const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
@@ -71,9 +82,22 @@ export function skeletonPropsFor(composedPage: PageConfig) {
 export function renderComposedPage({
   siteData,
   composedPage,
+  components,
+  productQuery,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
+  /**
+   * Optional composePage component overrides — the live storefront wrappers
+   * (LIVE_PRODUCTS_OVERRIDES). An override only fires when composePage renders
+   * that arm, so passing them for pages without a storefront is a no-op.
+   * Without them a storefront group on a generic/catalog page renders the bare
+   * uncontrolled arm — no CartAdapter, so Add/Buy silently no-op (the first
+   * live Square E2E bug).
+   */
+  components?: ComposeComponents;
+  /** Server-side products query (f_/search/sort) for the storefront round-trip. */
+  productQuery?: ProductQuery;
 }) {
   const format = composedPage.format;
 
@@ -168,7 +192,12 @@ export function renderComposedPage({
         )
       )}
       <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
-        <ComposedPageBody siteData={siteData} composedPage={composedPage} />
+        <ComposedPageBody
+          siteData={siteData}
+          composedPage={composedPage}
+          components={components}
+          productQuery={productQuery}
+        />
       </Suspense>
       <Footer />
     </>
@@ -188,14 +217,19 @@ export function renderComposedPage({
 async function ComposedPageBody({
   siteData,
   composedPage,
+  components,
+  productQuery,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
+  components?: ComposeComponents;
+  productQuery?: ProductQuery;
 }) {
   const { input, isEmpty } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
+    productQuery,
   });
 
   // SP-6 Task 5 isEmpty guard — only fires for generic formats.
@@ -204,5 +238,17 @@ async function ComposedPageBody({
     return notFound();
   }
 
-  return <>{composePage(input)}</>;
+  // Mirror ComposedFormatBody ([slug]/page.tsx): inject the live component
+  // overrides into CompositionOptions when provided; bare composePage otherwise.
+  // `input.options!` — buildPageContext always sets options (same non-null
+  // assertion ComposedFormatBody uses).
+  return (
+    <>
+      {composePage(
+        components
+          ? { ...input, options: { ...input.options!, components } }
+          : input,
+      )}
+    </>
+  );
 }
