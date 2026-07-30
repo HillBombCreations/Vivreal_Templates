@@ -94,6 +94,18 @@ const COMPOSE_FORMATS = new Set<string>([
   // profile → the person-led "Meet the Maker" page type (Ansel kit net-new).
   // Emits the same blocks as `standard` (renderer parity contract); same path.
   "profile",
+  // panorama → the color-blocked one-pager page type (poster-pop kit,
+  // musician template #1 net-new — HANDOFF-MUSICIAN-1 build #8). Emits the
+  // same blocks as `standard`; the panel grammar (full-viewport accent
+  // panels + edge rails + anchor ids + the capture closer) is applied inside
+  // composePage's exact-literal `format === 'panorama'` gate. Same
+  // delegation path (renderComposedPage). Without this entry a non-home
+  // panorama page 404s (the /shop lesson).
+  "panorama",
+  // discography → renderer `discography` page-template (DiscographyIndex,
+  // poster-pop kit build #8): edge-tight cover grid + per-item listen rows.
+  // Same delegation path as collection-list/catalog.
+  "discography",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -289,7 +301,9 @@ export default async function DynamicPage({
         format === "catalog" ||
         format === "location-hub" ||
         format === "craft" ||
-        format === "profile"
+        format === "profile" ||
+        format === "panorama" ||
+        format === "discography"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page

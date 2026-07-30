@@ -57,6 +57,16 @@ const Navbar = async () => {
       // Levain round — logo-center bar + image-card mega dropdowns (both
       // opt-in; null/absent keep the default bar byte-identical).
       layout={siteData?.navigation?.layout ?? null}
+      // Poster-pop kit (musician template #1) — the 'band' chrome extras.
+      // All three are inert unless layout === 'band' (renderer-gated):
+      // bandColor = the solid bar color; linkColorCycle = the per-arm accent
+      // cycle; socialLinks = the band's right-cluster icon rail, fed from the
+      // site's own authored socials (top-level {type,link} wire shape mapped
+      // to the renderer's {platform,url} — same mapping the Footer wrapper
+      // uses; no fabrication, the rail null-outs when nothing is authored).
+      bandColor={siteData?.navigation?.bandColor ?? null}
+      linkColorCycle={siteData?.navigation?.linkColorCycle ?? null}
+      socialLinks={(siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }))}
       // Ansel kit (bakery template #3) — the boutique utility-header extras
       // (all boutique-only; null/absent keep every other layout byte-identical).
       brandKicker={siteData?.navigation?.brandKicker ?? null}
