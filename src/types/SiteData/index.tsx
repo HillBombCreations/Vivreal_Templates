@@ -330,8 +330,22 @@ export interface SiteData {
          * 'boutique' (Ansel kit, bakery template #3) = the utility header:
          * stacked brandKicker lockup + centered centerLabel + right-cluster
          * utilityNote lines. Pair with menuStyle:'card'.
+         * 'band' (poster-pop kit, musician template #1) = the solid chrome
+         * band: SOLID dark bar (bandColor), display-face uppercase arms with
+         * a per-arm accent cycle (linkColorCycle), centered brand, and a
+         * social-icon rail fed from top-level siteData.socialLinks.
          */
-        layout?: 'logo-center' | 'editorial' | 'boutique' | null;
+        layout?: 'logo-center' | 'editorial' | 'boutique' | 'band' | null;
+        /**
+         * Poster-pop kit — the 'band' bar's SOLID background color (renderer
+         * validates via resolveColor). Mirrors NavbarProps.bandColor.
+         */
+        bandColor?: string | null;
+        /**
+         * Poster-pop kit — the 'band' per-arm nav accent cycle (arm i takes
+         * linkColorCycle[i % length]). Mirrors NavbarProps.linkColorCycle.
+         */
+        linkColorCycle?: string[] | null;
         /**
          * Ansel kit — the small spaced-caps line ABOVE the siteName in the
          * 'boutique' stacked lockup. Mirrors NavbarProps.brandKicker.
@@ -395,8 +409,10 @@ export interface SiteData {
          * 'wordmark' (Poilâne round) = the LIGHT grid + giant display
          * wordmark band (+ optional rotating `stamp` seal) + optional
          * `ticker` service marquee docked at the footer's top edge.
+         * 'band' (poster-pop round B) = the SLIM single-strip legal band:
+         * social icons left, legal cluster right, over `background`.
          */
-        variant?: 'columns' | 'centerpiece' | 'wordmark' | null;
+        variant?: 'columns' | 'centerpiece' | 'wordmark' | 'band' | null;
         /** Centerpiece background — resolved CSS color; absent ⇒ var(--primary).
          *  Under 'wordmark' this is the LIGHT surface tint instead. */
         background?: string | null;
