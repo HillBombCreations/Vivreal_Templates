@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide-react";
+import { BrandMark } from "@hillbombcreations/site-renderer";
 import type { CartDialogProps, CartItem } from "@/types/Cart";
 import {
   handleCheckout,
@@ -205,14 +206,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         <div className="sticky top-0 z-10 border-b border-black/10 bg-[var(--surface,#fff)] px-4 pt-4 pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-2xl bg-black/5 overflow-hidden flex items-center justify-center">
-                {siteLogo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={siteLogo} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <ShoppingBag className="h-5 w-5 opacity-70" />
-                )}
-              </div>
+              {/* BrandMark: aspect-aware — a wide wordmark logo falls back to
+                  the site's FAVICON tile (else a letter-mark) instead of a
+                  center-cropped letter slice. */}
+              <BrandMark src={siteLogo} name={siteData?.name} fallbackSrc={siteData?.favicon} shape="avatar" size={40} radius={14} />
               <div className="leading-tight">
                 <div className="text-base font-semibold">Your cart</div>
                 <div className="text-xs text-black/55">
@@ -269,7 +266,9 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                         <img
                           src={item?.imageUrl || siteLogo}
                           alt={item?.name || "Cart item"}
-                          className="h-full w-full object-cover"
+                          // Logo fallback must NEVER be cropped (wordmark logos
+                          // die in object-cover) — contain it on white instead.
+                          className={item?.imageUrl ? "h-full w-full object-cover" : "h-full w-full object-contain bg-white p-1.5"}
                         />
                       </div>
 
