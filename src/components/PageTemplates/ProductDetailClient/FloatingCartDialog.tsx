@@ -105,7 +105,9 @@ export default function FloatingCartDialog({
                 <img
                   src={safeImg}
                   alt={safeName || "Product"}
-                  className="h-14 w-14 rounded-xl object-cover bg-black/5"
+                  // Logo fallback must never be cropped (wordmark logos die in
+                  // object-cover) — contain it on white instead.
+                  className={safeImg === siteLogo ? "h-14 w-14 rounded-xl object-contain bg-white p-1.5 border border-black/10" : "h-14 w-14 rounded-xl object-cover bg-black/5"}
                 />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold line-clamp-1">
@@ -177,7 +179,7 @@ export default function FloatingCartDialog({
               <img
                 src={safeImg}
                 alt={safeName || "Product"}
-                className="h-14 w-14 rounded-xl object-cover bg-black/5"
+                className={safeImg === siteLogo ? "h-14 w-14 rounded-xl object-contain bg-white p-1.5 border border-black/10" : "h-14 w-14 rounded-xl object-cover bg-black/5"}
               />
               <div className="min-w-0">
                 <div className="text-sm font-semibold line-clamp-1">
