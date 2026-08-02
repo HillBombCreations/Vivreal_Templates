@@ -11,7 +11,7 @@ import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
-import { FloatingCta, FulfillmentStrip } from '@/components/RendererExports';
+import { FloatingCta, FulfillmentStrip, UtilityDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -197,6 +197,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       config ⇒ nothing renders. */}
                   {siteData.fulfillmentStrip && (
                       <FulfillmentStrip config={siteData.fulfillmentStrip} />
+                  )}
+                  {/* Coastal Estate kit (wedding-venue look #3) — the persistent
+                      BOTTOM action bar (phone · address · one squared CTA),
+                      mounted at page ROOT like FulfillmentStrip. Never inside
+                      the fixed header, which would cover it. The component
+                      itself renders nothing when nothing is authored. */}
+                  {siteData.utilityDock && (
+                      <UtilityDock {...siteData.utilityDock} />
                   )}
                   {/* #3 — site-wide "get in touch" FAB, config-driven from
                       siteData.floatingCta (migrated marketing sites). Links to the

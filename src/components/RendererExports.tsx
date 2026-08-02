@@ -6,6 +6,7 @@ export {
   TeamPage,
   FloatingCta,
   FulfillmentStrip,
+  UtilityDock,
   HeroSplit,
   // Iter 6 — Services + Portfolio additions (requires site-renderer bump for Iter-6)
   PricingTiers,
