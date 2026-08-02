@@ -106,6 +106,19 @@ const COMPOSE_FORMATS = new Set<string>([
   // poster-pop kit build #8): edge-tight cover grid + per-item listen rows.
   // Same delegation path as collection-list/catalog.
   "discography",
+  // inquiry → the venue lead-capture page type (wedding-venue kit look #1
+  // net-new). Emits the same blocks as `standard` (renderer parity contract);
+  // the look is authored via `formStyle:'inquiry'` on the form binding. Same
+  // delegation path (renderComposedPage) — without this entry an inquiry page
+  // 404s (the /shop lesson).
+  "inquiry",
+  // spaces → the venue SPACES page type (House & Garden kit net-new). Emits
+  // the same blocks as `standard`; same delegation path. Without this entry a
+  // spaces page 404s (the /shop lesson).
+  "spaces",
+  // tour → the virtual-tour page type (Coastal Estate kit net-new). Emits the
+  // same blocks as `standard`; same delegation path.
+  "tour",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -303,7 +316,10 @@ export default async function DynamicPage({
         format === "craft" ||
         format === "profile" ||
         format === "panorama" ||
-        format === "discography"
+        format === "discography" ||
+        format === "inquiry" ||
+        format === "spaces" ||
+        format === "tour"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page

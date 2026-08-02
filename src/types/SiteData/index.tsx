@@ -472,6 +472,18 @@ export interface SiteData {
      * renderer's FulfillmentStrip from it. null/absent ⇒ no strip.
      */
     fulfillmentStrip?: FulfillmentStripConfig | null;
+    /** Coastal Estate kit (wedding-venue look #3) — persistent bottom action
+        bar. Mounted at page root in layout.tsx (the FulfillmentStrip
+        precedent). Absent/null ⇒ no dock. */
+    utilityDock?: {
+      /** `false` hides an authored dock; absent ⇒ content decides. */
+      enabled?: boolean;
+      phone?: { label: string; href?: string } | null;
+      address?: { label: string; href?: string } | null;
+      action?: { label: string; href?: string } | null;
+      note?: string | null;
+      background?: string | null;
+    } | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media

@@ -80,6 +80,7 @@ interface SiteDetailsResponse {
   // Fulfillment strip — the Ansel-kit viewport-bottom channel pill (bakery
   // template #3; null/absent ⇒ no strip).
   fulfillmentStrip?: SiteData['fulfillmentStrip'];
+  utilityDock?: SiteData['utilityDock'];
   tier?: string;
 }
 
@@ -158,6 +159,11 @@ export const getSiteData = async (): Promise<SiteData> => {
     // Fulfillment strip (Ansel kit, bakery template #3): same dual-source read.
     fulfillmentStrip:
       raw.fulfillmentStrip ?? (raw.siteDetails.values as SiteData).fulfillmentStrip ?? null,
+    // Coastal Estate kit — same dual-read as fulfillmentStrip/emailPopup
+    // (HANDOFF gotcha #2: top-level wins, `values` is the fallback). Omitting
+    // this mapping would silently null the dock even when the bundle emits it.
+    utilityDock:
+      raw.utilityDock ?? (raw.siteDetails.values as SiteData).utilityDock ?? null,
     // W10.3 — site-wide default share image. Read from `values` ONLY (no
     // top-level fallback): unlike the strips it is a MEDIA descriptor, and
     // `values` is the only place VR_Client_API's mediaFields registry can reach
