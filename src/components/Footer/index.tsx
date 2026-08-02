@@ -67,6 +67,12 @@ const Footer = async () => {
   return (
     <RendererFooter
       siteName={siteName}
+      // The legal strip must NOT inherit `siteName`. A kit whose logo IS its
+      // wordmark sets `footer.brand.name: ''` (the schema-prescribed logo-only
+      // override) so the brand does not print twice — which resolves siteName to
+      // '' above and rendered "© 2026" with no name on every page. businessName
+      // is the per-field-override-proof source.
+      legalName={businessName}
       logoUrl={logoUrl}
       email={email}
       navItems={navItems}
