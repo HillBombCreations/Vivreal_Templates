@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
+import { resolveRedirect } from "@/lib/redirects";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
@@ -149,7 +150,18 @@ export default async function DynamicPage({
     privacy: "Privacy Policy",
     terms: "Terms of Service",
   };
-  if (!pageConfig && !STATIC_SLUGS[slug]) return notFound();
+  if (!pageConfig && !STATIC_SLUGS[slug]) {
+    // Phase 0 of the two-axis detail-route design (§5.1, §7.2 step 10) — the
+    // WS3 301 redirect mechanism. Reached only when no real page (and no
+    // static slug) matched, so this can never shadow live content. Covers
+    // the common case: most migrated-page redirects are single-segment
+    // renames (`/old-slug` → `/new-slug`), which route here, not to
+    // `[slug]/[itemId]/page.tsx`. Absent/empty siteData.redirects (the fleet
+    // default) short-circuits with one length check — no extra work.
+    const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}`);
+    if (redirectTarget) permanentRedirect(redirectTarget);
+    return notFound();
+  }
 
   const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
   const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;

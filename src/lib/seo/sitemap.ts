@@ -15,29 +15,32 @@ import type { PageConfig } from '@/types/SiteData';
  * synthetic `subscribers` carrier page (VR_Client_API adds it as a data carrier
  * for the EmailPopup; Templates notFound()s the route, so it must not be in the
  * sitemap). Empty `domainName` ⇒ `[]`.
+ *
+ * Two-axis detail-route design, Phase 3 (§7.1/T4) — `detailItemSegmentsByPage`
+ * is a pre-resolved map of `pageSlug -> [urlSegment, ...]` for pages with
+ * `detailPage.sitemap === true` (the caller does the async fetch/scope/
+ * itemSegment work — this function stays pure/synchronous so its existing
+ * unit tests keep working unchanged). Absent/empty for a page ⇒ zero detail
+ * items added for it — byte-identical to today's output when the map is
+ * omitted entirely.
  */
 export function buildSitemapEntries(
-  pages: Pick<PageConfig, 'slug' | 'format'>[] | undefined,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,
   domainName: string,
+  detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
   if (!domainName) return [];
 
-  const slugs = [
-    ...new Set(
-      (pages ?? [])
-        .filter(
-          (p) =>
-            p &&
-            typeof p.slug === 'string' &&
-            p.slug &&
-            p.slug !== 'home' &&
-            p.format !== 'home' &&
-            p.format !== 'subscribers',
-        )
-        .map((p) => (p.slug as string).replace(/^\/+/, ''))
-        .filter(Boolean),
-    ),
-  ];
+  const eligiblePages = (pages ?? []).filter(
+    (p) =>
+      p &&
+      typeof p.slug === 'string' &&
+      p.slug &&
+      p.slug !== 'home' &&
+      p.format !== 'home' &&
+      p.format !== 'subscribers',
+  );
+  const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
 
   const entries: MetadataRoute.Sitemap = [
     { url: `https://${domainName}`, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
@@ -51,5 +54,28 @@ export function buildSitemapEntries(
       priority: Number(priority.toFixed(2)),
     });
   });
+
+  // Detail items — only for pages that opted in (`detailPage.sitemap === true`)
+  // AND have resolved segments handed in. A page without `detailItemSegmentsByPage`
+  // at all (the fleet default: the param itself is omitted) adds nothing here,
+  // so `buildSitemapEntries(pages, domain)` (the 2-arg call every existing
+  // caller/test makes) is byte-identical output.
+  if (detailItemSegmentsByPage) {
+    for (const page of eligiblePages) {
+      if (page.detailPage?.sitemap !== true) continue;
+      const slug = (page.slug as string).replace(/^\/+/, '');
+      const segments = detailItemSegmentsByPage[slug];
+      if (!segments || segments.length === 0) continue;
+      for (const segment of segments) {
+        entries.push({
+          url: `https://${domainName}/${slug}/${segment}`,
+          lastModified: new Date(),
+          changeFrequency: 'monthly',
+          priority: 0.5,
+        });
+      }
+    }
+  }
+
   return entries;
 }

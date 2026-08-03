@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -7,6 +7,7 @@ import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { ArrowLeft } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
+import { resolveRedirect } from "@/lib/redirects";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
@@ -29,6 +30,11 @@ import type {
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
+import { applyScope, itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
+import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
+import { resolveDetailContext } from "@/lib/detail/resolveContext";
+import { applyContextOverrides } from "@/lib/detail/contextOverlay";
+import { resolveDetailCanonical } from "@/lib/detail/canonical";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -61,9 +67,24 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // a menu page composes with no overrides (ComposedFormatBody ≡ ComposedPageBody
     // for it), and migrated location-scoped menus ship 2-segment slugs like
     // "moraga/dinner" (Breweries template, Gate-2 2026-07-15).
+    //
+    // T6 (two-axis detail-route design §2.1/§8) — `team` REMOVED from this set.
+    // The alchemy43 blueprint authors `slug: "about/providers", format: "team"`,
+    // which this guard 404'd unconditionally (found while wiring the scoped-
+    // detail arm above, not caused by it). `team` needs no live component
+    // override (unlike `products`' CartAdapter) and already composes fine as a
+    // TOP-LEVEL page via the identical `renderComposedPage` → mapPageTemplate
+    // `'team'` dispatch (`[slug]/page.tsx`'s COMPOSE_FORMATS). The one real
+    // constraint — a nested team page's OWN member detail links would need a
+    // 3-segment route this file can't serve — degrades to today's existing
+    // 404 on click (same as any unreachable 3-segment URL), not a misrender;
+    // it does not block the roster PAGE itself from finally rendering.
+    // `shows`/`products`/etc. are left untouched (no design-doc finding cites
+    // them, and their detail arms carry real interactive/JSON-LD surface this
+    // repo hasn't audited for the nested case).
     const NON_NESTABLE_FORMATS = new Set([
       "products", "schedule", "subscribe",
-      "checkout-success", "checkout-cancel", "home", "shows", "team",
+      "checkout-success", "checkout-cancel", "home", "shows",
     ]);
     if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
     // Same live storefront overrides + controlled query as [slug]/page.tsx's
@@ -78,7 +99,20 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     });
   }
 
-  if (!pageConfig) return notFound();
+  if (!pageConfig) {
+    // Phase 0 of the two-axis detail-route design (§5.1, §7.2 step 10) — the
+    // WS3 301 redirect mechanism. This is the MORE common redirect shape for
+    // this route: a `from` deeper than 1 segment whose first segment was
+    // never itself a page slug (e.g. a flattened `/classes/category/
+    // baking-classes` — bug found while wiring this in: the nestedSlug check
+    // above and the bottom-of-function fallthrough both require `pageConfig`
+    // to already resolve, so a redirect check placed only at the end never
+    // ran for this case). Checked BEFORE notFound() so it can never shadow a
+    // real page/nested-page (both already returned above).
+    const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}/${itemId}`);
+    if (redirectTarget) permanentRedirect(redirectTarget);
+    return notFound();
+  }
 
   // Guard: if detail pages are explicitly disabled for this page, return 404
   if (pageConfig.detailPage?.enabled === false) return notFound();
@@ -339,40 +373,76 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     );
   }
 
-  // Generic CMS collection-list item detail (products, menu/catalog entries, etc.).
-  // A collection-list grid links each card to /<slug>/<mongoId>; without this arm
-  // every such click falls through to notFound() below (there is no products/
-  // shows/team format match for a plain CMS collection). Fetch the page's primary
-  // collection object by id and render the renderer's generic hero/content/cta
-  // detail (resolveDetailSections falls back to the generic default for this
-  // format).
-  if (pageConfig.format === "collection-list") {
-    const collectionId = getPageCollectionId(siteData, pageConfig.name, "");
+  // Generic CMS collection-list item detail (products, menu/catalog entries, etc.)
+  // — GENERALIZED into the two-axis detail-route design's scoped-detail arm
+  // (§7.2 steps 4-9, T1). A collection-list grid links each card to
+  // /<slug>/<mongoId>; without this arm every such click falls through to
+  // notFound() below (there is no products/shows/team format match for a
+  // plain CMS collection). ALSO fires for any page carrying
+  // `detailPage.itemCollectionId` regardless of format — this is what lets a
+  // `location-hub` page (§15.5 — no new semantic-marker format) host a
+  // scoped detail route: "a page that scopes a collection also hosts detail
+  // routes for the items in that scope, rendered in that page's context."
+  const scopedDetailPage = pageConfig.detailPage;
+  if (pageConfig.format === "collection-list" || scopedDetailPage?.itemCollectionId) {
+    const collectionId =
+      scopedDetailPage?.itemCollectionId || getPageCollectionId(siteData, pageConfig.name, "");
     if (!collectionId) return notFound();
 
     // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
     // API 502s on larger limits, and the list view already caps at 100.
-    const { items } = await getCollectionItems(collectionId, { limit: 100 });
-    const item = items.find((it) => it.id === itemId);
-    if (!item) return notFound();
+    const { items: unscopedItems } = await getCollectionItems(collectionId, { limit: 100 });
+
+    // §7.2 step 5 — `scope` restricts WHICH ITEMS ARE ADDRESSABLE here.
+    // Absent/malformed scope ⇒ identity (applyScope's own contract), so an
+    // unscoped collection-list page is byte-identical to before.
+    const scopedItems = applyScope(unscopedItems, scopedDetailPage?.scope);
+
+    // §7.2 step 6 — `_id` tried FIRST unconditionally (no existing URL can
+    // change meaning), then `raw[itemKeyField]` when configured.
+    const itemKeyField = scopedDetailPage?.itemKeyField;
+    const item = resolveItem(scopedItems, itemId, itemKeyField);
+
+    if (!item) {
+      // §7.2 step 7 — the doorway-page guard: an item that exists in the
+      // UNSCOPED pool but was excluded by `scope` is a hard 404, never a
+      // redirect to the unscoped page (that would invite crawling the full
+      // cross-product — the 20 non-existent alchemy43 cells, §3). Logged so
+      // a scope-exclusion 404 is distinguishable from a genuine miss.
+      if (isDoorwayMiss(unscopedItems, itemId, itemKeyField)) {
+        console.warn(
+          `[detail-route] doorway-page guard: "${itemId}" exists in collection ${collectionId} but is excluded by page "${slug}"'s scope`,
+        );
+      }
+      return notFound();
+    }
+
+    // §7.2 step 8 — resolve ONE context object (e.g. the location this page
+    // is scoped to). Unresolvable ⇒ undefined; render without context
+    // rather than 404 (a broken join must degrade, not delete a page).
+    const contextRaw = await resolveDetailContext(scopedDetailPage?.context);
+    // §7.2 step 9 — overlay `context.overrides` (itemField ← contextField)
+    // onto a CLONE of the item. Most-specific-wins; absent context/overrides
+    // ⇒ the item is returned untouched.
+    const effectiveItem = applyContextOverrides(item, contextRaw, scopedDetailPage?.context?.overrides);
 
     const cleanDesc =
-      typeof item.description === "string"
-        ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
+      typeof effectiveItem.description === "string"
+        ? effectiveItem.description.replace(/<[^>]*>/g, "").slice(0, 500)
         : undefined;
     const itemJsonLd = buildDetailJsonLd({
       format: "products",
-      title: item.title || pageConfig.name,
+      title: effectiveItem.title || pageConfig.name,
       description: cleanDesc,
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
-      imageUrl: unsignMediaUrl(item.imageUrl),
+      imageUrl: unsignMediaUrl(effectiveItem.imageUrl),
       url: siteData.domainName
         ? `https://${siteData.domainName}/${slug}/${itemId}`
         : undefined,
-      price: typeof item.price === "string" ? item.price : undefined,
-      sku: item.id,
+      price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
+      sku: effectiveItem.id,
     });
 
     return (
@@ -382,10 +452,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         <DetailPageTemplate
           slug={slug}
           format={pageConfig.format}
-          item={item as unknown as DetailItem}
+          item={effectiveItem as unknown as DetailItem}
           siteData={siteData as unknown as RendererSiteData}
           cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+          detailPage={scopedDetailPage as DetailPageConfig | undefined}
+          context={contextRaw}
         />
         <Footer />
       </>
@@ -418,17 +489,21 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     >["items"][number];
     let pool: PoolItem[] = [];
     let item: PoolItem | undefined;
+    // Two-axis detail-route design, Phase 1 (T2) — `_id` first unconditionally,
+    // then `raw[itemKeyField]` when configured. Shared with the scoped-detail
+    // arm above via `resolveItem` so both arms agree on lookup semantics.
+    const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
       const { items } = await getCollectionItems(itemsCollectionId, {
         limit: 100,
       });
-      item = items.find((it) => it.id === itemId);
+      item = resolveItem(items, itemId, menuItemKeyField);
       if (item) pool = items;
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
         const { items } = await getCollectionItems(cid, { limit: 100 });
-        const hit = items.find((it) => it.id === itemId);
+        const hit = resolveItem(items, itemId, menuItemKeyField);
         if (hit) {
           item = hit;
           pool = items;
@@ -445,13 +520,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const category = (item.raw as { category?: unknown } | undefined)?.category;
     const sameCategory = pool.filter(
       (it) =>
-        it.id !== itemId &&
+        it.id !== item!.id &&
         (typeof category !== "string" ||
           (it.raw as { category?: unknown } | undefined)?.category === category)
     );
     const relatedItems = sameCategory.map((it) => ({
       ...it,
-      href: `/${slug}/${it.id}`,
+      href: `/${slug}/${itemSegment(it, menuItemKeyField)}`,
     }));
 
     const cleanDesc =
@@ -487,6 +562,16 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       </>
     );
   }
+
+  // Phase 0 of the two-axis detail-route design (§5.1, §7.2 step 10) — the
+  // WS3 301 redirect mechanism. Every real arm above (shows/team/products/
+  // collection-list/menu/nested-page) already returned, so a redirect can
+  // never shadow live content by construction. `siteData.redirects` is
+  // absent/empty for every site with nothing renamed (the fleet default),
+  // so `resolveRedirect` short-circuits to `undefined` with one length
+  // check — zero extra upstream calls, byte-identical to today.
+  const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}/${itemId}`);
+  if (redirectTarget) permanentRedirect(redirectTarget);
 
   return notFound();
 }
@@ -652,6 +737,87 @@ export async function generateMetadata({ params }: Props) {
         images: [ogImageUrl],
       },
     };
+  }
+
+  // Two-axis detail-route design, Phase 3 (§7.2/§7.3, T3) — per-item/per-cell
+  // title/description patterns + canonical tag. Fetches the item ONLY when
+  // the page actually configures the detail route beyond defaults (absent
+  // ⇒ zero extra fetches, the exact pre-existing "no per-item fetch" default
+  // below runs unchanged — this ALSO fixes the pre-existing single-axis
+  // defect where every item under a page shared one title, §2.3).
+  const detailPage = pageConfig.detailPage;
+  const seoPatterns = detailPage?.seo;
+  const hasDetailRouteConfig = !!(
+    detailPage?.itemCollectionId ||
+    detailPage?.itemKeyField ||
+    detailPage?.scope ||
+    detailPage?.context ||
+    seoPatterns
+  );
+
+  if (hasDetailRouteConfig) {
+    const collectionId =
+      detailPage?.itemCollectionId || getPageCollectionId(siteData, pageConfig.name, "");
+    if (collectionId) {
+      const { items: unscopedItems } = await getCollectionItems(collectionId, { limit: 100 });
+      const scopedItems = applyScope(unscopedItems, detailPage?.scope);
+      const item = resolveItem(scopedItems, itemId, detailPage?.itemKeyField);
+      if (item) {
+        const contextRaw = await resolveDetailContext(detailPage?.context);
+        const effectiveItem = applyContextOverrides(item, contextRaw, detailPage?.context?.overrides);
+
+        const patternData = {
+          item: effectiveItem.raw ?? {},
+          context: contextRaw ?? null,
+          siteName,
+        };
+        const patternTitle = resolvePattern(seoPatterns?.titlePattern, patternData);
+        const patternDescription = resolvePattern(seoPatterns?.descriptionPattern, patternData);
+
+        const title = seo?.metaTitle || patternTitle || `${pageConfig.name} | ${siteName}`;
+        const description =
+          seo?.metaDescription ||
+          patternDescription ||
+          pageConfig.labels?.subtitle ||
+          `${pageConfig.name} — ${siteName}`;
+
+        // §15.2 — 'self' is the default the moment `scope` is authored (cells
+        // are distinct by construction); otherwise absent ⇒ no canonical tag,
+        // matching every other page on the fleet today.
+        const canonicalFrom = seoPatterns?.canonicalFrom ?? (detailPage?.scope ? "self" : undefined);
+        const canonical = resolveDetailCanonical({
+          origin,
+          pageConfigs: siteData.pageConfigs ?? [],
+          currentPage: pageConfig,
+          currentUrl: itemUrl,
+          item: effectiveItem,
+          canonicalFrom,
+        });
+
+        return {
+          title,
+          description,
+          ...(canonical ? { alternates: { canonical } } : {}),
+          openGraph: {
+            title,
+            description,
+            url: itemUrl,
+            type: "article",
+            siteName,
+            images: [ogImageUrl],
+          },
+          twitter: {
+            card: "summary_large_image",
+            title,
+            description,
+            images: [ogImageUrl],
+          },
+        };
+      }
+      // Item not found under this config (a doorway miss or a genuine 404) —
+      // fall through to the default below rather than special-casing "not
+      // found" text here; the page component is the source of truth for 404.
+    }
   }
 
   // Products + any other item detail. Kept lightweight (no per-item fetch): the
