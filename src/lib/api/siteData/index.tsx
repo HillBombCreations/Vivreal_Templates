@@ -81,6 +81,7 @@ interface SiteDetailsResponse {
   // template #3; null/absent ⇒ no strip).
   fulfillmentStrip?: SiteData['fulfillmentStrip'];
   utilityDock?: SiteData['utilityDock'];
+  edgeDock?: SiteData['edgeDock'];
   tier?: string;
 }
 
@@ -164,6 +165,11 @@ export const getSiteData = async (): Promise<SiteData> => {
     // this mapping would silently null the dock even when the bundle emits it.
     utilityDock:
       raw.utilityDock ?? (raw.siteDetails.values as SiteData).utilityDock ?? null,
+    // Med-spa kit look #1 — the SAME dual-read for the same reason. This is
+    // the mapping whose omission is invisible: the loader writes the rail, the
+    // bundle emits it, the preview shows it, and the live site renders nothing.
+    edgeDock:
+      raw.edgeDock ?? (raw.siteDetails.values as SiteData).edgeDock ?? null,
     // W10.3 — site-wide default share image. Read from `values` ONLY (no
     // top-level fallback): unlike the strips it is a MEDIA descriptor, and
     // `values` is the only place VR_Client_API's mediaFields registry can reach

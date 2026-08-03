@@ -484,6 +484,18 @@ export interface SiteData {
       note?: string | null;
       background?: string | null;
     } | null;
+    /** Med-spa kit look #1 (Vesper) — the persistent VERTICAL page-EDGE action
+        rail. Mounted at page root in layout.tsx on the UtilityDock contract;
+        differs from it on AXIS (side edge vs bottom bar) and is desktop only.
+        Absent/null ⇒ no rail. */
+    edgeDock?: {
+      /** `false` hides an authored rail; absent ⇒ content decides. */
+      enabled?: boolean;
+      label?: string | null;
+      side?: 'left' | 'right' | null;
+      actions?: { label: string; href?: string }[] | null;
+      background?: string | null;
+    } | null;
     /**
      * Brand-asset hardening — per-site favicon URL. Stored flat on the site doc
      * (same precedent as `chrome`/`floatingCta`; plain string, not a media

@@ -11,7 +11,7 @@ import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
-import { FloatingCta, FulfillmentStrip, UtilityDock } from '@/components/RendererExports';
+import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -205,6 +205,15 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       itself renders nothing when nothing is authored. */}
                   {siteData.utilityDock && (
                       <UtilityDock {...siteData.utilityDock} />
+                  )}
+                  {/* Med-spa kit look #1 (Vesper) — the persistent VERTICAL
+                      page-EDGE action rail (rotated label + stacked actions),
+                      mounted at page ROOT on the same contract as UtilityDock.
+                      Differs from it on AXIS: side edge vs bottom bar. Desktop
+                      only; the component renders nothing when nothing is
+                      authored. */}
+                  {siteData.edgeDock && (
+                      <EdgeDock {...siteData.edgeDock} />
                   )}
                   {/* #3 — site-wide "get in touch" FAB, config-driven from
                       siteData.floatingCta (migrated marketing sites). Links to the

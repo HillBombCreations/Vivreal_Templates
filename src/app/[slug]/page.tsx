@@ -119,6 +119,15 @@ const COMPOSE_FORMATS = new Set<string>([
   // tour → the virtual-tour page type (Coastal Estate kit net-new). Emits the
   // same blocks as `standard`; same delegation path.
   "tour",
+  // Med-spa kit page types (HANDOFF-MEDSPA-KITS §3d). Both emit the same
+  // blocks as `standard` (renderer parity contract) and take the same
+  // delegation path. Without these entries the page is not a recognized route
+  // and 404s — the /shop and /about-us lesson, twice recorded above.
+  //   booking-hub → the location-split booking ENTRY page (look #2), authored
+  //                 with a `location-grid` binding.
+  //   quiz        → the guided treatment finder (look #3).
+  "booking-hub",
+  "quiz",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -319,7 +328,14 @@ export default async function DynamicPage({
         format === "discography" ||
         format === "inquiry" ||
         format === "spaces" ||
-        format === "tour"
+        format === "tour" ||
+        // Med-spa kit page types. Listed here as well as in COMPOSE_FORMATS
+        // above: a products storefront group is composable on ANY page under
+        // the universal page model, and a format missing from THIS chain
+        // renders the bare uncontrolled arm — no CartAdapter, so Add/Buy
+        // silently no-op (the first live Square E2E finding).
+        format === "booking-hub" ||
+        format === "quiz"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page
