@@ -10,6 +10,8 @@ import type {
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSitemapEntries } from '@/lib/seo/sitemap';
+import { getCollectionItems } from '@/lib/api/collections';
+import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -82,6 +84,13 @@ interface SiteDetailsResponse {
   fulfillmentStrip?: SiteData['fulfillmentStrip'];
   utilityDock?: SiteData['utilityDock'];
   edgeDock?: SiteData['edgeDock'];
+  // Phase 0 (two-axis-detail-route-design.md §5.1) — the WS3 301 redirect
+  // map. Not currently forwarded top-level by VR_Client_API's getSiteDetails
+  // (unlike navigation/footer/emailPopup); the migrator persists it only
+  // inside `siteDetails.values`, so this optional top-level field exists
+  // solely for forward-compat with the announcement/utilityStrip precedent
+  // below (raw.X ?? values.X) should a future portal-authored surface add it.
+  redirects?: SiteData['redirects'];
   tier?: string;
 }
 
@@ -170,6 +179,16 @@ export const getSiteData = async (): Promise<SiteData> => {
     // bundle emits it, the preview shows it, and the live site renders nothing.
     edgeDock:
       raw.edgeDock ?? (raw.siteDetails.values as SiteData).edgeDock ?? null,
+    // Phase 0 (two-axis-detail-route-design.md §5.1) — the WS3 301 redirect
+    // map. Same dual-source read as the strips above (top-level wins, values
+    // is the fallback); today only the values path is ever populated (the
+    // migrator's createSite.js writes it into siteDetailsVal), but the dual
+    // read costs nothing and matches every other flat-persisted field's
+    // contract. Absent/empty ⇒ [] — [slug]/page.tsx and [slug]/[itemId]/
+    // page.tsx's resolveRedirect() no-ops on an empty array with zero extra
+    // work on the hot 404 path.
+    redirects:
+      raw.redirects ?? (raw.siteDetails.values as SiteData).redirects ?? [],
     // W10.3 — site-wide default share image. Read from `values` ONLY (no
     // top-level fallback): unlike the strips it is a MEDIA descriptor, and
     // `values` is the only place VR_Client_API's mediaFields registry can reach
@@ -309,8 +328,37 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // src/lib/seo/demoSafety.ts.
   if (isDemoSite(raw.siteDetails?.values)) return [];
 
+  // Two-axis detail-route design, Phase 3 (§7.1/T4) — resolve detail-item URL
+  // segments for pages that opted into `detailPage.sitemap === true`. Narrowed
+  // to pages with an explicit `itemCollectionId` (rather than replaying the
+  // full per-format primary-binding resolution `getPageCollectionId` needs,
+  // which requires a SECOND `getSiteData()`-shaped fetch this lightweight
+  // `siteDetails` read doesn't have) — every scoped detail-route page this
+  // arc produces authors `itemCollectionId` explicitly, so this covers the
+  // real feature without doubling upstream calls. Absent/false `sitemap` on
+  // every page (the fleet default) ⇒ zero extra fetches.
+  const sitemapPages = (raw.pages ?? []).filter(
+    (p) => p?.detailPage?.sitemap === true && !!p.detailPage.itemCollectionId,
+  );
+  const detailItemSegmentsByPage: Record<string, string[]> = {};
+  if (sitemapPages.length > 0) {
+    await Promise.all(
+      sitemapPages.map(async (page) => {
+        const detailPage = page.detailPage!;
+        const { items } = await getCollectionItems(detailPage.itemCollectionId!, { limit: 100 });
+        const scoped = applyScope(items, detailPage.scope);
+        const slug = (page.slug as string).replace(/^\/+/, '');
+        detailItemSegmentsByPage[slug] = scoped.map((it) => itemSegment(it, detailPage.itemKeyField));
+      }),
+    );
+  }
+
   // Build from the AUTHORITATIVE top-level page list (raw.pages — what getSiteData
   // uses), not siteDetails.values.pages (which the migrator never populates, so
   // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
-  return buildSitemapEntries(raw.pages, raw.domainName ?? '');
+  return buildSitemapEntries(
+    raw.pages,
+    raw.domainName ?? '',
+    sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
+  );
 };

@@ -16,6 +16,7 @@ import type {
   AnnouncementStripConfig,
   UtilityStripConfig,
   FulfillmentStripConfig,
+  DetailPageConfig,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -157,8 +158,15 @@ export interface PageConfig {
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
     cta?: PageCtaConfig;
-    detailPage?: {
-        enabled?: boolean;
+    /**
+     * References the renderer's `DetailPageConfig` directly (two-axis
+     * detail-route design — this mirror previously declared only `enabled`
+     * + `integrations`, forcing every v0.4.0+ field read in this repo
+     * through an `as DetailPageConfig` cast at the call site; extending the
+     * type here doesn't remove those existing casts, but stops this
+     * specific mirror from drifting further).
+     */
+    detailPage?: Omit<DetailPageConfig, 'integrations'> & {
         integrations?: PageIntegrationBinding[];
     };
     /**
@@ -557,6 +565,21 @@ export interface SiteData {
      * canonical override (the `noindex` alone still protects the prospect).
      */
     sourceUrl?: string;
+    /**
+     * Phase 0 of the two-axis detail-route design (§5.1/§7.2 step 10) — the
+     * WS3 301 redirect map. One entry per MIGRATED page whose URL changed at
+     * cutover (a flattened deep slug, a renamed page), so an old inbound
+     * link / search-index entry 301s to the new URL instead of 404ing.
+     * Stored flat inside `siteDetails.values` (same precedent as
+     * `favicon`/`fontFamily`/`utilityStrip`), so it round-trips through
+     * `getSiteData`'s `...siteDetails.values` spread with no VR_Client_API
+     * change. Read by `[slug]/page.tsx` and `[slug]/[itemId]/page.tsx` via
+     * `resolveRedirect()` — consulted ONLY after every real page/detail-item
+     * lookup has failed, so a redirect can never shadow live content.
+     * Absent/empty (every non-migrated or unchanged-URL site) ⇒ byte-identical
+     * no-op, zero extra work beyond one length check.
+     */
+    redirects?: { from: string; to: string; status?: number }[];
 }
 
 export type Pages = {
