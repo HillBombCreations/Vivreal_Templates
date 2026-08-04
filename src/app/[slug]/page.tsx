@@ -205,10 +205,13 @@ export default async function DynamicPage({
       // we must ensure composedPage carries a subscribe page-template block so
       // mapBlocks routes through the SubscribePage mapper (blocks.ts:286).
       //
-      // Additive superset: if the page already has a subscribe block (authored or
-      // SP-3-backfilled), pass it through unchanged. If not (legacy collectionId
-      // path), synthesize a one-block composedPage — same pattern as the static
-      // synthesis above. SP-7 will $unset collectionId after this migration lands.
+      // Additive superset: if the page already has a subscribe block (authored,
+      // SP-3-backfilled, or seeded by renderer ≥1.45.1's defaultBlocksForFormat),
+      // pass it through unchanged. If not (legacy collectionId path), APPEND the
+      // synthesized block to any stored blocks — replacing the whole array here
+      // dropped the seeded masthead-hero block, which is why an authored
+      // page.hero never rendered on a subscribe page (med-spa Round A findings
+      // §11.8). SP-7 will $unset collectionId after this migration lands.
       const hasSubscribeBlock = (pageConfig?.blocks ?? []).some(
         (b) => b?.type?.kind === "page-template" && b?.type?.dispatchId === "subscribe",
       );
@@ -217,13 +220,16 @@ export default async function DynamicPage({
         // exist until SP-7 $unsets them; the block binding is the SP-6+ path).
         const legacyCollectionId =
           pageConfig?.collectionId ?? pageConfig?.collections?.[0]?.collectionId ?? "";
+        const storedBlocks = pageConfig?.blocks ?? [];
         composedPage = {
           ...(pageConfig ?? { name, slug, format, collectionId: null, labels: {} }),
           blocks: [
+            ...storedBlocks,
             {
               id: `subscribe-synthesized-0`,
               type: { kind: "page-template" as const, dispatchId: "subscribe" },
-              order: 0,
+              // After any stored blocks (a seeded hero rides order:-1 and stays first).
+              order: storedBlocks.length,
               enabled: true,
               config: {
                 bindings: [
@@ -487,6 +493,7 @@ export default async function DynamicPage({
             productQuery={productQuery}
             components={components}
             scheduleView={scheduleView}
+            suppressSrTitle={showTransitionalTitleBand}
           />
         </Suspense>
         <Footer />
@@ -524,6 +531,7 @@ async function ComposedFormatBody({
   productQuery,
   components,
   scheduleView,
+  suppressSrTitle,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -532,6 +540,12 @@ async function ComposedFormatBody({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   components?: any;
   scheduleView?: ScheduleView;
+  /**
+   * §11.8 (renderer ≥1.45.1): true when the transitional title band already
+   * renders the page-title h1 — composePage must not add its sr-only fallback
+   * h1 on top (mirrors renderComposedPage; lockstep contract).
+   */
+  suppressSrTitle?: boolean;
 }) {
   const { input, isEmpty } = await buildPageContext({
     siteData,
@@ -552,7 +566,7 @@ async function ComposedFormatBody({
   return (
     <>
       {composePage(
-        components || scheduleView
+        components || scheduleView || suppressSrTitle
           ? {
               ...input,
               options: {
@@ -562,6 +576,10 @@ async function ComposedFormatBody({
                 // schedule arm can pass it as `initialView` to the override.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ...(scheduleView ? ({ scheduleView } as any) : {}),
+                // §11.8: the transitional title band owns the page h1 — the
+                // renderer's sr-only fallback must not stack a second one.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
               },
             }
           : input,

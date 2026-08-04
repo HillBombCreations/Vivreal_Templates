@@ -197,6 +197,7 @@ export function renderComposedPage({
           composedPage={composedPage}
           components={components}
           productQuery={productQuery}
+          suppressSrTitle={showTransitionalTitleBand}
         />
       </Suspense>
       <Footer />
@@ -219,11 +220,18 @@ async function ComposedPageBody({
   composedPage,
   components,
   productQuery,
+  suppressSrTitle,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
   components?: ComposeComponents;
   productQuery?: ProductQuery;
+  /**
+   * §11.8 (renderer ≥1.45.1): true when the transitional title band above
+   * already renders the page-title h1 — composePage must not add its sr-only
+   * fallback h1 on top (the band is chrome outside its section calculus).
+   */
+  suppressSrTitle?: boolean;
 }) {
   const { input, isEmpty } = await buildPageContext({
     siteData,
@@ -242,11 +250,19 @@ async function ComposedPageBody({
   // overrides into CompositionOptions when provided; bare composePage otherwise.
   // `input.options!` — buildPageContext always sets options (same non-null
   // assertion ComposedFormatBody uses).
+  // `any`: CompositionOptions in the installed renderer can lag working-tree
+  // keys during bumps (same tolerance as scheduleView in [slug]/page.tsx);
+  // suppressSrTitle lands in ≥1.45.1 and rides inert on older dists.
+  const extraOptions = {
+    ...(components ? { components } : {}),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
+  };
   return (
     <>
       {composePage(
-        components
-          ? { ...input, options: { ...input.options!, components } }
+        Object.keys(extraOptions).length
+          ? { ...input, options: { ...input.options!, ...extraOptions } }
           : input,
       )}
     </>
