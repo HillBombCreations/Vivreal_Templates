@@ -7,11 +7,18 @@ import { Mail, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 interface SubscribeClientProps {
   collectionId: string;
   labels: Record<string, string>;
+  /**
+   * §11.8 — true when a composed page-header hero owns the page h1
+   * (renderer PAGE_HEADER_VARIANTS): render the internal heading as h2 so the
+   * page keeps exactly one h1.
+   */
+  headerDemoted?: boolean;
 }
 
 export default function SubscribeClient({
   collectionId,
   labels,
+  headerDemoted,
 }: SubscribeClientProps) {
   const siteData = useSiteData();
   const [email, setEmail] = useState("");
@@ -22,6 +29,8 @@ export default function SubscribeClient({
   const subtitle =
     labels?.subtitle ||
     "Subscribe to get the latest updates, news, and exclusive content delivered straight to your inbox.";
+  // §11.8 — a composed page-header hero owns the h1; demote to h2 here.
+  const HeadingTag = headerDemoted ? ("h2" as const) : ("h1" as const);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,12 +80,12 @@ export default function SubscribeClient({
               style={{ color: siteData?.primary || "#1a1a2e" }}
             />
           </div>
-          <h1
+          <HeadingTag
             className="text-3xl md:text-4xl font-bold tracking-tight mb-4"
             style={{ color: siteData?.["text-primary"] }}
           >
             {title}
-          </h1>
+          </HeadingTag>
           <p
             className="text-base md:text-lg max-w-md mx-auto leading-relaxed"
             style={{ color: siteData?.["text-secondary"] || "rgba(0,0,0,0.6)" }}

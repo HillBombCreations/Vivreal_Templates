@@ -205,10 +205,13 @@ export default async function DynamicPage({
       // we must ensure composedPage carries a subscribe page-template block so
       // mapBlocks routes through the SubscribePage mapper (blocks.ts:286).
       //
-      // Additive superset: if the page already has a subscribe block (authored or
-      // SP-3-backfilled), pass it through unchanged. If not (legacy collectionId
-      // path), synthesize a one-block composedPage — same pattern as the static
-      // synthesis above. SP-7 will $unset collectionId after this migration lands.
+      // Additive superset: if the page already has a subscribe block (authored,
+      // SP-3-backfilled, or seeded by renderer ≥1.45.1's defaultBlocksForFormat),
+      // pass it through unchanged. If not (legacy collectionId path), APPEND the
+      // synthesized block to any stored blocks — replacing the whole array here
+      // dropped the seeded masthead-hero block, which is why an authored
+      // page.hero never rendered on a subscribe page (med-spa Round A findings
+      // §11.8). SP-7 will $unset collectionId after this migration lands.
       const hasSubscribeBlock = (pageConfig?.blocks ?? []).some(
         (b) => b?.type?.kind === "page-template" && b?.type?.dispatchId === "subscribe",
       );
@@ -217,13 +220,16 @@ export default async function DynamicPage({
         // exist until SP-7 $unsets them; the block binding is the SP-6+ path).
         const legacyCollectionId =
           pageConfig?.collectionId ?? pageConfig?.collections?.[0]?.collectionId ?? "";
+        const storedBlocks = pageConfig?.blocks ?? [];
         composedPage = {
           ...(pageConfig ?? { name, slug, format, collectionId: null, labels: {} }),
           blocks: [
+            ...storedBlocks,
             {
               id: `subscribe-synthesized-0`,
               type: { kind: "page-template" as const, dispatchId: "subscribe" },
-              order: 0,
+              // After any stored blocks (a seeded hero rides order:-1 and stays first).
+              order: storedBlocks.length,
               enabled: true,
               config: {
                 bindings: [

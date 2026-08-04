@@ -28,11 +28,14 @@ interface SubscribeAdapterProps {
   siteData?: unknown;
   slug?: string;
   collectionId?: string;
+  /** §11.8 — a composed page-header hero owns the h1; the client demotes its heading to h2. */
+  headerDemoted?: boolean;
 }
 
 export default function SubscribeClientAdapter({
   collectionId,
   labels,
+  headerDemoted,
 }: SubscribeAdapterProps) {
   // Narrow Record<string, unknown> → Record<string, string> by discarding non-string values.
   // SubscribeClient reads: title, subtitle, placeholder, buttonLabel, successMessage,
@@ -46,6 +49,7 @@ export default function SubscribeClientAdapter({
     <SubscribeClient
       collectionId={collectionId ?? ""}
       labels={stringLabels}
+      headerDemoted={headerDemoted}
     />
   );
 }
