@@ -493,6 +493,7 @@ export default async function DynamicPage({
             productQuery={productQuery}
             components={components}
             scheduleView={scheduleView}
+            suppressSrTitle={showTransitionalTitleBand}
           />
         </Suspense>
         <Footer />
@@ -530,6 +531,7 @@ async function ComposedFormatBody({
   productQuery,
   components,
   scheduleView,
+  suppressSrTitle,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -538,6 +540,12 @@ async function ComposedFormatBody({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   components?: any;
   scheduleView?: ScheduleView;
+  /**
+   * §11.8 (renderer ≥1.45.1): true when the transitional title band already
+   * renders the page-title h1 — composePage must not add its sr-only fallback
+   * h1 on top (mirrors renderComposedPage; lockstep contract).
+   */
+  suppressSrTitle?: boolean;
 }) {
   const { input, isEmpty } = await buildPageContext({
     siteData,
@@ -558,7 +566,7 @@ async function ComposedFormatBody({
   return (
     <>
       {composePage(
-        components || scheduleView
+        components || scheduleView || suppressSrTitle
           ? {
               ...input,
               options: {
@@ -568,6 +576,10 @@ async function ComposedFormatBody({
                 // schedule arm can pass it as `initialView` to the override.
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 ...(scheduleView ? ({ scheduleView } as any) : {}),
+                // §11.8: the transitional title band owns the page h1 — the
+                // renderer's sr-only fallback must not stack a second one.
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
               },
             }
           : input,
