@@ -5,12 +5,14 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
-  experimental: {
-    // Enables React's View Transitions API integration — used by
-    // `<ViewTransition>` wrappers in the root layout to animate route
-    // changes. Browsers without support (Safari <18) degrade gracefully.
-    viewTransition: true,
-  },
+  // NOTE: `experimental.viewTransition` was REMOVED here in the Next 16.3.0
+  // bump. The flag did not disappear because the feature was dropped — it
+  // GRADUATED: "View transitions work in the Next.js App Router with no
+  // configuration" (Next's view-transitions guide). 16.3.0 rejects the key as
+  // unrecognized, and because `next build` typechecks next.config.ts that was
+  // a hard build FAILURE (exit 1), not just the console warning.
+  // The `<ViewTransition>` wrappers in src/app/layout.tsx are unaffected and
+  // stay enabled — they import from `react`, not from a Next config surface.
   images: {
     // Pre-cutover migration previews carry source-domain media URLs
     // (e.g. abakeshop.com/cdn/...) that aren't in remotePatterns, so next/image
