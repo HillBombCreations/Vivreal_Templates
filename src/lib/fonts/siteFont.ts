@@ -32,6 +32,9 @@
  *     optimized, `font-display: swap`) — no new npm dependency (Next.js 16
  *     bundles "Geist" in its Google Fonts metadata; see
  *     node_modules/next/dist/compiled/@next/font/dist/google/font-data.json).
+ *   - Inter Display is NOT on Google Fonts at all, so it is vendored (OFL,
+ *     official rsms/inter release) under ./inter-display/ and loaded via
+ *     next/font/local — see the `interDisplayFont` declaration below.
  *
  * Full generality: a captured family outside the curated set falls through to
  * a best-effort runtime Google Fonts `<link>` (literal name) — see
@@ -40,6 +43,7 @@
  * nothing throws.
  */
 import { Geist } from 'next/font/google';
+import localFont from 'next/font/local';
 
 // next/font/google calls must be static module-scope calls (build-time
 // analyzed) — this is the ONE curated family that isn't already loaded
@@ -51,6 +55,24 @@ const geistFont = Geist({
   subsets: ['latin'],
   weight: 'variable',
   variable: '--font-geist',
+  display: 'swap',
+});
+
+// Inter Display — Inter's display-optical-size cut (tighter metrics than
+// Inter; a site captured as 'Inter Display' wraps measurably differently if
+// rendered with plain Inter). NOT on Google Fonts, so it is vendored from the
+// official rsms/inter v4.1 release (`web/` unhinted woff2 set, SIL OFL 1.1 —
+// see ./inter-display/OFL-LICENSE.txt) and self-hosted via next/font/local.
+// Weights 400/500/600/700 cover every weight the renderer's typography tokens
+// use; other weights synthesize from the nearest loaded face.
+const interDisplayFont = localFont({
+  src: [
+    { path: './inter-display/InterDisplay-Regular.woff2', weight: '400', style: 'normal' },
+    { path: './inter-display/InterDisplay-Medium.woff2', weight: '500', style: 'normal' },
+    { path: './inter-display/InterDisplay-SemiBold.woff2', weight: '600', style: 'normal' },
+    { path: './inter-display/InterDisplay-Bold.woff2', weight: '700', style: 'normal' },
+  ],
+  variable: '--font-inter-display',
   display: 'swap',
 });
 
@@ -78,6 +100,10 @@ const CURATED_FONTS: Record<string, CuratedFont> = {
   dmsans: { value: `'DM Sans', ${SANS_FALLBACK}` },
   sora: { value: `'Sora', ${SANS_FALLBACK}` },
   geist: { value: `var(--font-geist), 'Geist', ${SANS_FALLBACK}`, nextFontVariable: geistFont.variable },
+  interdisplay: {
+    value: `var(--font-inter-display), 'Inter Display', 'Inter', ${SANS_FALLBACK}`,
+    nextFontVariable: interDisplayFont.variable,
+  },
 };
 
 function normalizeKey(fontFamily: string): string {
