@@ -64,6 +64,15 @@ const Footer = async () => {
     siteData?.footer?.socialLinks ??
     (siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }));
 
+  // Wrinsy round (D6) — 'wordmark-crown' giant-wordmark threading. The mark's
+  // media object rides `footer.wordmark` (imageKey + backend-signed media —
+  // the brand.logoKey precedent); signed HERE because the renderer cannot
+  // sign URLs. `text`/`lift` pass through verbatim. Cast until the SiteData
+  // footer mirror lands with the next renderer bump.
+  const footerWordmark = (siteData?.footer as
+    | { wordmark?: { imageKey?: string; image?: unknown; text?: string; lift?: number } }
+    | undefined)?.wordmark;
+
   return (
     <RendererFooter
       siteName={siteName}
@@ -106,7 +115,11 @@ const Footer = async () => {
         // override (name:'') doesn't blank the band.
         stamp: siteData?.footer?.stamp ?? null,
         ticker: siteData?.footer?.ticker ?? null,
-        wordmarkText: businessName || null,
+        // Wrinsy round (D6): authored crown wordmark text wins; else the
+        // business name keeps the wordmark/crown bands readable.
+        wordmarkText: footerWordmark?.text ?? (businessName || null),
+        wordmarkUrl: footerWordmark?.imageKey ? getSignedUrl(footerWordmark.image) || null : null,
+        wordmarkLift: footerWordmark?.lift ?? null,
       } as Record<string, unknown>)}
     />
   );
