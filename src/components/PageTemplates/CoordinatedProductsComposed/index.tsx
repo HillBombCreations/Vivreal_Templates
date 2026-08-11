@@ -2,7 +2,7 @@
 
 import {
   ProductsProvider,
-  ProductsStorefront,
+  StorefrontShell,
 } from "@hillbombcreations/site-renderer";
 import type {
   ContentItem,
@@ -32,10 +32,19 @@ import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsL
  * URL-sync + server refetch, detail routing, client pagination, cart).
  *
  * Two deltas vs `ProductsPageComposed`, both mandated by the coordinated model:
- *   1. It renders `ProductsProvider` + `ProductsStorefront` DIRECTLY (not the
+ *   1. It renders `ProductsProvider` + `StorefrontShell` DIRECTLY (not the
  *      monolith `ProductsPage`) so it can pass `slots` — it MUST forward `slots`
  *      so a hidden toolbar/filters/grid part stays hidden. It MUST NOT
  *      double-provider (the renderer arm no longer wraps it).
+ *
+ *      `StorefrontShell` — NOT `ProductsStorefront`. It IS `ProductsStorefront`
+ *      (same component, same slots, no wrapper DOM) unless the grid binding
+ *      names a kit shell via the exact literal `sectionConfig.shell`, in which
+ *      case it renders that shell — the same lookup `ProductsPage` performs for
+ *      the monolith topology. Importing `ProductsStorefront` here instead makes
+ *      the LIVE site render the shared shell where the Studio preview (which
+ *      goes through the renderer's own bare path) renders the kit's, i.e. a
+ *      defect visible only after publish.
  *   2. It reads its inputs from `shaped` (the once-resolved payload) plus the
  *      group-level layout knobs `filterSide`/`gridColumns`/toolbar+filters config.
  */
@@ -81,7 +90,7 @@ export default function CoordinatedProductsComposed({
         loading={adapters.loading}
         onProductClick={adapters.onProductClick}
       >
-        <ProductsStorefront slots={slots} />
+        <StorefrontShell slots={slots} />
       </ProductsProvider>
     </SiteRendererBridge>
   );
