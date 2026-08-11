@@ -79,6 +79,13 @@ const Navbar = async () => {
       navLinkColor={siteData?.navigation?.navLinkColor ?? null}
       // REV-2 (Poilane round) — quiet uppercase text actions, right cluster.
       actions={siteData?.navigation?.actions ?? null}
+      // Resale round — the net-new header SEARCH BAND (an arm in the bar that
+      // opens a full-width band docked over the header). The band submits a
+      // native GET form to the authored `action` + `queryParam`, so results
+      // land on a REAL route (e.g. /shop?search=..., which the products
+      // storefront already honours server-side). null/absent ⇒ no arm, no
+      // band, byte-identical header.
+      search={siteData?.navigation?.search ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}

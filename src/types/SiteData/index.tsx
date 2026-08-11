@@ -391,6 +391,30 @@ export interface SiteData {
          * errors, `next build` does — promote job 3 FAILED fleet-wide on it.)
          */
         navLinkColor?: string | null;
+        /**
+         * Resale round — the net-new header SEARCH BAND. An arm in the bar
+         * opens a full-width band docked over the header; the band submits a
+         * native GET form to `action` carrying `queryParam` (e.g.
+         * `/shop?search=…` — a REAL route the products storefront already
+         * honours server-side). `suggestions` are AUTHORED links, not derived
+         * typeahead. Absent/null/`enabled:false`/no `action` ⇒ no arm, no
+         * band, byte-identical header. Mirrors the renderer's
+         * NavbarProps.search / NavSearchConfig — and this local mirror is
+         * LOAD-BEARING: a missing key here is a silent stable-build breaker
+         * (dev/Turbopack tolerates it, `next build` does not).
+         */
+        search?: {
+            enabled?: boolean;
+            label?: string;
+            placeholder?: string;
+            action?: string;
+            queryParam?: string;
+            heading?: string;
+            suggestionsLabel?: string;
+            suggestions?: Array<{ label: string; href: string; external?: boolean; target?: '_self' | '_blank' }>;
+            armSide?: 'left' | 'right';
+            bandHeight?: number;
+        } | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {

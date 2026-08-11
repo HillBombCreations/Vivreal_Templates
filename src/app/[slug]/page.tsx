@@ -129,6 +129,22 @@ const COMPOSE_FORMATS = new Set<string>([
   //   quiz        → the guided treatment finder (look #3).
   "booking-hub",
   "quiz",
+  // intake → the SELL-IN / SUBMISSION FUNNEL page type (resale/consignment kit,
+  // template #1). Emits the same blocks as `standard` (renderer parity
+  // contract) and takes the same delegation path (renderComposedPage); the
+  // format's own grammar (the hub+channels rail, the accept/decline split) is
+  // applied INSIDE composePage's exact-literal `format === 'intake'` gate, so
+  // nothing extra is needed here. Without this entry the HUB page is not a
+  // recognized route — the /shop and /about-us lesson, recorded three times
+  // above. MEASURED by removing this line against the running stack
+  // (2026-08-11): /sell-with-us served **HTTP 200 with a soft-404 body**
+  // (h1 "404", 805px) — i.e. worse than an empty body, because no status
+  // check can see it. Only a real page-content gate catches this.
+  // (The depth-2 CHANNEL pages route
+  // through `[slug]/[itemId]`'s CP-11 nested arm, which calls
+  // renderComposedPage directly and does not consult this set — so the hub is
+  // the surface this entry actually saves.)
+  "intake",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
