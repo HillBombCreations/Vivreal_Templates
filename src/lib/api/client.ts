@@ -7,6 +7,7 @@
 import 'server-only';
 import { headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
+import { BOT_VERDICT_HEADER } from '../botVerdict';
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
@@ -63,6 +64,29 @@ async function readPreviewToken(): Promise<string | null> {
     return h.get(PREVIEW_REQUEST_HEADER);
   } catch {
     return null;
+  }
+}
+
+/**
+ * Read the edge-computed bot verdict middleware.ts set on this request
+ * (Task 14 item 3, dashboard-insights-phase-3-capture/plan.md, D7). Callers
+ * thread this onto the product read's outbound headers so VR_Client_API can
+ * skip 3.2 capture for a visitor bot signal it otherwise has no way to see
+ * (the storefront's read is server-to-server, so the UA VR_Client_API would
+ * see there is the Amplify server's own fetch agent, not the browser's).
+ *
+ * Fails open to `'0'` (not-a-bot) — same posture as `readPreviewToken`:
+ * `headers()` throws outside a request scope (e.g. a build-time prerender),
+ * and an inability to prove "bot" must never silently drop capture for a
+ * real visitor. Absent header (any caller that isn't this middleware, or a
+ * not-yet-rebuilt deployment) resolves the same way.
+ */
+export async function readBotVerdict(): Promise<'0' | '1'> {
+  try {
+    const h = await headers();
+    return h.get(BOT_VERDICT_HEADER) === '1' ? '1' : '0';
+  } catch {
+    return '0';
   }
 }
 

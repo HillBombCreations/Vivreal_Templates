@@ -1,14 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Mail, Clock, Users, X, CheckCircle2, AlertCircle } from "lucide-react";
 import type { ContentLayoutProps } from "@/types/ContentItem";
+import { resolveContactErrorMessage, shouldResetContactFormOnSubmit } from "@/lib/contactErrorMessage";
 
 interface ToastState {
   open: boolean;
   type?: "success" | "error";
   message?: string;
 }
+
+// Task 14 item 9 (dashboard-insights-phase-3-capture/plan.md) — the built-in
+// fallbacks, unchanged strings, now routed through resolveContactErrorMessage
+// so a specific server string (Task 8's copy-batch.md rows 3/4/6) wins when
+// present.
+const CONTACT_ERROR_FALLBACK = "Error sending message. Please try again.";
+const CONTACT_NETWORK_ERROR = "Network error. Please try again later.";
 
 /* ------------------------------------------------------------------ */
 /*  Loading skeleton                                                   */
@@ -53,10 +61,25 @@ export default function FormLayout({
     return !form.fullName || !form.email || !isValidEmail(form.email) || !form.message || submitting;
   }, [form, submitting]);
 
-  const showToast = (next: ToastState, ms = 4500) => {
+  // Task 14 item 9 (ux-critique F3) — error toasts persist until dismissed
+  // or the next submit resolves; success toasts keep today's auto-dismiss.
+  const showToast = (next: ToastState, opts?: { persist?: boolean }) => {
     setToast(next);
-    window.setTimeout(() => setToast({ open: false }), ms);
+    if (!opts?.persist) {
+      window.setTimeout(() => setToast({ open: false }), 4500);
+    }
   };
+
+  // Task 14 item 10 (R1 — widened to all three fleet contact components):
+  // focus the error toast/box when it appears. role="alert" on the box
+  // below announces it too; this moves focus so a keyboard/screen-reader
+  // visitor actually lands on it.
+  const toastBoxRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (toast.open && toast.type === "error") {
+      toastBoxRef.current?.focus();
+    }
+  }, [toast]);
 
   const onChange =
     (key: "fullName" | "email" | "message") =>
@@ -77,15 +100,22 @@ export default function FormLayout({
         }),
       });
 
-      if (!res.ok) {
-        showToast({ open: true, type: "error", message: "Error sending message. Please try again." });
+      if (!shouldResetContactFormOnSubmit(res.ok)) {
+        // Task 14 item 9 — parse the body defensively; a non-JSON or empty
+        // body must never throw here. Typed input is intentionally NOT
+        // reset on this path (ux-critique F3).
+        const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+        showToast(
+          { open: true, type: "error", message: resolveContactErrorMessage(body?.error, CONTACT_ERROR_FALLBACK) },
+          { persist: true },
+        );
         return;
       }
 
       setForm({ fullName: "", email: "", message: "" });
       showToast({ open: true, type: "success", message: "Message sent! We'll get back to you soon." });
     } catch {
-      showToast({ open: true, type: "error", message: "Network error. Please try again later." });
+      showToast({ open: true, type: "error", message: CONTACT_NETWORK_ERROR }, { persist: true });
     } finally {
       setSubmitting(false);
     }
@@ -192,7 +222,12 @@ export default function FormLayout({
       {/* Toast notification */}
       {toast.open && (
         <div className="fixed left-1/2 top-5 z-50 w-[92vw] max-w-md -translate-x-1/2 animate-fade-in">
-          <div className="rounded-xl border border-black/[0.06] bg-white px-4 py-3 shadow-lg">
+          <div
+            ref={toastBoxRef}
+            role={toast.type === "error" ? "alert" : undefined}
+            tabIndex={toast.type === "error" ? -1 : undefined}
+            className="rounded-xl border border-black/[0.06] bg-white px-4 py-3 shadow-lg outline-none"
+          >
             <div className="flex items-center gap-3">
               {toast.type === "success" ? (
                 <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />

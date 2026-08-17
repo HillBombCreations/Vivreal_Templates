@@ -1,5 +1,6 @@
 import "server-only";
-import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from "../client";
+import { clientFetchCached, SITE_CACHE_TTL_SECONDS, readBotVerdict } from "../client";
+import { BOT_VERDICT_HEADER } from "../../botVerdict";
 // Pure raw → Product mapping lives in its own module so it can be unit-tested
 // under plain Node (`node --test`) — this file is `server-only` and cannot be
 // loaded there. Same split as `../collections/mapItem.ts`.
@@ -55,11 +56,18 @@ export async function getProducts(opts?: {
   if (opts?.sortVal) params.set("sort", opts.sortVal);
 
   const type = opts?.integrationType || "stripe";
+  // Task 14 item 3 (dashboard-insights-phase-3-capture/plan.md, D7) --
+  // relay the edge-computed bot verdict on this read. A bot request served
+  // from the Next.js data cache or CloudFront never reaches VR_Client_API
+  // at all (both sit in front of this call), so the header only affects a
+  // CACHE MISS -- which is the correct and sufficient scope: a repeat/
+  // cached bot hit was never going to be captured a second time anyway.
+  const botVerdict = await readBotVerdict();
   const raw = await clientFetchCached<PaginatedResponse>(
     `/tenant/integrationObjects?${params}`,
     { items: [], totalCount: 0 },
     SITE_CACHE_TTL_SECONDS,
-    undefined,
+    { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
     productTags(type)
   );
   return unwrapItems(raw).map(transformProduct);

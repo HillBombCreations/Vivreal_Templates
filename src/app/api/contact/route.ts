@@ -16,6 +16,17 @@ interface ContactPayload {
    * exactly as it did pre-v0.7.0.
    */
   customFields?: Record<string, unknown>;
+  /**
+   * Honeypot (Task 14 item 4b, dashboard-insights-phase-3-capture/plan.md,
+   * E-c/F7) — forwarded VERBATIM when the renderer's `ConfigurableForm`
+   * sends one (item 4a: same key on both submit modes now). Absent from
+   * `ContactSection`'s own hand-written payload today (no honeypot field
+   * there). `company_website` matches the renderer's
+   * `REVIEW_HONEYPOT_FIELD` constant and VR_Client_API's
+   * `sendContactEmailValidator` key — the validator must accept this key
+   * BEFORE the renderer bump ships (deploy-order note in the plan).
+   */
+  company_website?: string;
   branding?: {
     primary?: string;
     surface?: string;
@@ -338,6 +349,18 @@ export async function POST(request: NextRequest) {
         contactEmail: to,
         customerEmail,
         customHtml: buildBrandedEmail(enriched),
+        // Task 14 item 1 (dashboard-insights-phase-3-capture/plan.md, E-a) —
+        // both keys are OPTIONAL on the Joi validator (Task 8 step 1), so an
+        // old site build (neither key) and a new API stay compatible in
+        // both directions. `siteId` removes the multi-site resolution
+        // ambiguity (rung 1); `customFields` are structured form fields
+        // that today exist only inside the email HTML. `JSON.stringify`
+        // drops an `undefined` value, so an absent SITE_ID/customFields
+        // simply omits the key rather than sending a null placeholder.
+        siteId: process.env.SITE_ID || undefined,
+        customFields: body.customFields,
+        // Task 14 item 4b — forward the honeypot verbatim when present.
+        company_website: body.company_website,
       }),
     });
 
