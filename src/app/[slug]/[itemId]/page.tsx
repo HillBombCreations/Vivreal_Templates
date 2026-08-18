@@ -1,13 +1,12 @@
 import { notFound, permanentRedirect } from "next/navigation";
-import Link from "next/link";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { CTASectionTemplate } from "@/components/RendererExports";
 import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
-import { ArrowLeft } from "lucide-react";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
-import { resolveRedirect } from "@/lib/redirects";
+import { resolveMissingItemRedirect } from "@/lib/redirects";
+import type { SiteData } from "@/types/SiteData";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
@@ -38,6 +37,60 @@ import { resolveDetailCanonical } from "@/lib/detail/canonical";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
+
+/**
+ * docs/bugs/templates-soft-404-and-301-status, Change A (Open Question 2
+ * re-ruling) — the shared missing-item resolver every named-format arm below
+ * calls on ITS OWN "item not found" branch.
+ *
+ * Fixes the deep-redirect unreachability the plan's §Change 1a documented:
+ * each arm used to answer "does this item exist?" and call `notFound()`
+ * inline, so the bottom-of-function redirect fallback (the WS3 mechanism at
+ * the end of this component) was reachable only when `pageConfig.format`
+ * matched NO arm — a 2-segment authored redirect whose `from` sits under a
+ * live page slug (e.g. `/shop/retired-sku` where `shop` is a live `products`
+ * page) hard-404'd and the authored redirect never fired. This reorders the
+ * question: on a missing item, resolve an authored redirect for the request
+ * path FIRST; fall back to `notFound()` only when there is none (or the
+ * authored `to` fails the same-origin guard).
+ *
+ * NEVER SHADOW LIVE CONTENT: this function's only callers are each format
+ * arm's OWN "can't serve a real item here" branch — never the success path,
+ * so an existing item can never be redirected. Most callers are literally
+ * `if (!item) return redirectOrNotFound(...)` (shows, team, the generic
+ * collection-list item, the menu item), but two are not an item-missing
+ * check at all: the `!collectionId` branch (no `itemCollectionId`/page
+ * binding resolves to a collection) and the `!itemsCollectionId &&
+ * siblingCollectionIds.length === 0` branch (a menu page with no items
+ * binding at all) are the PAGE misconfigured, not any specific item
+ * missing — no item could exist to shadow in either case, so the same
+ * safety property holds, just for a different reason. Review note N3
+ * (page-layer-unvalidated-redirect-target).
+ * This is the same invariant `resolveRedirect()`'s doc comment
+ * (`@/lib/redirects.ts`) documents for the pre-existing `!pageConfig` and
+ * bottom-of-function redirect checks in this file; this helper extends it to
+ * every named-format arm's missing-item (and misconfigured-page) path too.
+ *
+ * Status: `permanentRedirect()` emits 308, not 301 — middleware.ts
+ * (`src/middleware.ts`) owns the literal-301 path for a redirect it can see;
+ * this is the correct-destination fallback for the deep-redirect shape
+ * middleware structurally cannot resolve (it cannot tell a retired item from
+ * a live one without a per-request CMS read).
+ *
+ * All matching logic is reused, not reimplemented: `resolveMissingItemRedirect()`
+ * (`@/lib/redirects`) composes the shared, pure `resolveRedirect()` with the
+ * same-origin guard `isSameOriginRedirectTarget()` — the same guard
+ * middleware.ts applies (there, followed by an additional authoritative
+ * resolved-URL origin check this page layer has no request object to
+ * perform; see that predicate's doc comment for why the pre-filter alone is
+ * sufficient here). On a hostile `to` (`isSameOriginRedirectTarget` returns
+ * false) this falls through to `notFound()`, never an off-origin redirect.
+ */
+function redirectOrNotFound(siteData: SiteData, path: string): never {
+  const target = resolveMissingItemRedirect(siteData.redirects, path);
+  if (target) permanentRedirect(target);
+  return notFound();
+}
 
 interface Props {
   params: Promise<{ slug: string; itemId: string }>;
@@ -109,7 +162,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // to already resolve, so a redirect check placed only at the end never
     // ran for this case). Checked BEFORE notFound() so it can never shadow a
     // real page/nested-page (both already returned above).
-    const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}/${itemId}`);
+    //
+    // docs/bugs/page-layer-unvalidated-redirect-target: resolved via
+    // `resolveMissingItemRedirect()`, the same shared resolve+validate
+    // helper `redirectOrNotFound()` below uses — not a hand-rolled
+    // resolve+`permanentRedirect()`, so a hostile `to` 404s here too instead
+    // of reaching `permanentRedirect()` unvalidated.
+    const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}/${itemId}`);
     if (redirectTarget) permanentRedirect(redirectTarget);
     return notFound();
   }
@@ -122,26 +181,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
     const show = await getShowById(itemId, collectionId);
 
-    if (!show) {
-      return (
-        <>
-          <Navbar />
-          <main className="pt-24 md:pt-32 pb-20 md:pb-32 text-center">
-            <h1 className="text-3xl font-bold">Not found</h1>
-            <p className="mt-4 text-gray-800">
-              Sorry, we couldn&apos;t find the content you&apos;re looking for.
-            </p>
-            <Link
-              href={`/${slug}`}
-              className="inline-flex items-center gap-1 mt-6 text-primary hover:underline"
-            >
-              <ArrowLeft size={16} /> Back to all content
-            </Link>
-          </main>
-          <Footer />
-        </>
-      );
-    }
+    // Change B (docs/bugs/templates-soft-404-and-301-status): this arm used
+    // to render a hand-rolled "Not found" page here at a soft status 200 —
+    // the only arm in this file that did not call notFound() on a miss. Now
+    // consistent with every other format: redirectOrNotFound() resolves an
+    // authored redirect first, else notFound() (a real 404 via
+    // src/app/not-found.tsx, same as every other arm below).
+    if (!show) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
 
     const showStartDate =
       show.date && show.time
@@ -185,7 +231,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const teamMembers = await getTeamMembers(collectionId);
     const member = teamMembers.find((m) => m.id === itemId);
 
-    if (!member) return notFound();
+    if (!member) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
 
     // Fetch TikTok posts and match by handle
     const tiktokHandle = member.socialLinks?.tiktok;
@@ -271,7 +317,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // (unchanged). Non-products pages can carry BOTH a storefront and plain
   // collection tiles that link to /<slug>/<itemId> — a product miss there
   // falls through to the collection/menu arms below instead.
-  if (!product && pageConfig.format === "products") return notFound();
+  if (!product && pageConfig.format === "products")
+    return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
   if (product) {
     // Fetch supplemental integrations for the detail page (non-payments ones —
     // the page's payments binding must not double-render as a supplemental feed)
@@ -387,7 +434,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   if (pageConfig.format === "collection-list" || scopedDetailPage?.itemCollectionId) {
     const collectionId =
       scopedDetailPage?.itemCollectionId || getPageCollectionId(siteData, pageConfig.name, "");
-    if (!collectionId) return notFound();
+    if (!collectionId) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
 
     // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
     // API 502s on larger limits, and the list view already caps at 100.
@@ -406,15 +453,18 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     if (!item) {
       // §7.2 step 7 — the doorway-page guard: an item that exists in the
       // UNSCOPED pool but was excluded by `scope` is a hard 404, never a
-      // redirect to the unscoped page (that would invite crawling the full
-      // cross-product — the 20 non-existent alchemy43 cells, §3). Logged so
-      // a scope-exclusion 404 is distinguishable from a genuine miss.
+      // FALLBACK redirect to the unscoped page (that would invite crawling
+      // the full cross-product — the 20 non-existent alchemy43 cells, §3).
+      // Logged so a scope-exclusion 404 is distinguishable from a genuine
+      // miss. Unrelated to (and not weakened by) redirectOrNotFound() below:
+      // that only resolves an AUTHORED entry in siteData.redirects for this
+      // exact path, never a derived fallback to the unscoped page.
       if (isDoorwayMiss(unscopedItems, itemId, itemKeyField)) {
         console.warn(
           `[detail-route] doorway-page guard: "${itemId}" exists in collection ${collectionId} but is excluded by page "${slug}"'s scope`,
         );
       }
-      return notFound();
+      return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
     }
 
     // §7.2 step 8 — resolve ONE context object (e.g. the location this page
@@ -477,7 +527,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const { itemsCollectionId, siblingCollectionIds } =
       resolveMenuDetailCollections(pageConfig);
     if (!itemsCollectionId && siblingCollectionIds.length === 0)
-      return notFound();
+      return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
 
     // The ITEMS binding is the primary pool; SIBLING bindings (the extra
     // collections a menu page carries around the pair — e.g. the bakery
@@ -511,7 +561,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         }
       }
     }
-    if (!item) return notFound();
+    if (!item) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
 
     // Related shelf: same category first (excluding self), then the rest —
     // href OVERRIDDEN to the item's own detail page so the shelf never
@@ -564,13 +614,42 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   }
 
   // Phase 0 of the two-axis detail-route design (§5.1, §7.2 step 10) — the
-  // WS3 301 redirect mechanism. Every real arm above (shows/team/products/
-  // collection-list/menu/nested-page) already returned, so a redirect can
-  // never shadow live content by construction. `siteData.redirects` is
-  // absent/empty for every site with nothing renamed (the fleet default),
-  // so `resolveRedirect` short-circuits to `undefined` with one length
-  // check — zero extra upstream calls, byte-identical to today.
-  const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}/${itemId}`);
+  // WS3 301 redirect mechanism.
+  //
+  // docs/bugs/templates-soft-404-and-301-status, Change A / Open Question 2:
+  // this used to be the ONLY place in the file that could resolve a deep
+  // authored redirect, and it was reachable ONLY when `pageConfig.format`
+  // matched none of the named arms above — every named arm answered "does
+  // this item exist?" and called `notFound()` inline, before this fallback
+  // could ever run for it. That made a 2-segment authored redirect whose
+  // `from` sits under a live page slug (e.g. `/shop/retired-sku`, `shop`
+  // live) unreachable and hard-404 (measured; see plan.md §Change 1a).
+  //
+  // Now REDUNDANT for every named format (shows/team/products/collection-
+  // list/menu): each of those arms' own missing-item branch calls
+  // `redirectOrNotFound()` above, which resolves the identical redirect via
+  // the same `resolveMissingItemRedirect()` (which already composes
+  // `resolveRedirect()` with the `isSameOriginRedirectTarget()` guard).
+  //
+  // docs/bugs/page-layer-unvalidated-redirect-target: the guard gap this
+  // comment used to note here ("a pre-existing gap this diff does not close
+  // here") is CLOSED — this fallback now goes through the same
+  // `resolveMissingItemRedirect()` helper as `redirectOrNotFound()` and the
+  // `!pageConfig` branch above, instead of a bare `resolveRedirect()` +
+  // `permanentRedirect()` with no same-origin check. All three of this
+  // file's redirect call sites, plus `[slug]/page.tsx` and
+  // `[...segments]/page.tsx`, now share one decision function — see
+  // `@/lib/redirects.ts`'s `isSameOriginRedirectTarget` doc comment.
+  //
+  // Still genuinely reachable, and still needed, for a `pageConfig.format`
+  // that matches NO arm in this file at all (e.g. schedule, subscribe,
+  // checkout-success, checkout-cancel, home) — every real arm above already
+  // returned in that case, so a redirect resolved here can never shadow live
+  // content by construction. `siteData.redirects` is absent/empty for every
+  // site with nothing renamed (the fleet default), so `resolveRedirect`
+  // short-circuits to `undefined` with one length check — zero extra
+  // upstream calls, byte-identical to today.
+  const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}/${itemId}`);
   if (redirectTarget) permanentRedirect(redirectTarget);
 
   return notFound();
