@@ -51,6 +51,7 @@ import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsL
 export default function CoordinatedProductsComposed({
   shaped,
   slots,
+  pageHeadingLevel,
 }: CoordinatedProductsProps) {
   const siteData = useSiteData();
   const adapters = useProductsLiveAdapters({
@@ -78,6 +79,11 @@ export default function CoordinatedProductsComposed({
         detailEnabled={shaped.detailEnabled}
         sectionConfig={shaped.sectionConfig}
         showHeader={shaped.showHeader}
+        // NEW-A (Item 8): the page-h1 election's verdict. Dropping this prop
+        // is the preview-green/live-red failure class — the Studio preview
+        // renders the renderer's own bare provider (which gets it), live
+        // renders THIS wrapper.
+        pageHeadingLevel={pageHeadingLevel}
         filterSide={shaped.filterSide}
         gridColumns={shaped.gridColumns}
         toolbarConfig={shaped.toolbarConfig}

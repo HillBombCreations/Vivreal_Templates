@@ -35,6 +35,8 @@ interface CoordinatedScheduleProps {
   siteData: RendererSiteData;
   slug: string;
   initialView?: ScheduleView;
+  /** NEW-A page-h1 election verdict — MUST be forwarded to ScheduleProvider. */
+  pageHeadingLevel?: "h1" | "h2";
 }
 
 /**
@@ -69,6 +71,7 @@ export default function CoordinatedScheduleComposed({
   slots,
   slug,
   initialView,
+  pageHeadingLevel,
 }: CoordinatedScheduleProps) {
   const siteData = useSiteData();
   const router = useRouter();
@@ -96,6 +99,9 @@ export default function CoordinatedScheduleComposed({
       slug={slug}
       siteData={siteData as unknown as RendererSiteData}
       showHeader={shaped.showHeader}
+      // NEW-A (Item 8): dropping this is preview-green/live-red — the Studio
+      // preview renders the renderer's bare provider, live renders THIS wrapper.
+      pageHeadingLevel={pageHeadingLevel}
       initialView={initialView}
       onViewChange={onViewChange}
     >
