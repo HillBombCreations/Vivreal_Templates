@@ -36,6 +36,8 @@ export default function ProductsPageComposed({
   displayAs = "cards",
   detailEnabled = true,
   sectionConfig,
+  showHeader,
+  pageHeadingLevel,
 }: ProductsPageProps) {
   const siteData = useSiteData();
   const adapters = useProductsLiveAdapters({ slug, detailEnabled });
@@ -58,6 +60,11 @@ export default function ProductsPageComposed({
         slug={slug}
         displayAs={displayAs}
         sectionConfig={sectionConfig}
+        // NEW-A (Item 8): both header props MUST forward or the fix lands in
+        // the Studio preview (bare arm) and never reaches live. showHeader was
+        // also silently dropped here before this round — same defect class.
+        showHeader={showHeader}
+        pageHeadingLevel={pageHeadingLevel}
         siteData={siteData as unknown as RendererSiteData}
         initialFilters={adapters.initialFilters}
         initialSort={adapters.initialSort}

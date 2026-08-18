@@ -8,17 +8,17 @@ interface SubscribeClientProps {
   collectionId: string;
   labels: Record<string, string>;
   /**
-   * §11.8 — true when a composed page-header hero owns the page h1
-   * (renderer PAGE_HEADER_VARIANTS): render the internal heading as h2 so the
-   * page keeps exactly one h1.
+   * NEW-A — the page-h1 election's verdict (renderer pageH1.ts, 1.52.0):
+   * 'h2' when another section owns the page h1, 'h1' when this one does.
+   * Absent ⇒ 'h1' (the pre-election default).
    */
-  headerDemoted?: boolean;
+  pageHeadingLevel?: "h1" | "h2";
 }
 
 export default function SubscribeClient({
   collectionId,
   labels,
-  headerDemoted,
+  pageHeadingLevel,
 }: SubscribeClientProps) {
   const siteData = useSiteData();
   const [email, setEmail] = useState("");
@@ -29,8 +29,8 @@ export default function SubscribeClient({
   const subtitle =
     labels?.subtitle ||
     "Subscribe to get the latest updates, news, and exclusive content delivered straight to your inbox.";
-  // §11.8 — a composed page-header hero owns the h1; demote to h2 here.
-  const HeadingTag = headerDemoted ? ("h2" as const) : ("h1" as const);
+  // NEW-A — the election owns the page-h1 decision; absent ⇒ 'h1'.
+  const HeadingTag = pageHeadingLevel ?? ("h1" as const);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
