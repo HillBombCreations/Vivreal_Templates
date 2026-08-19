@@ -145,6 +145,21 @@ const COMPOSE_FORMATS = new Set<string>([
   // renderComposedPage directly and does not consult this set — so the hub is
   // the surface this entry actually saves.)
   "intake",
+  // pricing → the PLANS & PRICING page type (SaaS/product kit #1, the
+  // vivreal.io relaunch → `saas-1`). A MARKER format: the renderer's arm is an
+  // explicit DELEGATE (byte-identical to `standard`) and there is NO composePage
+  // gate, because nothing about the page is render-time grammar — the billing
+  // control lives inside the shipped `pricing` LAYOUT and the compare band is
+  // its own `pricing-matrix` layout. So route recognition is the ONLY thing
+  // this format needs, and it needs it here.
+  //
+  // This is therefore the single highest-consequence line on card 2.7's list.
+  // Per the MEASURED note on `intake` directly above, the failure mode of
+  // omitting it is HTTP 200 with a soft-404 body — invisible to every status
+  // check, catchable only by a page-CONTENT gate (SOP step 9 / G43). NB
+  // `pricing` is also a layout dispatchId and a home-section; those are
+  // different namespaces and this Set is keyed on page.format.
+  "pricing",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
