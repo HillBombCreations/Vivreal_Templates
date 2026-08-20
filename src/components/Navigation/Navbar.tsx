@@ -112,6 +112,11 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
+      // H2 (renderer 1.54) — authored MINIMUM nav-row height, [40,120];
+      // mobile derives as min(barHeight, 72) unless barHeightMobile is set.
+      // Absent ⇒ today's logo-derived bar height, byte-identical.
+      barHeight={siteData?.navigation?.barHeight ?? null}
+      barHeightMobile={siteData?.navigation?.barHeightMobile ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       // Site-level announcement strip — rendered by the renderer INSIDE the

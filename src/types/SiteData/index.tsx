@@ -316,6 +316,13 @@ export interface SiteData {
         /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
         headerWidth?: 'contained' | 'full' | null;
         /**
+         * H2 — MINIMUM desktop nav-row height in px, clamped [40,120] by the
+         * renderer. null/absent ⇒ today's logo-derived bar height.
+         */
+        barHeight?: number | null;
+        /** H2 — explicit MOBILE minimum; absent ⇒ min(barHeight, 72). */
+        barHeightMobile?: number | null;
+        /**
          * Gate-2 §7 — menu pattern. null/absent/'drawer' ⇒ today's MobileNav
          * drawer (byte-identical). 'overlay' ⇒ the renderer's full-screen
          * OverlayNav on ALL breakpoints (Pippin pattern). 'card' (Ansel kit,
