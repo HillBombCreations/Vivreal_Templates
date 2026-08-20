@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -329,7 +330,23 @@ export async function POST(request: NextRequest) {
 
   const siteName = body.siteName?.trim() || site?.siteName || "Vivreal Site";
   const branding = body.branding ?? site?.branding;
-  const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding };
+  // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
+  // from the `vr_attr` cookie on this same-origin POST. customFields already
+  // flows both into the branded lead email (buildCustomFieldsBlock) and into
+  // the stored contact document, so one merge attributes /contact and /migrate
+  // at once. Never clobbers a submitted field of the same name (a contact form
+  // can legitimately carry its own `source` question), and returns the original
+  // reference when no cookie is present — byte-identical to today's payload for
+  // every fleet site, where `vr_attr` does not exist.
+  //
+  // Receiving validator verified before shipping: VR_Client_API's
+  // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
+  // .max(40)`, so these string keys are accepted with headroom to spare.
+  const customFields = mergeAttributionCustomFields(
+    body.customFields,
+    request.headers.get("cookie"),
+  );
+  const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
 
   const apiKey = process.env.API_KEY;
   const clientApiUrl =
@@ -358,7 +375,7 @@ export async function POST(request: NextRequest) {
         // drops an `undefined` value, so an absent SITE_ID/customFields
         // simply omits the key rather than sending a null placeholder.
         siteId: process.env.SITE_ID || undefined,
-        customFields: body.customFields,
+        customFields,
         // Task 14 item 4b — forward the honeypot verbatim when present.
         company_website: body.company_website,
       }),

@@ -13,6 +13,7 @@ import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
 import { subscribeUser } from '@/lib/api/subscribe/client';
+import { trackLeadConversion } from '@/lib/analytics';
 import { pagesNeedCart, type CartGatePage } from '@/lib/payments';
 
 const queryClient = new QueryClient();
@@ -102,8 +103,15 @@ const Providers = ({
     const content = (
         <NextProvider
             mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
-            onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) =>
-                subscribeUser(email, subscribersCollectionId, fields)}
+            onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) => {
+                const ok = await subscribeUser(email, subscribersCollectionId, fields);
+                // C5 — the one conversion event. Self-gates on GA4 being
+                // present AND consent granted AND the vivreal.io apex, so it is
+                // inert on every customer site. Only on SUCCESS: a failed
+                // capture is not a lead.
+                if (ok) trackLeadConversion({ method: _source || 'inline' });
+                return ok;
+            }}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
