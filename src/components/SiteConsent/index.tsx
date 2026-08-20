@@ -11,7 +11,6 @@ import {
   type VendorScript,
 } from '@/lib/consent';
 import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorTags';
-import { currentHostname } from '@/lib/vivrealApex';
 
 /**
  * The vivreal.io cookie-consent surface (G13 / C2) — banner + persistent
@@ -57,14 +56,11 @@ export default function SiteConsent({
   additional?: AdditionalVendorConfig[];
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
-  // Fail-closed inside: an unknown provider, a non-matching id, or `rb2b` on a
-  // customer host each yield nothing. `currentHostname()` is null during SSR, so
-  // the server resolves an empty list — which is correct, since nothing is
-  // injected until the mount effect runs anyway.
-  const vendors: VendorScript[] = useMemo(
-    () => resolveVendorScripts(additional, currentHostname()),
-    [additional],
-  );
+  // Fail-closed inside: an unknown provider or a non-matching id yields
+  // nothing. Resolving is pure — the HOST decision is this component's own apex
+  // gate below, which is what stops a resolved snippet ever being injected on a
+  // customer site.
+  const vendors: VendorScript[] = useMemo(() => resolveVendorScripts(additional), [additional]);
   // A visitor who dismisses with the X has not decided; hide the banner for
   // this page view without storing anything, so the next load asks again.
   const [dismissed, setDismissed] = useState(false);

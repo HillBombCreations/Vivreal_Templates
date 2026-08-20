@@ -155,8 +155,8 @@ export function installDom(opts?: {
 
   const head = makeContainer();
   const body = makeContainer();
-  // The RB2B snippet inserts itself before the document's first <script>, so
-  // the harness always has one for `getElementsByTagName('script')[0]`.
+  // The Clarity snippet inserts itself before the document's first <script>,
+  // so the harness always has one for `getElementsByTagName('script')[0]`.
   const anchorScript = makeElement('script');
   body.appendChild(anchorScript);
   appended.length = 0; // the anchor is scaffolding, not a tag under test

@@ -17,9 +17,8 @@
  *  3. WITHDRAW it. GDPR requires withdrawal to be as easy as giving consent,
  *     and `/privacy` cannot describe a control that does not exist.
  *  4. Be the ONLY injection point for the C9 registry vendors. GA4 has a
- *     consent API and can load denied then upgrade; Clarity and RB2B have no
- *     consent API at all, so "not loaded" is the only gate that exists for
- *     them.
+ *     consent API and can load denied then upgrade; Clarity has none, so "not
+ *     loaded" is the only gate that exists for it.
  *
  * React-free on purpose: Templates' test runner (`node --test` with type
  * stripping) cannot compile JSX, so all behaviour lives here and

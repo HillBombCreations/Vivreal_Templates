@@ -33,12 +33,17 @@ import {
 import { resolveVendorScripts, type AdditionalVendorConfig } from './vendorTags.ts';
 import { runAttributionCapture } from './attributionCapture.ts';
 import { getAttribution } from './attribution.ts';
-import { currentHostname } from './vivrealApex.ts';
 import { trackLeadConversion, resetLeadEventForTests } from './analytics.ts';
 
-/** The exact shape C7 will author onto the vivreal.io site doc. */
+/**
+ * The exact shape C7 will author onto the vivreal.io site doc.
+ *
+ * One vendor: RB2B was dropped entirely by owner decision on 2026-08-20. The
+ * registry SHAPE is unchanged, so a second vendor stays one entry away — and
+ * the stale-entry case below proves a dropped provider now fails closed rather
+ * than lingering.
+ */
 const SITE_ANALYTICS_ADDITIONAL: AdditionalVendorConfig[] = [
-  { provider: 'rb2b', id: 'FAKE00000000' },
   { provider: 'clarity', id: 'fakeclarity0' },
 ];
 
@@ -56,7 +61,7 @@ afterEach(() => {
 
 /** One page load: resolve the registry for this host, then mount the controller. */
 function loadPage() {
-  const vendors = resolveVendorScripts(SITE_ANALYTICS_ADDITIONAL, currentHostname());
+  const vendors = resolveVendorScripts(SITE_ANALYTICS_ADDITIONAL);
   const state = runConsentMount(vendors);
   runAttributionCapture({ consentDenied: state.choice === 'rejected' });
   return { vendors, state };
@@ -106,7 +111,7 @@ test('(a1) first visit: the banner renders and NOTHING third-party fires yet', (
   assert.equal(state.gated, true);
   assert.equal(state.showBanner, true, 'an undecided visitor is asked');
   assert.equal(state.showWithdraw, false);
-  assert.equal(vendors.length, 2, 'both registry vendors resolve on the apex');
+  assert.equal(vendors.length, 1, 'the configured registry vendor resolves');
 
   assert.deepEqual(vendorIds(), [], 'no vendor may fire before a decision');
   assert.equal(grantedUpdates(), 0, 'GA4 stays in the denied default');
@@ -136,17 +141,17 @@ test('(a3) ACCEPT ⇒ both vendor tags mount and GA4 is upgraded', () => {
   const { vendors } = loadPage();
   grantConsent(vendors);
 
-  assert.deepEqual(vendorIds(), ['vr-vendor-clarity', 'vr-vendor-rb2b']);
+  assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
   assert.equal(grantedUpdates(), 1);
 
   const injected = dom.scripts();
   assert.ok(
-    injected.some((s) => s.innerHTML.includes('reb2b.load("FAKE00000000")')),
-    'the rb2b tag carries the configured id',
-  );
-  assert.ok(
     injected.some((s) => s.innerHTML.includes('clarity.ms')),
     'the clarity tag is the real snippet',
+  );
+  assert.ok(
+    injected.some((s) => s.innerHTML.includes('fakeclarity0')),
+    'and it carries the configured project id',
   );
 });
 
@@ -164,8 +169,8 @@ test('★ (a4) RELOAD after accepting ⇒ choice restored, tags mount, NO re-pro
   assert.equal(state.showWithdraw, true, 'but the withdrawal control is offered');
   assert.deepEqual(
     vendorIds(),
-    ['vr-vendor-clarity', 'vr-vendor-rb2b'],
-    'both tags mount with no interaction at all',
+    ['vr-vendor-clarity'],
+    'the tag mounts with no interaction at all',
   );
   assert.equal(grantedUpdates(), 1, 'GA4 is upgraded on the restore path');
   assert.equal(
@@ -178,7 +183,7 @@ test('★ (a4) RELOAD after accepting ⇒ choice restored, tags mount, NO re-pro
 test('★ (a5) WITHDRAW ⇒ tags gone on the next load and the banner returns', () => {
   const { vendors } = loadPage();
   grantConsent(vendors);
-  assert.deepEqual(vendorIds(), ['vr-vendor-clarity', 'vr-vendor-rb2b']);
+  assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
 
   let reloaded = 0;
   withdrawConsent(() => {
@@ -231,6 +236,34 @@ test('(a7) the conversion event fires only inside a consented session', () => {
   );
 });
 
+test('★ (a8) a STALE rb2b entry left in config fails closed — accepted or not', () => {
+  // Owner decision 2026-08-20 dropped RB2B. The realistic residual risk is not
+  // the code, it is a site doc that still carries the entry. It must behave
+  // exactly like any other unknown provider: nothing resolves, nothing injects,
+  // and the surviving vendor is unaffected.
+  const stale: AdditionalVendorConfig[] = [
+    { provider: 'rb2b', id: 'FAKE00000000' },
+    { provider: 'clarity', id: 'fakeclarity0' },
+  ];
+  const vendors = resolveVendorScripts(stale);
+  assert.deepEqual(
+    vendors.map((v) => v.domId),
+    ['vr-vendor-clarity'],
+    'the dropped provider does not resolve; the kept one still does',
+  );
+
+  grantConsent(vendors);
+  assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
+  const everything = dom
+    .scripts()
+    .map((s) => s.innerHTML)
+    .join(' ')
+    .toLowerCase();
+  for (const needle of ['rb2b', 'reb2b', 'b2bjsstore']) {
+    assert.equal(everything.includes(needle), false, `${needle} must never reach the page`);
+  }
+});
+
 // ══ (b) ON A NON-APEX HOST — none of it exists ═════════════════════════════
 
 const CUSTOMER_HOSTS = ['acme.com', 'www.acme.com', 'shop.acme.co.uk', 'vivreal.io.evil.com'];
@@ -245,11 +278,6 @@ for (const host of CUSTOMER_HOSTS) {
     assert.equal(state.gated, false, 'a customer site is not under Vivreal consent');
     assert.equal(state.showBanner, false, 'no banner may render');
     assert.equal(state.showWithdraw, false, 'no withdrawal strip may render');
-    assert.equal(
-      vendors.filter((v) => v.domId === 'vr-vendor-rb2b').length,
-      0,
-      'rb2b must never resolve off the apex — the allowlist is code, not config',
-    );
     assert.deepEqual(vendorIds(), [], 'nothing may be injected into a customer page');
     assert.equal(document.cookie, '', 'no vr_attr cookie may be written');
     assert.equal(getAttribution(), null);
@@ -265,13 +293,13 @@ for (const host of CUSTOMER_HOSTS) {
   });
 }
 
-test('★ (b) a customer site that configures CLARITY still gets no rb2b and no banner', () => {
+test('★ (b) a customer site that configures CLARITY still gets nothing injected', () => {
   // The one legitimate off-apex case in the registry: clarity is allowed
   // anywhere. It still cannot be injected, because the consent controller that
   // injects it is apex-gated — which is the honest statement of Phase A's
   // scope: the registry is fleet-capable, the CONSENT SURFACE is not yet (C8).
   dom.setHostname('acme.com');
-  const vendors = resolveVendorScripts([{ provider: 'clarity', id: 'fakeclarity0' }], 'acme.com');
+  const vendors = resolveVendorScripts([{ provider: 'clarity', id: 'fakeclarity0' }]);
   assert.equal(vendors.length, 1, 'clarity resolves for a customer site…');
 
   dom.storage.set(COOKIE_CONSENT_KEY, 'accepted');

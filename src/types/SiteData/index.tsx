@@ -615,10 +615,10 @@ export interface SiteData {
          * Named-vendor tag registry (change item C9) — extra marketing tags as
          * `{provider, id}` against a HARD-CODED snippet in
          * `src/lib/vendorTags.ts`. Never a URL and never a script body. An
-         * unknown provider or a non-matching id renders nothing (fail-closed),
-         * and `rb2b` additionally renders only on the vivreal.io apex, enforced
-         * in code rather than config because it is person-level
-         * de-anonymisation. Absent ⇒ no extra tag, i.e. every existing site.
+         * unknown provider or a non-matching id renders nothing (fail-closed).
+         * The only provider today is `clarity`; the tags are injected solely by
+         * the apex-gated consent controller, so nothing here can reach a
+         * customer site. Absent ⇒ no extra tag, i.e. every existing site.
          */
         additional?: Array<{ provider?: string; id?: string }>;
     } | null;
