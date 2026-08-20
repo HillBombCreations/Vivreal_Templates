@@ -191,6 +191,16 @@ export function renderComposedPage({
           </div>
         )
       )}
+      {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
+          this is a page-authored Suspense boundary, not the deleted implicit
+          loading.tsx wrap — but it has the same failure mode. Streaming
+          begins the instant this boundary suspends, which flushes a 200
+          shell before ComposedPageBody runs. Unlike home's HYPOTHETICAL
+          hazard (app/page.tsx has no notFound() today), ComposedPageBody's
+          isEmpty guard DOES call notFound() at :256 — that is a real,
+          shipping soft-200, not a latent one. Any future fix to that guard
+          must run in the un-suspended parent (above this boundary), not
+          inside ComposedPageBody. */}
       <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
         <ComposedPageBody
           siteData={siteData}

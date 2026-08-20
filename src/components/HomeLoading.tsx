@@ -6,11 +6,14 @@ import { PageSkeleton } from "@hillbombcreations/site-renderer";
  * identically. Used by the home page's INLINE
  * `<Suspense fallback={<HomeLoading/>}>` boundary (app/page.tsx).
  *
- * Moved out of `app/loading.tsx` (2026-07-13): the route-level fallback is
- * now shape-neutral (see NeutralPageLoading) because it fronts EVERY route,
- * not just home — a catalog page booting behind a hero-shaped skeleton was
- * the wrong shape. The home page keeps this hero shape via its own inline
- * boundary, where the target page IS known.
+ * Originally moved out of `app/loading.tsx` (2026-07-13) alongside a
+ * shape-neutral route-level fallback. That route-level `loading.tsx` (and
+ * its sibling `NeutralPageLoading` component) were deleted in
+ * docs/bugs/templates-soft-404-and-301-status (Change 1b): the implicit
+ * `<Suspense>` it gave every route flushed a `200` shell before an async
+ * page's `notFound()` / `permanentRedirect()` could run, turning real 404s
+ * and 301s into soft `200`s. This component survives unchanged — the home
+ * page's own inline boundary here is unaffected by that deletion.
  */
 export default function HomeLoading() {
   return <PageSkeleton variant="home" />;
