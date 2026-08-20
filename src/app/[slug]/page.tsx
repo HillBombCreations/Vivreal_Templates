@@ -5,7 +5,7 @@ import Footer from "@/components/Footer";
 import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
-import { resolveRedirect } from "@/lib/redirects";
+import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
@@ -189,7 +189,14 @@ export default async function DynamicPage({
     // renames (`/old-slug` → `/new-slug`), which route here, not to
     // `[slug]/[itemId]/page.tsx`. Absent/empty siteData.redirects (the fleet
     // default) short-circuits with one length check — no extra work.
-    const redirectTarget = resolveRedirect(siteData.redirects, `/${slug}`);
+    //
+    // docs/bugs/page-layer-unvalidated-redirect-target: resolved via
+    // `resolveMissingItemRedirect()` (composes `resolveRedirect()` with the
+    // same-origin guard `isSameOriginRedirectTarget()`), not a hand-rolled
+    // resolve+validate — the same shared decision every missing-path/
+    // missing-item branch in this app makes, so a hostile `to` here 404s
+    // instead of reaching `permanentRedirect()` unvalidated.
+    const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}`);
     if (redirectTarget) permanentRedirect(redirectTarget);
     return notFound();
   }
@@ -516,6 +523,15 @@ export default async function DynamicPage({
             shell (Navbar/band/Footer) + a structure-derived skeleton flush
             immediately. Same model as renderComposedPage; the fallback is
             derived from the SAME composedPage config as the real render. */}
+        {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
+            this is a page-authored Suspense boundary, not the deleted
+            implicit loading.tsx wrap — but it has the same failure mode.
+            Streaming begins the instant this boundary suspends, which
+            flushes a 200 shell before ComposedFormatBody runs. The
+            `notFound()` inside ComposedFormatBody (the isEmpty guard below)
+            therefore CANNOT set a 404 status — it only swaps the body. Any
+            future guard on this route must run in the un-suspended parent
+            (DynamicPage, above this boundary), not inside ComposedFormatBody. */}
         <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
           <ComposedFormatBody
             siteData={siteData}

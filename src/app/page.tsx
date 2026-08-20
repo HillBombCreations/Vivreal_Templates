@@ -52,6 +52,17 @@ async function Resolved() {
   );
 }
 
+// GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c): this
+// Suspense boundary is page-authored, not the deleted implicit `loading.tsx`
+// wrap — but it has the SAME failure mode. `HomePage` is a synchronous shell;
+// `Resolved()` is the async child that does all the awaiting. Streaming
+// begins the instant this boundary suspends, which flushes a 200 shell
+// before `Resolved()` runs. A `notFound()`/`permanentRedirect()` placed
+// inside `Resolved()` (or anything it calls) would be a soft-200 on day one,
+// exactly like the bug this fix closes elsewhere. Home never guards today,
+// so this is documentary only — no behavioural change. Any future guard on
+// this route MUST run in `HomePage` itself (the un-suspended parent), not
+// inside `Resolved()`.
 export default function HomePage() {
   return (
     <Suspense fallback={<HomeLoading />}>

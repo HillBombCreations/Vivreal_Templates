@@ -1,6 +1,6 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteData } from "@/lib/api/siteData";
-import { resolveRedirect } from "@/lib/redirects";
+import { resolveMissingItemRedirect } from "@/lib/redirects";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -38,6 +38,15 @@ export const fetchCache = "force-no-store";
  *     by `SITE_CACHE_TTL_SECONDS` — the same cache window every other route
  *     shares, so a site with an empty `redirects` array pays no NEW distinct
  *     upstream traffic, only the existing cached fetch).
+ *
+ * docs/bugs/page-layer-unvalidated-redirect-target: this route only exists
+ * for a path with NO other matching route (see the specificity note above),
+ * so an authored `to` here can never shadow live content — the same
+ * missing-path invariant `resolveMissingItemRedirect()`'s doc comment
+ * documents. Resolves via that shared helper (composes `resolveRedirect()`
+ * with the same-origin guard `isSameOriginRedirectTarget()`) rather than a
+ * hand-rolled resolve so this call site cannot drift from the other three
+ * that decide the same class of redirect.
  */
 export default async function DeepRedirectCatchAll({
   params,
@@ -47,7 +56,7 @@ export default async function DeepRedirectCatchAll({
   const { segments } = await params;
   const siteData = await getSiteData();
   const path = `/${segments.join("/")}`;
-  const redirectTarget = resolveRedirect(siteData.redirects, path);
+  const redirectTarget = resolveMissingItemRedirect(siteData.redirects, path);
   if (redirectTarget) permanentRedirect(redirectTarget);
   return notFound();
 }

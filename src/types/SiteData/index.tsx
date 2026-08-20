@@ -633,9 +633,11 @@ export interface SiteData {
      * Stored flat inside `siteDetails.values` (same precedent as
      * `favicon`/`fontFamily`/`utilityStrip`), so it round-trips through
      * `getSiteData`'s `...siteDetails.values` spread with no VR_Client_API
-     * change. Read by `[slug]/page.tsx` and `[slug]/[itemId]/page.tsx` via
-     * `resolveRedirect()` — consulted ONLY after every real page/detail-item
-     * lookup has failed, so a redirect can never shadow live content.
+     * change. Read by `[slug]/page.tsx`, `[slug]/[itemId]/page.tsx`,
+     * `[...segments]/page.tsx`, and `src/middleware.ts` (edge) via
+     * `resolveMissingItemRedirect()` — consulted ONLY after every real
+     * page/detail-item lookup has failed, so a redirect can never shadow
+     * live content.
      * Absent/empty (every non-migrated or unchanged-URL site) ⇒ byte-identical
      * no-op, zero extra work beyond one length check.
      */
