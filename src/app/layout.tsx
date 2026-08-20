@@ -256,7 +256,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       `state.gated` is false and this renders null. Mounted
                       LAST so the withdrawal affordance sits below the page
                       footer rather than floating over content. */}
-                  <SiteConsent />
+                  <SiteConsent additional={siteData.analytics?.additional} />
               </Providers>
           </body>
       </html>

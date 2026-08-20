@@ -1,5 +1,6 @@
 import Script from 'next/script';
 import { buildGaInitScript } from '@/lib/gaInitScript';
+import type { AdditionalVendorConfig } from '@/lib/vendorTags';
 
 /**
  * Per-site web-analytics tag for a deployed customer site.
@@ -41,6 +42,16 @@ export interface SiteAnalyticsConfig {
    * opt the whole site out of static rendering. See lib/gaInitScript.ts.
    */
   consentMode?: boolean;
+  /**
+   * Named-vendor tag registry (G14 / change item C9). Declared here because it
+   * lives on the same `analytics` config object (which is already in
+   * VR_Secure_API's PRESERVE_ON_REPLACE list), but DELIBERATELY IGNORED by this
+   * component: <SiteAnalytics> is a server component in <head>, and neither
+   * registry vendor has a consent API, so "not loaded" is the only gate that
+   * exists for them. They are injected client-side by the consent controller
+   * (`lib/consent.ts`) on grant and on restore — see `lib/vendorTags.ts`.
+   */
+  additional?: AdditionalVendorConfig[];
 }
 
 // Strict per-provider id shapes. GA4 = `G-XXXX`; Plausible = a bare domain;
