@@ -86,6 +86,17 @@ const Navbar = async () => {
       // storefront already honours server-side). null/absent ⇒ no arm, no
       // band, byte-identical header.
       search={siteData?.navigation?.search ?? null}
+      // saas-1 kit (vivreal.io relaunch) — the `layout:'mega'` vehicle's two
+      // knobs. Same item-18 lockstep rule as the block above: a prop threaded
+      // here but not in the Studio preview wrapper
+      // (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) is invisible in the
+      // Studio, and a prop threaded there but not here is invisible on the
+      // LIVE site. Both are wired. `megaDensity` absent/null/'detailed' ⇒ the
+      // roomy default; `megaFeature` absent/heading-less ⇒ no featured rail —
+      // and both are ignored outright by every layout that is not 'mega', so
+      // every existing site's header is byte-identical.
+      megaDensity={siteData?.navigation?.megaDensity ?? null}
+      megaFeature={siteData?.navigation?.megaFeature ?? null}
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}

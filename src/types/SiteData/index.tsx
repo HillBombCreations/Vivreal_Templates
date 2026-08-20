@@ -342,8 +342,24 @@ export interface SiteData {
          * band: SOLID dark bar (bandColor), display-face uppercase arms with
          * a per-arm accent cycle (linkColorCycle), centered brand, and a
          * social-icon rail fed from top-level siteData.socialLinks.
+         * 'garden' (House & Garden kit, wedding-venue look #2) = display-face
+         * uppercase arms on generous letterspacing, centred.
+         * 'stacked' (med-spa kit look #2) = the THREE-BAND header: the arms
+         * lift onto a full-width JUSTIFIED row beneath the brand row.
+         * 'mega' (saas-1 kit, vivreal.io relaunch) = the MEGA HEADER VEHICLE:
+         * brand left, arms in flow beside it, dual action hard-right, each
+         * children-bearing arm opening a full-width bar-docked mega panel
+         * (multi-column grid + the tinted `megaFeature` promo rail), and a
+         * net-new DRILL-DOWN condensed menu. Mirrors NavbarProps.layout.
+         *
+         * DRIFT NOTE: 'garden' and 'stacked' shipped in the renderer two and
+         * one rounds ago respectively and were never mirrored here. Corrected
+         * in the same edit that adds 'mega', on the item-5 precedent: widening
+         * a mirror union is purely additive (no runtime output changes — TS
+         * types are erased), and leaving a known stale enum on the line you
+         * are already rewriting is worse than fixing it.
          */
-        layout?: 'logo-center' | 'editorial' | 'boutique' | 'band' | null;
+        layout?: 'logo-center' | 'editorial' | 'boutique' | 'band' | 'garden' | 'stacked' | 'mega' | null;
         /**
          * Poster-pop kit — the 'band' bar's SOLID background color (renderer
          * validates via resolveColor). Mirrors NavbarProps.bandColor.
@@ -391,6 +407,26 @@ export interface SiteData {
          * errors, `next build` does — promote job 3 FAILED fleet-wide on it.)
          */
         navLinkColor?: string | null;
+        /**
+         * saas-1 kit — `layout:'mega'` panel DENSITY. Only 'compact' changes
+         * anything; 'detailed'/null/absent are the roomy default (the default
+         * IS the sentinel, so the Studio writes null rather than pinning a
+         * literal). Ignored by every other layout. Mirrors
+         * NavbarProps.megaDensity.
+         */
+        megaDensity?: 'compact' | 'detailed' | null;
+        /**
+         * saas-1 kit — `layout:'mega'`'s FEATURED REGION: a TINTED promo card
+         * in every mega panel's right rail. Deliberately media-free (no
+         * PageMediaDescriptor ⇒ no promote/sign surface). Absent/null/no
+         * `heading` ⇒ nothing renders. Mirrors NavbarProps.megaFeature.
+         */
+        megaFeature?: {
+            eyebrow?: string;
+            heading?: string;
+            body?: string;
+            cta?: { label: string; href: string; external?: boolean; target?: '_self' | '_blank' };
+        } | null;
         /**
          * Resale round — the net-new header SEARCH BAND. An arm in the bar
          * opens a full-width band docked over the header; the band submits a
