@@ -1,4 +1,4 @@
-import { deriveNav } from '@hillbombcreations/site-renderer';
+import { deriveNav, resolveMastheadTone } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
@@ -17,8 +17,19 @@ import NavbarChrome from './NavbarChrome';
  * so the override logo is signed HERE from the backend-delivered signed media
  * object on `brand.logo`.
  */
-const Navbar = async () => {
+/**
+ * H1 (saas-1 kit, renderer 1.54.0) — `page` is the CURRENT route's (raw,
+ * pre-compose) PageConfig. The shell derives the masthead tone from its
+ * authored hero with the renderer's own `resolveMastheadTone` and threads it
+ * as `mastheadTone`, so a `transparent-on-hero` header lands on the solid
+ * token set at scroll 0 over a LIGHT masthead (a media-less `statement`
+ * hero) instead of painting white ink on white. Omitting `page` ⇒ `null` ⇒
+ * the renderer's pre-1.54.0 behaviour, byte-identical — the detail-page
+ * mounts and the welcome fallback pass nothing.
+ */
+const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
   const siteData = await getSiteData();
+  const mastheadTone = resolveMastheadTone(page ?? null);
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
   // No logo ⇒ '' (renderer NavbarView gates the <img> on truthiness → name-only
@@ -48,6 +59,7 @@ const Navbar = async () => {
       cta={siteData?.navigation?.cta ?? null}
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
+      mastheadTone={mastheadTone}
       // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
       // resolveMediaSrc reads a pre-signed URL string or an inlined
       // currentFile.source descriptor (this shell does no signing for it — the
