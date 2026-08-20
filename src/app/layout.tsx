@@ -16,6 +16,7 @@ import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
 import AttributionCapture from '@/components/AttributionCapture';
+import SiteConsent from '@/components/SiteConsent';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 /**
@@ -249,6 +250,13 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       site IS vivreal.io, and a first touch that is not captured
                       on the landing page is not recoverable later. */}
                   <AttributionCapture />
+                  {/* vivreal.io cookie consent (G13/C2) — banner, restore-on-
+                      mount and the persistent withdrawal control. Same apex
+                      gate as <AttributionCapture>: on every customer site
+                      `state.gated` is false and this renders null. Mounted
+                      LAST so the withdrawal affordance sits below the page
+                      footer rather than floating over content. */}
+                  <SiteConsent />
               </Providers>
           </body>
       </html>

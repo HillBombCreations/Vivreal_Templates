@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { runAttributionCapture } from '@/lib/attributionCapture';
+import { readStoredConsentChoice, COOKIE_CONSENT_REJECTED } from '@/lib/consent';
 
 /**
  * Null-rendering mount for `vr_attr` attribution capture (G12 / C1).
@@ -17,7 +18,15 @@ import { runAttributionCapture } from '@/lib/attributionCapture';
  */
 export default function AttributionCapture() {
   useEffect(() => {
-    runAttributionCapture();
+    // An AFFIRMATIVE rejection blocks the write. "Undecided" deliberately does
+    // not: first touch only exists on the first page load, so gating it on a
+    // decision the visitor has not made yet destroys it permanently (Open
+    // Question 5 — today's contract, carried forward verbatim). `/privacy` must
+    // describe the asymmetry: `vr_attr` is first-party and written
+    // pre-decision; the third-party vendor tags never fire pre-decision.
+    runAttributionCapture({
+      consentDenied: readStoredConsentChoice() === COOKIE_CONSENT_REJECTED,
+    });
   }, []);
 
   return null;
