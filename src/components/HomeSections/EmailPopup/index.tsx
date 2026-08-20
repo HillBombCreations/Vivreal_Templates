@@ -6,6 +6,7 @@ import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import type { EmailPopupConfig } from "@hillbombcreations/site-renderer";
 import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
+import { trackLeadConversion } from "@/lib/analytics";
 import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
 
 // REUSE the live wrapper's existing keys so users mid-cap aren't reset.
@@ -212,6 +213,11 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
       image={cfg.image}
       onSubscribe={async (email) => {
         const ok = await subscribeUser(email, collectionId);
+        // C5 — the popup calls subscribeUser directly rather than through the
+        // renderer provider, so it needs its own conversion call. Same three
+        // gates inside trackLeadConversion; deduped per page load, so a visitor
+        // who converts here and in the footer counts once.
+        if (ok) trackLeadConversion({ method: 'popup' });
         // Permanent "never again" on success, regardless of frequency mode.
         if (ok) localStorage.setItem(SUBSCRIBE_KEY, "true");
         return ok;

@@ -363,7 +363,9 @@ test('middleware.ts wiring: calls the composed resolveMissingItemRedirect(), nev
   // comments legitimately mentions `resolveRedirect()` by name (e.g. to
   // explain what the composed helper wraps); only CODE must be checked.
   const code = source
-    .split('\n')
+    // CRLF-safe: `\r` is a JS line terminator, so on a Windows checkout a
+    // trailing `\r` would stop `.` short and the strip below would no-op.
+    .split(/\r?\n/)
     .map((line) => line.replace(/\/\/.*$/, ''))
     .join('\n');
   assert.match(

@@ -601,6 +601,26 @@ export interface SiteData {
     analytics?: {
         provider?: 'google_analytics' | 'plausible' | 'fathom';
         trackingId?: string;
+        /**
+         * Consent Mode (vivreal.io relaunch, change item C3). True ⇒ the GA4
+         * init string emits `gtag('consent','default',…)` denied BEFORE
+         * `gtag('config',…)` and reads the `vr_internal` staff-traffic cookie.
+         * Absent/false ⇒ byte-identical output for every existing site. Set on
+         * the vivreal.io site doc only. Persisted through VR_Secure_API
+         * updateSiteValues — a value written before that validator key deploys
+         * is stripped SILENTLY, so read the doc back after every write.
+         */
+        consentMode?: boolean;
+        /**
+         * Named-vendor tag registry (change item C9) — extra marketing tags as
+         * `{provider, id}` against a HARD-CODED snippet in
+         * `src/lib/vendorTags.ts`. Never a URL and never a script body. An
+         * unknown provider or a non-matching id renders nothing (fail-closed).
+         * The only provider today is `clarity`; the tags are injected solely by
+         * the apex-gated consent controller, so nothing here can reach a
+         * customer site. Absent ⇒ no extra tag, i.e. every existing site.
+         */
+        additional?: Array<{ provider?: string; id?: string }>;
     } | null;
     /**
      * Migration lifecycle state (SEO demo-safety). `'demo'` = a pre-cutover

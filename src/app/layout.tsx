@@ -15,6 +15,8 @@ import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/componen
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
+import AttributionCapture from '@/components/AttributionCapture';
+import SiteConsent from '@/components/SiteConsent';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 /**
@@ -241,6 +243,20 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       on real deployed sites (SITE_ID set + != 'preview'); collection
                       is ON by default for every site (basic analytics is bundled). */}
                   <SiteBeacon siteId={process.env.SITE_ID ?? ''} />
+                  {/* vivreal.io campaign attribution (G12/C1). Renders null and
+                      is a NO-OP on every host that is not the vivreal.io apex —
+                      see lib/vivrealApex.ts. It exists here, in the fleet app,
+                      because after the CloudFront origin swap the Templates
+                      site IS vivreal.io, and a first touch that is not captured
+                      on the landing page is not recoverable later. */}
+                  <AttributionCapture />
+                  {/* vivreal.io cookie consent (G13/C2) — banner, restore-on-
+                      mount and the persistent withdrawal control. Same apex
+                      gate as <AttributionCapture>: on every customer site
+                      `state.gated` is false and this renders null. Mounted
+                      LAST so the withdrawal affordance sits below the page
+                      footer rather than floating over content. */}
+                  <SiteConsent additional={siteData.analytics?.additional} />
               </Providers>
           </body>
       </html>

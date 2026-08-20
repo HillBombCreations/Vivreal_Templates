@@ -1,4 +1,6 @@
 import Script from 'next/script';
+import { buildGaInitScript } from '@/lib/gaInitScript';
+import type { AdditionalVendorConfig } from '@/lib/vendorTags';
 
 /**
  * Per-site web-analytics tag for a deployed customer site.
@@ -22,6 +24,34 @@ type AnalyticsProvider = 'google_analytics' | 'plausible' | 'fathom';
 export interface SiteAnalyticsConfig {
   provider?: AnalyticsProvider;
   trackingId?: string;
+  /**
+   * Consent Mode (G13 / change item C3). When true the GA4 init string emits
+   * `gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied'})`
+   * BEFORE `gtag('config',…)` — the ordering that makes the gate real — and
+   * reads the `vr_internal` staff-traffic cookie. Absent/false ⇒ the emitted
+   * string is BYTE-IDENTICAL to today, which is what keeps this fleet-safe:
+   * default-denied reaching a customer site with GA4 configured would silently
+   * zero their analytics.
+   *
+   * C3 owns the DEFAULT half only. The transitions INTO granted — both the
+   * banner click and the return-visit restore — belong to the client consent
+   * controller (`lib/consent.ts`, C2). Neither half is correct alone.
+   *
+   * A config flag rather than the isVivrealApex() host gate used elsewhere,
+   * because this is a server component in <head>: a `headers()` host read would
+   * opt the whole site out of static rendering. See lib/gaInitScript.ts.
+   */
+  consentMode?: boolean;
+  /**
+   * Named-vendor tag registry (G14 / change item C9). Declared here because it
+   * lives on the same `analytics` config object (which is already in
+   * VR_Secure_API's PRESERVE_ON_REPLACE list), but DELIBERATELY IGNORED by this
+   * component: <SiteAnalytics> is a server component in <head>, and neither
+   * registry vendor has a consent API, so "not loaded" is the only gate that
+   * exists for them. They are injected client-side by the consent controller
+   * (`lib/consent.ts`) on grant and on restore — see `lib/vendorTags.ts`.
+   */
+  additional?: AdditionalVendorConfig[];
 }
 
 // Strict per-provider id shapes. GA4 = `G-XXXX`; Plausible = a bare domain;
@@ -51,7 +81,7 @@ export default function SiteAnalytics({
           strategy="afterInteractive"
         />
         <Script id="ga-init" strategy="afterInteractive">
-          {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${id}');`}
+          {buildGaInitScript(id, { consentMode: analytics?.consentMode })}
         </Script>
       </>
     );
