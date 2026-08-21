@@ -1,4 +1,4 @@
-import { deriveNav, resolveMastheadTone } from '@hillbombcreations/site-renderer';
+import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
@@ -26,10 +26,21 @@ import NavbarChrome from './NavbarChrome';
  * hero) instead of painting white ink on white. Omitting `page` ⇒ `null` ⇒
  * the renderer's pre-1.54.0 behaviour, byte-identical — the detail-page
  * mounts and the welcome fallback pass nothing.
+ *
+ * GATE-1b (saas-1 kit, same renderer train) — the SAME `page` also decides
+ * whether the header stays PINNED: `resolveHeaderPinned(page)` is `false`
+ * only when the page carries a `section-bar` binding in `mode:'replace'`
+ * (the sticky product-family bar takes over the chrome once the hero scrolls
+ * by, so the header must scroll away with it — Shopify /pos, Wix /ecommerce).
+ * Every page without a bar, and every mount that passes no `page`, resolves
+ * `true` ⇒ the fixed header, byte-identical. Item-18 lockstep: the Studio
+ * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
+ * the same derivation.
  */
 const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
   const siteData = await getSiteData();
   const mastheadTone = resolveMastheadTone(page ?? null);
+  const pinned = resolveHeaderPinned(page ?? null);
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
   // No logo ⇒ '' (renderer NavbarView gates the <img> on truthiness → name-only
@@ -60,6 +71,7 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
       mastheadTone={mastheadTone}
+      pinned={pinned}
       // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
       // resolveMediaSrc reads a pre-signed URL string or an inlined
       // currentFile.source descriptor (this shell does no signing for it — the
