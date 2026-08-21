@@ -305,8 +305,20 @@ export interface SiteData {
          * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
          * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
          */
-        /** `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight. */
-        brand?: (NavbarBrand & { logo?: BrandLogoMedia; logoHeight?: number }) | null;
+        /**
+         * `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight.
+         *
+         * B1 media leg (renderer 1.54.0 R2) — `logoScrolled` is the backend-signed
+         * sibling of the bare `logoScrolledKey`, exactly as `logo` is for `logoKey`.
+         * `logoScrolledKey` is widened locally for the same reason `logoHeight` is:
+         * the installed renderer publishes it only from 1.54.0 on.
+         */
+        brand?: (NavbarBrand & {
+            logo?: BrandLogoMedia;
+            logoHeight?: number;
+            logoScrolledKey?: string;
+            logoScrolled?: BrandLogoMedia;
+        }) | null;
         /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
         cartIcon?: CartIcon | null;
         /** Header scroll treatment. null/absent ⇒ 'solid' (today's behavior). */

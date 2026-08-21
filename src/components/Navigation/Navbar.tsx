@@ -55,6 +55,13 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
 
   const siteName = has('name') ? (brand!.name ?? '') : businessName;
   const logoUrl = has('logoKey') ? getSignedUrl(brand!.logo) : businessLogoUrl;
+  // B1 media leg (renderer 1.54.0 R2) — the SOLID-state wordmark. Same
+  // presence-means-override shape as `logoKey` one field over: VR_Client_API
+  // signs the bare `logoScrolledKey` into the sibling `logoScrolled`, and the
+  // renderer reads the resulting URL only on the `transparent-on-hero` path
+  // (a `solid` header never consults it). Absent ⇒ null ⇒ `logoUrl` in every
+  // state, byte-identical to the pre-1.54.0 header.
+  const logoScrolledUrl = has('logoScrolledKey') ? getSignedUrl(brand!.logoScrolled) : null;
 
   const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
   const navItems = deriveNav(pageConfigs);
@@ -63,6 +70,7 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
     <NavbarChrome
       siteName={siteName}
       logoUrl={logoUrl}
+      logoScrolledUrl={logoScrolledUrl}
       navItems={navItems}
       accentColor={siteData?.primary}
       pageConfigs={pageConfigs}
