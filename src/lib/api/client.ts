@@ -7,12 +7,21 @@
 import 'server-only';
 import { headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
+import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
+import { buildFetchFailureCapture } from './errorCapture';
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 
 const API_KEY = process.env.API_KEY || '';
+
+/**
+ * This deployment's siteId. Used ONLY as a Sentry tag so a fleet-wide upstream
+ * failure (one Issue, by fingerprint) can still be filtered down to the sites it
+ * actually hit. Never part of a fingerprint - see ./errorCapture.
+ */
+const SITE_ID = process.env.SITE_ID || '';
 
 const PREVIEW_REQUEST_HEADER = 'x-vivreal-preview-token';
 const PREVIEW_FORWARD_HEADER = 'x-vivreal-preview';
@@ -178,6 +187,15 @@ export async function clientFetchSafe<T>(
     if (err instanceof ApiError && err.status === 402) {
       throw err;
     }
+    // Capture HERE, at the swallow, not at the caller's fallback branch: this is
+    // the last point where the real ApiError (with its .status and its cause)
+    // still exists. One line lower it is gone and only the fallback remains,
+    // which is precisely why the 2026-08-20 fallback renders reached Sentry as
+    // nothing at all. 402 is already excluded - it re-throws above.
+    Sentry.captureException(
+      err,
+      buildFetchFailureCapture({ source: 'clientFetchSafe', path, siteId: SITE_ID })
+    );
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
     return fallback;
   }
@@ -236,6 +254,12 @@ export async function clientFetchCached<T>(
     if (err instanceof ApiError && err.status === 402) {
       throw err;
     }
+    // Same reasoning as clientFetchSafe above - capture at the swallow, while
+    // the ApiError is still intact. 402 re-throws above and is never captured.
+    Sentry.captureException(
+      err,
+      buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID })
+    );
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
     return fallback;
   }
