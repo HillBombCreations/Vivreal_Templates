@@ -1,4 +1,4 @@
-import { deriveNav } from '@hillbombcreations/site-renderer';
+import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
@@ -17,8 +17,30 @@ import NavbarChrome from './NavbarChrome';
  * so the override logo is signed HERE from the backend-delivered signed media
  * object on `brand.logo`.
  */
-const Navbar = async () => {
+/**
+ * H1 (saas-1 kit, renderer 1.54.0) — `page` is the CURRENT route's (raw,
+ * pre-compose) PageConfig. The shell derives the masthead tone from its
+ * authored hero with the renderer's own `resolveMastheadTone` and threads it
+ * as `mastheadTone`, so a `transparent-on-hero` header lands on the solid
+ * token set at scroll 0 over a LIGHT masthead (a media-less `statement`
+ * hero) instead of painting white ink on white. Omitting `page` ⇒ `null` ⇒
+ * the renderer's pre-1.54.0 behaviour, byte-identical — the detail-page
+ * mounts and the welcome fallback pass nothing.
+ *
+ * GATE-1b (saas-1 kit, same renderer train) — the SAME `page` also decides
+ * whether the header stays PINNED: `resolveHeaderPinned(page)` is `false`
+ * only when the page carries a `section-bar` binding in `mode:'replace'`
+ * (the sticky product-family bar takes over the chrome once the hero scrolls
+ * by, so the header must scroll away with it — Shopify /pos, Wix /ecommerce).
+ * Every page without a bar, and every mount that passes no `page`, resolves
+ * `true` ⇒ the fixed header, byte-identical. Item-18 lockstep: the Studio
+ * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
+ * the same derivation.
+ */
+const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
   const siteData = await getSiteData();
+  const mastheadTone = resolveMastheadTone(page ?? null);
+  const pinned = resolveHeaderPinned(page ?? null);
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
   // No logo ⇒ '' (renderer NavbarView gates the <img> on truthiness → name-only
@@ -33,6 +55,13 @@ const Navbar = async () => {
 
   const siteName = has('name') ? (brand!.name ?? '') : businessName;
   const logoUrl = has('logoKey') ? getSignedUrl(brand!.logo) : businessLogoUrl;
+  // B1 media leg (renderer 1.54.0 R2) — the SOLID-state wordmark. Same
+  // presence-means-override shape as `logoKey` one field over: VR_Client_API
+  // signs the bare `logoScrolledKey` into the sibling `logoScrolled`, and the
+  // renderer reads the resulting URL only on the `transparent-on-hero` path
+  // (a `solid` header never consults it). Absent ⇒ null ⇒ `logoUrl` in every
+  // state, byte-identical to the pre-1.54.0 header.
+  const logoScrolledUrl = has('logoScrolledKey') ? getSignedUrl(brand!.logoScrolled) : null;
 
   const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
   const navItems = deriveNav(pageConfigs);
@@ -41,6 +70,7 @@ const Navbar = async () => {
     <NavbarChrome
       siteName={siteName}
       logoUrl={logoUrl}
+      logoScrolledUrl={logoScrolledUrl}
       navItems={navItems}
       accentColor={siteData?.primary}
       pageConfigs={pageConfigs}
@@ -48,6 +78,8 @@ const Navbar = async () => {
       cta={siteData?.navigation?.cta ?? null}
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
+      mastheadTone={mastheadTone}
+      pinned={pinned}
       // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
       // resolveMediaSrc reads a pre-signed URL string or an inlined
       // currentFile.source descriptor (this shell does no signing for it — the
@@ -100,6 +132,11 @@ const Navbar = async () => {
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
+      // H2 (renderer 1.54) — authored MINIMUM nav-row height, [40,120];
+      // mobile derives as min(barHeight, 72) unless barHeightMobile is set.
+      // Absent ⇒ today's logo-derived bar height, byte-identical.
+      barHeight={siteData?.navigation?.barHeight ?? null}
+      barHeightMobile={siteData?.navigation?.barHeightMobile ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       // Site-level announcement strip — rendered by the renderer INSIDE the

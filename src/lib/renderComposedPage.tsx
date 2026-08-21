@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navigation/Navbar';
 import Footer from '@/components/Footer';
 import { composePage, ComposedPageSkeleton } from '@hillbombcreations/site-renderer';
+import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import { willRenderHeroBanner, hasHomeSectionBlock } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -140,7 +141,7 @@ export function renderComposedPage({
 
   return (
     <>
-      <Navbar />
+      <Navbar page={composedPage as unknown as RendererPageConfig} />
       {showTransitionalTitleBand && (
         // Transitional title band: renders the legacy page.labels.title/subtitle
         // so generic pages that haven't been SP-3-backfilled still show their H1.

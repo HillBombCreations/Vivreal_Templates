@@ -305,8 +305,20 @@ export interface SiteData {
          * businessInfo; PRESENT (incl. "") ⇒ override. `logo` is the backend-signed
          * media object for `brand.logoKey` (the wrapper signs via getSignedUrl).
          */
-        /** `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight. */
-        brand?: (NavbarBrand & { logo?: BrandLogoMedia; logoHeight?: number }) | null;
+        /**
+         * `logoHeight` widened locally until the renderer bump publishes NavbarBrand.logoHeight.
+         *
+         * B1 media leg (renderer 1.54.0 R2) — `logoScrolled` is the backend-signed
+         * sibling of the bare `logoScrolledKey`, exactly as `logo` is for `logoKey`.
+         * `logoScrolledKey` is widened locally for the same reason `logoHeight` is:
+         * the installed renderer publishes it only from 1.54.0 on.
+         */
+        brand?: (NavbarBrand & {
+            logo?: BrandLogoMedia;
+            logoHeight?: number;
+            logoScrolledKey?: string;
+            logoScrolled?: BrandLogoMedia;
+        }) | null;
         /** Group B (N10) — cart glyph. Absent ⇒ default 'cart'. */
         cartIcon?: CartIcon | null;
         /** Header scroll treatment. null/absent ⇒ 'solid' (today's behavior). */
@@ -315,6 +327,13 @@ export interface SiteData {
         secondaryCta?: NavbarCta | null;
         /** Header container width. null/absent ⇒ 'contained' (today's max-w cap). */
         headerWidth?: 'contained' | 'full' | null;
+        /**
+         * H2 — MINIMUM desktop nav-row height in px, clamped [40,120] by the
+         * renderer. null/absent ⇒ today's logo-derived bar height.
+         */
+        barHeight?: number | null;
+        /** H2 — explicit MOBILE minimum; absent ⇒ min(barHeight, 72). */
+        barHeightMobile?: number | null;
         /**
          * Gate-2 §7 — menu pattern. null/absent/'drawer' ⇒ today's MobileNav
          * drawer (byte-identical). 'overlay' ⇒ the renderer's full-screen

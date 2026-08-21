@@ -3,6 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
+import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
@@ -496,7 +497,7 @@ export default async function DynamicPage({
 
     return (
       <>
-        <Navbar />
+        <Navbar page={composedPage as unknown as RendererPageConfig} />
         {showTransitionalTitleBand && (
           // Transitional title band: renders the legacy page.labels.title/subtitle
           // so generic pages that haven't been SP-3-backfilled still show their H1.

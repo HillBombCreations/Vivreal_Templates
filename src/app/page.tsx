@@ -3,6 +3,7 @@ import { getSiteData } from "@/lib/api/siteData";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
+import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "@/components/HomeLoading";
@@ -45,7 +46,7 @@ async function Resolved() {
 
   return (
     <>
-      <Navbar />
+      <Navbar page={homePageConfig as unknown as RendererPageConfig} />
       {composePage(input)}
       <Footer />
     </>
