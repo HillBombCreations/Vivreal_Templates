@@ -7,7 +7,12 @@ import type {
   PageIntegrationBinding,
   SiteData,
 } from '@/types/SiteData';
+import * as Sentry from '@sentry/nextjs';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import {
+  SITE_DETAILS_FALLBACK_MESSAGE,
+  buildSiteDetailsFallbackCapture,
+} from '@/lib/api/errorCapture';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSitemapEntries } from '@/lib/seo/sitemap';
 import { getCollectionItems } from '@/lib/api/collections';
@@ -103,7 +108,26 @@ export const getSiteData = async (): Promise<SiteData> => {
     SITE_CHROME_TAG
   );
 
-  if (!raw?.siteDetails?.values) return FALLBACK_SITE_DATA;
+  if (!raw?.siteDetails?.values) {
+    // TRAIN-1.54.0 gap 2a. Taking this branch means the visitor is being served
+    // a black-and-white page with no nav, no content and no logo - the exact
+    // render the 2026-08-20 screenshot run photographed, which nobody was paged
+    // for because this line was silent. It is a DISTINCT signal from the fetch
+    // failure captured in client.ts: that one says "an upstream read failed",
+    // this one says "a customer's site is live and empty", which is the
+    // condition worth an alert rule.
+    //
+    // captureMessage rather than captureException because there is no error
+    // object left here by design - clientFetchCached already swallowed it and
+    // handed back the `null` fallback (see the capture at that swallow for the
+    // ApiError and its status). Matches VR_Client_Auth's `unmapped_tier`
+    // precedent for the same shape of condition.
+    Sentry.captureMessage(
+      SITE_DETAILS_FALLBACK_MESSAGE,
+      buildSiteDetailsFallbackCapture({ siteId: SITE_ID })
+    );
+    return FALLBACK_SITE_DATA;
+  }
 
   const allPages = raw.pages ?? [];
   const homePageConfig = allPages.find(
