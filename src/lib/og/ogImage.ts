@@ -1,5 +1,6 @@
 import 'server-only';
 import type { SiteData } from '@/types/SiteData';
+export { resolveIndexedOrigin, buildDetailUrl } from './siteOrigin';
 
 /**
  * Resolve the site's canonical origin (protocol + host, no trailing slash).

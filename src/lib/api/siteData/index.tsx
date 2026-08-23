@@ -17,6 +17,7 @@ import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSitemapEntries } from '@/lib/seo/sitemap';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
+import { resolveIndexedOrigin } from '@/lib/og/ogImage';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -382,7 +383,7 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
   return buildSitemapEntries(
     raw.pages,
-    raw.domainName ?? '',
+    resolveIndexedOrigin({ domainName: raw.domainName, domainInformation: raw.domainInformation }),
     sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
   );
 };

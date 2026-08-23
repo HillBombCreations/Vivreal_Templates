@@ -23,13 +23,19 @@ import type { PageConfig } from '@/types/SiteData';
  * unit tests keep working unchanged). Absent/empty for a page ⇒ zero detail
  * items added for it — byte-identical to today's output when the map is
  * omitted entirely.
+ *
+ * `siteOrigin` is a pre-resolved absolute origin (protocol + host, no
+ * trailing slash) — the caller resolves it via `resolveIndexedOrigin`
+ * (`@/lib/og/ogImage`) so this function stays pure and origin-source-agnostic.
+ * Empty `siteOrigin` ⇒ `[]`.
  */
 export function buildSitemapEntries(
   pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,
-  domainName: string,
+  siteOrigin: string,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
-  if (!domainName) return [];
+  if (!siteOrigin) return [];
+  const origin = siteOrigin.replace(/\/+$/, '');
 
   const eligiblePages = (pages ?? []).filter(
     (p) =>
@@ -43,12 +49,12 @@ export function buildSitemapEntries(
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
 
   const entries: MetadataRoute.Sitemap = [
-    { url: `https://${domainName}`, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
+    { url: origin, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
   ];
   slugs.forEach((slug, idx) => {
     const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / slugs.length));
     entries.push({
-      url: `https://${domainName}/${slug}`,
+      url: `${origin}/${slug}`,
       lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: Number(priority.toFixed(2)),
@@ -58,7 +64,7 @@ export function buildSitemapEntries(
   // Detail items — only for pages that opted in (`detailPage.sitemap === true`)
   // AND have resolved segments handed in. A page without `detailItemSegmentsByPage`
   // at all (the fleet default: the param itself is omitted) adds nothing here,
-  // so `buildSitemapEntries(pages, domain)` (the 2-arg call every existing
+  // so `buildSitemapEntries(pages, origin)` (the 2-arg call every existing
   // caller/test makes) is byte-identical output.
   if (detailItemSegmentsByPage) {
     for (const page of eligiblePages) {
@@ -68,7 +74,7 @@ export function buildSitemapEntries(
       if (!segments || segments.length === 0) continue;
       for (const segment of segments) {
         entries.push({
-          url: `https://${domainName}/${slug}/${segment}`,
+          url: `${origin}/${slug}/${segment}`,
           lastModified: new Date(),
           changeFrequency: 'monthly',
           priority: 0.5,
