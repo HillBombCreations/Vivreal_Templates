@@ -7,7 +7,7 @@ import type { SiteData as RendererSiteData } from "@hillbombcreations/site-rende
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import type { SiteData } from "@/types/SiteData";
-import { resolveSiteOrigin, buildOgImageUrl, buildDetailUrl } from "@/lib/og/ogImage";
+import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
@@ -202,7 +202,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // team branch already applies to member images.
       imageUrl: unsignMediaUrl(show.imageUrl || show.image || undefined),
-      url: buildDetailUrl(siteData, slug, itemId),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
       startDate: showStartDate,
       location: show.location || undefined,
     });
@@ -258,7 +260,6 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // URLs expire after 300s but JSON-LD lives in crawler caches for days.
     // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
     const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
-    const detailUrl = buildDetailUrl(siteData, slug, itemId);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -267,8 +268,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
         : {}),
       ...(memberImage ? { image: memberImage } : {}),
-      ...(detailUrl
-        ? { url: detailUrl }
+      ...(siteData.domainName
+        ? { url: `https://${siteData.domainName}/${slug}/${itemId}` }
         : {}),
       ...(siteData.businessInfo?.name
         ? {
@@ -353,7 +354,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       title: productName || 'Product',
       description: productDescription,
       imageUrl: productImage,
-      url: buildDetailUrl(siteData, slug, itemId),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
       price: productPrice,
       sku: product._id,
     });
@@ -486,7 +489,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
       imageUrl: unsignMediaUrl(effectiveItem.imageUrl),
-      url: buildDetailUrl(siteData, slug, itemId),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
     });
@@ -584,7 +589,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       title: item.title || pageConfig.name,
       description: cleanDesc,
       imageUrl: unsignMediaUrl(item.imageUrl),
-      url: buildDetailUrl(siteData, slug, itemId),
+      url: siteData.domainName
+        ? `https://${siteData.domainName}/${slug}/${itemId}`
+        : undefined,
       price: typeof item.price === "string" ? item.price : undefined,
       sku: item.id,
     });

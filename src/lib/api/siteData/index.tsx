@@ -17,7 +17,6 @@ import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSitemapEntries } from '@/lib/seo/sitemap';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
-import { resolveSiteOrigin } from '@/lib/og/ogImage';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -146,18 +145,13 @@ export const getSiteData = async (): Promise<SiteData> => {
   // /feeds/schedule.ics proxy route (same origin). Only inject when a schedule
   // page exists AND the canonical domain is known — never set a partial/relative
   // value the renderer would mangle. No renderer change, no per-site authoring.
-  const siteOrigin = resolveSiteOrigin({
-    canonicalUrl: raw.siteDetails.values.canonicalUrl,
-    domainName: raw.domainName,
-    domainInformation: raw.domainInformation,
-    lifecycleState: raw.siteDetails.values.lifecycleState,
-  });
-  if (siteOrigin) {
+  const domainName = raw.domainName;
+  if (domainName) {
     for (const page of pageConfigs) {
       if (page.format === "schedule") {
         page.labels = {
           ...(page.labels ?? {}),
-          icalFeedUrl: `${siteOrigin}/feeds/schedule.ics`,
+          icalFeedUrl: `https://${domainName}/feeds/schedule.ics`,
         };
       }
     }
@@ -388,15 +382,7 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
   return buildSitemapEntries(
     raw.pages,
-    resolveSiteOrigin({
-      canonicalUrl: raw.siteDetails.values.canonicalUrl,
-      domainName: raw.domainName,
-      domainInformation: raw.domainInformation,
-      // Defense in depth — the isDemoSite early-return above already excludes
-      // demo sites from ever reaching this call, but threading the doc's own
-      // flag keeps this call site self-protecting if that guard ever moves.
-      lifecycleState: raw.siteDetails.values.lifecycleState,
-    }),
+    raw.domainName ?? '',
     sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
   );
 };

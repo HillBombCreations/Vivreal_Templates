@@ -7,20 +7,49 @@ import { isDemoSite } from '../seo/demoSafety.ts';
 
 type OriginSiteData = Pick<SiteData, 'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState'>;
 
-/**
- * `canonicalUrl` lands in public SEO tags and every absolute URL this module
- * builds (OG, JSON-LD, sitemap, iCal feed). A malformed or attacker-influenced
- * value there is a cross-domain canonical / open-redirect hazard (OWASP ASVS
- * 5.1 input validation) — require a genuine absolute https origin and fall
- * back to the existing resolution chain for anything else.
- */
-function isAbsoluteHttpsOrigin(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return parsed.protocol === 'https:' && parsed.host.length > 0;
-  } catch {
-    return false;
+// Matches VR_Secure_API's cutover Joi validator (`setSiteCutoverState`
+// `validators.js` — `Joi.string().uri({ scheme: ['https'] }).max(2048)`).
+// Templates is the fleet-wide READER of this field and must not depend on any
+// one producer having enforced this — enforce it here too.
+const MAX_CANONICAL_URL_LENGTH = 2048;
+
+// The WHATWG URL parser silently trims leading/trailing C0-control-or-space
+// and strips embedded ASCII tab/CR/LF from the input before validating it —
+// so a value containing a literal tab or newline would otherwise parse
+// "successfully" even though it is not a clean origin. Reject any C0 control
+// character, DEL, or space up front (char-code check, not a regex class, to
+// keep the check obviously correct rather than relying on an escape-heavy
+// pattern) so nothing the parser would have quietly sanitized can pass this
+// gate.
+function hasControlOrWhitespace(value: string): boolean {
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x20 || code === 0x7f) return true;
   }
+  return false;
+}
+
+/**
+ * Parse `value` as a strict https ORIGIN — no path, query, fragment, or
+ * credentials — per design.md's "HTTPS-origin allowlisted (no path, query,
+ * fragment, credentials, or arbitrary host)" requirement (OWASP ASVS 5.1
+ * input validation). Returns the normalized `origin` (e.g.
+ * `https://example.com`), NEVER the raw input — a caller that emits the raw
+ * value instead of this return would string-concatenate onto
+ * operator-controlled input (see canonical-emission-review.md BLOCK 2/3).
+ */
+function parseHttpsOrigin(value: string): string | null {
+  if (value.length > MAX_CANONICAL_URL_LENGTH || hasControlOrWhitespace(value)) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || parsed.host.length === 0) return null;
+  if (parsed.username || parsed.password) return null;
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+  return parsed.origin;
 }
 
 /**
@@ -45,8 +74,8 @@ export function resolveCanonicalUrl(siteData?: OriginSiteData | null): string {
   // that already governs noindex (see demoSafety.ts).
   if (isDemoSite(siteData)) return '';
   const persistedUrl = siteData?.canonicalUrl?.trim();
-  if (!persistedUrl || !isAbsoluteHttpsOrigin(persistedUrl)) return '';
-  return persistedUrl.replace(/\/+$/, '');
+  if (!persistedUrl) return '';
+  return parseHttpsOrigin(persistedUrl) ?? '';
 }
 
 export function resolveSiteOrigin(

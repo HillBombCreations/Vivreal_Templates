@@ -22,7 +22,6 @@
  */
 import type { SiteData } from '@/types/SiteData';
 import { unsignMediaUrl } from './unsignMediaUrl';
-import { resolveSiteOrigin } from '@/lib/og/ogImage';
 
 interface JsonLdProps {
   schema: Record<string, unknown> | Array<Record<string, unknown>>;
@@ -50,7 +49,8 @@ export function JsonLd({ schema }: JsonLdProps) {
 export function buildSiteJsonLd(siteData: SiteData): Array<Record<string, unknown>> {
   const siteName =
     siteData.businessInfo?.name || siteData.name || 'Website';
-  const url = resolveSiteOrigin(siteData) || undefined;
+  const domain = siteData.domainName;
+  const url = domain ? `https://${domain}` : undefined;
   const description = siteData.businessInfo?.description;
   // Strip CloudFront signing params before embedding in JSON-LD — the
   // signed form expires after 300s but JSON-LD lives in crawler caches
