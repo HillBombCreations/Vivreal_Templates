@@ -13,6 +13,13 @@ type OriginSiteData = Pick<SiteData, 'canonicalUrl' | 'domainName' | 'domainInfo
 // one producer having enforced this — enforce it here too.
 const MAX_CANONICAL_URL_LENGTH = 2048;
 
+// RFC 1035 §3.1: a full domain name is capped at 253 octets and each
+// dot-separated label at 63. Nothing longer can exist in DNS — a canonical
+// pointing at a host that cannot resolve is a de-index risk for a page that
+// is otherwise fine (canonical-emission-review.md Pass 3 CONCERN K).
+const MAX_HOSTNAME_LENGTH = 253;
+const MAX_LABEL_LENGTH = 63;
+
 // The WHATWG URL parser silently trims leading/trailing C0-control-or-space
 // and strips embedded ASCII tab/CR/LF from the input before validating it —
 // so a value containing a literal tab or newline would otherwise parse
@@ -40,15 +47,24 @@ function isBareIPv4(hostname: string): boolean {
  * "no...arbitrary host"): a trailing-dot FQDN (a distinct origin to crawlers
  * that normally fails TLS SNI — canonical-emission-review.md Pass 2 CONCERN
  * C), an empty/dot-only host, a bracketed IPv6 literal, a bare IPv4 literal,
- * and `localhost`/`*.localhost`. Requires at least one dot so a bare
- * single-label host is rejected too.
+ * `localhost`/`*.localhost`, and a name/label that exceeds RFC 1035's DNS
+ * length caps (Pass 3 CONCERN K) — nothing that long can ever resolve.
+ * Requires at least one dot so a bare single-label host is rejected too.
  */
 function isPublicHostname(hostname: string): boolean {
   if (hostname.startsWith('[')) return false; // bracketed IPv6 literal
   if (isBareIPv4(hostname)) return false;
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) return false;
   if (hostname.startsWith('.') || hostname.endsWith('.') || hostname.includes('..')) return false;
-  return hostname.includes('.');
+  if (!hostname.includes('.')) return false;
+  // Two independent RFC 1035 §3.1 bounds, checked separately (not folded
+  // into one compound condition) so each has its own dedicated failing
+  // test — a single test that only trips when BOTH are removed is a false
+  // pin (canonical-emission-review.md Pass 3 findings on the `:65` compound
+  // guard).
+  if (hostname.length > MAX_HOSTNAME_LENGTH) return false;
+  if (hostname.split('.').some((label) => label.length > MAX_LABEL_LENGTH)) return false;
+  return true;
 }
 
 /**
