@@ -29,14 +29,37 @@ function hasControlOrWhitespace(value: string): boolean {
   return false;
 }
 
+// Bare IPv4 literal (e.g. `192.0.2.1`) — not a stable public canonical host.
+function isBareIPv4(hostname: string): boolean {
+  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+}
+
 /**
- * Parse `value` as a strict https ORIGIN — no path, query, fragment, or
- * credentials — per design.md's "HTTPS-origin allowlisted (no path, query,
- * fragment, credentials, or arbitrary host)" requirement (OWASP ASVS 5.1
- * input validation). Returns the normalized `origin` (e.g.
- * `https://example.com`), NEVER the raw input — a caller that emits the raw
- * value instead of this return would string-concatenate onto
- * operator-controlled input (see canonical-emission-review.md BLOCK 2/3).
+ * Reject host forms the WHATWG URL parser accepts as syntactically valid but
+ * that cannot be a legitimate PUBLIC canonical origin (design.md
+ * "no...arbitrary host"): a trailing-dot FQDN (a distinct origin to crawlers
+ * that normally fails TLS SNI — canonical-emission-review.md Pass 2 CONCERN
+ * C), an empty/dot-only host, a bracketed IPv6 literal, a bare IPv4 literal,
+ * and `localhost`/`*.localhost`. Requires at least one dot so a bare
+ * single-label host is rejected too.
+ */
+function isPublicHostname(hostname: string): boolean {
+  if (hostname.startsWith('[')) return false; // bracketed IPv6 literal
+  if (isBareIPv4(hostname)) return false;
+  if (hostname === 'localhost' || hostname.endsWith('.localhost')) return false;
+  if (hostname.startsWith('.') || hostname.endsWith('.') || hostname.includes('..')) return false;
+  return hostname.includes('.');
+}
+
+/**
+ * Parse `value` as a strict https ORIGIN — no path, query, fragment,
+ * credentials, explicit port, or non-public host — per design.md's
+ * "HTTPS-origin allowlisted (no path, query, fragment, credentials, or
+ * arbitrary host)" requirement (OWASP ASVS 5.1 input validation). Returns the
+ * normalized `origin` (e.g. `https://example.com`), NEVER the raw input — a
+ * caller that emits the raw value instead of this return would
+ * string-concatenate onto operator-controlled input (see
+ * canonical-emission-review.md BLOCK 2/3).
  */
 function parseHttpsOrigin(value: string): string | null {
   if (value.length > MAX_CANONICAL_URL_LENGTH || hasControlOrWhitespace(value)) return null;
@@ -49,6 +72,11 @@ function parseHttpsOrigin(value: string): string | null {
   if (parsed.protocol !== 'https:' || parsed.host.length === 0) return null;
   if (parsed.username || parsed.password) return null;
   if (parsed.pathname !== '/' || parsed.search || parsed.hash) return null;
+  // The default https port (443) already normalizes to '' — anything left
+  // here is an explicit non-default port, which a public canonical apex
+  // never legitimately carries.
+  if (parsed.port) return null;
+  if (!isPublicHostname(parsed.hostname)) return null;
   return parsed.origin;
 }
 
@@ -73,7 +101,16 @@ export function resolveCanonicalUrl(siteData?: OriginSiteData | null): string {
   // — that would tell crawlers the demo IS the production apex. Same gate
   // that already governs noindex (see demoSafety.ts).
   if (isDemoSite(siteData)) return '';
-  const persistedUrl = siteData?.canonicalUrl?.trim();
+  // `siteDetails.values` is a loose Mongo Mixed field (see the module doc
+  // above) — a producer bug or malformed write can persist ANY JSON type
+  // under `canonicalUrl`, not just a string. `?.trim()` guards null/undefined
+  // but not type: a number/boolean/object/array throws inside
+  // generateMetadata() and silently strips <title>/description/every og:*
+  // tag from EVERY page (HTTP 200, swallowed TypeError) — see
+  // canonical-emission-review.md Pass 2 CONCERN A. Treat a non-string exactly
+  // like "nothing authored", not a crash.
+  const rawCanonicalUrl: unknown = siteData?.canonicalUrl;
+  const persistedUrl = typeof rawCanonicalUrl === 'string' ? rawCanonicalUrl.trim() : '';
   if (!persistedUrl) return '';
   return parseHttpsOrigin(persistedUrl) ?? '';
 }
@@ -89,15 +126,4 @@ export function resolveSiteOrigin(
   if (liveUrl) return liveUrl.replace(/\/+$/, '');
   const domain = siteData?.domainName?.trim();
   return domain ? `https://${domain.replace(/\/+$/, '')}` : '';
-}
-
-export function buildDetailUrl(
-  siteData: OriginSiteData,
-  slug: string,
-  itemId: string,
-): string | undefined {
-  const origin = resolveSiteOrigin(siteData);
-  // Preserve the existing route serialization. Next.js supplies already-decoded
-  // params here, and adding encoding would change schema bytes for existing sites.
-  return origin ? `${origin}/${slug}/${itemId}` : undefined;
 }

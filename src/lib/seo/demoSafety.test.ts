@@ -1,5 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import type { SiteData } from '@/types/SiteData';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`
 // (see package.json "test"), which needs a resolvable specifier.
 import { isDemoSite, getDemoSourceUrl } from './demoSafety.ts';
@@ -29,6 +30,22 @@ test('FAIL-SAFE DEFAULT: no flag and no env ⇒ NOT a demo (indexable)', () => {
 test('an explicit lifecycleState=demo ⇒ demo (withheld from indexing)', () => {
   delete process.env.SITE_LIFECYCLE;
   assert.equal(isDemoSite({ lifecycleState: 'demo' }), true);
+});
+
+test('lifecycleState EXPLICITLY null (key present, value null) ⇒ demo — distinct from a truly absent key', () => {
+  // canonical-emission-review.md Pass 2 CONCERN B: VR_Secure_API's
+  // PRESERVE_ON_REPLACE merge only restores a preserved key when the
+  // incoming value is `undefined`; an explicit `null` wins as a deliberate
+  // clear and can land in the stored doc distinct from the key never having
+  // been written. Fail safe toward demo, same as any other present-but-not-
+  // 'live' value — do NOT treat this the same as the truly-absent-key case
+  // (isDemoSite(undefined) / isDemoSite({})) above.
+  delete process.env.SITE_LIFECYCLE;
+  // `as unknown as` — deliberately outside lifecycleState's declared
+  // `'demo'|'live'` union: the exact runtime shape a loose Mixed Mongo field
+  // can actually carry (same convention as rootMetadata.test.ts's ambiguous-
+  // value cases).
+  assert.equal(isDemoSite({ lifecycleState: null } as unknown as Pick<SiteData, 'lifecycleState'>), true);
 });
 
 test('lifecycleState=live ⇒ NOT a demo (indexable)', () => {

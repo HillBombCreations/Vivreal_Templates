@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveSiteOrigin, buildDetailUrl } from './siteOrigin.ts';
+import { resolveSiteOrigin } from './siteOrigin.ts';
 
 const ORIGINAL_ENV = process.env.NEXT_PUBLIC_SITE_URL;
 const ORIGINAL_LIFECYCLE = process.env.SITE_LIFECYCLE;
@@ -65,17 +65,4 @@ test('a malformed, relative, or non-https canonicalUrl is rejected and falls bac
   assert.equal(resolveSiteOrigin({ canonicalUrl: '   ', domainName: 'legacy.example' }), 'https://legacy.example');
   // A well-formed value still wins over every fallback.
   assert.equal(resolveSiteOrigin({ canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }), 'https://vivreal.io');
-});
-
-test('all detail schema shapes share the resolved canonical URL without changing route serialization', () => {
-  process.env.NEXT_PUBLIC_SITE_URL = 'https://env.example';
-  const data = { canonicalUrl: 'https://vivreal.io' };
-  for (const shape of ['shows', 'team', 'products', 'scoped-item', 'menu-item']) {
-    assert.equal(
-      buildDetailUrl(data, `${shape} & more`, 'item/1'),
-      `https://vivreal.io/${shape} & more/item/1`,
-    );
-  }
-  delete process.env.NEXT_PUBLIC_SITE_URL;
-  assert.equal(buildDetailUrl({}, 'shows', 'one'), undefined);
 });
