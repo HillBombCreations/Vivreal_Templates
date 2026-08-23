@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
@@ -94,6 +95,7 @@ export const generateMetadata = async () => {
     // built out, and having the toggle silently do nothing on one page would be
     // worse than not offering it.
     ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
+    ...buildRouteCanonicalMetadata(siteData, '/'),
     openGraph: {
       title,
       description,

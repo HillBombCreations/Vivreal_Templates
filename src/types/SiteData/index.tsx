@@ -217,6 +217,8 @@ export interface HomeSection {
 
 export interface SiteData {
     primary?: string;
+    /** Operator-owned public canonical origin, persisted with lifecycleState. */
+    canonicalUrl?: string;
     domainName?: string;
     /**
      * Deployed URL info from the Client API. `live_url` is the site's actual

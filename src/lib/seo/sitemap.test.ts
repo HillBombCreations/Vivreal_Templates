@@ -15,19 +15,19 @@ const pages = [
 ];
 
 test('builds an entry per navigable page, home as the root', () => {
-  const entries = buildSitemapEntries(pages, 'acme.test');
+  const entries = buildSitemapEntries(pages, 'https://acme.test');
   const urls = entries.map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/about', 'https://acme.test/menu']);
 });
 
 test('excludes the home duplicate and the synthetic subscribers carrier', () => {
-  const urls = buildSitemapEntries(pages, 'acme.test').map((e) => e.url);
+  const urls = buildSitemapEntries(pages, 'https://acme.test').map((e) => e.url);
   assert.ok(!urls.includes('https://acme.test/home'), 'no /home duplicate');
   assert.ok(!urls.includes('https://acme.test/subscribers'), 'the subscribers carrier is not indexed');
 });
 
 test('home is priority 1.0 and content pages descend', () => {
-  const entries = buildSitemapEntries(pages, 'acme.test');
+  const entries = buildSitemapEntries(pages, 'https://acme.test');
   assert.strictEqual(entries[0].priority, 1.0);
   assert.ok((entries[1].priority ?? 0) < 1.0 && (entries[1].priority ?? 0) >= 0.1);
 });
@@ -38,12 +38,12 @@ test('empty domainName ⇒ no sitemap', () => {
 
 test('de-duplicates + strips leading slashes on slugs', () => {
   const dupes = [{ slug: 'about', format: 'about' }, { slug: '/about', format: 'about' }];
-  const urls = buildSitemapEntries(dupes, 'acme.test').map((e) => e.url);
+  const urls = buildSitemapEntries(dupes, 'https://acme.test').map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/about'], 'one /about entry');
 });
 
 test('undefined pages ⇒ just the root', () => {
-  const urls = buildSitemapEntries(undefined, 'acme.test').map((e) => e.url);
+  const urls = buildSitemapEntries(undefined, 'https://acme.test').map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test']);
 });
 
@@ -56,8 +56,8 @@ test('detailItemSegmentsByPage omitted ⇒ byte-identical URL/priority shape to 
   ];
   const shape = (entries: ReturnType<typeof buildSitemapEntries>) =>
     entries.map((e) => ({ url: e.url, priority: e.priority }));
-  const withoutMap = shape(buildSitemapEntries(scopedPages, 'acme.test'));
-  const twoArg = shape(buildSitemapEntries(scopedPages, 'acme.test'));
+  const withoutMap = shape(buildSitemapEntries(scopedPages, 'https://acme.test'));
+  const twoArg = shape(buildSitemapEntries(scopedPages, 'https://acme.test'));
   assert.deepStrictEqual(withoutMap, twoArg);
 });
 
@@ -65,7 +65,7 @@ test('detailPage.sitemap === true + resolved segments ⇒ detail item URLs appen
   const scopedPages = [
     { slug: 'santa-monica', format: 'collection-list', detailPage: { sitemap: true, itemKeyField: 'slug' } },
   ];
-  const urls = buildSitemapEntries(scopedPages, 'acme.test', { 'santa-monica': ['botox', 'juvederm'] }).map(
+  const urls = buildSitemapEntries(scopedPages, 'https://acme.test', { 'santa-monica': ['botox', 'juvederm'] }).map(
     (e) => e.url,
   );
   assert.ok(urls.includes('https://acme.test/santa-monica/botox'));
@@ -74,12 +74,12 @@ test('detailPage.sitemap === true + resolved segments ⇒ detail item URLs appen
 
 test('detailPage.sitemap absent/false ⇒ no detail items added even if segments are supplied', () => {
   const scopedPages = [{ slug: 'santa-monica', format: 'collection-list', detailPage: { itemKeyField: 'slug' } }];
-  const urls = buildSitemapEntries(scopedPages, 'acme.test', { 'santa-monica': ['botox'] }).map((e) => e.url);
+  const urls = buildSitemapEntries(scopedPages, 'https://acme.test', { 'santa-monica': ['botox'] }).map((e) => e.url);
   assert.ok(!urls.includes('https://acme.test/santa-monica/botox'));
 });
 
 test('a page with sitemap:true but no resolved segments (empty pool / fetch miss) adds nothing', () => {
   const scopedPages = [{ slug: 'santa-monica', format: 'collection-list', detailPage: { sitemap: true } }];
-  const urls = buildSitemapEntries(scopedPages, 'acme.test', {}).map((e) => e.url);
+  const urls = buildSitemapEntries(scopedPages, 'https://acme.test', {}).map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/santa-monica']);
 });

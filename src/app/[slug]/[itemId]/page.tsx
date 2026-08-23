@@ -7,7 +7,7 @@ import type { SiteData as RendererSiteData } from "@hillbombcreations/site-rende
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import type { SiteData } from "@/types/SiteData";
-import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { resolveSiteOrigin, buildOgImageUrl, buildDetailUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
@@ -34,6 +34,7 @@ import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
+import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -201,9 +202,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // team branch already applies to member images.
       imageUrl: unsignMediaUrl(show.imageUrl || show.image || undefined),
-      url: siteData.domainName
-        ? `https://${siteData.domainName}/${slug}/${itemId}`
-        : undefined,
+      url: buildDetailUrl(siteData, slug, itemId),
       startDate: showStartDate,
       location: show.location || undefined,
     });
@@ -259,6 +258,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // URLs expire after 300s but JSON-LD lives in crawler caches for days.
     // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
     const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
+    const detailUrl = buildDetailUrl(siteData, slug, itemId);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Person',
@@ -267,8 +267,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
         : {}),
       ...(memberImage ? { image: memberImage } : {}),
-      ...(siteData.domainName
-        ? { url: `https://${siteData.domainName}/${slug}/${itemId}` }
+      ...(detailUrl
+        ? { url: detailUrl }
         : {}),
       ...(siteData.businessInfo?.name
         ? {
@@ -353,9 +353,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       title: productName || 'Product',
       description: productDescription,
       imageUrl: productImage,
-      url: siteData.domainName
-        ? `https://${siteData.domainName}/${slug}/${itemId}`
-        : undefined,
+      url: buildDetailUrl(siteData, slug, itemId),
       price: productPrice,
       sku: product._id,
     });
@@ -488,9 +486,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
       imageUrl: unsignMediaUrl(effectiveItem.imageUrl),
-      url: siteData.domainName
-        ? `https://${siteData.domainName}/${slug}/${itemId}`
-        : undefined,
+      url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
     });
@@ -588,9 +584,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       title: item.title || pageConfig.name,
       description: cleanDesc,
       imageUrl: unsignMediaUrl(item.imageUrl),
-      url: siteData.domainName
-        ? `https://${siteData.domainName}/${slug}/${itemId}`
-        : undefined,
+      url: buildDetailUrl(siteData, slug, itemId),
       price: typeof item.price === "string" ? item.price : undefined,
       sku: item.id,
     });
@@ -712,6 +706,7 @@ export async function generateMetadata({ params }: Props) {
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
   const origin = resolveSiteOrigin(siteData);
+  const routeCanonicalMetadata = buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`);
 
   // CP-11: metadata for nested sub-pages resolved via the joined slug.
   const nestedPage = getPageBySlug(siteData, `${slug}/${itemId}`);
@@ -727,6 +722,7 @@ export async function generateMetadata({ params }: Props) {
     return {
       title,
       description,
+      ...routeCanonicalMetadata,
       openGraph: {
         title,
         description,
@@ -772,6 +768,7 @@ export async function generateMetadata({ params }: Props) {
     return {
       title,
       description,
+      ...routeCanonicalMetadata,
       openGraph: {
         title,
         description,
@@ -801,6 +798,7 @@ export async function generateMetadata({ params }: Props) {
     return {
       title,
       description,
+      ...routeCanonicalMetadata,
       openGraph: {
         title,
         description,
@@ -876,7 +874,7 @@ export async function generateMetadata({ params }: Props) {
         return {
           title,
           description,
-          ...(canonical ? { alternates: { canonical } } : {}),
+          ...buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`, canonical),
           openGraph: {
             title,
             description,
@@ -907,6 +905,7 @@ export async function generateMetadata({ params }: Props) {
   return {
     title,
     description,
+    ...routeCanonicalMetadata,
     openGraph: {
       title,
       description,

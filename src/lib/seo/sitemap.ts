@@ -26,10 +26,11 @@ import type { PageConfig } from '@/types/SiteData';
  */
 export function buildSitemapEntries(
   pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,
-  domainName: string,
+  siteOrigin: string,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
-  if (!domainName) return [];
+  if (!siteOrigin) return [];
+  const origin = siteOrigin.replace(/\/+$/, '');
 
   const eligiblePages = (pages ?? []).filter(
     (p) =>
@@ -43,12 +44,12 @@ export function buildSitemapEntries(
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
 
   const entries: MetadataRoute.Sitemap = [
-    { url: `https://${domainName}`, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
+    { url: origin, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
   ];
   slugs.forEach((slug, idx) => {
     const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / slugs.length));
     entries.push({
-      url: `https://${domainName}/${slug}`,
+      url: `${origin}/${slug}`,
       lastModified: new Date(),
       changeFrequency: 'monthly',
       priority: Number(priority.toFixed(2)),
@@ -68,7 +69,7 @@ export function buildSitemapEntries(
       if (!segments || segments.length === 0) continue;
       for (const segment of segments) {
         entries.push({
-          url: `https://${domainName}/${slug}/${segment}`,
+          url: `${origin}/${slug}/${segment}`,
           lastModified: new Date(),
           changeFrequency: 'monthly',
           priority: 0.5,

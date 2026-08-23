@@ -6,6 +6,7 @@ import '@hillbombcreations/site-renderer/styles/animations.css';
 import { getSiteData } from '@/lib/api/siteData';
 import { isDemoSite, getDemoSourceUrl } from '@/lib/seo/demoSafety';
 import { resolveSiteOrigin } from '@/lib/og/ogImage';
+import { buildRouteCanonicalMetadata } from '@/lib/seo/routeMetadata';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
@@ -57,6 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
       ...(siteData.favicon && { icons: { icon: siteData.favicon } }),
       ...(demo && { robots: { index: false, follow: false } }),
       ...(demo && demoSource && { alternates: { canonical: demoSource } }),
+      ...(!demo && buildRouteCanonicalMetadata(siteData, '/')),
     };
   } catch {
     const envOrigin = resolveSiteOrigin(null);
