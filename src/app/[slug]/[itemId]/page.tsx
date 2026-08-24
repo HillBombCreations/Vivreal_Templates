@@ -705,7 +705,7 @@ export async function generateMetadata({ params }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
-  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const routeCanonicalMetadata = buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`);
 
   // CP-11: metadata for nested sub-pages resolved via the joined slug.

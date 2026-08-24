@@ -1,5 +1,10 @@
 import type { MetadataRoute } from 'next';
 import type { PageConfig } from '@/types/SiteData';
+// Explicit .ts extension (not the `@/` alias): imported directly by
+// sitemap.test.ts / originConsistency.test.ts under
+// `node --experimental-strip-types --test`, which has no tsconfig `paths`
+// resolution. Same convention robotsPolicy.ts / siteMapPolicy.ts follow.
+import { isNonIndexablePageFormat } from './pageIndexing.ts';
 
 /**
  * Build sitemap entries from the site's REAL page configs.
@@ -11,14 +16,29 @@ import type { PageConfig } from '@/types/SiteData';
  * that authoritative page list instead.
  *
  * The home page is the root entry (priority 1.0); each navigable content page maps
- * to `/<slug>` with a descending priority. Excluded: the home duplicate and the
- * synthetic `subscribers` carrier page (VR_Client_API adds it as a data carrier
- * for the EmailPopup; Templates notFound()s the route, so it must not be in the
- * sitemap).
+ * to `/<slug>` with a descending priority. Three exclusions, each for its own
+ * reason (they are kept as separate conditions rather than folded into one list
+ * precisely because the reasons differ):
+ *   - the home DUPLICATE. Home is in the sitemap, as the root entry, so a
+ *     second `/home` entry would be a self-duplicate.
+ *   - the synthetic `subscribers` carrier page. VR_Client_API adds it as a data
+ *     carrier for the EmailPopup and Templates `notFound()`s the route, so
+ *     listing it would submit a 404.
+ *   - the NON-INDEXABLE page types (`isNonIndexablePageFormat` — today the two
+ *     Stripe checkout result pages). `dougs-kitchen.com` was advertising
+ *     `/checkoutsuccess` and `/checkoutcancel` to crawlers: thin, duplicate,
+ *     post-transaction pages with no search intent, which every OTHER surface
+ *     in the platform already treats as system pages. See ./pageIndexing.ts for
+ *     the full membership rationale and for the candidates NOT excluded.
+ *
+ * Removing entries renumbers `priority` for the entries after them, because
+ * priority is derived from position (`1.0 - (idx+1) * (0.9/n)`). That is an
+ * arithmetic consequence of the removal rather than a separate change, and
+ * priority is a non-binding hint Google has publicly said it ignores.
  *
  * `siteOrigin` is a PRE-RESOLVED absolute origin (protocol + host, no trailing
  * slash). The caller resolves it through the one shared chain
- * (`resolveSiteOrigin(siteData, { prefer: 'durable' })`, via
+ * (`resolveSiteOrigin(siteData, { surface: 'durable' })`, via
  * `buildSiteMapForSite`) so this function stays pure and origin-source-
  * agnostic, and so a subdomain-only site (no `domainName`, the fleet majority)
  * stops emitting an empty sitemap. Empty `siteOrigin` ⇒ `[]`.
@@ -46,7 +66,8 @@ export function buildSitemapEntries(
       p.slug &&
       p.slug !== 'home' &&
       p.format !== 'home' &&
-      p.format !== 'subscribers',
+      p.format !== 'subscribers' &&
+      !isNonIndexablePageFormat(p.format),
   );
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
 

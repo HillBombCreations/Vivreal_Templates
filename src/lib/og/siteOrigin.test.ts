@@ -7,11 +7,17 @@ import assert from 'node:assert/strict';
 // re-export is required, not preference: ogImage.ts carries
 // `import 'server-only'`, a Next.js build-time sentinel with no npm package
 // behind it, so it cannot resolve under plain `node --test`.
-import { resolveCanonicalUrl, resolveSiteOrigin, buildDetailUrl } from './siteOrigin.ts';
+import {
+  buildDetailUrl,
+  isRefusedOrigin,
+  resolveCanonicalUrl,
+  resolveSiteOrigin,
+  resolveSiteOriginResult,
+} from './siteOrigin.ts';
 
 // ONE resolver, ONE precedence chain (design.md Option A):
 //   canonicalUrl -> NEXT_PUBLIC_SITE_URL -> domainInformation.live_url -> domainName
-// The required `prefer` discriminant does NOT reorder that chain. It selects
+// The required `surface` discriminant does NOT reorder that chain. It selects
 // how strict the resolver is about the answer: 'durable' (JSON-LD `url`,
 // robots.txt `Sitemap:`, sitemap `<loc>`, crawler-cached for days) refuses a
 // `*.amplifyapp.com` candidate; 'deployed' (metadataBase/OG, per-request)
@@ -27,7 +33,7 @@ afterEach(() => {
 });
 
 const live = (canonicalUrl: string) => ({ lifecycleState: 'live' as const, canonicalUrl });
-const BOTH_MODES = [{ prefer: 'durable' as const }, { prefer: 'deployed' as const }];
+const BOTH_MODES = [{ surface: 'durable' as const }, { surface: 'deployed' as const }];
 
 // ───────────────────────── precedence: ONE order, BOTH modes ─────────────────
 
@@ -41,17 +47,17 @@ test('precedence is canonicalUrl > NEXT_PUBLIC_SITE_URL > live_url > domainName,
   const full = { ...noCanonical, canonicalUrl: 'https://vivreal.io/' };
   for (const mode of BOTH_MODES) {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://env.example/';
-    assert.equal(resolveSiteOrigin(full, mode), 'https://vivreal.io', `${mode.prefer}: canonicalUrl wins`);
-    assert.equal(resolveSiteOrigin(noCanonical, mode), 'https://env.example', `${mode.prefer}: env is level 2`);
+    assert.equal(resolveSiteOrigin(full, mode), 'https://vivreal.io', `${mode.surface}: canonicalUrl wins`);
+    assert.equal(resolveSiteOrigin(noCanonical, mode), 'https://env.example', `${mode.surface}: env is level 2`);
 
     delete process.env.NEXT_PUBLIC_SITE_URL;
-    assert.equal(resolveSiteOrigin(noCanonical, mode), 'https://next.vivreal.io', `${mode.prefer}: live_url is level 3`);
+    assert.equal(resolveSiteOrigin(noCanonical, mode), 'https://next.vivreal.io', `${mode.surface}: live_url is level 3`);
     assert.equal(
       resolveSiteOrigin({ lifecycleState: 'live', domainName: 'legacy.example' }, mode),
       'https://legacy.example',
-      `${mode.prefer}: domainName is level 4`,
+      `${mode.surface}: domainName is level 4`,
     );
-    assert.equal(resolveSiteOrigin({}, mode), '', `${mode.prefer}: nothing known ⇒ empty`);
+    assert.equal(resolveSiteOrigin({}, mode), '', `${mode.surface}: nothing known ⇒ empty`);
     assert.equal(resolveSiteOrigin(null, mode), '');
     assert.equal(resolveSiteOrigin(undefined, mode), '');
   }
@@ -67,8 +73,8 @@ test('live_url outranks domainName in BOTH modes: the resolver never ships two o
     domainName: 'legacy.example',
     domainInformation: { live_url: 'https://deployed.example' },
   };
-  assert.equal(resolveSiteOrigin(site, { prefer: 'durable' }), 'https://deployed.example');
-  assert.equal(resolveSiteOrigin(site, { prefer: 'deployed' }), 'https://deployed.example');
+  assert.equal(resolveSiteOrigin(site, { surface: 'durable' }), 'https://deployed.example');
+  assert.equal(resolveSiteOrigin(site, { surface: 'deployed' }), 'https://deployed.example');
 });
 
 // ───────────────────────── backward compatibility, per input shape ───────────
@@ -97,7 +103,16 @@ test('BACKCOMPAT: every real fleet input shape resolves to exactly the pre-chang
   ];
   for (const [label, siteData, expected] of cases) {
     for (const mode of BOTH_MODES) {
-      assert.equal(resolveSiteOrigin(siteData, mode), expected, `${label} (${mode.prefer})`);
+      assert.equal(resolveSiteOrigin(siteData, mode), expected, `${label} (${mode.surface})`);
+      // C5 companion: not one of these fleet shapes may report a refusal. A
+      // false positive here would page an operator once per render for every
+      // correctly-configured site in the fleet, which is worse than the silence
+      // the diagnostic replaces.
+      assert.deepEqual(
+        resolveSiteOriginResult(siteData, mode).refused,
+        [],
+        `${label} (${mode.surface}): a healthy fleet input must report nothing`,
+      );
     }
   }
 });
@@ -106,7 +121,7 @@ test('BACKCOMPAT: a site with no lifecycleState at all still resolves its origin
   delete process.env.SITE_LIFECYCLE;
   delete process.env.NEXT_PUBLIC_SITE_URL;
   assert.equal(
-    resolveSiteOrigin({ domainName: 'legacy-no-lifecycle.example' }, { prefer: 'durable' }),
+    resolveSiteOrigin({ domainName: 'legacy-no-lifecycle.example' }, { surface: 'durable' }),
     'https://legacy-no-lifecycle.example',
   );
 });
@@ -114,8 +129,8 @@ test('BACKCOMPAT: a site with no lifecycleState at all still resolves its origin
 test('NEXT_PUBLIC_SITE_URL override wins over both fallbacks in both modes, trailing slash stripped', () => {
   process.env.NEXT_PUBLIC_SITE_URL = 'https://override.test/';
   const site = { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://classichousephx.vivreal.io' } };
-  assert.equal(resolveSiteOrigin(site, { prefer: 'durable' }), 'https://override.test');
-  assert.equal(resolveSiteOrigin(site, { prefer: 'deployed' }), 'https://override.test');
+  assert.equal(resolveSiteOrigin(site, { surface: 'durable' }), 'https://override.test');
+  assert.equal(resolveSiteOrigin(site, { surface: 'deployed' }), 'https://override.test');
 });
 
 test('a slash-only NEXT_PUBLIC_SITE_URL is treated as absent, in BOTH modes, falling through to live_url', () => {
@@ -126,8 +141,8 @@ test('a slash-only NEXT_PUBLIC_SITE_URL is treated as absent, in BOTH modes, fal
   // means the empty result is correctly falsy and the override is ignored.
   process.env.NEXT_PUBLIC_SITE_URL = '/';
   const site = { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://classichousephx.vivreal.io' } };
-  assert.equal(resolveSiteOrigin(site, { prefer: 'durable' }), 'https://classichousephx.vivreal.io');
-  assert.equal(resolveSiteOrigin(site, { prefer: 'deployed' }), 'https://classichousephx.vivreal.io');
+  assert.equal(resolveSiteOrigin(site, { surface: 'durable' }), 'https://classichousephx.vivreal.io');
+  assert.equal(resolveSiteOrigin(site, { surface: 'deployed' }), 'https://classichousephx.vivreal.io');
 });
 
 // ───────────────────────── the amplifyapp refusal (durable only) ─────────────
@@ -142,7 +157,7 @@ test('durable: a bare amplifyapp live_url with no domainName is refused, not emi
   assert.equal(
     resolveSiteOrigin(
       { domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' } },
-      { prefer: 'durable' },
+      { surface: 'durable' },
     ),
     '',
   );
@@ -157,7 +172,7 @@ test('durable: an amplifyapp candidate is SKIPPED, not aborted on, so a good dom
   assert.equal(
     resolveSiteOrigin(
       { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://main.d1234abcd.amplifyapp.com' } },
-      { prefer: 'durable' },
+      { surface: 'durable' },
     ),
     'https://wavesofgrainco.com',
   );
@@ -168,7 +183,7 @@ test('deployed: an amplifyapp live_url is accepted, unchanged from pre-resolver 
   assert.equal(
     resolveSiteOrigin(
       { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' } },
-      { prefer: 'deployed' },
+      { surface: 'deployed' },
     ),
     'https://stable.d1a2b3c4d5.amplifyapp.com',
   );
@@ -181,7 +196,7 @@ test('durable: the amplifyapp refusal applies to EVERY level, including a miscon
   delete process.env.SITE_LIFECYCLE;
   process.env.NEXT_PUBLIC_SITE_URL = 'https://stable.denv.amplifyapp.com';
   assert.equal(
-    resolveSiteOrigin({ lifecycleState: 'live', domainName: 'wavesofgrainco.com' }, { prefer: 'durable' }),
+    resolveSiteOrigin({ lifecycleState: 'live', domainName: 'wavesofgrainco.com' }, { surface: 'durable' }),
     'https://wavesofgrainco.com',
     'an amplifyapp env override is skipped, not emitted',
   );
@@ -189,7 +204,7 @@ test('durable: the amplifyapp refusal applies to EVERY level, including a miscon
   assert.equal(
     resolveSiteOrigin(
       { lifecycleState: 'live', canonicalUrl: 'https://stable.dcanon.amplifyapp.com', domainName: 'wavesofgrainco.com' },
-      { prefer: 'durable' },
+      { surface: 'durable' },
     ),
     'https://wavesofgrainco.com',
     'an amplifyapp canonicalUrl is skipped, not emitted',
@@ -209,24 +224,24 @@ test('the three amplifyapp host bypasses the regex alone could not close are clo
     'stable.d1.amplifyapp.com',
   ]) {
     assert.equal(
-      resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, { prefer: 'durable' }),
+      resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, { surface: 'durable' }),
       '',
       `${liveUrl} must not resolve`,
     );
   }
 });
 
-test('an unrecognized prefer literal fails safe to durable, not the less-safe deployed answer', () => {
-  // TypeScript rejects every bad `prefer` form at compile time; this pins the
+test('an unrecognized surface literal fails safe to durable, not the less-safe deployed answer', () => {
+  // TypeScript rejects every bad `surface` form at compile time; this pins the
   // JS-runtime fallback for a value that reaches here anyway (an omitted
   // options object, a typo'd literal from an untyped caller). Testing
   // positively for 'deployed' is what makes the unrecognized value land on the
   // stricter path.
   delete process.env.NEXT_PUBLIC_SITE_URL;
   const site = { domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' } };
-  // @ts-expect-error — intentionally an unrecognized `prefer` literal, not one of
-  // the two values the OriginPreference union allows.
-  assert.equal(resolveSiteOrigin(site, { prefer: 'indexed' }), '');
+  // @ts-expect-error — intentionally an unrecognized `surface` literal, not one of
+  // the two values the OriginSurface union allows.
+  assert.equal(resolveSiteOrigin(site, { surface: 'indexed' }), '');
 });
 
 // ───────────────────────── the HTTPS-origin allowlist, EVERY candidate ───────
@@ -239,7 +254,7 @@ test('C2: a live_url carrying a path or query is refused, not concatenated into 
   delete process.env.NEXT_PUBLIC_SITE_URL;
   for (const liveUrl of ['https://acme.com/site?x=1', 'https://acme.com/site', 'https://acme.com/?utm=1', 'https://acme.com/#top']) {
     for (const mode of BOTH_MODES) {
-      assert.equal(resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, mode), '', `${liveUrl} (${mode.prefer})`);
+      assert.equal(resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, mode), '', `${liveUrl} (${mode.surface})`);
     }
   }
 });
@@ -247,7 +262,7 @@ test('C2: a live_url carrying a path or query is refused, not concatenated into 
 test('C2: a scheme-less or non-https live_url is refused rather than emitted as a relative directive', () => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   for (const liveUrl of ['acme.com', 'http://acme.com', '//acme.com', 'ftp://acme.com']) {
-    assert.equal(resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, { prefer: 'durable' }), '', liveUrl);
+    assert.equal(resolveSiteOrigin({ domainInformation: { live_url: liveUrl } }, { surface: 'durable' }), '', liveUrl);
   }
 });
 
@@ -266,7 +281,7 @@ test('C2: credentials, an explicit port, and a non-public host are refused on li
     { domainName: 'https://acme.com' }, // already a URL: would have become https://https://acme.com
   ];
   for (const siteData of refused) {
-    assert.equal(resolveSiteOrigin(siteData, { prefer: 'durable' }), '', JSON.stringify(siteData));
+    assert.equal(resolveSiteOrigin(siteData, { surface: 'durable' }), '', JSON.stringify(siteData));
   }
 });
 
@@ -275,7 +290,7 @@ test('C13: the resolver only ever returns "" or a string new URL() can parse', (
   // a SECOND time. An unparseable env value used to be able to throw there,
   // uncaught, taking generateMetadata() down for every page on the site.
   process.env.NEXT_PUBLIC_SITE_URL = 'not a url at all';
-  const origin = resolveSiteOrigin({ domainName: 'acme.test' }, { prefer: 'deployed' });
+  const origin = resolveSiteOrigin({ domainName: 'acme.test' }, { surface: 'deployed' });
   assert.equal(origin, 'https://acme.test', 'a garbage env value is skipped, not returned');
   assert.doesNotThrow(() => new URL(origin));
 });
@@ -335,10 +350,10 @@ test('CONCERN A — a non-string canonicalUrl never throws; treated exactly like
 test('CONCERN A: a non-string live_url or domainName never throws either', () => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   const asInput = (siteData: unknown) => siteData as Parameters<typeof resolveSiteOrigin>[0];
-  assert.doesNotThrow(() => resolveSiteOrigin(asInput({ domainName: 12345 }), { prefer: 'durable' }));
-  assert.equal(resolveSiteOrigin(asInput({ domainName: 12345 }), { prefer: 'durable' }), '');
+  assert.doesNotThrow(() => resolveSiteOrigin(asInput({ domainName: 12345 }), { surface: 'durable' }));
+  assert.equal(resolveSiteOrigin(asInput({ domainName: 12345 }), { surface: 'durable' }), '');
   assert.equal(
-    resolveSiteOrigin(asInput({ domainInformation: { live_url: { v: 1 } }, domainName: 'acme.test' }), { prefer: 'durable' }),
+    resolveSiteOrigin(asInput({ domainInformation: { live_url: { v: 1 } }, domainName: 'acme.test' }), { surface: 'durable' }),
     'https://acme.test',
     'a non-string live_url is skipped, and the good domainName still resolves',
   );
@@ -426,21 +441,60 @@ test('SEO demo-safety: a demo site never resolves its origin from a populated ca
         mode,
       ),
       'https://demo-sub.vivreal.io',
-      `${mode.prefer}: falls through to live_url, ignoring the persisted canonicalUrl entirely`,
+      `${mode.surface}: falls through to live_url, ignoring the persisted canonicalUrl entirely`,
     );
     assert.equal(
       resolveSiteOrigin({ lifecycleState: 'demo', canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }, mode),
       'https://legacy.example',
-      `${mode.prefer}: falls through to domainName when live_url is absent too`,
+      `${mode.surface}: falls through to domainName when live_url is absent too`,
     );
   }
   // Same gate as isDemoSite's env fallback: an in-flight demo protected by
   // SITE_LIFECYCLE alone (doc flag not yet written) is covered too.
   process.env.SITE_LIFECYCLE = 'demo';
   assert.equal(
-    resolveSiteOrigin({ canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }, { prefer: 'deployed' }),
+    resolveSiteOrigin({ canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }, { surface: 'deployed' }),
     'https://legacy.example',
   );
+});
+
+test('SEO demo-safety: resolveCanonicalUrl itself withholds a demo canonicalUrl, not just resolveSiteOrigin', () => {
+  // There are TWO demo gates on canonicalUrl and they protect different
+  // surfaces: `parseCanonicalUrl`'s guards `resolveCanonicalUrl`, which
+  // routeMetadata.ts turns into `<link rel="canonical">`, and
+  // `resolveSiteOriginResult`'s guards the general origin chain. Before the
+  // C5 refusal diagnostics existed the second delegated to the first, so one
+  // test killed both; it no longer can, because reporting a WITHHELD demo
+  // canonicalUrl as a REFUSED one would fire a Sentry alert for correct
+  // behaviour on every demo in the fleet, on every render.
+  //
+  // So this gate needs its own test, called DIRECTLY. `resolveRouteCanonical`
+  // cannot provide it: it runs its own `isDemoSite` check first and returns
+  // before ever reaching here, masking this one entirely.
+  delete process.env.SITE_LIFECYCLE;
+  assert.equal(
+    resolveCanonicalUrl({ lifecycleState: 'demo', canonicalUrl: 'https://vivreal.io' }),
+    '',
+    'a demo must never emit the write-ahead production apex as its canonical',
+  );
+  // Fail-safe values: anything present that is not the literal 'live'.
+  for (const lifecycleState of ['', 'pending', 'Demo', null] as const) {
+    assert.equal(
+      resolveCanonicalUrl({
+        lifecycleState,
+        canonicalUrl: 'https://vivreal.io',
+      } as unknown as Parameters<typeof resolveCanonicalUrl>[0]),
+      '',
+      `lifecycleState ${JSON.stringify(lifecycleState)} fails safe toward demo`,
+    );
+  }
+  // The env-only in-flight demo (doc flag not yet written) is gated too.
+  process.env.SITE_LIFECYCLE = 'demo';
+  assert.equal(resolveCanonicalUrl({ canonicalUrl: 'https://vivreal.io' }), '');
+  // Control: an affirmatively live site still emits it, so the gate is not
+  // just "always empty".
+  delete process.env.SITE_LIFECYCLE;
+  assert.equal(resolveCanonicalUrl(live('https://vivreal.io')), 'https://vivreal.io');
 });
 
 test('a malformed, relative, or non-https canonicalUrl is rejected and falls back rather than emitting garbage', () => {
@@ -448,16 +502,216 @@ test('a malformed, relative, or non-https canonicalUrl is rejected and falls bac
   delete process.env.NEXT_PUBLIC_SITE_URL;
   for (const canonicalUrl of ['not-a-url', '/relative/path', 'http://insecure.example', 'javascript:alert(1)', '   ']) {
     assert.equal(
-      resolveSiteOrigin({ canonicalUrl, domainName: 'legacy.example' }, { prefer: 'deployed' }),
+      resolveSiteOrigin({ canonicalUrl, domainName: 'legacy.example' }, { surface: 'deployed' }),
       'https://legacy.example',
       canonicalUrl,
     );
   }
   // A well-formed value still wins over every fallback.
   assert.equal(
-    resolveSiteOrigin({ canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }, { prefer: 'deployed' }),
+    resolveSiteOrigin({ canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' }, { surface: 'deployed' }),
     'https://vivreal.io',
   );
+});
+
+// ───────────────────── C5: the refusal is no longer silent ───────────────────
+// review-templates-106.md C5: `return ''` with no log and no Sentry breadcrumb.
+// A misconfigured site emitted no canonical, no `Sitemap:` directive and no
+// sitemap `<loc>`, and nothing anywhere reported it — the same silent-absence
+// class as the empty-sitemap defect. The resolver still cannot import Sentry
+// (that would make this whole file unloadable by `node --experimental-strip-
+// types --test`), so it reports the reason as DATA and the caller sends it.
+
+test('C5: resolveSiteOrigin returns exactly resolveSiteOriginResult().origin — the two can never drift', () => {
+  // The string form is a wrapper, not a second copy of the chain. A future edit
+  // that re-implements it turns this red.
+  delete process.env.SITE_LIFECYCLE;
+  const shapes: Array<Parameters<typeof resolveSiteOrigin>[0]> = [
+    { domainInformation: { live_url: 'https://classichousephx.vivreal.io' } },
+    { domainName: 'comedycollectivechi.com' },
+    { domainName: 'legacy.example', domainInformation: { live_url: 'https://next.vivreal.io' } },
+    { lifecycleState: 'live', canonicalUrl: 'https://vivreal.io', domainName: 'legacy.example' },
+    { domainInformation: { live_url: 'https://stable.d1.amplifyapp.com' } },
+    { domainInformation: { live_url: 'https://acme.com/path' } },
+    {},
+  ];
+  for (const siteData of shapes) {
+    for (const mode of BOTH_MODES) {
+      delete process.env.NEXT_PUBLIC_SITE_URL;
+      assert.equal(
+        resolveSiteOrigin(siteData, mode),
+        resolveSiteOriginResult(siteData, mode).origin,
+        `${JSON.stringify(siteData)} (${mode.surface})`,
+      );
+    }
+  }
+});
+
+test('C5: a malformed live_url is reported with its LEVEL and its CAUSE, not just swallowed', () => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    { domainInformation: { live_url: 'https://acme.com/site?x=1' } },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, '');
+  assert.deepEqual(result.refused, [{ level: 'live_url', cause: 'malformed' }]);
+  assert.equal(isRefusedOrigin(result), true, 'this is the alertable condition');
+});
+
+test('C5: an amplifyapp refusal is reported as its OWN cause, distinct from a malformed value', () => {
+  // The two are different operator actions: `amplify-host` means the deploy
+  // never attached a real domain, `malformed` means somebody wrote a bad value.
+  // Collapsing them into one reason would make the alert undebuggable.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    { domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' } },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, '');
+  assert.deepEqual(result.refused, [{ level: 'live_url', cause: 'amplify-host' }]);
+});
+
+test('C5: the SAME input in deployed mode is accepted and reports nothing — strictness, not a defect', () => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    { domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' } },
+    { surface: 'deployed' },
+  );
+  assert.equal(result.origin, 'https://stable.d1a2b3c4d5.amplifyapp.com');
+  assert.deepEqual(result.refused, []);
+});
+
+test('C5: refusals accumulate across levels, in precedence order, so the report says how far the chain got', () => {
+  delete process.env.SITE_LIFECYCLE;
+  process.env.NEXT_PUBLIC_SITE_URL = 'https://stable.denv.amplifyapp.com';
+  const result = resolveSiteOriginResult(
+    {
+      lifecycleState: 'live',
+      canonicalUrl: 'http://insecure.example',
+      domainInformation: { live_url: 'https://acme.com:8443' },
+      domainName: 'localhost',
+    },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, '');
+  assert.deepEqual(result.refused, [
+    { level: 'canonicalUrl', cause: 'malformed' },
+    { level: 'NEXT_PUBLIC_SITE_URL', cause: 'amplify-host' },
+    { level: 'live_url', cause: 'malformed' },
+    { level: 'domainName', cause: 'malformed' },
+  ]);
+});
+
+test('C5: nothing authored anywhere ⇒ no refusals and NOT alertable — an un-deployed site is not a misconfiguration', () => {
+  // The narrowing that keeps this diagnostic usable. `SITE_ID='preview'` local
+  // and preview builds take this path on every render; alerting on them would
+  // bury the real signal under noise.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  for (const siteData of [{}, null, undefined] as const) {
+    const result = resolveSiteOriginResult(siteData, { surface: 'durable' });
+    assert.equal(result.origin, '');
+    assert.deepEqual(result.refused, []);
+    assert.equal(isRefusedOrigin(result), false, `${JSON.stringify(siteData)} is absent, not refused`);
+  }
+});
+
+test('C5: a whitespace-only or slash-only value is ABSENT, not refused', () => {
+  // `NEXT_PUBLIC_SITE_URL='/'` is a real fixture (see the slash-only test
+  // above). Both normalisations reduce these to '', so they were never
+  // authored and must not be reported.
+  delete process.env.SITE_LIFECYCLE;
+  process.env.NEXT_PUBLIC_SITE_URL = '/';
+  assert.deepEqual(
+    resolveSiteOriginResult({ domainName: '   ', domainInformation: { live_url: '' } }, { surface: 'durable' })
+      .refused,
+    [],
+  );
+});
+
+test('C5: a NON-string value out of the Mixed Mongo field IS reported — that is a real write defect', () => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const asInput = (siteData: unknown) => siteData as Parameters<typeof resolveSiteOriginResult>[0];
+  const result = resolveSiteOriginResult(
+    asInput({ domainInformation: { live_url: { v: 1 } }, domainName: 12345 }),
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, '');
+  assert.deepEqual(result.refused, [
+    { level: 'live_url', cause: 'malformed' },
+    { level: 'domainName', cause: 'malformed' },
+  ]);
+});
+
+test('C5 DEMO SAFETY: a demo never reports its withheld canonicalUrl as a refusal', () => {
+  // The highest-severity false positive available here. A demo's canonicalUrl
+  // is WITHHELD by design (the cutover endpoint write-aheads it before
+  // lifecycleState flips), so reporting it would fire on every demo in the
+  // fleet, on every render, for correct behaviour.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    {
+      lifecycleState: 'demo',
+      canonicalUrl: 'https://vivreal.io',
+      domainInformation: { live_url: 'https://demo-sub.vivreal.io' },
+    },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, 'https://demo-sub.vivreal.io', 'the demo still resolves its own host');
+  assert.deepEqual(result.refused, [], 'withheld is not refused');
+});
+
+test('C5 DEMO SAFETY: a demo whose canonicalUrl is ALSO malformed still reports nothing for that level', () => {
+  // The gate runs before the parse, so the value is never even looked at.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    {
+      lifecycleState: 'demo',
+      canonicalUrl: 'http://insecure.example',
+      domainInformation: { live_url: 'https://demo-sub.vivreal.io' },
+    },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, 'https://demo-sub.vivreal.io');
+  assert.deepEqual(result.refused, []);
+});
+
+test('C5: a refusal is recorded even when a LOWER level saves the resolution, but that is not alertable', () => {
+  // review-templates-106.md C4's scenario, which is currently invisible: an
+  // amplifyapp live_url masked by a good domainName. Worth carrying in the
+  // result; not worth paging on, because the site is emitting correct output.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    {
+      domainName: 'wavesofgrainco.com',
+      domainInformation: { live_url: 'https://main.d1234abcd.amplifyapp.com' },
+    },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, 'https://wavesofgrainco.com');
+  assert.deepEqual(result.refused, [{ level: 'live_url', cause: 'amplify-host' }]);
+  assert.equal(isRefusedOrigin(result), false, 'a site with a working origin is not alertable');
+});
+
+test('C5: resolution short-circuits — a level below the winner is never parsed, so it can never be reported', () => {
+  // Both a perf property (the `??` chain this replaced short-circuited too) and
+  // a correctness one: a broken domainName under a working live_url must not
+  // manufacture a refusal on a healthy site.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const result = resolveSiteOriginResult(
+    { domainInformation: { live_url: 'https://acme.test' }, domainName: 'not a host at all' },
+    { surface: 'durable' },
+  );
+  assert.equal(result.origin, 'https://acme.test');
+  assert.deepEqual(result.refused, []);
 });
 
 // ───────────────────────── buildDetailUrl ────────────────────────────────────

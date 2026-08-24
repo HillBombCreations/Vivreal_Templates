@@ -9,6 +9,7 @@ import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
+import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -665,18 +666,21 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     pageConfig?.labels?.subtitle ||
     `${derivedTitle} — ${siteName}`;
 
-  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {
     title,
     description,
-    // Studio W6 — per-page search visibility. Emitted ONLY when the author
-    // turned it off, so a page without the field is untouched (no `robots` key
-    // at all, letting the root layout's demo-site rule stand on its own).
-    // `follow: false` rides along: a page the owner keeps out of search should
-    // not be leaking its outbound links into the graph either.
-    ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
+    // Studio W6 — per-page search visibility, plus the page types that must
+    // never be indexed regardless of what the author set (the Stripe checkout
+    // result pages). Composed in `buildPageRobotsMetadata` rather than inline
+    // for the reason every other gate in this area moved out of a .tsx: the
+    // plain-Node test runner cannot load a route module, and a gate no test can
+    // call is a gate that can be deleted with the suite still green. An
+    // ordinary page still yields NO `robots` key at all, so the root layout's
+    // demo-site rule stands on its own exactly as before.
+    ...buildPageRobotsMetadata(pageConfig?.format, seo?.noindex),
     ...buildRouteCanonicalMetadata(siteData, `/${slug}`),
     openGraph: {
       title,

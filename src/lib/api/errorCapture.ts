@@ -1,5 +1,9 @@
 /**
- * Sentry capture shapes for VR_Client_API read failures (TRAIN-1.54.0 gap 2a).
+ * Sentry capture shapes for conditions this app SWALLOWS by design — VR_Client_API
+ * read failures (TRAIN-1.54.0 gap 2a) and the origin resolver's refusals
+ * (review-templates-106.md C5). Every one of them produces a working HTTP 200
+ * with something missing from it, which is the class of failure that reaches an
+ * operator last.
  *
  * WHY THIS MODULE EXISTS AT ALL
  *
@@ -23,7 +27,18 @@
  * tagging rules in this dependency-free module is what makes them testable at
  * all (see `errorCapture.test.ts`); `client.ts` and `siteData/index.tsx` import
  * from here rather than each hand-rolling a capture context.
+ *
+ * The same constraint is why the ORIGIN-refusal shape lives here:
+ * `src/lib/og/siteOrigin.ts` must stay loadable by `node
+ * --experimental-strip-types --test` (its 17-mutation behavioural suite is the
+ * only thing pinning the demo gates), so it cannot import Sentry and reports
+ * its refusals as DATA instead. This module turns that data into a capture
+ * context; `siteData/index.tsx` sends it.
  */
+
+// Type-only, so `--experimental-strip-types` erases it and this module stays
+// import-free at runtime.
+import type { OriginSurface, RefusedOriginCandidate } from '../og/siteOrigin.ts';
 
 /** Where a swallowed upstream failure was caught. Tagged, not fingerprinted. */
 export type FetchFailureSource = 'clientFetchSafe' | 'clientFetchCached';
@@ -56,6 +71,23 @@ export const SITE_DETAILS_FALLBACK_FINGERPRINT = 'templates.siteDetails.fallback
 /** Message body for the fallback-render capture (there is no error object). */
 export const SITE_DETAILS_FALLBACK_MESSAGE =
   'siteDetails unavailable — site rendered from FALLBACK_SITE_DATA';
+
+/**
+ * Fingerprint root for "this site authored an origin and the resolver refused
+ * every one of them" (review-templates-106.md C5).
+ *
+ * A third distinct business condition, not a variant of the two above: the
+ * upstream read SUCCEEDED, the site renders normally, and the only symptom is
+ * that four SEO surfaces are silently empty. Nothing throws, nothing logs, and
+ * the visible outcome ("robots.txt has no Sitemap: line") looks exactly like
+ * the defect this whole change set exists to fix, so an operator seeing it
+ * would reasonably conclude the fix never deployed.
+ */
+export const ORIGIN_REFUSAL_FINGERPRINT = 'templates.siteOrigin.refused';
+
+/** Message body for the origin-refusal capture (there is no error object). */
+export const ORIGIN_REFUSAL_MESSAGE =
+  'site origin refused — no canonical, no robots.txt Sitemap: directive, no sitemap <loc>';
 
 /** Tag value used when a tenant identifier is not available at capture time. */
 const UNKNOWN_SITE_ID = 'unknown';
@@ -119,6 +151,53 @@ export function buildSiteDetailsFallbackCapture({
     fingerprint: [SITE_DETAILS_FALLBACK_FINGERPRINT],
     tags: {
       siteId: siteId || UNKNOWN_SITE_ID,
+    },
+  };
+}
+
+/**
+ * Render the refused candidates as a compact, LOW-CARDINALITY tag value:
+ * `level:cause` pairs joined by `,`, in the resolver's precedence order (which
+ * is itself diagnostic — it says how far down the chain the site got).
+ *
+ * The candidate VALUES are deliberately absent. Every one of them is a
+ * per-tenant hostname, and a hostname in a tag is the same mistake
+ * `stripQueryString` exists to prevent one function up. The whole value space
+ * here is 4 levels x 2 causes, so this tag can never explode Sentry's
+ * cardinality budget, and the longest possible value (all four levels refused)
+ * is well inside Sentry's 200-character tag-value limit.
+ */
+export function formatRefusedOriginCandidates(
+  refused: readonly RefusedOriginCandidate[],
+): string {
+  return refused.map(({ level, cause }) => `${level}:${cause}`).join(',');
+}
+
+/**
+ * Capture context for "every authored origin candidate was refused".
+ *
+ * Fingerprint carries no tenant AND no cause component, for the reason
+ * `buildSiteDetailsFallbackCapture` documents: this should be a ZERO-event
+ * condition fleet-wide, so it must collapse into one Issue whose event count an
+ * alert rule can threshold on. The cause lives in `tags.refused`, where it
+ * stays filterable and groupable without splitting the Issue.
+ */
+export function buildOriginRefusalCapture({
+  siteId,
+  surface,
+  refused,
+}: {
+  siteId: string | undefined;
+  surface: OriginSurface;
+  refused: readonly RefusedOriginCandidate[];
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [ORIGIN_REFUSAL_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      surface,
+      refused: formatRefusedOriginCandidates(refused),
     },
   };
 }

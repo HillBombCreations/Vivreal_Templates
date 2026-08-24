@@ -38,7 +38,7 @@ export function buildSiteJsonLd(siteData: SiteData): Array<Record<string, unknow
   // Amplify build host is refused rather than published.
   const url = isDemoSite(siteData)
     ? undefined
-    : resolveSiteOrigin(siteData, { prefer: 'durable' }) || undefined;
+    : resolveSiteOrigin(siteData, { surface: 'durable' }) || undefined;
   const description = siteData.businessInfo?.description;
   // Strip CloudFront signing params before embedding in JSON-LD — the
   // signed form expires after 300s but JSON-LD lives in crawler caches

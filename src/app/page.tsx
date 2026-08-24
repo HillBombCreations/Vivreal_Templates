@@ -79,7 +79,7 @@ export const generateMetadata = async () => {
   // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
   // block (if any) drives the Studio-editable overrides.
   const seo = siteData?.homePageConfig?.seo;
-  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, "home");
 
   const title = seo?.metaTitle || siteName;

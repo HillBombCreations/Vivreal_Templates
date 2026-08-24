@@ -22,9 +22,11 @@ import EmailPopup from '@/components/HomeSections/EmailPopup';
 /**
  * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
  * resolve to absolute and Next's "metadataBase is not set" warning is silenced.
- * Origin prefers `NEXT_PUBLIC_SITE_URL` (canonical per-site; CloudFront rewrites
- * Host, so request-derived origins are unreliable), falling back to the API
- * domain.
+ * The origin comes from the one shared chain in `src/lib/og/siteOrigin.ts`
+ * (`canonicalUrl` → `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` →
+ * `domainName`), never from the request: CloudFront rewrites Host, so a
+ * request-derived origin is unreliable. `surface: 'deployed'` because
+ * `metadataBase` is per-request, not crawler-cached.
  *
  * Deliberately NO `title.template` here: Studio-authored `seo.metaTitle` must be
  * the EXACT title (the author owns the full string, un-suffixed). A parent
@@ -50,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
     const siteData = await getSiteData();
     return buildRootMetadata(siteData);
   } catch {
-    const envOrigin = resolveSiteOrigin(null, { prefer: 'deployed' });
+    const envOrigin = resolveSiteOrigin(null, { surface: 'deployed' });
     return envOrigin ? { metadataBase: new URL(envOrigin) } : {};
   }
 }

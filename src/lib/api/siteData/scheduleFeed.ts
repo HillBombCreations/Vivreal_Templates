@@ -35,7 +35,7 @@ const SCHEDULE_FEED_PATH = '/feeds/schedule.ics';
  * origin (`buildRobotsPolicy` ⇒ no `Sitemap:` directive).
  */
 export function buildScheduleFeedUrl(siteData: ScheduleFeedSiteData): string | undefined {
-  const origin = resolveSiteOrigin(siteData, { prefer: 'durable' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
   return origin ? `${origin}${SCHEDULE_FEED_PATH}` : undefined;
 }
 

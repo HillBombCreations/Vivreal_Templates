@@ -278,7 +278,7 @@ test('FEED: a REFUSED live_url falls through to a good domainName, same as every
 test('FEED: an amplifyapp-only origin is refused, because a webcal subscription outlives the build host', () => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   delete process.env.SITE_LIFECYCLE;
-  // The feed resolves with prefer:'durable', not 'deployed'. A visitor's
+  // The feed resolves with surface:'durable', not 'deployed'. A visitor's
   // calendar client re-polls a webcal:// subscription indefinitely, which makes
   // it the longest-lived artifact that could carry an Amplify build host, so
   // it gets the same refusal robots and the sitemap get, and stays on the same
@@ -367,5 +367,83 @@ test('a rolled-back cutover (canonicalUrl kept, lifecycleState back to demo) wit
     wireFeed(siteData, pages).icalFeedUrl,
     'https://next.vivreal.io/feeds/schedule.ics',
     'a rolled-back site must not advertise the apex anywhere, including the Subscribe button',
+  );
+});
+
+// ── checkout result pages, across every real fleet input shape ───────────────
+//
+// `buildSitemapEntries` has its own unit tests for the exclusion. These prove
+// it through the FULL wiring both `robots.tsx` and `sitemap.tsx` actually use —
+// `toOriginSource` → `buildSiteMapForSite` (demo gate + resolver) → entries —
+// against each of the five origin shapes the fleet really carries, because
+// "the exclusion works but only on one origin shape" is the kind of gap that
+// ships.
+
+/** dougs-kitchen.com's real page list, verified live 2026-08-24. */
+const makeCheckoutPages = () => [
+  { slug: 'home', format: 'home' },
+  { slug: 'products', format: 'products' },
+  { slug: 'checkoutsuccess', format: 'checkout-success' },
+  { slug: 'checkoutcancel', format: 'checkout-cancel' },
+  { slug: 'about', format: 'about' },
+];
+
+const ORIGIN_SHAPES: Array<[string, Record<string, unknown>, Record<string, unknown>, string]> = [
+  // [label, siteDetails.values, top-level response fields, expected origin]
+  ['live_url only (fleet majority)', { lifecycleState: 'live' }, { domainInformation: { live_url: 'https://dougs-kitchen.vivreal.io' } }, 'https://dougs-kitchen.vivreal.io'],
+  ['domainName only (legacy apex)', { lifecycleState: 'live' }, { domainName: 'comedycollectivechi.com' }, 'https://comedycollectivechi.com'],
+  ['both present', { lifecycleState: 'live' }, { domainName: 'legacy.example', domainInformation: { live_url: 'https://next.vivreal.io' } }, 'https://next.vivreal.io'],
+  ['canonicalUrl present (post-cutover)', { canonicalUrl: 'https://vivreal.io', lifecycleState: 'live' }, { domainInformation: { live_url: 'https://next.vivreal.io' } }, 'https://vivreal.io'],
+];
+
+test('SITEMAP: the checkout result pages are excluded on EVERY fleet origin shape, and nothing else is', () => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  for (const [label, values, top, origin] of ORIGIN_SHAPES) {
+    const siteData = toOriginSource(rawResponse(values, top));
+    const urls = buildSiteMapForSite(siteData, makeCheckoutPages()).map((e) => e.url);
+    assert.deepEqual(
+      urls,
+      [origin, `${origin}/products`, `${origin}/about`],
+      `${label}: checkout pages withheld, every content page kept`,
+    );
+  }
+});
+
+test('SITEMAP: NEITHER live_url nor domainName ⇒ still an empty sitemap, checkout pages or not', () => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const siteData = toOriginSource(rawResponse({ lifecycleState: 'live' }, {}));
+  assert.deepEqual(buildSiteMapForSite(siteData, makeCheckoutPages()), []);
+});
+
+test('DEMO SAFETY: a demo store still emits a COMPLETELY empty sitemap, not a checkout-filtered one', () => {
+  // The exclusion must not become a partial substitute for the demo gate. A
+  // demo emits zero entries, including no root entry.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const siteData = toOriginSource(
+    rawResponse({ lifecycleState: 'demo' }, { domainInformation: { live_url: 'https://demo-store.vivreal.io' } }),
+  );
+  assert.deepEqual(buildSiteMapForSite(siteData, makeCheckoutPages()), []);
+  assert.deepEqual(buildRobotsPolicy(siteData).rules, [{ userAgent: '*', disallow: '/' }]);
+  assert.equal(buildRobotsPolicy(siteData).sitemap, undefined);
+});
+
+test('the robots.txt Sitemap: directive and every remaining <loc> still name ONE origin after the exclusion', () => {
+  // Removing entries must not disturb the invariant this file exists for.
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  delete process.env.SITE_LIFECYCLE;
+  const siteData = toOriginSource(
+    rawResponse({ lifecycleState: 'live' }, { domainInformation: { live_url: 'https://dougs-kitchen.vivreal.io' } }),
+  );
+  const locs = buildSiteMapForSite(siteData, makeCheckoutPages()).map((e) => new URL(e.url).origin);
+  const directive = buildRobotsPolicy(siteData).sitemap;
+  // Pins the directive AND narrows it off `string | string[]` for the strip
+  // below, the same way the CUTOVER SHAPE test above does.
+  assert.equal(directive, 'https://dougs-kitchen.vivreal.io/sitemap.xml');
+  assert.deepEqual(
+    [...new Set([...locs, directive.replace('/sitemap.xml', '')])],
+    ['https://dougs-kitchen.vivreal.io'],
   );
 });

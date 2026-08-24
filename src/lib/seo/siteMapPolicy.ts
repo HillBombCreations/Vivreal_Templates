@@ -45,7 +45,7 @@ export function buildSiteMapForSite(
   // Amplify build host is refused rather than published.
   return buildSitemapEntries(
     pages,
-    resolveSiteOrigin(siteData, { prefer: 'durable' }),
+    resolveSiteOrigin(siteData, { surface: 'durable' }),
     detailItemSegmentsByPage,
   );
 }
