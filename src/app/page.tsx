@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
+import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
@@ -79,7 +80,7 @@ export const generateMetadata = async () => {
   // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
   // block (if any) drives the Studio-editable overrides.
   const seo = siteData?.homePageConfig?.seo;
-  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, "home");
 
   const title = seo?.metaTitle || siteName;
@@ -94,7 +95,15 @@ export const generateMetadata = async () => {
     // home too: rare, but a site can legitimately be link-only while it is being
     // built out, and having the toggle silently do nothing on one page would be
     // worse than not offering it.
-    ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
+    //
+    // Routed through the shared composer rather than reading `seo?.noindex`
+    // inline. `buildSitemapEntries` now drops the sitemap's ROOT entry for an
+    // author-hidden home page, and it decides that by calling the same module;
+    // an inline read here would be the second reader of the field the whole
+    // point of that module is to prevent. Output is unchanged for home: the
+    // format rule cannot fire on `home`, so this is `noindex, nofollow` when the
+    // toggle is off and no `robots` key at all otherwise, exactly as before.
+    ...buildPageRobotsMetadata(siteData?.homePageConfig),
     ...buildRouteCanonicalMetadata(siteData, '/'),
     openGraph: {
       title,

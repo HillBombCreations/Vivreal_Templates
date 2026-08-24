@@ -6,25 +6,92 @@ import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from '../seo/demoSafety.ts';
 
 /**
- * Which SURFACE CLASS is asking for the origin.
+ * Which SURFACE CLASS is asking for the origin, and therefore HOW STRICT the
+ * resolver must be about the answer.
  *
- * Both values resolve the SAME precedence chain (see {@link resolveSiteOrigin});
- * design.md specifies exactly one order and this resolver ships exactly one.
- * The discriminant selects only how strict the resolver is about the answer:
+ * This selects STRICTNESS, not order. Both values walk the SAME precedence
+ * chain in the same sequence (see {@link resolveSiteOrigin}); design.md
+ * specifies exactly one order and this resolver ships exactly one. The only
+ * difference between the two values is which parsed candidates are acceptable:
  *
  *   'durable'  = crawler-cached surfaces (JSON-LD `url`, robots.txt `Sitemap:`,
- *                sitemap `<loc>`). A `*.amplifyapp.com` candidate is REFUSED
- *                here, because those surfaces live in crawler caches for days
- *                and an Amplify build host is never a public identity.
+ *                sitemap `<loc>`, the webcal schedule feed). A
+ *                `*.amplifyapp.com` candidate is REFUSED here, because those
+ *                surfaces live in crawler caches (and calendar clients) for
+ *                days and an Amplify build host is never a public identity.
  *   'deployed' = per-request metadata (`metadataBase`, `og:image`). Accepts an
  *                amplifyapp candidate, which is exactly what these surfaces did
  *                before this resolver existed, so nothing regresses.
+ *
+ * The parameter was called `prefer` while a since-dropped design had the two
+ * values reordering the chain. It no longer does, and `prefer` actively misled
+ * a reader into expecting a reordering, so it is named for what it selects.
  *
  * It is REQUIRED (no default) on purpose. Two identically-typed resolvers
  * reachable from one import path is a swap waiting to happen with no compiler
  * or lint signal, so the caller has to type the choice out.
  */
-export type OriginPreference = 'durable' | 'deployed';
+export type OriginSurface = 'durable' | 'deployed';
+
+/**
+ * The precedence level a candidate was read from.
+ *
+ * Deliberately the level NAME and never the value: this is emitted as a Sentry
+ * tag by the reporting call site, and a tag carrying the host itself would mint
+ * one Issue per tenant and destroy the fleet-wide signal (the grouping rule
+ * `src/lib/api/errorCapture.ts` already documents).
+ */
+export type OriginCandidateLevel =
+  | 'canonicalUrl'
+  | 'NEXT_PUBLIC_SITE_URL'
+  | 'live_url'
+  | 'domainName';
+
+/**
+ * Why a candidate that WAS authored did not become the origin.
+ *
+ *   'malformed'    = failed the HTTPS-origin allowlist ({@link parseHttpsOrigin}):
+ *                    a path/query/fragment, credentials, a port, a non-https
+ *                    scheme, a non-public host, or a non-string value out of the
+ *                    free-form `siteDetails.values` Mixed field.
+ *   'amplify-host' = parsed cleanly, but is an Amplify build host and the caller
+ *                    asked for a `durable` surface.
+ *
+ * "Absent" is NOT a cause. A level nothing was ever authored at produces no
+ * entry at all, which is what lets a caller tell a MISCONFIGURED site apart
+ * from a site that simply has no custom domain yet.
+ */
+export type OriginRefusalCause = 'malformed' | 'amplify-host';
+
+export interface RefusedOriginCandidate {
+  readonly level: OriginCandidateLevel;
+  readonly cause: OriginRefusalCause;
+}
+
+/**
+ * What {@link resolveSiteOriginResult} decided, and why.
+ *
+ * `origin` is the resolved origin or `''`. `refused` lists every authored
+ * candidate the resolver walked past, in precedence order, so the refusal is
+ * REPORTABLE by a caller that can reach Sentry.
+ *
+ * This module must stay importable by `node --experimental-strip-types --test`,
+ * which cannot load the Sentry SDK, so the resolver cannot report the refusal
+ * itself. Trading its behavioural suite for a log line would be a bad deal:
+ * that suite is the only thing standing between the demo gates and silent
+ * deletion (review-templates-106.md B2). Returning the reason as DATA keeps
+ * both — the resolver stays pure and testable, and
+ * `src/lib/api/siteData/index.tsx` (which already imports Sentry) reports it.
+ *
+ * `refused` is populated on SUCCESS too: a `live_url` refused as an amplifyapp
+ * host while `domainName` carried the day is a real and currently invisible
+ * misconfiguration, and callers that only care about total failure use
+ * {@link isRefusedOrigin}.
+ */
+export interface OriginResolution {
+  readonly origin: string;
+  readonly refused: readonly RefusedOriginCandidate[];
+}
 
 export type OriginSiteData = Pick<
   SiteData,
@@ -161,6 +228,25 @@ function parseCandidateOrigin(value: unknown): URL | null {
 }
 
 /**
+ * Did the site actually AUTHOR something at this level?
+ *
+ * The mirror image of the two `parseCandidate*` normalisations above: anything
+ * they reduce to an empty string was never authored, so a whitespace-only or
+ * slash-only value is "absent", not "malformed". That distinction is what keeps
+ * `NEXT_PUBLIC_SITE_URL='/'` (a real fixture — see siteOrigin.test.ts) out of
+ * the refusal report.
+ *
+ * A NON-string is treated as authored-and-malformed on purpose. `siteDetails.
+ * values` is a free-form Mongo Mixed field, so a number or object landing in
+ * `canonicalUrl` is a genuine write defect worth reporting, not an empty field.
+ */
+function isAuthoredCandidate(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value !== 'string') return true;
+  return value.trim().replace(/\/+$/, '') !== '';
+}
+
+/**
  * `domainName` is a bare host (`acme.com`), not a URL, so it gets the same
  * `https://` prefix it always has, then the identical allowlist.
  */
@@ -205,27 +291,27 @@ export function resolveCanonicalUrl(siteData?: OriginSiteData | null): string {
 }
 
 /**
- * Resolve the site's public origin (protocol + host, no trailing slash).
+ * Resolve the site's public origin AND why any authored candidate was refused.
  *
- * ONE precedence chain, exactly as design.md's Option A specifies, applied
- * identically for both `prefer` values:
+ * ONE precedence chain, exactly as design.md's Option A specifies, walked
+ * identically for both `surface` values:
  *
  *   1. `siteData.canonicalUrl`            (owned runtime state, demo-gated)
  *   2. `NEXT_PUBLIC_SITE_URL`             (existing fleet compatibility)
  *   3. `domainInformation.live_url`       (physical site origin)
  *   4. `domainName`                       (legacy directly attached domain)
  *
- * `canonicalUrl` is resolved ABOVE the `prefer` branch, never inside it, so it
- * is structurally impossible to apply it to only one surface class. Applying
- * it to one and not the other would put `og:url`/`metadataBase` on one host
- * while JSON-LD and the sitemap named another: split-brain on the exact site
- * the cutover exists for (review-templates-106.md, Trap 2).
+ * `canonicalUrl` is resolved ABOVE the `surface` strictness check, never inside
+ * it, so it is structurally impossible to apply it to only one surface class.
+ * Applying it to one and not the other would put `og:url`/`metadataBase` on one
+ * host while JSON-LD and the sitemap named another: split-brain on the exact
+ * site the cutover exists for (review-templates-106.md, Trap 2).
  *
  * EVERY candidate goes through the same HTTPS-origin allowlist
  * ({@link parseHttpsOrigin}), not just the first. A `live_url` carrying a
  * path, a query string, credentials, a port or a non-resolving host reaches
  * `robots.txt` and sitemap `<loc>` otherwise, and both are crawler-cached
- * (review-templates-106.md C2). A useful side effect: the returned string is
+ * (review-templates-106.md C2). A useful side effect: the returned origin is
  * always either `''` or something `new URL()` can parse, so the
  * `metadataBase: new URL(origin)` call sites cannot throw (C13).
  *
@@ -233,34 +319,92 @@ export function resolveCanonicalUrl(siteData?: OriginSiteData | null): string {
  * `live_url` is refused still resolves through to its perfectly good
  * `domainName` rather than discarding a valid origin (C4).
  *
+ * Evaluation short-circuits at the first accepted candidate, exactly as the
+ * `??` chain this replaced did — a site whose `canonicalUrl` answers never
+ * parses the other three.
+ *
  * Backward compatibility: every well-formed fleet input resolves to the same
  * bytes as before. `live_url = https://sub.vivreal.io` ⇒ unchanged,
  * `domainName = acme.com` ⇒ `https://acme.com` unchanged, neither present ⇒
  * `''` unchanged. `NEXT_PUBLIC_SITE_URL` is set on zero of the 20 fleet
  * Amplify apps, so level 2 is currently inert in production either way.
  */
-export function resolveSiteOrigin(
+export function resolveSiteOriginResult(
   siteData: OriginSiteData | null | undefined,
-  { prefer }: { prefer: OriginPreference },
-): string {
-  // Test positively for 'deployed' so any value TypeScript's OriginPreference
+  { surface }: { surface: OriginSurface },
+): OriginResolution {
+  // Test positively for 'deployed' so any value TypeScript's OriginSurface
   // union did not catch (an omitted options object, a typo'd literal reaching
   // this JS at runtime) falls to the STRICTER 'durable' path rather than the
   // one that would pass an amplifyapp host straight through.
-  const isDeployed = prefer === 'deployed';
-  const accept = (parsed: URL | null): string | null => {
-    if (!parsed) return null;
-    if (!isDeployed && AMPLIFYAPP_HOST_RE.test(parsed.hostname)) return null;
-    return parsed.origin;
-  };
+  const isDeployed = surface === 'deployed';
 
-  return (
-    accept(parseCanonicalUrl(siteData)) ??
-    accept(parseCandidateOrigin(process.env.NEXT_PUBLIC_SITE_URL)) ??
-    accept(parseCandidateOrigin(siteData?.domainInformation?.live_url)) ??
-    accept(parseDomainNameOrigin(siteData?.domainName)) ??
-    ''
-  );
+  // A demo's canonicalUrl is WITHHELD, not refused (see parseCanonicalUrl for
+  // why it is withheld). Passing `undefined` here rather than the raw value is
+  // what stops every demo site in the fleet from reporting a refusal it did
+  // not cause — the highest-severity false positive this diagnostic could have.
+  const canonicalCandidate = isDemoSite(siteData) ? undefined : siteData?.canonicalUrl;
+
+  // Raw values + their parser, so parsing stays LAZY: the loop below stops at
+  // the first accepted candidate and never touches the rest.
+  const candidates: ReadonlyArray<
+    readonly [OriginCandidateLevel, unknown, (value: unknown) => URL | null]
+  > = [
+    ['canonicalUrl', canonicalCandidate, parseCandidateOrigin],
+    ['NEXT_PUBLIC_SITE_URL', process.env.NEXT_PUBLIC_SITE_URL, parseCandidateOrigin],
+    ['live_url', siteData?.domainInformation?.live_url, parseCandidateOrigin],
+    ['domainName', siteData?.domainName, parseDomainNameOrigin],
+  ];
+
+  const refused: RefusedOriginCandidate[] = [];
+  for (const [level, raw, parse] of candidates) {
+    const parsed = parse(raw);
+    if (!parsed) {
+      // Absent ⇒ no entry. Only an authored-but-unusable value is a refusal.
+      if (isAuthoredCandidate(raw)) refused.push({ level, cause: 'malformed' });
+      continue;
+    }
+    if (!isDeployed && AMPLIFYAPP_HOST_RE.test(parsed.hostname)) {
+      refused.push({ level, cause: 'amplify-host' });
+      continue;
+    }
+    return { origin: parsed.origin, refused };
+  }
+  return { origin: '', refused };
+}
+
+/**
+ * Resolve the site's public origin (protocol + host, no trailing slash), or
+ * `''` when none is known. The string form of {@link resolveSiteOriginResult},
+ * which every existing caller uses.
+ *
+ * It delegates rather than re-implementing so the two can never disagree: a
+ * second copy of the precedence chain is exactly the divergence
+ * `toOriginSource` was created to make impossible one layer up.
+ */
+export function resolveSiteOrigin(
+  siteData: OriginSiteData | null | undefined,
+  { surface }: { surface: OriginSurface },
+): string {
+  return resolveSiteOriginResult(siteData, { surface }).origin;
+}
+
+/**
+ * Did the resolver come back with NOTHING despite the site having authored at
+ * least one candidate?
+ *
+ * This is the alertable condition, and it is deliberately narrower than
+ * `origin === ''`. A site with no `canonicalUrl`, no `live_url` and no
+ * `domainName` is not misconfigured; it is un-deployed (or the local/preview
+ * build, where `SITE_ID` is `'preview'`), and paging on it would bury the real
+ * signal. A site that authored something the resolver then refused is a
+ * misconfiguration whose only symptom is ABSENCE — no canonical, no robots.txt
+ * `Sitemap:` directive, no sitemap `<loc>`, no schedule feed — which is the
+ * same silent-absence class as the empty-sitemap defect (review-templates-106.md
+ * C5).
+ */
+export function isRefusedOrigin(resolution: OriginResolution): boolean {
+  return resolution.origin === '' && resolution.refused.length > 0;
 }
 
 /**
@@ -280,6 +424,6 @@ export function buildDetailUrl(
   slug: string,
   itemId: string,
 ): string | undefined {
-  const origin = resolveSiteOrigin(siteData, { prefer: 'durable' });
+  const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
   return origin ? `${origin}/${slug.replace(/^\/+/, '')}/${itemId}` : undefined;
 }

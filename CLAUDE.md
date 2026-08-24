@@ -65,8 +65,10 @@ src/
 │   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
 │   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers
-│   ├── og/siteOrigin.ts            # resolveSiteOrigin(siteData, {prefer}): canonicalUrl → NEXT_PUBLIC_SITE_URL → live_url → domainName
-│   │                               #   ONE order for both prefer values; `durable` (JSON-LD/robots/sitemap) also refuses a *.amplifyapp.com host
+│   ├── og/siteOrigin.ts            # resolveSiteOrigin(siteData, {surface}): canonicalUrl → NEXT_PUBLIC_SITE_URL → live_url → domainName
+│   │                               #   ONE order for both surface values; `surface` selects STRICTNESS, not order — `durable`
+│   │                               #   (JSON-LD/robots/sitemap/schedule feed) also refuses a *.amplifyapp.com host.
+│   │                               #   resolveSiteOriginResult() additionally returns WHY a candidate was refused
 │   ├── og/ogImage.ts               # server-only re-export of the resolver + buildOgImageUrl
 │   ├── fonts/siteFont.ts           # Per-site font resolution from siteData.fontFamily
 │   ├── pages/                      # pageConfig lookup helpers (getPageBySlug, getItemHref)
@@ -162,7 +164,9 @@ Pages are async Server Components that fetch data and pass it to Client Componen
 
 ### Metadata is Dynamic
 
-`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution is ONE chain in `src/lib/og/siteOrigin.ts`: `siteData.canonicalUrl` → `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>`, via `resolveSiteOrigin(siteData, { prefer })`. Every candidate goes through the same HTTPS-origin allowlist (no path, query, fragment, credentials, port or non-public host). The required `prefer` discriminant does NOT reorder the chain: `'durable'` (JSON-LD `url`, robots.txt `Sitemap:`, sitemap `<loc>` — crawler-cached) additionally refuses a `*.amplifyapp.com` candidate, `'deployed'` (metadataBase/OG — per-request) accepts it. `canonicalUrl` is demo-gated inside the resolver.
+`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution is ONE chain in `src/lib/og/siteOrigin.ts`: `siteData.canonicalUrl` → `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>`, via `resolveSiteOrigin(siteData, { surface })`. Every candidate goes through the same HTTPS-origin allowlist (no path, query, fragment, credentials, port or non-public host). The required `surface` discriminant selects STRICTNESS, never order: `'durable'` (JSON-LD `url`, robots.txt `Sitemap:`, sitemap `<loc>`, the webcal schedule feed — crawler-cached) additionally refuses a `*.amplifyapp.com` candidate, `'deployed'` (metadataBase/OG — per-request) accepts it. `canonicalUrl` is demo-gated inside the resolver. The resolver cannot import Sentry (that would make it unloadable by the plain-Node test runner and cost it the suite that pins the demo gates), so `resolveSiteOriginResult()` returns the refused candidates as DATA and `getSiteData()` captures them — a refusal is never silent.
+
+**Page-level indexing.** `src/lib/seo/pageIndexing.ts` owns the one list of page FORMATS search engines must never be pointed at (today: `checkout-success` / `checkout-cancel`). It drives both the sitemap exclusion (`buildSitemapEntries`) and the page's `robots` metadata (`[slug]/page.tsx`), because absence from a sitemap does not deindex an already-crawled URL. Keyed on `pageConfig.format`, never the slug — the live checkout slugs are `checkoutsuccess`/`checkoutcancel`.
 
 ### Analytics — Two Distinct Components
 

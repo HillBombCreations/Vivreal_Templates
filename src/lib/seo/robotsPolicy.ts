@@ -47,7 +47,7 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
 
   // `durable`, not `deployed`: a robots.txt `Sitemap:` directive sits in
   // crawler caches for days, so it must never advertise an Amplify build host.
-  const siteOrigin = resolveSiteOrigin(siteData, { prefer: 'durable' });
+  const siteOrigin = resolveSiteOrigin(siteData, { surface: 'durable' });
 
   return {
     rules: [

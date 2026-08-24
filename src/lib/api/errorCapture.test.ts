@@ -14,9 +14,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   FETCH_FAILURE_FINGERPRINT,
+  ORIGIN_REFUSAL_FINGERPRINT,
   SITE_DETAILS_FALLBACK_FINGERPRINT,
   buildFetchFailureCapture,
+  buildOriginRefusalCapture,
   buildSiteDetailsFallbackCapture,
+  formatRefusedOriginCandidates,
   stripQueryString,
 } from './errorCapture.ts';
 
@@ -120,5 +123,84 @@ test('the fallback fingerprint carries no tenant component at all — every site
   assert.deepEqual(
     buildSiteDetailsFallbackCapture({ siteId: 'aaaa' }).fingerprint,
     buildSiteDetailsFallbackCapture({ siteId: 'bbbb' }).fingerprint,
+  );
+});
+
+// ── the origin-refusal capture (review-templates-106.md C5) ──────────────────
+// The condition: the upstream read SUCCEEDED, the site renders normally, and
+// four SEO surfaces are silently empty because the resolver refused every
+// authored origin candidate. Same alertability rules as the two above.
+
+test('the origin-refusal capture names the refused LEVEL and CAUSE, in precedence order', () => {
+  const capture = buildOriginRefusalCapture({
+    siteId: 'aaaa',
+    surface: 'durable',
+    refused: [
+      { level: 'canonicalUrl', cause: 'malformed' },
+      { level: 'live_url', cause: 'amplify-host' },
+    ],
+  });
+  assert.equal(capture.tags.refused, 'canonicalUrl:malformed,live_url:amplify-host');
+  assert.equal(capture.tags.surface, 'durable');
+  assert.equal(capture.tags.siteId, 'aaaa');
+});
+
+test('the refused tag carries NO hostname — a per-tenant value in a tag is the mistake stripQueryString exists to prevent', () => {
+  // The resolver hands back levels and causes, never values, so this is a
+  // structural property. Asserted anyway: it is the one thing that would
+  // silently explode Sentry cardinality if the shape ever widened.
+  const rendered = formatRefusedOriginCandidates([
+    { level: 'live_url', cause: 'malformed' },
+    { level: 'domainName', cause: 'malformed' },
+  ]);
+  assert.equal(rendered, 'live_url:malformed,domainName:malformed');
+  assert.doesNotMatch(rendered, /\./, 'no host, and therefore no dot, can appear in the tag');
+});
+
+test('the fully-refused tag value stays inside Sentry 200-character tag limit', () => {
+  // All four levels refused is the worst case the resolver can produce.
+  const worstCase = formatRefusedOriginCandidates([
+    { level: 'canonicalUrl', cause: 'amplify-host' },
+    { level: 'NEXT_PUBLIC_SITE_URL', cause: 'amplify-host' },
+    { level: 'live_url', cause: 'amplify-host' },
+    { level: 'domainName', cause: 'amplify-host' },
+  ]);
+  assert.ok(worstCase.length < 200, `${worstCase.length} chars`);
+});
+
+test('the origin-refusal fingerprint carries no tenant AND no cause — a fleet-wide misconfiguration must be ONE Issue with a countable event rate', () => {
+  const siteA = buildOriginRefusalCapture({
+    siteId: 'aaaa',
+    surface: 'durable',
+    refused: [{ level: 'live_url', cause: 'malformed' }],
+  });
+  const siteB = buildOriginRefusalCapture({
+    siteId: 'bbbb',
+    surface: 'durable',
+    refused: [{ level: 'domainName', cause: 'amplify-host' }],
+  });
+  assert.deepEqual(siteA.fingerprint, [ORIGIN_REFUSAL_FINGERPRINT]);
+  assert.deepEqual(siteA.fingerprint, siteB.fingerprint);
+});
+
+test('the origin refusal is a DISTINCT Issue from both fetch-failure shapes — it means something entirely different', () => {
+  const refusal = buildOriginRefusalCapture({
+    siteId: 'x',
+    surface: 'durable',
+    refused: [{ level: 'live_url', cause: 'malformed' }],
+  });
+  assert.notDeepEqual(refusal.fingerprint, [SITE_DETAILS_FALLBACK_FINGERPRINT]);
+  assert.notDeepEqual(refusal.fingerprint, [FETCH_FAILURE_FINGERPRINT]);
+  assert.equal(refusal.level, 'error');
+});
+
+test('an absent SITE_ID degrades to "unknown" on the origin refusal too', () => {
+  assert.equal(
+    buildOriginRefusalCapture({
+      siteId: undefined,
+      surface: 'durable',
+      refused: [{ level: 'live_url', cause: 'malformed' }],
+    }).tags.siteId,
+    'unknown',
   );
 });

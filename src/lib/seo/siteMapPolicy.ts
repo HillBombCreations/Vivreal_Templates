@@ -33,7 +33,7 @@ type SiteMapSiteData = Pick<
  */
 export function buildSiteMapForSite(
   siteData: SiteMapSiteData,
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo'>[] | undefined,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
   // SEO demo-safety: emit NO sitemap for a pre-cutover demo. A sitemap actively
@@ -45,7 +45,7 @@ export function buildSiteMapForSite(
   // Amplify build host is refused rather than published.
   return buildSitemapEntries(
     pages,
-    resolveSiteOrigin(siteData, { prefer: 'durable' }),
+    resolveSiteOrigin(siteData, { surface: 'durable' }),
     detailItemSegmentsByPage,
   );
 }

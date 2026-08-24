@@ -10,9 +10,12 @@ import type {
 import * as Sentry from '@sentry/nextjs';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import {
+  ORIGIN_REFUSAL_MESSAGE,
   SITE_DETAILS_FALLBACK_MESSAGE,
+  buildOriginRefusalCapture,
   buildSiteDetailsFallbackCapture,
 } from '@/lib/api/errorCapture';
+import { isRefusedOrigin, resolveSiteOriginResult } from '@/lib/og/ogImage';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
@@ -124,6 +127,36 @@ export const getSiteData = async (): Promise<SiteData> => {
   // getSiteMap() also calls, so a canonical, a sitemap and a schedule feed can
   // never resolve different hosts. See ./originSource.ts.
   const originSource = toOriginSource(raw);
+
+  // review-templates-106.md C5 — the origin refusal used to be SILENT. The
+  // resolver returns '' with no log and no breadcrumb, and the four durable
+  // surfaces (canonical, robots.txt `Sitemap:`, sitemap `<loc>`, the schedule
+  // feed) then emit nothing at all. That is the same silent-absence class as
+  // the empty-sitemap defect those surfaces were just fixed for, and an
+  // operator who saw it would reasonably conclude the fix had not deployed.
+  //
+  // The report happens HERE and not in the resolver because
+  // `src/lib/og/siteOrigin.ts` must stay loadable by `node
+  // --experimental-strip-types --test` — a Sentry import would cost it its
+  // whole behavioural suite, which is the only thing pinning the demo gates
+  // (B2). The resolver hands back the reason as data; this module already
+  // imports Sentry and is the ONE place `originSource` is built, so a single
+  // capture covers every surface that resolves from it.
+  //
+  // `isRefusedOrigin`, not `origin === ''`: a site that simply has no domain
+  // yet (and the local/preview build) is not misconfigured, and paging on it
+  // would bury the real signal.
+  const durableOrigin = resolveSiteOriginResult(originSource, { surface: 'durable' });
+  if (isRefusedOrigin(durableOrigin)) {
+    Sentry.captureMessage(
+      ORIGIN_REFUSAL_MESSAGE,
+      buildOriginRefusalCapture({
+        siteId: SITE_ID,
+        surface: 'durable',
+        refused: durableOrigin.refused,
+      }),
+    );
+  }
 
   // Wire the renderer's Schedule "Subscribe" button. The renderer reads
   // page.labels.icalFeedUrl and rewrites https:// → webcal://, so it MUST be an
