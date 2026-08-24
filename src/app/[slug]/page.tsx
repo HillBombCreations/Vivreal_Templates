@@ -8,6 +8,7 @@ import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -664,7 +665,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     pageConfig?.labels?.subtitle ||
     `${derivedTitle} — ${siteName}`;
 
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {
@@ -676,6 +677,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     // `follow: false` rides along: a page the owner keeps out of search should
     // not be leaking its outbound links into the graph either.
     ...(seo?.noindex ? { robots: { index: false, follow: false } } : {}),
+    ...buildRouteCanonicalMetadata(siteData, `/${slug}`),
     openGraph: {
       title,
       description,

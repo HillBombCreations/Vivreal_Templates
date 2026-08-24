@@ -17,13 +17,43 @@ import type { SiteData } from '@/types/SiteData';
  *   2. `process.env.SITE_LIFECYCLE` — a build-time fallback so a demo can be
  *      protected even before the flag is written to the doc.
  *
- * **Fail-safe default:** absent on BOTH ⇒ NOT a demo ⇒ fully indexable. That is
- * deliberate — it guarantees no existing live customer site is ever accidentally
- * deindexed by this gate. Only an explicit `'demo'` opts a site out of indexing.
+ * **Fail-safe defaults, and they are NOT symmetric:**
+ *   - Doc field truly ABSENT (`undefined` — the key is missing from
+ *     `siteDetails.values` entirely) ⇒ NOT a demo ⇒ fully indexable, falling
+ *     back to the env flag. That is deliberate — every existing fleet site
+ *     that predates this field must never be accidentally deindexed by this
+ *     gate.
+ *   - Doc field PRESENT — including an explicit `null` — but not the literal
+ *     string `'live'` (including `''`, `'pending'`, a case variant like
+ *     `'Demo'`, or anything else) ⇒ demo ⇒ withheld from indexing.
+ *     `siteDetails.values` is a free-form Mixed Mongo field written by more
+ *     than one caller (see `docs/projects/canonical-emission-review.md`
+ *     BLOCK 1), and its own replace-semantics (VR_Secure_API's
+ *     `PRESERVE_ON_REPLACE`) treat an explicit `null` as a caller's deliberate
+ *     CLEAR of the key, distinct from never having written it — so an
+ *     explicit `null` gets the SAME fail-safe-toward-demo treatment as any
+ *     other ambiguous/malformed present value, not the absent-key default. An
+ *     ambiguous or malformed value there is typo/empty-write territory, not a
+ *     signed assertion that the site is live, so it must fail SAFE TOWARD
+ *     demo (withheld) rather than toward indexable. Only an affirmative
+ *     `'live'` opts a site into full indexing once the field is present (in
+ *     any form, including `null`) at all.
  */
 export const isDemoSite = (
   siteData?: Pick<SiteData, 'lifecycleState'> | null,
-): boolean => (siteData?.lifecycleState ?? process.env.SITE_LIFECYCLE) === 'demo';
+): boolean => {
+  const docState = siteData?.lifecycleState;
+  if (docState === undefined) {
+    // The key is truly missing — fall back to the build-time env flag, same
+    // as before. This is the ONLY path that can return "not a demo" without
+    // an affirmative 'live', preserving the existing-fleet fail-safe default.
+    return process.env.SITE_LIFECYCLE === 'demo';
+  }
+  // Present in any other form — including an explicit `null` — fails safe
+  // toward demo. `null !== 'live'` is true, so this covers it without a
+  // dedicated branch.
+  return docState !== 'live';
+};
 
 /**
  * The prospect's original URL for a demo site's `<link rel="canonical">`, from
