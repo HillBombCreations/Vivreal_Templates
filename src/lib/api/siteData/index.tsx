@@ -16,6 +16,7 @@ import {
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
+import { applyScheduleFeedUrl } from './scheduleFeed';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
@@ -119,30 +120,27 @@ export const getSiteData = async (): Promise<SiteData> => {
     (p) => p.format !== "home" && p.slug !== "home"
   );
 
+  // The origin-deciding fields come from ONE shared constructor that
+  // getSiteMap() also calls, so a canonical, a sitemap and a schedule feed can
+  // never resolve different hosts. See ./originSource.ts.
+  const originSource = toOriginSource(raw);
+
   // Wire the renderer's Schedule "Subscribe" button. The renderer reads
   // page.labels.icalFeedUrl and rewrites https:// → webcal://, so it MUST be an
-  // absolute https URL on the site's canonical domain (a relative URL would not
+  // absolute https URL on the site's public origin (a relative URL would not
   // survive the webcal rewrite). The URL points at this site's own
-  // /feeds/schedule.ics proxy route (same origin). Only inject when a schedule
-  // page exists AND the canonical domain is known — never set a partial/relative
-  // value the renderer would mangle. No renderer change, no per-site authoring.
-  const domainName = raw.domainName;
-  if (domainName) {
-    for (const page of pageConfigs) {
-      if (page.format === "schedule") {
-        page.labels = {
-          ...(page.labels ?? {}),
-          icalFeedUrl: `https://${domainName}/feeds/schedule.ics`,
-        };
-      }
-    }
-  }
+  // /feeds/schedule.ics proxy route (same origin).
+  //
+  // C1: this read raw `domainName`, which the fleet majority does not have.
+  // Those sites carry a `domainInformation.live_url` instead, so their Subscribe
+  // button had nothing to bind to at all. Same defect class as the empty-sitemap
+  // bug. It now resolves through the SAME chain robots, the sitemap and the
+  // canonical use, and still emits nothing at all when no origin resolves.
+  // See ./scheduleFeed.ts.
+  applyScheduleFeedUrl(pageConfigs, originSource);
 
   return {
-    // The origin-deciding fields come from ONE shared constructor that
-    // getSiteMap() also calls, so a canonical and a sitemap can never resolve
-    // different hosts. See ./originSource.ts.
-    ...toOriginSource(raw),
+    ...originSource,
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
