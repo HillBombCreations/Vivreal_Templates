@@ -14,7 +14,9 @@ import {
   buildSiteDetailsFallbackCapture,
 } from '@/lib/api/errorCapture';
 import { isDemoSite } from '@/lib/seo/demoSafety';
-import { buildSitemapEntries } from '@/lib/seo/sitemap';
+import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
+import { toOriginSource } from './originSource';
+import { FALLBACK_SITE_DATA } from './fallback';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
 
@@ -33,27 +35,6 @@ const SITE_DETAILS_REVALIDATE_SECONDS = SITE_CACHE_TTL_SECONDS;
 // this tag on site.* (Studio save) and collection.* webhook events, so a chrome
 // edit is reflected on the next render without waiting for the time backstop.
 const SITE_CHROME_TAG = SITE_ID ? [`site:${SITE_ID}`] : undefined;
-
-const FALLBACK_SITE_DATA: SiteData = {
-  primary: '#000000',
-  secondary: '#333333',
-  hover: '#555555',
-  surface: '#ffffff',
-  'surface-alt': '#f5f5f5',
-  'text-primary': '#000000',
-  'text-secondary': '#666666',
-  'text-inverse': '#ffffff',
-  border: '#e0e0e0',
-  pages: {},
-  pageConfigs: [],
-  siteMap: [],
-  logo: {
-    name: '',
-    key: '',
-    type: '',
-    currentFile: { source: '' },
-  },
-};
 
 interface SiteDetailsResponse {
   siteDetails: {
@@ -158,13 +139,10 @@ export const getSiteData = async (): Promise<SiteData> => {
   }
 
   return {
-    ...raw.siteDetails.values,
-    domainName: raw.domainName,
-    // Thread domainInformation through so resolveSiteOrigin can use `live_url`
-    // (the deployed origin, set on every site) for metadata/OG absolute URLs —
-    // without it, subdomain sites lacking NEXT_PUBLIC_SITE_URL fell back to
-    // localhost via the default metadataBase.
-    domainInformation: raw.domainInformation,
+    // The origin-deciding fields come from ONE shared constructor that
+    // getSiteMap() also calls, so a canonical and a sitemap can never resolve
+    // different hosts. See ./originSource.ts.
+    ...toOriginSource(raw),
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
     aboutSection: raw.aboutSection,
@@ -344,13 +322,21 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
     SITE_CHROME_TAG
   );
 
-  if (!raw) return [];
+  // No response, or a response with no `siteDetails.values`, means we cannot
+  // tell a demo from a live site. getSiteData() resolves that same condition to
+  // FALLBACK_SITE_DATA, which carries no origin and an explicit demo
+  // lifecycleState, so both readers agree on an empty sitemap here.
+  if (!raw?.siteDetails?.values) return [];
 
-  // SEO demo-safety: emit NO sitemap for a pre-cutover demo — a sitemap actively
-  // invites indexing of a near-duplicate of the prospect's real site. Cutover
-  // flips lifecycleState to 'live' and the full sitemap returns. See
-  // src/lib/seo/demoSafety.ts.
-  if (isDemoSite(raw.siteDetails?.values)) return [];
+  // The SAME object getSiteData() returns its origin fields from, so the
+  // sitemap can never resolve a different host from the canonical.
+  const siteData = toOriginSource(raw);
+
+  // Perf short-circuit only. A demo emits no sitemap, so skip the detail-item
+  // collection fetches below entirely. The AUTHORITATIVE demo gate lives in
+  // buildSiteMapForSite (src/lib/seo/siteMapPolicy.ts) where it is pinned by a
+  // test; deleting this line changes nothing but the number of upstream reads.
+  if (isDemoSite(siteData)) return [];
 
   // Two-axis detail-route design, Phase 3 (§7.1/T4) — resolve detail-item URL
   // segments for pages that opted into `detailPage.sitemap === true`. Narrowed
@@ -380,9 +366,9 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // Build from the AUTHORITATIVE top-level page list (raw.pages — what getSiteData
   // uses), not siteDetails.values.pages (which the migrator never populates, so
   // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
-  return buildSitemapEntries(
+  return buildSiteMapForSite(
+    siteData,
     raw.pages,
-    raw.domainName ?? '',
     sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
   );
 };

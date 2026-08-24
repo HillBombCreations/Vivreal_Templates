@@ -32,7 +32,7 @@ import { resolveSiteOrigin } from '../og/siteOrigin.ts';
  * existing site) adds neither key and is byte-identical to before.
  */
 export function buildRootMetadata(siteData: SiteData): Metadata {
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
   const demo = isDemoSite(siteData);
   const demoSource = demo ? getDemoSourceUrl(siteData) : '';
   return {

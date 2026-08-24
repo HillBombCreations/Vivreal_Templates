@@ -50,7 +50,7 @@ export async function generateMetadata(): Promise<Metadata> {
     const siteData = await getSiteData();
     return buildRootMetadata(siteData);
   } catch {
-    const envOrigin = resolveSiteOrigin(null);
+    const envOrigin = resolveSiteOrigin(null, { prefer: 'deployed' });
     return envOrigin ? { metadataBase: new URL(envOrigin) } : {};
   }
 }

@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
-import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from './demoSafety.ts';
 import { resolveCanonicalUrl } from '../og/siteOrigin.ts';
-
-type OriginSiteData = Pick<SiteData, 'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState'>;
+// One shared shape, exported by the resolver that consumes it, so this file
+// cannot drift from what resolveCanonicalUrl actually reads.
+import type { OriginSiteData } from '../og/siteOrigin.ts';
 
 export function resolveRouteCanonical(
   siteData: OriginSiteData,

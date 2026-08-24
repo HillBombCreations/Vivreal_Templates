@@ -65,7 +65,9 @@ src/
 │   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
 │   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers
-│   ├── og/ogImage.ts               # resolveSiteOrigin: NEXT_PUBLIC_SITE_URL → domainInformation.live_url → domainName
+│   ├── og/siteOrigin.ts            # resolveSiteOrigin(siteData, {prefer}): canonicalUrl → NEXT_PUBLIC_SITE_URL → live_url → domainName
+│   │                               #   ONE order for both prefer values; `durable` (JSON-LD/robots/sitemap) also refuses a *.amplifyapp.com host
+│   ├── og/ogImage.ts               # server-only re-export of the resolver + buildOgImageUrl
 │   ├── fonts/siteFont.ts           # Per-site font resolution from siteData.fontFamily
 │   ├── pages/                      # pageConfig lookup helpers (getPageBySlug, getItemHref)
 │   └── renderComposedPage.tsx      # composePage output → JSX + skeletonPropsFor()
@@ -118,7 +120,9 @@ VR_Client_API generates signed URLs for any media field listed in `objectValue.m
 NEXT_PUBLIC_CLIENT_API         # VR_Client_API base URL (default https://client.vivreal.io)
 API_KEY                        # API key for VR_Client_API authorization
 SITE_ID                        # MongoDB site document ID; 'preview' in local/preview (disables SiteBeacon)
-NEXT_PUBLIC_SITE_URL           # Canonical per-site origin (CloudFront rewrites Host — never derive from request)
+NEXT_PUBLIC_SITE_URL           # Optional per-site origin override (CloudFront rewrites Host — never derive from request).
+                               #   NOT set by the deploy pipeline: verified unset on all 20 fleet Amplify apps, so this level is
+                               #   currently inert in production. The persisted `siteDetails.values.canonicalUrl` outranks it.
 SITE_CACHE_TTL_SECONDS         # Data Cache TTL (default 60; 86400 only after raising signed-URL TTL)
 REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verification
 NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
@@ -158,7 +162,7 @@ Pages are async Server Components that fetch data and pass it to Client Componen
 
 ### Metadata is Dynamic
 
-`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution: `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>` (`resolveSiteOrigin`).
+`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution is ONE chain in `src/lib/og/siteOrigin.ts`: `siteData.canonicalUrl` → `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>`, via `resolveSiteOrigin(siteData, { prefer })`. Every candidate goes through the same HTTPS-origin allowlist (no path, query, fragment, credentials, port or non-public host). The required `prefer` discriminant does NOT reorder the chain: `'durable'` (JSON-LD `url`, robots.txt `Sitemap:`, sitemap `<loc>` — crawler-cached) additionally refuses a `*.amplifyapp.com` candidate, `'deployed'` (metadataBase/OG — per-request) accepts it. `canonicalUrl` is demo-gated inside the resolver.
 
 ### Analytics — Two Distinct Components
 

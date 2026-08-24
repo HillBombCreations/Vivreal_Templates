@@ -1,5 +1,6 @@
 import 'server-only';
-export { resolveSiteOrigin } from './siteOrigin';
+export { resolveSiteOrigin, resolveCanonicalUrl, buildDetailUrl } from './siteOrigin';
+export type { OriginPreference, OriginSiteData } from './siteOrigin';
 
 /**
  * Build the Open Graph image URL for a page. Always points at the dynamic

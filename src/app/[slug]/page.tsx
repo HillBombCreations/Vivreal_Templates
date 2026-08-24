@@ -665,7 +665,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     pageConfig?.labels?.subtitle ||
     `${derivedTitle} — ${siteName}`;
 
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveSiteOrigin(siteData, { prefer: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {
