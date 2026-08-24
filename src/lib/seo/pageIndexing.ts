@@ -1,6 +1,21 @@
 import type { Metadata } from 'next';
 
 /**
+ * The minimum page shape every indexing rule in this module reads.
+ *
+ * Structural rather than `Pick<PageConfig, 'format' | 'seo'>` so this module
+ * stays importable by `node --experimental-strip-types --test`, which resolves
+ * no tsconfig `paths` and therefore cannot follow the `@/types/SiteData` alias.
+ * `PageConfig` declares both members compatibly (`format: string`,
+ * `seo?: { noindex?: boolean }`), so a real page config assigns to this with no
+ * cast, and `sitemap.ts`'s own narrowed page type does too.
+ */
+export type IndexablePage = {
+  format?: string;
+  seo?: { noindex?: boolean };
+};
+
+/**
  * Which Studio page TYPES must never be advertised to a search engine.
  *
  * Keyed on `pageConfig.format`, the authoritative page-type discriminant every
@@ -50,7 +65,9 @@ import type { Metadata } from 'next';
  *     NOT "must not be indexed", so they are kept as their own conditions in
  *     `buildSitemapEntries`: home IS in the sitemap (as the root entry, so the
  *     `/home` form would be a duplicate), and `subscribers` is a synthetic data
- *     carrier VR_Client_API injects whose route `notFound()`s.
+ *     carrier VR_Client_API injects whose route `notFound()`s. Note that the
+ *     root entry DOES answer to the author rule below (an owner can hide home
+ *     from search like any other page); it just never answers to this list.
  *   - cart / login / account / order-confirmation / thank-you / search-results —
  *     the obvious members of this class in a normal ecommerce app. None of them
  *     exists here: the cart is a dialog (`CartDialog`), there are no customer
@@ -71,6 +88,83 @@ export function isNonIndexablePageFormat(format: string | undefined): boolean {
 }
 
 /**
+ * The AUTHOR rule: did a human explicitly hide this page from search?
+ *
+ * The one place in this app that reads the `seo.noindex` field path. Everything
+ * that needs the answer (the page's `robots` metadata AND the sitemap) calls
+ * this, so the field cannot be renamed or re-typed on one surface and not the
+ * other. That drift is not hypothetical: before this function existed the route
+ * read `seo?.noindex` inline while `buildSitemapEntries` did not read it at all,
+ * so a page the author had hidden was still submitted in `sitemap.xml` while
+ * that same page served `noindex`. That is Google Search Console's "Submitted URL
+ * marked noindex" error, with the site simultaneously inviting and refusing the
+ * crawl.
+ *
+ * Truthiness, not `=== true`, deliberately. It matches byte-for-byte what the
+ * route already did with this flag, so unifying the two surfaces cannot make a
+ * page that is hidden TODAY become visible. The portal only ever persists the
+ * literal `true` (`Studio/seoDraft.ts` rebuilds the bag from a known key list
+ * and drops `noindex` entirely when false), so the two forms cannot disagree on
+ * real fleet data anyway, but if a hand-edited doc ever carried a truthy
+ * non-boolean, the strict form would silently un-hide a page, and that is the
+ * one direction of error this must not take.
+ */
+export function isAuthorHiddenPage(page: IndexablePage | undefined | null): boolean {
+  return Boolean(page?.seo?.noindex);
+}
+
+/**
+ * WHY this page must be withheld from search, or `null` if it must not be.
+ *
+ * The single predicate behind both search-facing surfaces: `buildSitemapEntries`
+ * skips a page when this is non-null, and `buildPageRobotsMetadata` turns the
+ * same answer into the page's `robots` directive. One function answering "should
+ * this page be indexed" means the sitemap and the meta tag cannot disagree,
+ * which is the entire failure mode this area keeps producing.
+ *
+ * It returns the CAUSE rather than a boolean because the two rules have
+ * different origins and different consequences, and a future reader has to be
+ * able to tell them apart:
+ *   - `'author'`: a human turned the Studio search-visibility toggle off on
+ *     THIS page. Site-specific, reversible in the Studio, and it can legitimately
+ *     empty a sitemap (a link-only site is a real thing an owner may ask for).
+ *   - `'format'`: the page TYPE is one no site should ever advertise, listed in
+ *     `NON_INDEXABLE_PAGE_FORMATS` above. Fleet-wide, not authorable, and it can
+ *     never empty a sitemap because no site consists only of checkout pages.
+ *
+ * Precedence is author-first and stated once here rather than re-derived at each
+ * call site. It only matters for the `follow` half of the directive (an author
+ * who hides a page wants nothing followed out of it), since both causes agree on
+ * `index: false`.
+ */
+export type PageIndexingBlock = 'author' | 'format';
+
+export function pageIndexingBlock(page: IndexablePage | undefined | null): PageIndexingBlock | null {
+  if (isAuthorHiddenPage(page)) return 'author';
+  if (isNonIndexablePageFormat(page?.format)) return 'format';
+  return null;
+}
+
+/**
+ * Whether a withheld page still passes link discovery on.
+ *
+ * A `Record<PageIndexingBlock, boolean>` rather than a `default:` arm or a
+ * trailing `if`: adding a cause to `PageIndexingBlock` without deciding its
+ * `follow` value is then a COMPILE error. The fall-through shapes all fail OPEN
+ * (a page withheld from the sitemap that emits no `noindex` at all), which is
+ * the precise inconsistency this module exists to prevent.
+ */
+const FOLLOW_WHEN_BLOCKED: Record<PageIndexingBlock, boolean> = {
+  // The author hid the page; nothing should be discovered through it either.
+  author: false,
+  // `follow`, not `nofollow`: the checkout result pages carry a "continue
+  // shopping" link back into the storefront, and a thin page that must not be
+  // indexed should still pass discovery on to the pages that should be. That is
+  // the standard treatment for a thank-you page.
+  format: true,
+};
+
+/**
  * The page's `robots` metadata, or NO `robots` key at all.
  *
  * Absence from a sitemap does not prevent indexing — Google's own guidance is
@@ -81,27 +175,28 @@ export function isNonIndexablePageFormat(format: string | undefined): boolean {
  * invitation but cannot retract it. `noindex` is the only directive that can,
  * which is why this is not "sitemap-only" hygiene.
  *
- * Three outcomes, in precedence order:
- *   1. Author set `seo.noindex` ⇒ `noindex, nofollow`, byte-identical to what
- *      this repo already emitted for that flag. The author's stricter choice
- *      wins over the format default so turning the Studio toggle on can never
- *      make a page LESS hidden.
- *   2. A non-indexable page type ⇒ `noindex, follow`. `follow`, not `nofollow`:
- *      the checkout result pages carry a "continue shopping" link back into the
- *      storefront, and a thin page that must not be indexed should still pass
- *      discovery on to the pages that should be. That is the standard treatment
- *      for a thank-you page.
- *   3. Anything else ⇒ `{}`, no `robots` key at all, so the root layout's
- *      demo-site rule stands on its own exactly as it does today. Returning an
- *      empty object rather than `{ robots: undefined }` is load-bearing: the
- *      call site spreads this, and a present-but-undefined key would override
- *      the layout's value.
+ * Three outcomes, decided by `pageIndexingBlock` above:
+ *   1. `'author'` ⇒ `noindex, nofollow`, byte-identical to what this repo
+ *      already emitted for that flag. The author's stricter choice wins over the
+ *      format default so turning the Studio toggle on can never make a page LESS
+ *      hidden.
+ *   2. `'format'` ⇒ `noindex, follow`.
+ *   3. `null` ⇒ `{}`, no `robots` key at all, so the root layout's demo-site
+ *      rule stands on its own exactly as it does today. Returning an empty
+ *      object rather than `{ robots: undefined }` is load-bearing: the call site
+ *      spreads this, and a present-but-undefined key would override the layout's
+ *      value.
+ *
+ * Takes the PAGE rather than a `(format, authoredNoindex)` pair so that the
+ * caller cannot compute the author half differently from the way the sitemap
+ * does. A boolean parameter is an invitation to a second reader of the field.
  */
 export function buildPageRobotsMetadata(
-  format: string | undefined,
-  authoredNoindex: boolean | undefined,
+  page: IndexablePage | undefined | null,
 ): Pick<Metadata, 'robots'> {
-  if (authoredNoindex) return { robots: { index: false, follow: false } };
-  if (isNonIndexablePageFormat(format)) return { robots: { index: false, follow: true } };
-  return {};
+  const block = pageIndexingBlock(page);
+  if (!block) return {};
+  // A fresh object per call: Next.js owns the returned metadata and a shared
+  // reference across every page render is a mutation hazard for no gain.
+  return { robots: { index: false, follow: FOLLOW_WHEN_BLOCKED[block] } };
 }

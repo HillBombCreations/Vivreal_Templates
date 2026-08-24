@@ -4,7 +4,7 @@ import type { PageConfig } from '@/types/SiteData';
 // sitemap.test.ts / originConsistency.test.ts under
 // `node --experimental-strip-types --test`, which has no tsconfig `paths`
 // resolution. Same convention robotsPolicy.ts / siteMapPolicy.ts follow.
-import { isNonIndexablePageFormat } from './pageIndexing.ts';
+import { isAuthorHiddenPage, pageIndexingBlock } from './pageIndexing.ts';
 
 /**
  * Build sitemap entries from the site's REAL page configs.
@@ -24,17 +24,33 @@ import { isNonIndexablePageFormat } from './pageIndexing.ts';
  *   - the synthetic `subscribers` carrier page. VR_Client_API adds it as a data
  *     carrier for the EmailPopup and Templates `notFound()`s the route, so
  *     listing it would submit a 404.
- *   - the NON-INDEXABLE page types (`isNonIndexablePageFormat` — today the two
- *     Stripe checkout result pages). `dougs-kitchen.com` was advertising
- *     `/checkoutsuccess` and `/checkoutcancel` to crawlers: thin, duplicate,
- *     post-transaction pages with no search intent, which every OTHER surface
- *     in the platform already treats as system pages. See ./pageIndexing.ts for
- *     the full membership rationale and for the candidates NOT excluded.
+ *   - anything `pageIndexingBlock` withholds from search. That covers BOTH
+ *     indexability rules from the one owner, so this sitemap can never disagree
+ *     with the `robots` meta tag the same page serves:
+ *       · `'format'`: the NON-INDEXABLE page types (today the two Stripe
+ *         checkout result pages). `dougs-kitchen.com` was advertising
+ *         `/checkoutsuccess` and `/checkoutcancel` to crawlers: thin, duplicate,
+ *         post-transaction pages with no search intent, which every OTHER
+ *         surface in the platform already treats as system pages.
+ *       · `'author'`: a human turned this page's Studio search-visibility
+ *         toggle off (`seo.noindex`). Until this condition existed the sitemap
+ *         ignored that flag entirely, so an author-hidden page was SUBMITTED to
+ *         Google while simultaneously serving `noindex` to it: the documented
+ *         Search Console error "Submitted URL marked noindex", and the same
+ *         defect class as the checkout pages one line up.
+ *     See ./pageIndexing.ts for the format list's membership rationale, for the
+ *     candidates NOT excluded, and for why the author rule reads truthiness.
  *
  * Removing entries renumbers `priority` for the entries after them, because
  * priority is derived from position (`1.0 - (idx+1) * (0.9/n)`). That is an
  * arithmetic consequence of the removal rather than a separate change, and
- * priority is a non-binding hint Google has publicly said it ignores.
+ * priority is a non-binding hint Google has publicly said it ignores. It applies
+ * to the author rule exactly as it did to the format rule.
+ *
+ * A site with no author-hidden page and no checkout page gets byte-identical
+ * output to before either rule existed: both conditions are pure additions to
+ * the filter, and the root entry's own gate below reads a field the fleet does
+ * not set (the portal persists `seo.noindex` only when a human sets it to true).
  *
  * `siteOrigin` is a PRE-RESOLVED absolute origin (protocol + host, no trailing
  * slash). The caller resolves it through the one shared chain
@@ -52,14 +68,16 @@ import { isNonIndexablePageFormat } from './pageIndexing.ts';
  * omitted entirely.
  */
 export function buildSitemapEntries(
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo'>[] | undefined,
   siteOrigin: string,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
   if (!siteOrigin) return [];
   const origin = siteOrigin.replace(/\/+$/, '');
 
-  const eligiblePages = (pages ?? []).filter(
+  const allPages = pages ?? [];
+
+  const eligiblePages = allPages.filter(
     (p) =>
       p &&
       typeof p.slug === 'string' &&
@@ -67,13 +85,29 @@ export function buildSitemapEntries(
       p.slug !== 'home' &&
       p.format !== 'home' &&
       p.format !== 'subscribers' &&
-      !isNonIndexablePageFormat(p.format),
+      pageIndexingBlock(p) === null,
   );
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
 
-  const entries: MetadataRoute.Sitemap = [
-    { url: origin, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 },
-  ];
+  // The root entry IS the home page, so the author rule has to reach it too.
+  // Without this, turning the Studio toggle off on home left `/` submitted in
+  // the sitemap while `app/page.tsx` served it `noindex`, the same Search
+  // Console contradiction, on the one URL that matters most.
+  //
+  // `isAuthorHiddenPage`, not `pageIndexingBlock`: only a human can remove the
+  // root entry. The format rule must never be able to, because a sitemap that
+  // lost its root over a fleet-wide type rule would be a silent, site-wide
+  // regression nobody authored. Same home-page identity test getSiteData()
+  // uses for `homePageConfig` (siteData/index.tsx), so the page whose metadata
+  // emits the `noindex` is exactly the page consulted here.
+  const homePage = allPages.find((p) => p && (p.format === 'home' || p.slug === 'home'));
+
+  const entries: MetadataRoute.Sitemap = [];
+  if (!isAuthorHiddenPage(homePage)) {
+    entries.push({ url: origin, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 });
+  }
+  // Slug priorities are derived from each slug's own position, never from the
+  // entries array, so dropping the root above cannot renumber anything.
   slugs.forEach((slug, idx) => {
     const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / slugs.length));
     entries.push({

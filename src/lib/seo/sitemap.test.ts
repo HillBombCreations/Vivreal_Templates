@@ -195,3 +195,175 @@ test('a page with sitemap:true but no resolved segments (empty pool / fetch miss
   const urls = buildSitemapEntries(scopedPages, 'https://acme.test', {}).map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/santa-monica']);
 });
+
+// ── an author-hidden page must not be SUBMITTED to the crawler it is hiding from
+//
+// The second half of the same defect class as the checkout pages above. The
+// author turns the Studio search-visibility toggle off, `[slug]/page.tsx` emits
+// `noindex, nofollow` for that page, and the sitemap kept submitting the URL
+// anyway. Google Search Console reports that exact pair as "Submitted URL marked
+// noindex": the site invites the crawl and refuses the result in one breath.
+//
+// The field is `pageConfig.seo.noindex` (src/types/SiteData/index.tsx), written
+// by the portal Studio's seoDraft collapse, which persists the key only when it
+// is true.
+
+const hiddenPagePages = [
+  { slug: 'home', format: 'home' },
+  { slug: 'about', format: 'about' },
+  { slug: 'thank-you', format: 'static', seo: { noindex: true } },
+  { slug: 'menu', format: 'list' },
+];
+
+test('DEFECT: an author-noindexed page is absent from the sitemap', () => {
+  const urls = buildSitemapEntries(hiddenPagePages, 'https://acme.test').map((e) => e.url);
+  assert.ok(
+    !urls.includes('https://acme.test/thank-you'),
+    'a page the author hid from search must not be submitted to search',
+  );
+});
+
+test('DEFECT: the removal is surgical, every page the author did NOT hide is still advertised, in order', () => {
+  // The mirror of the checkout case: a change that dropped the hidden page by
+  // dropping something else with it would pass the assertion above.
+  const urls = buildSitemapEntries(hiddenPagePages, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, [
+    'https://acme.test',
+    'https://acme.test/about',
+    'https://acme.test/menu',
+  ]);
+});
+
+test('the author rule fires on the FLAG, not on the format: `static` is otherwise indexable and stays so', () => {
+  // `thank-you` above is a `static` page, the same format as privacy/terms,
+  // which pageIndexing.ts deliberately keeps indexable. Only the flag moved it.
+  // This is what keeps the two rules independent: the author rule must not be
+  // implementable as "another format in the set".
+  const sameFormatUnflagged = [
+    { slug: 'home', format: 'home' },
+    { slug: 'thank-you', format: 'static' },
+  ];
+  const urls = buildSitemapEntries(sameFormatUnflagged, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/thank-you']);
+});
+
+test('BACK-COMPAT: a site with zero author-hidden pages gets byte-identical entries, seo block present or not', () => {
+  // The fleet-wide guarantee. `seo` is a bag most pages carry for metaTitle /
+  // metaDescription alone, and a site that has never touched the visibility
+  // toggle must be unable to tell this change shipped.
+  //
+  // Compares the FULL entry shape (url + priority + changeFrequency), not just
+  // URLs, because the priority renumbering is the one way a removal leaks into
+  // entries it did not remove. `lastModified` is `new Date()` per call and is
+  // excluded for that reason alone.
+  const shape = (entries: ReturnType<typeof buildSitemapEntries>) =>
+    entries.map((e) => ({ url: e.url, priority: e.priority, changeFrequency: e.changeFrequency }));
+
+  const noSeoAtAll = [
+    { slug: 'home', format: 'home' },
+    { slug: 'about', format: 'about' },
+    { slug: 'menu', format: 'list' },
+  ];
+  const seoButNoFlag = [
+    { slug: 'home', format: 'home', seo: { metaTitle: 'Home' } },
+    { slug: 'about', format: 'about', seo: { metaDescription: 'About us' } },
+    { slug: 'menu', format: 'list', seo: { noindex: false } },
+  ];
+
+  const baseline = shape(buildSitemapEntries(noSeoAtAll, 'https://acme.test'));
+  assert.deepStrictEqual(shape(buildSitemapEntries(seoButNoFlag, 'https://acme.test')), baseline);
+  // ...and the baseline itself is still the pre-change output, spelled out
+  // rather than compared to itself.
+  assert.deepStrictEqual(baseline, [
+    { url: 'https://acme.test', priority: 1.0, changeFrequency: 'monthly' },
+    { url: 'https://acme.test/about', priority: 0.55, changeFrequency: 'monthly' },
+    { url: 'https://acme.test/menu', priority: 0.1, changeFrequency: 'monthly' },
+  ]);
+});
+
+test('the two rules COMPOSE: a checkout page and an author-hidden page both go, and only those two', () => {
+  const mixed = [
+    { slug: 'home', format: 'home' },
+    { slug: 'products', format: 'products' },
+    { slug: 'private-launch', format: 'about', seo: { noindex: true } },
+    { slug: 'checkoutsuccess', format: 'checkout-success' },
+    { slug: 'terms', format: 'static' },
+  ];
+  const urls = buildSitemapEntries(mixed, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, [
+    'https://acme.test',
+    'https://acme.test/products',
+    'https://acme.test/terms',
+  ]);
+});
+
+test('the author rule renumbers priority the same way the format rule does: position-derived, stated not discovered', () => {
+  // Same arithmetic consequence the checkout removal has, pinned separately so
+  // it reads as an intended property of the AUTHOR rule rather than something
+  // inherited quietly. 2 remaining slugs of 4 pages ⇒ a 0.9/2 = 0.45 step, so
+  // the survivors span the full 1.0 → 0.1 range instead of holding the
+  // positions they had when the hidden pages were still in the list.
+  const entries = buildSitemapEntries(hiddenPagePages, 'https://acme.test');
+  assert.deepStrictEqual(
+    entries.map((e) => e.priority),
+    [1.0, 0.55, 0.1],
+  );
+});
+
+test('an author-hidden page that opted into detail-item URLs contributes none of them either', () => {
+  // Mirrors the checkout detail-item case: the item loop reads `eligiblePages`,
+  // so a page removed by the author rule must take its items with it.
+  const pages = [
+    { slug: 'home', format: 'home' },
+    {
+      slug: 'santa-monica',
+      format: 'collection-list',
+      detailPage: { sitemap: true },
+      seo: { noindex: true },
+    },
+  ];
+  const urls = buildSitemapEntries(pages, 'https://acme.test', {
+    'santa-monica': ['botox', 'juvederm'],
+  }).map((e) => e.url);
+  assert.deepStrictEqual(urls, ['https://acme.test'], 'root only, no page entry and no item entries');
+});
+
+test('an author-hidden HOME page removes the sitemap ROOT entry, the one URL the toggle would otherwise silently miss', () => {
+  // `/` is the home page. Home is excluded from the slug list by the
+  // home-duplicate rule, so without an explicit gate the root entry was emitted
+  // unconditionally and a site whose owner hid home kept submitting `/` while
+  // app/page.tsx served it `noindex, nofollow`.
+  const pages = [
+    { slug: 'home', format: 'home', seo: { noindex: true } },
+    { slug: 'about', format: 'about' },
+  ];
+  const urls = buildSitemapEntries(pages, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, ['https://acme.test/about'], 'no root entry, the rest untouched');
+});
+
+test('only the AUTHOR can remove the root entry: a home page with no flag keeps it, however it is identified', () => {
+  // The gate matches home the same way getSiteData() does (`format === 'home'
+  // || slug === 'home'`), so the page whose metadata carries the noindex is
+  // exactly the page consulted here. Both spellings, both unflagged, root kept.
+  for (const home of [
+    { slug: 'home', format: 'home' },
+    { slug: 'home', format: 'standard' },
+    { slug: 'welcome', format: 'home' },
+  ]) {
+    const urls = buildSitemapEntries([home, { slug: 'about', format: 'about' }], 'https://acme.test').map(
+      (e) => e.url,
+    );
+    assert.ok(urls.includes('https://acme.test'), `root entry kept for ${JSON.stringify(home)}`);
+  }
+});
+
+test('a site with no pages at all still emits its root, because the author rule cannot fire on a page that is not there', () => {
+  // Guards the `find` returning undefined. An empty sitemap is the defect this
+  // whole area was fixed for, and only an explicit author flag may produce one.
+  assert.deepStrictEqual(buildSitemapEntries(undefined, 'https://acme.test').map((e) => e.url), [
+    'https://acme.test',
+  ]);
+  assert.deepStrictEqual(buildSitemapEntries([], 'https://acme.test').map((e) => e.url), [
+    'https://acme.test',
+  ]);
+});

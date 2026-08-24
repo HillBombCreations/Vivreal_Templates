@@ -680,7 +680,11 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     // call is a gate that can be deleted with the suite still green. An
     // ordinary page still yields NO `robots` key at all, so the root layout's
     // demo-site rule stands on its own exactly as before.
-    ...buildPageRobotsMetadata(pageConfig?.format, seo?.noindex),
+    //
+    // Handed the whole `pageConfig`, not `(format, seo?.noindex)`: the same
+    // predicate then decides this page's `robots` directive and its presence in
+    // `sitemap.xml`, so the two can never contradict each other.
+    ...buildPageRobotsMetadata(pageConfig),
     ...buildRouteCanonicalMetadata(siteData, `/${slug}`),
     openGraph: {
       title,
