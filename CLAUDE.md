@@ -65,7 +65,7 @@ src/
 │   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
 │   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers
-│   ├── og/ogImage.ts               # resolveSiteOrigin: NEXT_PUBLIC_SITE_URL → domainInformation.live_url → domainName
+│   ├── og/ogImage.ts               # resolveOrigin(siteData, {prefer}): 'deployed' = env → live_url → domainName; 'durable' (JSON-LD/robots/sitemap) = env → domainName → live_url
 │   ├── fonts/siteFont.ts           # Per-site font resolution from siteData.fontFamily
 │   ├── pages/                      # pageConfig lookup helpers (getPageBySlug, getItemHref)
 │   └── renderComposedPage.tsx      # composePage output → JSX + skeletonPropsFor()
@@ -158,7 +158,7 @@ Pages are async Server Components that fetch data and pass it to Client Componen
 
 ### Metadata is Dynamic
 
-`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution: `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>` (`resolveSiteOrigin`).
+`generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution: `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>` (`resolveOrigin(siteData, { prefer: 'deployed' })`; JSON-LD/robots/sitemap use `{ prefer: 'durable' }`, which flips the last two and refuses a bare `*.amplifyapp.com` result — see `src/lib/og/siteOrigin.ts`).
 
 ### Analytics — Two Distinct Components
 

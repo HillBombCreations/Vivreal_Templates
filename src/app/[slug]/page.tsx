@@ -7,7 +7,7 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { resolveOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -664,7 +664,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     pageConfig?.labels?.subtitle ||
     `${derivedTitle} — ${siteName}`;
 
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveOrigin(siteData, { prefer: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {

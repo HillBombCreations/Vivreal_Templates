@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
-import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { resolveOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
@@ -78,7 +78,7 @@ export const generateMetadata = async () => {
   // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
   // block (if any) drives the Studio-editable overrides.
   const seo = siteData?.homePageConfig?.seo;
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveOrigin(siteData, { prefer: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, "home");
 
   const title = seo?.metaTitle || siteName;

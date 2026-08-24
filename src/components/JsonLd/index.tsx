@@ -22,7 +22,8 @@
  */
 import type { SiteData } from '@/types/SiteData';
 import { unsignMediaUrl } from './unsignMediaUrl';
-import { resolveIndexedOrigin } from '@/lib/og/ogImage';
+import { resolveOrigin } from '@/lib/og/ogImage';
+import { isDemoSite } from '@/lib/seo/demoSafety';
 
 interface JsonLdProps {
   schema: Record<string, unknown> | Array<Record<string, unknown>>;
@@ -50,7 +51,13 @@ export function JsonLd({ schema }: JsonLdProps) {
 export function buildSiteJsonLd(siteData: SiteData): Array<Record<string, unknown>> {
   const siteName =
     siteData.businessInfo?.name || siteData.name || 'Website';
-  const url = resolveIndexedOrigin(siteData) || undefined;
+  // SEO demo-safety: robots.txt (robots.tsx:30) and the sitemap
+  // (siteData/index.tsx:354) already withhold themselves from a pre-cutover
+  // demo. JSON-LD `url` had no matching gate — it would emit the demo's own
+  // `<sub>.vivreal.io` origin here while the layout's canonical simultaneously
+  // points at the prospect's real site (layout.tsx), a contradictory pair of
+  // ownership signals in one document. Gated the same way for symmetry.
+  const url = isDemoSite(siteData) ? undefined : resolveOrigin(siteData, { prefer: 'durable' }) || undefined;
   const description = siteData.businessInfo?.description;
   // Strip CloudFront signing params before embedding in JSON-LD — the
   // signed form expires after 300s but JSON-LD lives in crawler caches

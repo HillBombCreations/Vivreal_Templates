@@ -7,7 +7,7 @@ import type { SiteData as RendererSiteData } from "@hillbombcreations/site-rende
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import type { SiteData } from "@/types/SiteData";
-import { resolveSiteOrigin, buildOgImageUrl, buildDetailUrl } from "@/lib/og/ogImage";
+import { resolveOrigin, buildOgImageUrl, buildDetailUrl } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
@@ -704,7 +704,7 @@ export async function generateMetadata({ params }: Props) {
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
-  const origin = resolveSiteOrigin(siteData);
+  const origin = resolveOrigin(siteData, { prefer: 'deployed' });
 
   // CP-11: metadata for nested sub-pages resolved via the joined slug.
   const nestedPage = getPageBySlug(siteData, `${slug}/${itemId}`);

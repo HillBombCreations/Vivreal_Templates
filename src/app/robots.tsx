@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getSiteData } from '@/lib/api/siteData';
 import { isDemoSite } from '@/lib/seo/demoSafety';
-import { resolveIndexedOrigin } from '@/lib/og/ogImage';
+import { resolveOrigin } from '@/lib/og/ogImage';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,7 +31,7 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     return { rules: [{ userAgent: '*', disallow: '/' }] };
   }
 
-  const siteOrigin = resolveIndexedOrigin(siteData);
+  const siteOrigin = resolveOrigin(siteData, { prefer: 'durable' });
   return {
     rules: [
       // Default policy for every other crawler.
@@ -56,10 +56,11 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
       { userAgent: 'CCBot', disallow: '/' },
       { userAgent: 'Google-Extended', disallow: '/' },
     ],
-    // Subdomain-only sites have no custom domainName — resolveIndexedOrigin
-    // falls back to domainInformation.live_url for them so this still emits
-    // `https://<sub>.vivreal.io/sitemap.xml` rather than advertising
-    // `https://undefined/sitemap.xml` (observed live before this fallback).
+    // Subdomain-only sites have no custom domainName — resolveOrigin's
+    // 'durable' mode falls back to domainInformation.live_url for them so
+    // this still emits `https://<sub>.vivreal.io/sitemap.xml` rather than
+    // advertising `https://undefined/sitemap.xml` (observed live before this
+    // fallback).
     ...(siteOrigin
       ? { sitemap: `${siteOrigin}/sitemap.xml` }
       : {}),

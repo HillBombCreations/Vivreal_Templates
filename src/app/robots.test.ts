@@ -8,10 +8,10 @@ import fs from 'node:fs';
 // for the same constraint (see JsonLd/index.test.ts and
 // [slug]/[itemId]/page.test.ts).
 
-test('the Sitemap: line resolves through the indexed-origin resolver, not raw domainName', () => {
+test('the Sitemap: line resolves through the durable-preferring origin resolver, not raw domainName', () => {
   const source = fs.readFileSync(new URL('./robots.tsx', import.meta.url), 'utf8');
-  assert.match(source, /import \{ resolveIndexedOrigin \} from '@\/lib\/og\/ogImage'/);
-  assert.match(source, /const siteOrigin = resolveIndexedOrigin\(siteData\)/);
+  assert.match(source, /import \{ resolveOrigin \} from '@\/lib\/og\/ogImage'/);
+  assert.match(source, /const siteOrigin = resolveOrigin\(siteData, \{ prefer: 'durable' \}\)/);
   assert.match(source, /sitemap: `\$\{siteOrigin\}\/sitemap\.xml`/);
   assert.doesNotMatch(source, /https:\/\/\$\{siteData\.domainName\}\/sitemap\.xml/);
 });

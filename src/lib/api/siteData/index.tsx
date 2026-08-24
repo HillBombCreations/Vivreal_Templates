@@ -14,10 +14,10 @@ import {
   buildSiteDetailsFallbackCapture,
 } from '@/lib/api/errorCapture';
 import { isDemoSite } from '@/lib/seo/demoSafety';
+import { resolveOrigin } from '@/lib/og/ogImage';
 import { buildSitemapEntries } from '@/lib/seo/sitemap';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
-import { resolveIndexedOrigin } from '@/lib/og/ogImage';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -161,10 +161,11 @@ export const getSiteData = async (): Promise<SiteData> => {
   return {
     ...raw.siteDetails.values,
     domainName: raw.domainName,
-    // Thread domainInformation through so resolveSiteOrigin can use `live_url`
-    // (the deployed origin, set on every site) for metadata/OG absolute URLs —
-    // without it, subdomain sites lacking NEXT_PUBLIC_SITE_URL fell back to
-    // localhost via the default metadataBase.
+    // Thread domainInformation through so resolveOrigin's 'deployed' mode can
+    // use `live_url` (the deployed origin, set on every site) for metadata/OG
+    // absolute URLs — without it, subdomain sites lacking
+    // NEXT_PUBLIC_SITE_URL fell back to localhost via the default
+    // metadataBase.
     domainInformation: raw.domainInformation,
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
@@ -383,7 +384,7 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
   return buildSitemapEntries(
     raw.pages,
-    resolveIndexedOrigin({ domainName: raw.domainName, domainInformation: raw.domainInformation }),
+    resolveOrigin({ domainName: raw.domainName, domainInformation: raw.domainInformation }, { prefer: 'durable' }),
     sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
   );
 };

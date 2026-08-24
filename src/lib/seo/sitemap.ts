@@ -25,9 +25,9 @@ import type { PageConfig } from '@/types/SiteData';
  * omitted entirely.
  *
  * `siteOrigin` is a pre-resolved absolute origin (protocol + host, no
- * trailing slash) — the caller resolves it via `resolveIndexedOrigin`
- * (`@/lib/og/ogImage`) so this function stays pure and origin-source-agnostic.
- * Empty `siteOrigin` ⇒ `[]`.
+ * trailing slash) — the caller resolves it via `resolveOrigin(siteData,
+ * { prefer: 'durable' })` (`@/lib/og/ogImage`) so this function stays pure
+ * and origin-source-agnostic. Empty `siteOrigin` ⇒ `[]`.
  */
 export function buildSitemapEntries(
   pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage'>[] | undefined,

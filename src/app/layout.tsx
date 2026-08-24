@@ -5,7 +5,7 @@ import '@hillbombcreations/site-renderer/styles/content-grid.css';
 import '@hillbombcreations/site-renderer/styles/animations.css';
 import { getSiteData } from '@/lib/api/siteData';
 import { isDemoSite, getDemoSourceUrl } from '@/lib/seo/demoSafety';
-import { resolveSiteOrigin } from '@/lib/og/ogImage';
+import { resolveOrigin } from '@/lib/og/ogImage';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
@@ -43,7 +43,7 @@ import EmailPopup from '@/components/HomeSections/EmailPopup';
 export async function generateMetadata(): Promise<Metadata> {
   try {
     const siteData = await getSiteData();
-    const origin = resolveSiteOrigin(siteData);
+    const origin = resolveOrigin(siteData, { prefer: 'deployed' });
     // SEO demo-safety: a pre-cutover demo emits `noindex, nofollow` on every
     // page, and points its canonical at the prospect's ORIGINAL site so any
     // crawler that still reaches the demo attributes the content there (signal
@@ -59,7 +59,7 @@ export async function generateMetadata(): Promise<Metadata> {
       ...(demo && demoSource && { alternates: { canonical: demoSource } }),
     };
   } catch {
-    const envOrigin = resolveSiteOrigin(null);
+    const envOrigin = resolveOrigin(null, { prefer: 'deployed' });
     return envOrigin ? { metadataBase: new URL(envOrigin) } : {};
   }
 }
