@@ -23,9 +23,18 @@ function isAmplifyAppOrigin(origin: string): boolean {
   try {
     return AMPLIFYAPP_HOST_RE.test(new URL(origin).hostname);
   } catch {
-    // Not a parseable absolute URL — can't happen for our own env/https://
-    // construction, but a malformed domainName could theoretically reach
-    // here. Not an amplifyapp host either way.
+    // Not a parseable absolute URL. Currently unreachable, but NOT because it
+    // is structurally impossible: `domainOrigin()` always prefixes
+    // `domainName` with `https://`, but `siteData.domainInformation.live_url`
+    // (below, in `resolveOrigin`) is passed through UNVALIDATED. A
+    // scheme-less, protocol-relative, or trailing-dot amplifyapp `live_url`
+    // would land here and be treated as "not amplifyapp" — not refused, not
+    // caught by the regex either (it anchors on an exact `.com` end). It's
+    // unreachable today only because every current writer of `live_url`
+    // (Vivreal_EventHandler's `getDefaultUrl`, `markSiteLive`,
+    // `checkDomainAssociaion` — see the JSDoc above) unconditionally emits an
+    // `https://` scheme. That is an external invariant this function relies
+    // on, not one it enforces.
     return false;
   }
 }
@@ -49,6 +58,19 @@ function isAmplifyAppOrigin(origin: string): boolean {
  *   2. `durable`: `domainName` first, then `domainInformation.live_url`.
  *      `deployed`: `domainInformation.live_url` first, then `domainName`.
  *
+ * One deliberate behavior change vs. the pre-collapse pair, in BOTH modes
+ * (not just `durable` — corrected from an earlier, false "deployed is
+ * unaffected" claim): a slash-only `NEXT_PUBLIC_SITE_URL` (e.g. `"/"`) now
+ * falls through to `domainName`/`live_url` instead of short-circuiting to
+ * `''`. The old code tested the trimmed-but-unstripped value (`"/"`,
+ * truthy) and returned the stripped one (`''`); this version strips before
+ * testing, so the already-empty result is falsy and the env override is
+ * correctly treated as absent. The new behavior is the intended one: a
+ * slash-only env var isn't a real origin, and silently blanking a site's
+ * known-good `domainName`/`live_url` because of it (the old behavior) is
+ * strictly worse than falling back to them. `NEXT_PUBLIC_SITE_URL` is never
+ * actually set to `"/"` by the deploy pipeline, so this has no fleet impact.
+ *
  * Why two orders exist at all — for JSON-LD `url`, `robots.txt` `Sitemap:`,
  * and sitemap `<loc>` (crawler-cached for days), `durable` prefers the
  * customer-authored `domainName` over `live_url`. For OG/canonical metadata
@@ -71,7 +93,7 @@ function isAmplifyAppOrigin(origin: string): boolean {
  *     amplifyapp `defaultUrl` and writes it as the TERMINAL `live_url` value
  *     whenever `domain` is falsy.
  *   - The deploy state machine proves this path is real and permanent, not
- *     hypothetical: `docs/ops/deploy-site-state-machine.asl.json`'s
+ *     hypothetical: `Vivreal_EventHandler/docs/ops/deploy-site-state-machine.asl.json`'s
  *     `AssociateDomain?` state routes `$.domain === ""` straight to
  *     `MarkLive` (an End state), skipping association entirely. A site
  *     created with neither a subdomain nor a custom domain
@@ -126,13 +148,23 @@ export function resolveOrigin(
 
   const domain = domainOrigin(siteData?.domainName);
   const liveUrl = normalizedUrl(siteData?.domainInformation?.live_url);
-  const resolved = prefer === 'durable' ? domain || liveUrl : liveUrl || domain;
+
+  // Test positively for 'deployed' (rather than 'durable') so that any value
+  // TypeScript's `OriginPreference` union didn't catch — an omitted options
+  // object, a typo'd literal reaching this JS at runtime — falls to the
+  // SAFER `durable` path, both for resolution order and for the amplifyapp
+  // guard below. The prior positive-test-for-'durable' form let an
+  // unrecognized value silently take the 'deployed' branch, including the
+  // amplifyapp host the guard exists to refuse. No behavior change for
+  // either valid literal.
+  const isDeployed = prefer === 'deployed';
+  const resolved = isDeployed ? liveUrl || domain : domain || liveUrl;
 
   // Defensive floor (see doc comment above) — only the `durable` surfaces
   // (JSON-LD, robots, sitemap) are crawler-cached long enough for a leaked
   // amplifyapp host to matter; `deployed` (OG/metadata) already accepted
   // `live_url` as-is before this resolver existed and is unchanged here.
-  if (prefer === 'durable' && isAmplifyAppOrigin(resolved)) return '';
+  if (!isDeployed && isAmplifyAppOrigin(resolved)) return '';
 
   return resolved;
 }

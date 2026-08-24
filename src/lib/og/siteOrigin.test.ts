@@ -108,6 +108,31 @@ test('NEXT_PUBLIC_SITE_URL env override wins over both, either mode', () => {
   }
 });
 
+test('a slash-only NEXT_PUBLIC_SITE_URL is treated as absent, in BOTH modes, falling back to domainName/live_url', () => {
+  // Fixture R from the origin-unification review's `e13c56d` verification: the
+  // pre-collapse code tested the trimmed-but-unstripped env value ("/", truthy)
+  // and returned the STRIPPED result (''), so a slash-only override blanked the
+  // origin entirely in both modes even though a real domainName/live_url was
+  // known. This version strips before testing, so the empty result is
+  // correctly falsy and the override is ignored — a nonsensical env value no
+  // longer silences a site's real, known-good origin.
+  process.env.NEXT_PUBLIC_SITE_URL = '/';
+  try {
+    const durable = resolveOrigin(
+      { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://classichousephx.vivreal.io' } },
+      { prefer: 'durable' },
+    );
+    const deployed = resolveOrigin(
+      { domainName: 'wavesofgrainco.com', domainInformation: { live_url: 'https://classichousephx.vivreal.io' } },
+      { prefer: 'deployed' },
+    );
+    assert.strictEqual(durable, 'https://wavesofgrainco.com');
+    assert.strictEqual(deployed, 'https://classichousephx.vivreal.io');
+  } finally {
+    delete process.env.NEXT_PUBLIC_SITE_URL;
+  }
+});
+
 test('trailing slashes are stripped from both domainName and live_url sources', () => {
   assert.strictEqual(
     resolveOrigin({ domainName: 'acme.test/', domainInformation: undefined }, { prefer: 'durable' }),
@@ -143,4 +168,24 @@ test('buildDetailUrl returns undefined when the only known origin is a bare ampl
     'abc123',
   );
   assert.strictEqual(url, undefined);
+});
+
+test('an unrecognized prefer literal fails safe to durable, not the less-safe deployed answer', () => {
+  // TypeScript already rejects every bad `prefer` form at compile time (see the
+  // `@ts-expect-error` probes in the origin-unification review) — this pins the
+  // JS-runtime fallback for a value that reaches here anyway (an omitted options
+  // object, a typo'd literal from an untyped caller). Before the fix, the
+  // discriminant tested positively for 'durable', so anything else — including
+  // this — silently took the 'deployed' branch and returned the raw amplifyapp
+  // host the durable guard exists to refuse. The fixture has no domainName and a
+  // durably-amplifyapp live_url, so 'durable' resolves to '' (fixture E in the
+  // review) while the old 'deployed' fallthrough resolved to the amplifyapp host.
+  const site = {
+    domainName: undefined,
+    domainInformation: { live_url: 'https://stable.d1a2b3c4d5.amplifyapp.com' },
+  };
+  // @ts-expect-error — intentionally an unrecognized `prefer` literal, not one of
+  // the two values 'durable'/'deployed' the OriginPreference union allows.
+  const origin = resolveOrigin(site, { prefer: 'indexed' });
+  assert.strictEqual(origin, '', 'unrecognized prefer must refuse the amplifyapp host, matching durable mode');
 });

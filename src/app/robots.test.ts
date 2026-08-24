@@ -15,3 +15,16 @@ test('the Sitemap: line resolves through the durable-preferring origin resolver,
   assert.match(source, /sitemap: `\$\{siteOrigin\}\/sitemap\.xml`/);
   assert.doesNotMatch(source, /https:\/\/\$\{siteData\.domainName\}\/sitemap\.xml/);
 });
+
+test('the Sitemap: line is guarded by a conditional spread on siteOrigin, not emitted unconditionally', () => {
+  // Pins the ternary itself, not just the interpolation string. Without this,
+  // a mutant that always emits `sitemap: ...` (dropping the `siteOrigin ? ... : {}`
+  // guard) still satisfies the assertions above, and renders an amplifyapp-empty
+  // origin as `Sitemap: /sitemap.xml` — a relative directive, invalid per the
+  // sitemaps.org robots.txt extension, which requires a fully-qualified URL.
+  const source = fs.readFileSync(new URL('./robots.tsx', import.meta.url), 'utf8');
+  assert.match(
+    source,
+    /\.\.\.\(siteOrigin\s*\?\s*\{ sitemap: `\$\{siteOrigin\}\/sitemap\.xml` \}\s*:\s*\{\}\)/,
+  );
+});
