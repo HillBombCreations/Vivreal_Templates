@@ -221,6 +221,11 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                           showAfterScroll={siteData.floatingCta.showAfterScroll ?? 400}
                           position={siteData.floatingCta.position}
                           hideOnPages={siteData.floatingCta.hideOnPages ?? [siteData.floatingCta.link]}
+                          /* Optional contact panel. These props are mapped
+                             EXPLICITLY, so any new floatingCta key is dropped
+                             unless it is threaded here too. */
+                          fields={siteData.floatingCta.fields}
+                          submitLabel={siteData.floatingCta.submitLabel}
                       />
                   )}
                   {/*
