@@ -108,6 +108,9 @@ function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undef
   return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
 }
 
+import { Suspense } from "react";
+import RouteProgress from "@/components/Navigation/RouteProgress";
+
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
     const siteData = await getSiteData();
@@ -167,6 +170,17 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               }
           >
               <Providers siteData={siteData}>
+                  {/*
+                    Route-transition feedback. Every page here is
+                    `force-dynamic`, so a navigation waits on a server render
+                    with nothing on screen changing — the site looks frozen and
+                    people click again. Suspense because RouteProgress reads
+                    useSearchParams, which opts the tree into client rendering
+                    without one.
+                  */}
+                  <Suspense fallback={null}>
+                      <RouteProgress />
+                  </Suspense>
                   {/*
                     View Transitions: wraps route content so the browser
                     animates cross-fades between navigations automatically
