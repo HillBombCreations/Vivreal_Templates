@@ -9,7 +9,7 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\""
+    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\""
   },
   "dependencies": {
     "@hillbombcreations/site-renderer": "^1.62.1",
