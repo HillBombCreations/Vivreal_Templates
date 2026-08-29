@@ -33,7 +33,7 @@ type RobotsSiteData = Pick<
  *
  * Crawlers not listed fall through to the wildcard `*` rule, which allows
  * indexing of public content and disallows `/private/` + agent endpoints
- * (so generic search crawlers don't try to follow `/mcp`).
+ * (so generic search crawlers don't try to follow `/mcp` or `/llms.txt`).
  */
 export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robots {
   // SEO demo-safety: a pre-cutover demo site is a near-duplicate of the
@@ -51,11 +51,23 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
 
   return {
     rules: [
-      // Default policy for every other crawler.
+      // Default policy for every other crawler. `/llms.txt` is an agent
+      // endpoint in the same class as `/mcp`: generic search crawlers stay off
+      // it (a Markdown index of the site gains nothing from being indexed and
+      // must not compete with the real pages), while the live-action agents
+      // below are let onto it explicitly. `/.well-known/llms.txt` is the
+      // pre-#123 path, now a 301 onto `/llms.txt`; it stays listed so the
+      // retired path never becomes a side door into the same file.
       {
         userAgent: '*',
         allow: '/',
-        disallow: ['/private/', '/mcp', '/.well-known/mcp.json', '/.well-known/llms.txt'],
+        disallow: [
+          '/private/',
+          '/mcp',
+          '/.well-known/mcp.json',
+          '/.well-known/llms.txt',
+          '/llms.txt',
+        ],
       },
 
       // Live-action agent classes — allowed everywhere including agent endpoints.
