@@ -28,16 +28,24 @@ test('dynamic is force-dynamic', () => {
   assert.match(source, /export const dynamic = 'force-dynamic';/);
 });
 
-test('redirects using the shared target + status, not a hand-rolled URL/status literal', () => {
-  assert.match(source, /NextResponse\.redirect\(/);
-  assert.match(source, /llmsTxtRedirectTarget\(request\.url\)/);
-  assert.match(source, /LLMS_TXT_REDIRECT_STATUS/);
+test('builds the response from the shared, behaviourally-tested init, not a hand-rolled URL/status literal', () => {
+  assert.match(source, /new NextResponse\(null, llmsTxtRedirectResponseInit\(\)\)/);
   // Genuinely rejects a hand-rolled `new URL('/llms.txt', ...)` reintroduced
-  // inline instead of importing the shared, behaviourally-tested target.
+  // inline instead of importing the shared, behaviourally-tested init.
   assert.doesNotMatch(source, /new URL\('\/llms\.txt'/);
 });
 
-test('imports the target + status from the shared llmsTxtRedirect module', () => {
+test('never derives the target from the request (hotfix 2026-08-29): no request.url, no NextResponse.redirect', () => {
+  // Under Amplify's compute `request.url` is `http://localhost:3000/...`, and
+  // `NextResponse.redirect()` requires an absolute URL, so the only way it
+  // could have been fed one was from that host. Every customer site 301'd to
+  // `https://localhost:3000/llms.txt` for the minutes this stood.
+  assert.doesNotMatch(source, /request\.url/);
+  assert.doesNotMatch(source, /request\.nextUrl/);
+  assert.doesNotMatch(source, /NextResponse\.redirect\(/);
+});
+
+test('imports the init from the shared llmsTxtRedirect module', () => {
   assert.match(source, /from '@\/lib\/llmsTxtRedirect'/);
 });
 

@@ -14,12 +14,19 @@
  * behavioural coverage under `node --test`, which cannot load this file (it
  * imports `next/server`).
  */
-import { NextRequest, NextResponse } from 'next/server';
-import { llmsTxtRedirectTarget, LLMS_TXT_REDIRECT_STATUS } from '@/lib/llmsTxtRedirect';
+import { NextResponse } from 'next/server';
+import { llmsTxtRedirectResponseInit } from '@/lib/llmsTxtRedirect';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  return NextResponse.redirect(llmsTxtRedirectTarget(request.url), LLMS_TXT_REDIRECT_STATUS);
+/**
+ * No `request` parameter, and not the framework's redirect helper: that
+ * helper insists on an absolute URL, and the only absolute origin available
+ * here is the incoming request's own URL, which under Amplify's compute
+ * carries `localhost:3000`. The `Location` is site-relative (see
+ * `llmsTxtRedirect.ts`), so the response is built directly.
+ */
+export async function GET(): Promise<NextResponse> {
+  return new NextResponse(null, llmsTxtRedirectResponseInit());
 }
