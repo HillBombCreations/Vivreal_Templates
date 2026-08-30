@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
+import { HARD_INVALIDATION } from "@/lib/cacheInvalidation";
 import crypto from "node:crypto";
 
 // MUST be the Node.js runtime, not edge: revalidateTag drives the Next.js Data
@@ -116,9 +117,11 @@ export async function POST(request: NextRequest) {
 
   const tags = tagsForEvent(event, body.data);
   for (const tag of tags) {
-    // 'max' = stale-while-revalidate: serve stale once while the next render
-    // refetches in the background, so an edit never produces a request stall.
-    revalidateTag(tag, "max");
+    // HARD_INVALIDATION ({ expire: 0 }) drops the entry outright. The previous
+    // 'max' profile was stale-while-revalidate, which left the customer's own
+    // edit invisible for one more render on this instance. See
+    // src/lib/cacheInvalidation.ts for the manifest-level difference.
+    revalidateTag(tag, HARD_INVALIDATION);
   }
 
   return NextResponse.json({ revalidated: true, event, tags, now: Date.now() });
