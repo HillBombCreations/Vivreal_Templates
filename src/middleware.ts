@@ -7,23 +7,68 @@ import {
   isSelfRedirectLoop,
 } from '@/lib/edgeSiteMap'
 import { resolveMissingItemRedirect } from '@/lib/redirects'
-
-const PREVIEW_QUERY_PARAM = 'vivreal_preview'
-const PREVIEW_REQUEST_HEADER = 'x-vivreal-preview-token'
+import {
+  PREVIEW_QUERY_PARAM,
+  PREVIEW_TOKEN_COOKIE,
+  buildPreviewEnableUrl,
+  isWellFormedPreviewToken,
+} from '@/lib/api/previewToken'
 
 export async function middleware(request: NextRequest) {
-  const requestHeaders = new Headers(request.headers)
-
-  // Capture the portal preview-bypass token from the inbound URL and surface
-  // it to server components as a request header. server-side fetches in
-  // lib/api/client.ts read it via next/headers and relay to VR_Client_API.
-  // The portal appends `?vivreal_preview=<token>` to the iframe src and the
-  // "Visit Site" link; this is the only point where it crosses from the
-  // user's browser into the SSR request context.
+  // ISR migration Phase 1 -- upgrade the portal's `?vivreal_preview=<token>`
+  // URL into a Next draft-mode session instead of injecting it as a request
+  // header.
+  //
+  // This file used to set `x-vivreal-preview-token` here, which meant
+  // lib/api/client.ts had to call `headers()` on EVERY render to find it. That
+  // one call forced every route on every customer site dynamic and was the
+  // sole blocker on prerender/ISR eligibility for the whole fleet
+  // (docs/projects/isr-migration/plan.md, "Root blocker"). Draft mode is
+  // readable without making a public render dynamic; a request header is not.
+  //
+  // The `?vivreal_preview=` contract is deliberately UNCHANGED, so the portal
+  // needs no coordinated release: the same link it emits today still starts a
+  // preview, it just costs one extra 307 first. `/api/preview/enable` sets the
+  // token cookie that client.ts relays to VR_Client_API as `x-vivreal-preview`
+  // -- the header that keeps a portal preview off the customer's API quota.
+  //
+  // Loop safety: the redirect target has the preview param stripped
+  // (resolvePreviewRedirectTarget), so the bounced-back request cannot land
+  // here again. A malformed token skips the detour entirely and renders as an
+  // ordinary public request, which is what it would have degraded to anyway --
+  // VR_Client_API would have refused it.
+  //
+  // GET/HEAD only. A 307 preserves method and body, so redirecting a POST that
+  // happened to carry the param would re-post it at /api/preview/enable and
+  // earn a 405. Nothing sends the param on a POST today; a POST that somehow
+  // did simply renders without the bypass (metered, still correct), which is
+  // the better of the two failure modes.
+  //
+  // NextResponse.redirect with an absolute URL is correct HERE and would not
+  // be inside a route handler: Next's middleware adapter rewrites a Location
+  // whose host matches the request back to a relative one
+  // (next/dist/server/web/adapter.js -> getRelativeURL), so the Amplify
+  // localhost:3000 trap that bit .well-known/llms.txt cannot reach this call.
+  // /api/preview/enable, being a route handler, emits its Location relative by
+  // hand for exactly that reason.
   const previewToken = request.nextUrl.searchParams.get(PREVIEW_QUERY_PARAM)
-  if (previewToken) {
-    requestHeaders.set(PREVIEW_REQUEST_HEADER, previewToken)
+  if (
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    isWellFormedPreviewToken(previewToken)
+  ) {
+    return NextResponse.redirect(
+      new URL(
+        buildPreviewEnableUrl(
+          previewToken,
+          `${request.nextUrl.pathname}${request.nextUrl.search}`,
+        ),
+        request.nextUrl,
+      ),
+      307,
+    )
   }
+
+  const requestHeaders = new Headers(request.headers)
 
   // Task 14 item 2 (dashboard-insights-phase-3-capture/plan.md, D7) --
   // compute the visitor bot verdict ONCE, here at the edge, where the
@@ -49,10 +94,19 @@ export async function middleware(request: NextRequest) {
 
   // isSkippablePath covers both: (a) Studio preview traffic -- must never be
   // redirected by a cached map, and preview reads already bypass every cache
-  // layer (src/lib/api/client.ts:200-206) -- and (b) non-document paths
-  // (`/_next/*`, `/api/*`, extension-bearing paths), a cost optimisation
+  // layer (src/lib/api/client.ts, clientFetchCached) -- and (b) non-document
+  // paths (`/_next/*`, `/api/*`, extension-bearing paths), a cost optimisation
   // only, since these can never be an authored redirect's `from`.
-  if (isSkippablePath(request.nextUrl)) {
+  //
+  // The cookie check carries (a) forward. Preview traffic used to be
+  // identifiable for the whole session by `?vivreal_preview=` riding on the
+  // URL; after the draft-mode swap the param appears on exactly ONE request
+  // (the one redirected to /api/preview/enable) and every later request in the
+  // session carries the cookie instead. Without this line a preview session
+  // would start being redirected by the 300s-stale edge map -- e.g. a page the
+  // author just created would 301 away under them -- which is precisely the
+  // failure isSkippablePath's preview clause exists to prevent.
+  if (request.cookies.has(PREVIEW_TOKEN_COOKIE) || isSkippablePath(request.nextUrl)) {
     return fallthrough()
   }
 

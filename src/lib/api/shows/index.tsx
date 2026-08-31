@@ -1,9 +1,18 @@
 import 'server-only';
 import type { ShowData, CMSShowData } from '@/types/Shows';
-import { clientFetchSafe } from '@/lib/api/client';
+import { clientFetchCached, clientFetchSafe, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { collectionTags } from '@/lib/api/cacheTags';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
+const SITE_ID = process.env.SITE_ID || '';
+
+/**
+ * Window `getShows()` reads. Unchanged from the value it has always passed
+ * through `getShowsPaginated`; named because it is now also half of a cache
+ * key and must stay constant for that key to be reused across renders.
+ */
+const SHOWS_DETAIL_LIMIT = 100;
 
 interface PaginatedResponse<T> {
   items: T[];
@@ -13,6 +22,10 @@ interface PaginatedResponse<T> {
 export interface ShowsResult {
   shows: ShowData[];
   totalCount: number;
+}
+
+function showsPath(collectionId: string, limit: number, skip: number): string {
+  return `/tenant/collectionObjects?collectionId=${encodeURIComponent(collectionId)}&limit=${limit}&skip=${skip}&sort=publishDate:desc`;
 }
 
 function mapShow(item: CMSShowData): ShowData {
@@ -30,9 +43,43 @@ function mapShow(item: CMSShowData): ShowData {
   };
 }
 
+/** Newest first. The API sorts by publishDate; the UI sorts by event date. */
+function byEventDateDesc(shows: ShowData[]): ShowData[] {
+  return shows.sort(
+    (a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime()
+  );
+}
+
+/**
+ * The whole show list, CACHED and TAGGED.
+ *
+ * ISR migration Phase 2 (plan.md, Blocker 5): this read backs `getShowById`
+ * and therefore every show DETAIL page. It used to go through the uncached
+ * `clientFetchSafe`, which meant a show detail page re-hit VR_Client_API on
+ * every render (billing the customer's quota for crawler traffic) AND carried
+ * no cache tag, so a Studio edit to that show had nothing to invalidate. It
+ * now shares the `collection:<id>` + `site:<id>` tags every other collection
+ * read uses, so `POST /api/revalidate` drops it on `content.*`/`collection.*`.
+ *
+ * The fixed `limit`/`skip` matter: they keep the cache key constant, which is
+ * what lets the entry actually be reused. `getShowsPaginated` below stays
+ * uncached deliberately — its limit/skip come straight off the public
+ * `/api/shows` query string, so caching it would let any caller mint
+ * unbounded Data Cache entries.
+ */
 export async function getShows(collectionId?: string): Promise<ShowData[]> {
-  const result = await getShowsPaginated({ collectionId, limit: 100 });
-  return result.shows;
+  const id = collectionId || SHOWS_ID;
+  if (!id) return [];
+
+  const res = await clientFetchCached<PaginatedResponse<CMSShowData>>(
+    showsPath(id, SHOWS_DETAIL_LIMIT, 0),
+    { items: [], totalCount: 0 },
+    SITE_CACHE_TTL_SECONDS,
+    undefined,
+    collectionTags(SITE_ID, id)
+  );
+
+  return byEventDateDesc(res.items.map(mapShow));
 }
 
 export async function getShowsPaginated({
@@ -48,16 +95,11 @@ export async function getShowsPaginated({
   if (!id) return { shows: [], totalCount: 0 };
 
   const res = await clientFetchSafe<PaginatedResponse<CMSShowData>>(
-    `/tenant/collectionObjects?collectionId=${encodeURIComponent(id)}&limit=${limit}&skip=${skip}&sort=publishDate:desc`,
+    showsPath(id, limit, skip),
     { items: [], totalCount: 0 }
   );
 
-  const shows = res.items.map(mapShow);
-  shows.sort(
-    (a, b) => new Date(b.date ?? 0).getTime() - new Date(a.date ?? 0).getTime()
-  );
-
-  return { shows, totalCount: res.totalCount };
+  return { shows: byEventDateDesc(res.items.map(mapShow)), totalCount: res.totalCount };
 }
 
 export const getShowById = async (id: string, collectionId?: string): Promise<ShowData | null> => {
