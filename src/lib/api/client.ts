@@ -141,8 +141,16 @@ export async function clientFetch<T>(
 
 /**
  * Safe version — returns fallback on error instead of throwing.
- * Re-throws ApiError with status 402 (quota exceeded / frozen account)
- * so the page can render the QuotaExceeded component.
+ * Re-throws ApiError with status 402 (quota exceeded) so the page can render
+ * the QuotaExceeded component.
+ *
+ * NOT the freeze path, despite what this comment said until the 2026-08-31
+ * root cause was found. A billing freeze is a 400 carrying `code:
+ * 'GroupFrozen'`, never a 402, so `isQuotaError` has never recognised one and
+ * this re-throw has never fired for a frozen account. Freezes are handled
+ * above the render entirely, by the middleware gate in `src/middleware.ts` and
+ * `isSiteFrozen()` in `src/lib/edgeSiteMap.ts`. Anything here that needs to
+ * tell a freeze apart should read `err.code`, not `err.status`.
  */
 export async function clientFetchSafe<T>(
   path: string,
@@ -152,7 +160,8 @@ export async function clientFetchSafe<T>(
   try {
     return await clientFetch<T>(path, init);
   } catch (err) {
-    // Let 402 (quota/frozen) bubble up so pages can show the quota page
+    // Let 402 (quota, NOT freeze — see the doc comment) bubble up so pages can
+    // show the quota page
     if (err instanceof ApiError && err.status === 402) {
       throw err;
     }
@@ -183,8 +192,8 @@ export async function clientFetchSafe<T>(
  * - Preview requests (draft mode on, carrying a per-session token) BYPASS the
  *   cache entirely — they must always be fresh, and request APIs (cookies())
  *   can't be read inside a cache scope.
- * - 402 (quota/frozen) is never cached: it re-throws so the page re-evaluates
- *   quota state on the next request.
+ * - 402 (quota; a freeze is a 400, see clientFetchSafe) is never cached: it
+ *   re-throws so the page re-evaluates quota state on the next request.
  * - Cache key includes `path` (so different siteIds/params are isolated); each
  *   customer site is its own deployment, so entries are effectively per-site.
  * - Callers must keep `revalidateSeconds` UNDER VR_Client_API's 300s signed
@@ -221,7 +230,7 @@ export async function clientFetchCached<T>(
   try {
     return await cached();
   } catch (err) {
-    // Let 402 (quota/frozen) bubble up so pages can show the quota page; never cache it.
+    // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page; never cache it.
     if (err instanceof ApiError && err.status === 402) {
       throw err;
     }

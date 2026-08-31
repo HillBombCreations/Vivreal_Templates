@@ -50,6 +50,16 @@ function captureFetch(body: unknown, status = 200): Captured[] {
   return calls;
 }
 
+/** Stub `fetch` with a body we control byte for byte (non-JSON, empty, HTML). */
+function captureRawFetch(body: string, status: number, contentType = 'application/json') {
+  globalThis.fetch = (async () =>
+    new Response(body, {
+      status,
+      statusText: '',
+      headers: { 'Content-Type': contentType },
+    })) as typeof globalThis.fetch;
+}
+
 /** Read a header off the captured init the way the platform would. */
 function headerOf(call: Captured, name: string): string | null {
   return new Headers(call.init?.headers).get(name);
@@ -188,4 +198,131 @@ test('buildClientFetchHeaders lets a caller override Content-Type but not the by
   });
   assert.equal(headers['Content-Type'], 'text/plain');
   assert.equal(headers[PREVIEW_FORWARD_HEADER], TOKEN);
+});
+
+/* ------------------------------------------------------------------ */
+/*  Error fidelity — the body must survive the throw                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The regression this section exists for.
+ *
+ * `doClientFetch` used to throw `VR_Client_API ${status}: ${statusText}` and
+ * never read the response body at all, so the API's `error` sentence and its
+ * `code` were destroyed before any caller could see them. That is why the
+ * 2026-08-31 Atlas incident reached Sentry as a bare status, and why the
+ * middleware frozen gate had to bypass this module entirely and read
+ * `edgeSiteMap`'s raw `Response` to find `GroupFrozen`.
+ */
+
+test('a GroupFrozen 400 carries its code and the upstream sentence onto the error', async () => {
+  captureFetch(
+    {
+      success: false,
+      data: null,
+      error: 'The group is frozen please resume go to portal to activate',
+      code: 'GroupFrozen',
+    },
+    400,
+  );
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/siteDetails?siteId=abc', null),
+    (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      assert.equal(err.status, 400);
+      // The point of the whole ticket: a consumer can branch on an identifier
+      // instead of string-matching a sentence that copy edits can change.
+      assert.equal(err.code, 'GroupFrozen');
+      assert.equal(
+        err.serverMessage,
+        'The group is frozen please resume go to portal to activate',
+      );
+      return true;
+    },
+  );
+});
+
+test('the thrown message names the code and the reason, so Sentry titles it usefully', async () => {
+  // statusText is '' here on purpose: that is the real shape on the wire, and
+  // it is what made the old message read `VR_Client_API 400: ` and nothing more.
+  captureRawFetch(
+    JSON.stringify({ success: false, data: null, error: 'boom', code: 'IntegrationNotActive' }),
+    400,
+  );
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) =>
+      err instanceof ApiError &&
+      err.message === 'VR_Client_API 400 (IntegrationNotActive): boom',
+  );
+});
+
+test('an error with no code leaves code null rather than inventing one', async () => {
+  captureFetch({ success: false, data: null, error: 'Internal Server Error' }, 500);
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      // null means UNKNOWN, never "not frozen" — every consumer must fail open
+      // on it, the same posture edgeSiteMap's recordFrozenVerdictFromError takes.
+      assert.equal(err.code, null);
+      assert.equal(err.serverMessage, 'Internal Server Error');
+      return true;
+    },
+  );
+});
+
+test('a non-JSON error body still throws an ApiError, never a parse error', async () => {
+  // CloudFront serves its own HTML error pages. Parsing one must not replace a
+  // diagnosable 503 with an opaque SyntaxError.
+  captureRawFetch('<html><body>503 Service Unavailable</body></html>', 503, 'text/html');
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) => {
+      assert.ok(err instanceof ApiError, 'must not leak a SyntaxError from the body read');
+      assert.equal(err.status, 503);
+      assert.equal(err.code, null);
+      assert.equal(err.serverMessage, null);
+      return true;
+    },
+  );
+});
+
+test('an empty error body degrades to the status line alone', async () => {
+  captureRawFetch('', 502);
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) =>
+      err instanceof ApiError && err.status === 502 && err.message === 'VR_Client_API 502',
+  );
+});
+
+test('a 2xx carrying success:false keeps its REAL status, not a hardcoded 500', async () => {
+  captureFetch({ success: false, data: null, error: 'collection missing' }, 200);
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      assert.equal(err.status, 200, 'flattening this to 500 invented a server error');
+      assert.equal(err.serverMessage, 'collection missing');
+      return true;
+    },
+  );
+});
+
+test('isQuotaError stays 402-only and is not swayed by a code', async () => {
+  // Guards the locked constraint from the other side: a freeze is a 400 and
+  // must NOT start reading as a quota error just because it now has a code.
+  captureFetch({ success: false, data: null, error: 'frozen', code: 'GroupFrozen' }, 400);
+
+  await assert.rejects(
+    () => doClientFetch(CONFIG, '/tenant/x', null),
+    (err: unknown) => err instanceof ApiError && !isQuotaError(err),
+  );
 });

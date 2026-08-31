@@ -33,15 +33,54 @@ interface ApiEnvelope<T> {
   success: boolean;
   data: T;
   error: string | null;
+  /**
+   * Added by VR_Client_API v2.6.2 (PR #70). Present ONLY for a `CustomError`,
+   * so it is exactly the closed set in `VR_Client_API/src/scripts/customError.js`
+   * — `GroupFrozen`, `IntegrationNotActive`, `ExpectedError`, `Failure` — and
+   * absent on every other failure. Optional here because older responses, and
+   * any error that is not a `CustomError`, simply do not carry it.
+   */
+  code?: string | null;
 }
 
-/** Custom error that preserves the HTTP status code. */
+/**
+ * Custom error that preserves the HTTP status code and, when the upstream sent
+ * one, the machine-readable `code` and the server's own sentence.
+ *
+ * `status` and its meaning are unchanged; `code` and `serverMessage` are
+ * purely additive. `isQuotaError` below still keys off `status` alone.
+ */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /**
+   * VR_Client_API's stable discriminator for by-design denials, off the
+   * envelope's `code` field.
+   *
+   * `null` whenever the upstream did not send one — every non-`CustomError`
+   * failure, and every response whose body could not be read. So a consumer
+   * MUST read `null` as "unknown", never as "not frozen": that is the same
+   * fail-open posture `recordFrozenVerdictFromError` takes in `edgeSiteMap.ts`,
+   * and for the same reason. A false freeze takes a paying customer's site
+   * down.
+   */
+  readonly code: string | null;
+  /**
+   * The envelope's `error` sentence, verbatim and unprefixed. Kept separate
+   * from `message` so a caller can surface the upstream's own words without
+   * stripping our `VR_Client_API <status>` prefix back off.
+   */
+  readonly serverMessage: string | null;
+
+  constructor(
+    message: string,
+    status: number,
+    details?: { code?: string | null; serverMessage?: string | null },
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = details?.code ?? null;
+    this.serverMessage = details?.serverMessage ?? null;
   }
 }
 
@@ -74,6 +113,59 @@ export function buildClientFetchHeaders(
 }
 
 /**
+ * Best-effort read of a failed response's envelope.
+ *
+ * NEVER THROWS, and that is the entire contract. This runs on the failure
+ * path, where the only job left is to describe the failure: a `SyntaxError`
+ * escaping from here would replace a diagnosable `VR_Client_API 503` with an
+ * opaque JSON parse error, which is strictly worse than the blindness it is
+ * fixing. An empty body, one of CloudFront's HTML error pages, or an aborted
+ * stream all degrade to two nulls and the caller falls back to the status line
+ * alone.
+ *
+ * Consumes the body. Safe because both callers throw immediately after, so
+ * nothing reads the response again.
+ */
+async function readErrorEnvelope(
+  res: Response,
+): Promise<{ code: string | null; serverMessage: string | null }> {
+  try {
+    const body: unknown = await res.json();
+    if (body && typeof body === 'object') {
+      const { code, error } = body as { code?: unknown; error?: unknown };
+      return {
+        code: typeof code === 'string' && code ? code : null,
+        serverMessage: typeof error === 'string' && error ? error : null,
+      };
+    }
+  } catch {
+    // Unreadable or non-JSON body. Nothing recoverable, and nothing to log
+    // that the caller's own console.error does not already say.
+  }
+  return { code: null, serverMessage: null };
+}
+
+/**
+ * Compose the thrown `message`, which is what becomes the Sentry issue title.
+ *
+ * `res.statusText` is very often the EMPTY STRING here: HTTP/2 carries no
+ * reason phrase and API Gateway supplies none, so before this a frozen-account
+ * failure could reach Sentry titled literally `VR_Client_API 400: `. Appending
+ * the code and the upstream sentence is what makes the title say which denial
+ * it was, which is the whole point of the ticket.
+ */
+function describeFailure(
+  status: number,
+  statusText: string,
+  code: string | null,
+  serverMessage: string | null,
+): string {
+  const label = code ? `${status} (${code})` : `${status}`;
+  const detail = serverMessage || statusText;
+  return detail ? `VR_Client_API ${label}: ${detail}` : `VR_Client_API ${label}`;
+}
+
+/**
  * Core fetch + envelope-unwrap. Takes the preview token explicitly so this can
  * be invoked from inside a cache scope (`unstable_cache`), where request APIs
  * like `cookies()` are not permitted.
@@ -93,8 +185,22 @@ export async function doClientFetch<T>(
   });
 
   if (!res.ok) {
-    console.error(`[clientFetch] ${res.status} ${res.statusText} — ${url}`);
-    throw new ApiError(`VR_Client_API ${res.status}: ${res.statusText}`, res.status);
+    // Read the body BEFORE throwing. Until v2.6.2 this module discarded it
+    // entirely, which is why the 2026-08-31 Atlas incident reached Sentry as a
+    // bare status with no upstream reason attached, and why the middleware
+    // frozen gate had to bypass this module and read `edgeSiteMap`'s raw
+    // `Response` to see the `GroupFrozen` code at all.
+    const { code, serverMessage } = await readErrorEnvelope(res);
+    console.error(
+      `[clientFetch] ${res.status} ${res.statusText} — ${url}` +
+        (code ? ` — code=${code}` : '') +
+        (serverMessage ? ` — ${serverMessage}` : ''),
+    );
+    throw new ApiError(
+      describeFailure(res.status, res.statusText, code, serverMessage),
+      res.status,
+      { code, serverMessage },
+    );
   }
 
   const json = await res.json();
@@ -103,7 +209,17 @@ export async function doClientFetch<T>(
   if (json && typeof json === 'object' && 'success' in json) {
     const envelope = json as ApiEnvelope<T>;
     if (!envelope.success) {
-      throw new ApiError(`VR_Client_API error: ${envelope.error || 'Unknown error'}`, 500);
+      // `res.status`, not a hardcoded 500. A 2xx carrying `success: false` is
+      // rare but real, and flattening it invented an upstream server error
+      // that never happened. `isQuotaError` is unaffected in either direction:
+      // a 402 never reaches this branch, `!res.ok` catches it above.
+      const code = typeof envelope.code === 'string' && envelope.code ? envelope.code : null;
+      const serverMessage = envelope.error || null;
+      throw new ApiError(
+        `VR_Client_API error${code ? ` (${code})` : ''}: ${serverMessage || 'Unknown error'}`,
+        res.status,
+        { code, serverMessage },
+      );
     }
     return envelope.data;
   }
