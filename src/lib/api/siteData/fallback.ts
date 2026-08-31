@@ -10,7 +10,17 @@ import type { SiteData } from '@/types/SiteData';
 export const FALLBACK_SITE_DATA: SiteData = {
   // FAIL CLOSED on an upstream outage.
   //
-  // `robots.tsx` is `force-dynamic`, so this is re-evaluated on EVERY request.
+  // ISR migration Phase 3 changed the blast radius of this constant on a site
+  // that has opted into `SITE_RENDER_MODE=isr`, and the change is worth stating
+  // rather than discovering. `robots.tsx` used to be `force-dynamic`, so this
+  // was re-evaluated on EVERY request and an outage's effect ended the moment
+  // the outage did. Under ISR the robots policy built from this fallback is
+  // cached for up to `revalidate` (300s) at the origin and at CloudFront, so a
+  // brief outage can withhold a LIVE site from crawlers for up to five minutes
+  // after it recovers. That is still the right side to fail on, for the reason
+  // below, and it is bounded: the read carries the `site:<id>` tag, so the next
+  // Studio save clears it early.
+  //
   // Without an explicit lifecycleState the key is absent, `isDemoSite()` takes
   // its existing-fleet default of "not a demo", and a sustained Client API
   // outage silently un-gates every demo site in the fleet: full permissive

@@ -30,9 +30,59 @@ import { parseProductQuery } from "@/lib/composition/productQuery";
 import type { PageConfig, SiteData } from "@/types/SiteData";
 // S2/OD#3 — schedule view type for ?view= param validation.
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
+import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
+import { slugsForStaticParams } from "@/lib/pages/staticParams";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// ISR migration Phase 3. Both values MUST be literals — Next 16 parses route
+// segment config out of this file's source and hard-fails the build on any
+// expression, so the SITE_RENDER_MODE gate cannot live here. It lives in the
+// render, in `enforceDynamicUnlessIsr()`. Keep 300 in step with
+// ISR_REVALIDATE_SECONDS (`src/lib/renderMode.ts`); `renderMode.test.ts` fails
+// if they drift.
+//
+// `dynamicParams = true` is Next's default and is stated explicitly because it
+// is load-bearing here: `generateStaticParams` below emits the slugs known at
+// build time, and a page added in Studio afterwards must still render (then
+// cache) on first request rather than 404.
+export const revalidate = 300;
+export const dynamicParams = true;
+
+/**
+ * Prerender params for this route.
+ *
+ * Every slug here gets its own prerender attempt and Next decides per slug from
+ * the page's own content: a `static` page prerenders, a page that reaches
+ * `searchParams` or `headers()` bails to dynamic for that slug alone. That
+ * per-slug decision is the only way "keep the pages that carry a product block
+ * dynamic" can be expressed, because route segment config is per FILE and
+ * "carries a product block" is per SITE data.
+ *
+ * DELIBERATELY NOT GATED ON `SITE_RENDER_MODE`, and this is the sharpest edge in
+ * the whole phase. The obvious implementation, `if (gate off) return []`, takes
+ * every `/[slug]` URL on every customer site to **HTTP 500**. Measured, gate
+ * off, clean build: 45 `DYNAMIC_SERVER_USAGE` errors and a 500 on `/about`,
+ * `/our-story`, `/shop` and `/schedule`. An empty list makes Next classify the
+ * route as fully static (`● /[slug]` in the build output), so every request is
+ * an on-demand prerender, and the render gate's `connection()` throws inside it
+ * instead of merely opting out.
+ *
+ * Returning the real list in BOTH states is what fixes it: with the gate off
+ * every attempt bails at the gate, Next classifies the route `ƒ` exactly as
+ * `force-dynamic` did, and every URL serves a normal dynamic 200. The gate
+ * belongs in the render, and only in the render.
+ */
+export async function generateStaticParams(): Promise<{ slug: string }[]> {
+  const siteData = await getSiteData();
+  // `STATIC_PAGE_TITLES` is declared further down the file. Safe: this function
+  // runs during the build, long after module evaluation, so the binding is
+  // initialised. It is read rather than duplicated because privacy and terms
+  // render from it with no page config at all, and a second list would drift.
+  // It also guarantees a NON-EMPTY result on every site, which the docblock
+  // above explains is the difference between a working fleet and a 500.
+  return slugsForStaticParams(siteData.pageConfigs, Object.keys(STATIC_PAGE_TITLES)).map(
+    (slug) => ({ slug }),
+  );
+}
 
 // Formats migrated to the unified composePage() pipeline (Plan 4). Migrated one
 // at a time, parity-gated; any format NOT listed here keeps the legacy per-format
@@ -175,6 +225,9 @@ export default async function DynamicPage({
   params: Promise<{ slug: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
+  // line runs during `next build`.
+  await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
@@ -644,6 +697,9 @@ const STATIC_PAGE_TITLES: Record<string, string> = {
 };
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+  // Same gate as the page, for the same reason: a gate-off build must not make
+  // a `siteDetails` read that `force-dynamic` used to skip.
+  await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);

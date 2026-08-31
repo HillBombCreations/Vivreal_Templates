@@ -5,9 +5,12 @@
  *
  * The owner, three separate times: "when i click a link or tab in nav if it
  * takes a bit to load there's no real indication on the site except for the
- * browser tab loading indicator". Every page in this app is `force-dynamic`,
- * so a navigation waits on a server render before anything visibly changes —
- * on a slow request the site looks frozen and people click again.
+ * browser tab loading indicator". A navigation waits on a server render before
+ * anything visibly changes — on a slow request the site looks frozen and people
+ * click again. That was true of every page when they were all `force-dynamic`,
+ * and it is still true of every page a site's content keeps dynamic after the
+ * ISR flip (products, schedule, detail routes, anything reaching a product
+ * read). Cached pages return fast enough not to need it, so this stays.
  *
  * WHY A DOCUMENT-LEVEL CLICK LISTENER rather than `useLinkStatus`:
  * `useLinkStatus` only reports for the `<Link>` it is rendered inside, so
