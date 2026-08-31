@@ -274,6 +274,50 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
       </html>
     );
   } catch (err) {
+    // ─────────────────────────────────────────────────────────────────────
+    // DEAD BRANCH, DELIBERATELY KEPT. Do not "fix" it into reachability.
+    //
+    // `<QuotaExceeded />` has not rendered once in production, and making it
+    // render would be a REGRESSION, not a repair. Three separate reasons, all
+    // verified 2026-08-31:
+    //
+    // 1. UNREACHABLE, render path. This catch guards the layout's OWN
+    //    `getSiteData()` read only. Every content route calls `getSiteData()`
+    //    again with no 402 guard at all (`page.tsx:22,:92`,
+    //    `[slug]/page.tsx:75,:232,:704`, `[slug]/[itemId]/page.tsx:153,:759`,
+    //    `[...segments]/page.tsx:57,:65`), so a 402 escapes from
+    //    `generateMetadata` first and the route answers 500 before this is
+    //    ever consulted.
+    //
+    // 2. UNREACHABLE, trigger. VR_Client_API has no general quota 402 left:
+    //    W12 neutralized the API hard-402 and W4 the CDN one, both after a
+    //    2026-07 incident where two free-tier groups served empty pages for
+    //    days. The only surviving 402 is the spending-cap trip, which needs
+    //    `overageBilling.enabled` AND `spendingCap.enabled`; a live census of
+    //    `Vivreal.groups` finds zero groups enrolled.
+    //
+    // 3. Rendering it would VIOLATE the constraint it looks like it serves. A
+    //    successful render on an SSG route is storable by construction: this
+    //    page would become a cacheable 200 pinned at the CloudFront edge for
+    //    up to an hour, and there is no invalidation API for an
+    //    Amplify-managed distribution. The customer would pay and stay down.
+    //    Today's compliance is accidental (it never renders); making it render
+    //    turns that into a real violation.
+    //
+    // If you arrived here wanting to stop a FROZEN site from serving: that is
+    // already done, and not here. A freeze is a 400 carrying
+    // `code: 'GroupFrozen'` — never a 402, so `isQuotaError` has never matched
+    // one — and it is handled ABOVE the render by `src/middleware.ts` +
+    // `isSiteFrozen()`, which is the only position that can emit `no-store`.
+    // Do NOT extend that gate to 402. Freeze must block; quota must never
+    // block ("customer sites never go down" is a LOCKED product constraint,
+    // see the W4/W12 comments in
+    // `VR_Client_API/src/scripts/trackApiUsage.js`).
+    //
+    // Kept rather than deleted because the component and this branch are the
+    // documented shape of the eventual quota UX, and deleting them would lose
+    // the reasoning above at exactly the moment W5 makes someone look again.
+    // ─────────────────────────────────────────────────────────────────────
     if (isQuotaError(err)) {
       return (
         <html lang="en">
