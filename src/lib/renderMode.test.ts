@@ -500,6 +500,63 @@ test('EVERY return of FALLBACK_SITE_DATA bails out of caching first', () => {
   );
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// getSiteMap()'s degraded branch — the reader blocker 1 left behind
+//
+// `src/lib/api/siteData/index.tsx` imports `server-only`, so `node --test`
+// cannot load it and these claims are source-pinned, exactly as this suite
+// already pins the route literals and next.config.ts above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SITE_DATA_SOURCE = '../lib/api/siteData/index.tsx';
+
+/** The body of `getSiteMap`, from its declaration to the end of the file. */
+function getSiteMapBody(): string {
+  const src = sourceOf(SITE_DATA_SOURCE);
+  const start = src.indexOf('export const getSiteMap');
+  assert.notEqual(start, -1, 'getSiteMap declaration not found — this pin is vacuous');
+  return src.slice(start);
+}
+
+test('getSiteMap bails out of caching on the DEGRADED branch', () => {
+  // Blocker 1 covered getSiteData() and was scoped to "these two only", which
+  // left this reader behind. A metadata route is still PRERENDERED: in the
+  // outage build sitemap.xml was the one route that stayed `○ 5m 1h` while
+  // every other route correctly reclassified to `ƒ`. So a fleet build during
+  // an Atlas episode bakes an EMPTY sitemap into the deployment and nothing
+  // expires it, because it is a successful render of a legitimately-empty list.
+  const body = getSiteMapBody();
+  assert.match(
+    body,
+    /if \(!raw\?\.siteDetails\?\.values\) \{[\s\S]*?await bailOutOfCachingDegradedRender\(\);[\s\S]*?return \[\];[\s\S]*?\}/,
+    'the !raw?.siteDetails?.values branch must bail before returning []',
+  );
+});
+
+test('getSiteMap does NOT bail on the isDemoSite branch', () => {
+  // The `[]` return is OVERLOADED and the bail must not be. A demo site's
+  // empty sitemap is correct, cacheable, and must stay prerendered; bailing
+  // there would drag every demo build dynamic for no reason.
+  const body = getSiteMapBody();
+  const demoIndex = body.indexOf('if (isDemoSite(siteData))');
+  assert.notEqual(demoIndex, -1, 'isDemoSite branch not found — this pin is vacuous');
+  // Everything from the demo guard to the end of that statement.
+  const demoBranch = body.slice(demoIndex, demoIndex + 200);
+  assert.doesNotMatch(
+    demoBranch,
+    /bailOutOfCachingDegradedRender/,
+    'a legitimate demo must stay prerendered',
+  );
+});
+
+test('getSiteMap imports the bail from the one place it is bound to real Next', () => {
+  assert.match(
+    sourceOf(SITE_DATA_SOURCE),
+    /^import \{ bailOutOfCachingDegradedRender \} from '@\/lib\/renderGate';$/m,
+    'must use the shared binding, never a local connection() call',
+  );
+});
+
 test('next.config.ts pins expireTime, so nobody inherits Next\'s one-year default', () => {
   // Phase 4 blocker 2. Next's default `expireTime` is 31536000, and
   // `getCacheControlHeader` emits `expire - revalidate`, which is where the

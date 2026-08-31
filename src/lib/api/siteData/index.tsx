@@ -373,7 +373,28 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // tell a demo from a live site. getSiteData() resolves that same condition to
   // FALLBACK_SITE_DATA, which carries no origin and an explicit demo
   // lifecycleState, so both readers agree on an empty sitemap here.
-  if (!raw?.siteDetails?.values) return [];
+  if (!raw?.siteDetails?.values) {
+    // ISR migration Phase 4, blocker 1, completed. This is the SAME degraded
+    // condition getSiteData() bails on twenty lines up, and it was the one
+    // reader left behind when that fix was scoped to "these two only".
+    //
+    // Why it matters despite sitemap.xml never being edge-cached: a metadata
+    // route is still PRERENDERED. In the outage build this was the single
+    // route that stayed `○ 5m 1h` while blocker 1 correctly reclassified every
+    // other route to `ƒ`, which means a fleet build that happens to run during
+    // an Atlas episode BAKES AN EMPTY SITEMAP into the deployment and serves
+    // it until the next build. Nothing expires it, because there is nothing
+    // wrong with it from the cache's point of view: it is a successful render
+    // of a legitimately-empty list.
+    //
+    // Scoped to THIS branch only, deliberately. The `isDemoSite()` return
+    // below is the identical `[]` for an entirely legitimate reason, and a
+    // demo site's empty sitemap is correct, cacheable, and must stay
+    // prerendered. Bailing there would drag every demo build dynamic for no
+    // reason. The `[]` is overloaded; the bail is not.
+    await bailOutOfCachingDegradedRender();
+    return [];
+  }
 
   // The SAME object getSiteData() returns its origin fields from, so the
   // sitemap can never resolve a different host from the canonical.
