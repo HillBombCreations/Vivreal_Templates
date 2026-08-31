@@ -42,6 +42,38 @@ const FETCH_TIMEOUT_MS = 800;
 // request per instance (per failure window) can ever block.
 const NEGATIVE_CACHE_MS = 30_000;
 
+/**
+ * The stable discriminator VR_Client_API sends for a billing freeze
+ * (`CustomError('GroupFrozen')` -> `errorHandler` -> the `code` field on the
+ * error envelope).
+ *
+ * Gate on THIS, never on the human `error` sentence and never on the status
+ * alone:
+ *  - the status cannot discriminate, because `GroupFrozen` and
+ *    `IntegrationNotActive` are BOTH 400;
+ *  - and matching the sentence would mean rewording "The group is frozen
+ *    please resume go to portal to activate" silently un-freezes every frozen
+ *    site in the fleet.
+ *
+ * Note it is 400, NOT 402. 402 is the quota / spending-cap path
+ * (`handlers.js`), which is a different state with different copy.
+ */
+const FROZEN_CODE = 'GroupFrozen';
+
+/**
+ * How long an observed frozen verdict stays trusted without reconfirmation.
+ *
+ * This is a FAIL-OPEN timer, and that is its whole point. If the upstream
+ * becomes unreachable while a site is frozen, `fetchSiteMap` returns null
+ * without touching `frozenState`, the verdict ages out, and the site starts
+ * serving again. Never taking a paying customer's site down because the API
+ * blinked matters more than holding a freeze through an outage.
+ *
+ * 90s is three times the NEGATIVE_CACHE_MS recheck cadence, so a reachable
+ * upstream refreshes the verdict roughly three times before it could expire.
+ */
+const FROZEN_SIGNAL_TTL_MS = 90_000;
+
 const PREVIEW_QUERY_PARAM = 'vivreal_preview';
 
 /** Static slugs that always render regardless of pageConfigs (mirrors the
@@ -68,6 +100,14 @@ let inFlight: Promise<EdgeSiteMap | null> | null = null;
 // Negative cache: timestamp of the most recent fetchSiteMap() failure, or
 // null if the last attempt succeeded (or none has run yet).
 let lastFailureAt: number | null = null;
+// Billing-freeze verdict, carried on the SAME siteDetails fetch the redirect
+// map already makes. Riding that fetch is the entire reason this is cheap:
+// the gate adds no request, no timeout and no blocking to a path that runs on
+// every document request of every site.
+//
+// `null` means "never observed", which reads as NOT frozen. Absence is always
+// the open state here.
+let frozenState: { frozen: boolean; observedAt: number } | null = null;
 
 interface RawPageConfig {
   slug?: string;
@@ -169,6 +209,66 @@ export function isSelfRedirectLoop(fromPath: string, target: string): boolean {
   );
 }
 
+/**
+ * Read a billing-freeze verdict off a non-2xx siteDetails response.
+ *
+ * FAIL-OPEN IN EVERY BRANCH, and that is deliberate. A false positive here
+ * takes a PAYING customer's site down and shows their visitors an "unavailable"
+ * page, which is far worse than a frozen site serving for another minute. So
+ * this only ever sets `frozen: true` on the one unambiguous signal (a 400
+ * carrying the exact `GroupFrozen` code) and otherwise leaves `frozenState`
+ * untouched, letting the existing verdict stand or age out on its own.
+ *
+ * Leaving it untouched rather than clearing it also matters: a transient 500
+ * in the middle of a real freeze must not un-freeze the site.
+ *
+ * Never throws. A throw out of here reaches `fetchSiteMap`'s catch, but this
+ * runs on every document request of every site, so it is guarded at its own
+ * level too.
+ */
+async function recordFrozenVerdictFromError(res: Response): Promise<void> {
+  // Only a 400 can be a freeze. Checking first avoids reading a body on every
+  // unrelated 500 or 401.
+  if (res.status !== 400) return;
+  try {
+    const body = (await res.json()) as { code?: unknown } | null;
+    if (body?.code === FROZEN_CODE) {
+      frozenState = { frozen: true, observedAt: Date.now() };
+    }
+  } catch {
+    // Unreadable or non-JSON body. Cannot confirm a freeze, so do not claim
+    // one.
+  }
+}
+
+/**
+ * Is this site's owner account currently frozen?
+ *
+ * A PURE READ of the verdict `getEdgeSiteMap()` refreshes as a side effect of
+ * the fetch it already makes. It performs no network call and never blocks, so
+ * `middleware.ts` can consult it on every request for free.
+ *
+ * Returns false unless a freeze was positively observed AND that observation
+ * is still fresh. Both "never observed" and "observed too long ago" read as
+ * not frozen, because every ambiguous state on this path must fail open.
+ *
+ * DETECTION LATENCY, stated plainly: up to `TTL_MS` (300s). While the redirect
+ * map is fresh, `getEdgeSiteMap()` returns early without fetching, so a freeze
+ * that begins in that window is not seen until the map goes stale. That is an
+ * accepted tradeoff, not an oversight: the alternative is a fetch every 30s on
+ * every healthy site in the fleet, which is real load on the exact upstream
+ * whose saturation prompted this work. It is also not the binding constraint,
+ * because CloudFront can still be serving the pre-freeze page for up to an
+ * hour regardless (there is no invalidation API for an Amplify-managed
+ * distribution). Once a freeze IS observed the map stops refreshing, so the
+ * negative-cache path rechecks every 30s and UNFREEZING is fast, which is the
+ * direction the customer is actually waiting on.
+ */
+export function isSiteFrozen(): boolean {
+  if (!frozenState || !frozenState.frozen) return false;
+  return Date.now() - frozenState.observedAt < FROZEN_SIGNAL_TTL_MS;
+}
+
 async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
   // Read call-time, not hoisted to a module-scope const -- see the comment
   // above CLIENT_API_URL.
@@ -202,6 +302,7 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
       // take the whole request down. Log for visibility; the caller falls
       // back to the last-known cached value, or null if there is none.
       console.error(`[edgeSiteMap] ${res.status} ${res.statusText} fetching siteDetails`);
+      await recordFrozenVerdictFromError(res);
       return null;
     }
     const json = (await res.json()) as ApiEnvelope;
@@ -219,6 +320,11 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
     // by the migrator; reading only the top-level field yields an
     // always-empty map.
     const redirects = raw.redirects ?? raw.siteDetails?.values?.redirects ?? [];
+    // A 2xx is a definitive NOT-frozen verdict, and recording it here is what
+    // makes unfreezing fast: the first successful read after the owner fixes
+    // their billing clears the gate on this instance immediately, with no
+    // separate signal and no webhook required.
+    frozenState = { frozen: false, observedAt: Date.now() };
     return { slugs, redirects };
   } catch (err) {
     // Deliberate fail-open: network error, the 800ms abort-timeout, or a
@@ -309,6 +415,36 @@ export function __resetEdgeSiteMapCacheForTests(): void {
   cache = null;
   inFlight = null;
   lastFailureAt = null;
+  frozenState = null;
+}
+
+/**
+ * Test-only escape hatch: rewinds the frozen verdict's `observedAt` so the
+ * next `isSiteFrozen()` treats it as expired, without waiting out the real
+ * 90s TTL. Makes the fail-open-on-staleness branch reachable in a fast unit
+ * test. No-op if nothing has been observed. Never called from `middleware.ts`
+ * or any production path.
+ */
+export function __setFrozenObservedAtForTests(observedAt: number): void {
+  if (frozenState) {
+    frozenState = { frozen: frozenState.frozen, observedAt };
+  }
+}
+
+/**
+ * Test-only escape hatch: rewinds the negative-cache timestamp so the next
+ * `getEdgeSiteMap()` actually hits the network again, without waiting out the
+ * real NEGATIVE_CACHE_MS.
+ *
+ * Needed to test UNFREEZING. A freeze leaves `cache` empty and `lastFailureAt`
+ * fresh, so the very next call short-circuits before `fetch` and the verdict
+ * cannot change in-process. That 30s recheck cadence is the real production
+ * behaviour and the reason unfreezing takes up to ~30s to be seen; this hook
+ * lets a fast test cross that window. Never called from `middleware.ts` or any
+ * production path.
+ */
+export function __setLastFailureAtForTests(at: number | null): void {
+  lastFailureAt = at;
 }
 
 /**
