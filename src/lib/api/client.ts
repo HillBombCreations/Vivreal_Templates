@@ -5,16 +5,23 @@
  * Automatically unwraps the { success, data, error } response envelope.
  */
 import 'server-only';
-import { headers } from 'next/headers';
+import { cookies, draftMode, headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
 import { buildFetchFailureCapture } from './errorCapture';
+import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
+import { resolvePreviewToken } from './previewToken';
+
+export { ApiError, isQuotaError };
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 
 const API_KEY = process.env.API_KEY || '';
+
+/** The one place `API_KEY` is read. Passed into every core fetch. */
+const CLIENT_API: ClientApiConfig = { baseUrl: CLIENT_API_URL, apiKey: API_KEY };
 
 /**
  * This deployment's siteId. Used ONLY as a Sentry tag so a fleet-wide upstream
@@ -22,9 +29,6 @@ const API_KEY = process.env.API_KEY || '';
  * actually hit. Never part of a fingerprint - see ./errorCapture.
  */
 const SITE_ID = process.env.SITE_ID || '';
-
-const PREVIEW_REQUEST_HEADER = 'x-vivreal-preview-token';
-const PREVIEW_FORWARD_HEADER = 'x-vivreal-preview';
 
 /**
  * Per-site cache TTL (seconds) for cached public reads (site chrome + content).
@@ -59,18 +63,24 @@ export const SITE_CACHE_TTL_SECONDS = readCacheTtlSeconds();
 
 /**
  * Pull the portal preview-bypass token (if any) out of the current request
- * scope. middleware.ts injects it from `?vivreal_preview=<token>` on the
- * inbound URL; we relay it as `x-vivreal-preview` on every server-to-server
- * fetch so VR_Client_API can skip quota tracking for portal-driven previews.
+ * scope, so every server-to-server fetch can relay it as `x-vivreal-preview`
+ * and VR_Client_API can skip quota tracking for portal-driven previews.
  *
- * `headers()` throws when called outside a request scope (e.g., during a
- * build-time prerender). In that case we just have no token and the call
- * is tracked normally — exactly the right fallback.
+ * ISR migration Phase 1: this used to call `headers()` for a middleware-injected
+ * header, which forced EVERY route on EVERY site dynamic and was the single
+ * blocker on prerender/ISR eligibility (isr-migration/plan.md, "Root blocker").
+ * It now uses the Spike-A pattern — `draftMode()` first, `cookies()` only when
+ * draft mode is on — which is prerender-safe on the public path. The decision
+ * itself lives in `./previewToken.ts` so it can be tested against Next's real
+ * prerender work store; see the ordering note there before touching it.
+ *
+ * Fails closed to `null` on any throw (e.g. called outside a request scope, as
+ * a build-time prerender does): no token means the call is metered normally,
+ * which is exactly the right fallback.
  */
 async function readPreviewToken(): Promise<string | null> {
   try {
-    const h = await headers();
-    return h.get(PREVIEW_REQUEST_HEADER);
+    return await resolvePreviewToken(draftMode, cookies);
   } catch {
     return null;
   }
@@ -84,11 +94,16 @@ async function readPreviewToken(): Promise<string | null> {
  * (the storefront's read is server-to-server, so the UA VR_Client_API would
  * see there is the Amplify server's own fetch agent, not the browser's).
  *
- * Fails open to `'0'` (not-a-bot) — same posture as `readPreviewToken`:
- * `headers()` throws outside a request scope (e.g. a build-time prerender),
- * and an inability to prove "bot" must never silently drop capture for a
- * real visitor. Absent header (any caller that isn't this middleware, or a
- * not-yet-rebuilt deployment) resolves the same way.
+ * Fails open to `'0'` (not-a-bot): `headers()` throws outside a request scope
+ * (e.g. a build-time prerender), and an inability to prove "bot" must never
+ * silently drop capture for a real visitor. Absent header (any caller that
+ * isn't this middleware, or a not-yet-rebuilt deployment) resolves the same way.
+ *
+ * NOTE (ISR migration): this is the LAST unconditional `headers()` read in the
+ * render path. Its only caller is `getProducts()`, and `products` stays
+ * `force-dynamic` for v1 by owner decision, so it does not block Phase 1. It
+ * DOES block Phase 3 for any route that reaches a product read — see
+ * docs/projects/isr-migration/plan.md.
  */
 export async function readBotVerdict(): Promise<'0' | '1'> {
   try {
@@ -99,66 +114,6 @@ export async function readBotVerdict(): Promise<'0' | '1'> {
   }
 }
 
-interface ApiEnvelope<T> {
-  success: boolean;
-  data: T;
-  error: string | null;
-}
-
-/** Custom error that preserves the HTTP status code. */
-export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'ApiError';
-    this.status = status;
-  }
-}
-
-/**
- * Core fetch + envelope-unwrap. Takes the preview token explicitly so this can
- * be invoked from inside a cache scope (unstable_cache), where request APIs
- * like headers() are not permitted.
- */
-async function doClientFetch<T>(
-  path: string,
-  previewToken: string | null,
-  init?: RequestInit
-): Promise<T> {
-  const url = `${CLIENT_API_URL}${path}`;
-
-  const fwdHeaders: Record<string, string> = {
-    Authorization: API_KEY,
-    'Content-Type': 'application/json',
-    ...(init?.headers as Record<string, string> | undefined),
-  };
-  if (previewToken) fwdHeaders[PREVIEW_FORWARD_HEADER] = previewToken;
-
-  const res = await fetch(url, {
-    ...init,
-    headers: fwdHeaders,
-    cache: 'no-store',
-  });
-
-  if (!res.ok) {
-    console.error(`[clientFetch] ${res.status} ${res.statusText} — ${url}`);
-    throw new ApiError(`VR_Client_API ${res.status}: ${res.statusText}`, res.status);
-  }
-
-  const json = await res.json();
-
-  // Unwrap the { success, data, error } envelope
-  if (json && typeof json === 'object' && 'success' in json) {
-    const envelope = json as ApiEnvelope<T>;
-    if (!envelope.success) {
-      throw new ApiError(`VR_Client_API error: ${envelope.error || 'Unknown error'}`, 500);
-    }
-    return envelope.data;
-  }
-
-  return json as T;
-}
-
 /**
  * Fetch data from VR_Client_API with auth.
  * Unwraps the { success, data, error } envelope automatically.
@@ -167,7 +122,7 @@ export async function clientFetch<T>(
   path: string,
   init?: RequestInit
 ): Promise<T> {
-  return doClientFetch<T>(path, await readPreviewToken(), init);
+  return doClientFetch<T>(CLIENT_API, path, await readPreviewToken(), init);
 }
 
 /**
@@ -210,9 +165,9 @@ export async function clientFetchSafe<T>(
  * unstable_cache is independent of route segment config.
  *
  * Safety:
- * - Preview requests (carrying a per-request token) BYPASS the cache entirely —
- *   they must always be fresh, and request APIs (headers()) can't be read inside
- *   a cache scope.
+ * - Preview requests (draft mode on, carrying a per-session token) BYPASS the
+ *   cache entirely — they must always be fresh, and request APIs (cookies())
+ *   can't be read inside a cache scope.
  * - 402 (quota/frozen) is never cached: it re-throws so the page re-evaluates
  *   quota state on the next request.
  * - Cache key includes `path` (so different siteIds/params are isolated); each
@@ -223,9 +178,10 @@ export async function clientFetchSafe<T>(
  *
  * On-demand invalidation:
  * - Pass `tags` (e.g. `['site:<id>']`, `['collection:<id>']`) to make the entry
- *   invalidatable via `revalidateTag(tag, 'max')` from the `/api/revalidate`
- *   route handler when the owning content is edited in the portal. The time
- *   `revalidateSeconds` then acts purely as a backstop for missed webhooks.
+ *   invalidatable via `revalidateTag(tag, HARD_INVALIDATION)` from the
+ *   `/api/revalidate` route handler when the owning content is edited in the
+ *   portal. The time `revalidateSeconds` then acts purely as a backstop for
+ *   missed webhooks.
  * - Tags are additive and backward-compatible; omit for time-only caching.
  */
 export async function clientFetchCached<T>(
@@ -242,7 +198,7 @@ export async function clientFetchCached<T>(
   }
 
   const cached = unstable_cache(
-    async () => doClientFetch<T>(path, null, init),
+    async () => doClientFetch<T>(CLIENT_API, path, null, init),
     ['vr-client-api', path],
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
@@ -263,9 +219,4 @@ export async function clientFetchCached<T>(
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
     return fallback;
   }
-}
-
-/** Check if an error is a 402 quota exceeded error. */
-export function isQuotaError(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 402;
 }
