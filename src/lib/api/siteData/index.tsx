@@ -16,6 +16,7 @@ import {
   buildSiteDetailsFallbackCapture,
 } from '@/lib/api/errorCapture';
 import { isRefusedOrigin, resolveSiteOriginResult } from '@/lib/og/ogImage';
+import { bailOutOfCachingDegradedRender } from '@/lib/renderGate';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
@@ -111,6 +112,21 @@ export const getSiteData = async (): Promise<SiteData> => {
       SITE_DETAILS_FALLBACK_MESSAGE,
       buildSiteDetailsFallbackCapture({ siteId: SITE_ID })
     );
+    // ISR migration Phase 4, blocker 1. Take THIS render off both caches before
+    // handing back the placeholder. Without it the degraded page is emitted with
+    // `s-maxage=300, stale-while-revalidate=<expireTime>` and pinned at the
+    // CloudFront edge, which no `revalidateTag` can reach (Spike B): on
+    // 2026-08-31 a 5m41s upstream outage produced 9m46s of a broken customer
+    // home page.
+    //
+    // It belongs HERE, at the one place the degraded value is produced, so every
+    // route that reads it is covered without seven separate edits. It must NOT
+    // move to `!homePageConfig` in page.tsx: a site with no Studio home config
+    // takes that branch with perfectly healthy data and belongs in the cache.
+    //
+    // What Next actually does with this is not the obvious thing — see
+    // `optOutOfCachingDegradedRender` in `src/lib/renderMode.ts`.
+    await bailOutOfCachingDegradedRender();
     return FALLBACK_SITE_DATA;
   }
 

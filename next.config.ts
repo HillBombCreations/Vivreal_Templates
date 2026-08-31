@@ -5,6 +5,35 @@ import { withSentryConfig } from "@sentry/nextjs";
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
+  // ISR migration Phase 4, blocker 2 — the `stale-while-revalidate` window a CDN
+  // is allowed to serve an ISR page past its `s-maxage`.
+  //
+  // Next's default is 31536000 (one year), and `getCacheControlHeader` emits
+  // `expire - revalidate`, which is where the fleet's observed
+  // `s-maxage=300, stale-while-revalidate=31535700` came from. Nobody chose that
+  // number. CloudFront honours it, and on 2026-08-31 that is how an
+  // `s-maxage=300` object was served at `Age: 599` as an ordinary `X-Cache: Hit`
+  // (also seen at 509, 516, 519, 552) and how two POPs served two different
+  // versions of the same URL simultaneously.
+  //
+  // 3600 is chosen, and the tradeoff is real in BOTH directions:
+  //   - A very short window would have removed the thing that kept `/` and
+  //     `/privacy` serving correct content at `Age: 552` while every dynamic
+  //     route on the same site returned 504 during the same incident. That
+  //     resilience is the strongest result the ISR pilot produced.
+  //   - One year is indefensible: the post-edit and post-incident stale tail is
+  //     unbounded in practice, and Amplify offers no edge invalidation, so there
+  //     is no way to cut it short.
+  // One hour caps the tail at something a human would tolerate while keeping
+  // most of the outage resilience. It is defensible only BECAUSE the degraded
+  // render can no longer enter the cache at all (blocker 1,
+  // `bailOutOfCachingDegradedRender()` in src/lib/renderGate.ts) — a longer
+  // stale window is only safe when what goes stale was correct to begin with.
+  //
+  // Matches the framework's own documented example
+  // (`node_modules/next/dist/docs/.../expireTime.md`, "one hour in seconds").
+  // Effect on a 300s route: `s-maxage=300, stale-while-revalidate=3300`.
+  expireTime: 3600,
   // NOTE: `experimental.viewTransition` was REMOVED here in the Next 16.3.0
   // bump. The flag did not disappear because the feature was dropped — it
   // GRADUATED: "View transitions work in the Next.js App Router with no
