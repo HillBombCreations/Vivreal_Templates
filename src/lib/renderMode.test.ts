@@ -6,6 +6,7 @@ import {
   ISR_REVALIDATE_SECONDS,
   SITE_RENDER_MODE_ENV,
   isIsrRenderMode,
+  optOutOfCachingDegradedRender,
   optOutOfPrerenderUnlessIsr,
   shouldOptOutOfPrerender,
 } from './renderMode.ts';
@@ -106,8 +107,20 @@ const { workUnitAsyncStorage } = await import(
  */
 const { connection } = await import('next/dist/server/request/connection.js');
 
+/**
+ * Next's REAL response-header composer, the single function that turns a
+ * collected `revalidate` into the string a CDN acts on
+ * (`next/dist/server/lib/cache-control.js`). Layer 2b below asserts on its
+ * output rather than on the internal number, because "no `s-maxage`" is the
+ * property CloudFront actually obeys and an internal 0 is only a proxy for it.
+ */
+const { getCacheControlHeader } = await import('next/dist/server/lib/cache-control.js');
+
 /** The gate, wired the way `renderGate.ts` wires it. */
 const enforceDynamicUnlessIsr = () => optOutOfPrerenderUnlessIsr(connection);
+
+/** The degraded-render bail, wired the way `renderGate.ts` wires it. */
+const bailOutOfCachingDegradedRender = () => optOutOfCachingDegradedRender(connection);
 
 type TestWorkStore = WorkStore & { dynamicUsageDescription?: string };
 
@@ -122,9 +135,21 @@ function makeWorkStore(): TestWorkStore {
   } as unknown as TestWorkStore;
 }
 
-/** Run `fn` the way Next runs a build-time prerender of a non-force-dynamic route. */
+/**
+ * Run `fn` the way Next runs a build-time prerender of a non-force-dynamic
+ * route, or the way it re-renders an ISR route at runtime when the cached entry
+ * has expired or been tag-purged. Both are the SAME work unit store type: for a
+ * route Next classified SSG, `base-server` sets `supportsDynamicResponse = false`
+ * (`!isSSG`), which makes `isStaticGeneration` true and selects
+ * `prerender-legacy`. That equivalence is why this store is the right subject —
+ * the 2026-08-31 incident render was a runtime revalidation, not a build.
+ *
+ * `initialRevalidate` seeds the store the way the route's `export const
+ * revalidate = 300` literal does, so the collected value is the real one.
+ */
 async function underPrerender<T>(
   fn: () => Promise<T>,
+  initialRevalidate: number | false = false,
 ): Promise<{ store: TestWorkStore; prerenderRevalidate: unknown; error?: unknown }> {
   const store = makeWorkStore();
   // `as unknown as`: the prerender store union is not exported.
@@ -133,7 +158,7 @@ async function underPrerender<T>(
     phase: 'render',
     rootParams: {},
     implicitTags: undefined,
-    revalidate: false,
+    revalidate: initialRevalidate,
   } as unknown as Parameters<typeof workUnitAsyncStorage.run>[0] & { revalidate: unknown };
 
   return workAsyncStorage.run(store, () =>
@@ -168,6 +193,56 @@ async function underRequest<T>(fn: () => Promise<T>): Promise<{ error?: unknown 
       }
     }),
   );
+}
+
+/**
+ * Run `fn` inside an arbitrary work unit store type. Used for the two build-time
+ * scopes where `connection()` is ILLEGAL and throws a plain `Error` rather than
+ * a `DynamicServerError`: `generate-static-params` (E1125) and `unstable-cache`
+ * (E840). `src/app/[slug]/page.tsx`'s `generateStaticParams()` calls
+ * `getSiteData()`, so the first of those is on the real fleet build path the
+ * moment the upstream is down during a build.
+ */
+async function underWorkUnitStore<T>(
+  type: 'generate-static-params' | 'unstable-cache',
+  fn: () => Promise<T>,
+): Promise<{ error?: unknown }> {
+  const store = makeWorkStore();
+  // `as unknown as`: none of the work unit store variants are exported.
+  const unitStore = {
+    type,
+    phase: 'render',
+    implicitTags: undefined,
+  } as unknown as Parameters<typeof workUnitAsyncStorage.run>[0];
+
+  return workAsyncStorage.run(store, () =>
+    workUnitAsyncStorage.run(unitStore, async () => {
+      try {
+        await fn();
+        return {};
+      } catch (error) {
+        return { error };
+      }
+    }),
+  );
+}
+
+/**
+ * Reproduce Next's own collected-revalidate → response-header pipeline, using
+ * the real header composer at the end of it.
+ *
+ * The middle step is `applyMetadataFromPrerenderResult`
+ * (`next/dist/server/app-render/app-render.js`): a collected revalidate of 0
+ * becomes `{ revalidate: 0, expire: undefined }`, anything else becomes
+ * `{ revalidate, expire }`. `base-server.pipeImpl` then fills an undefined
+ * `expire` from `nextConfig.expireTime` before `getCacheControlHeader` runs.
+ */
+function emittedCacheControl(collectedRevalidate: unknown, expireTime: number): string {
+  const cacheControl =
+    collectedRevalidate === 0
+      ? { revalidate: 0, expire: expireTime }
+      : { revalidate: collectedRevalidate as number | false, expire: expireTime };
+  return getCacheControlHeader(cacheControl);
 }
 
 /**
@@ -236,6 +311,94 @@ test('gate OFF does not throw on a real request — it only blocks prerendering'
     underRequest(() => enforceDynamicUnlessIsr()),
   );
   assert.equal(error, undefined);
+});
+
+/* ------------------------------------------------------------------ */
+/*  Layer 2b: a degraded render must not be cacheable (Phase 4, B1)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The property under test is NOT "the bail function was called". It is the
+ * value Next collects for the render, and the `Cache-Control` string that value
+ * produces, so the assertions end at Next's real `getCacheControlHeader`.
+ *
+ * READ THIS BEFORE CHANGING THE FIRST TEST. A collected revalidate of 0 does
+ * NOT mean the page answers with `private, no-cache, no-store`. That is what an
+ * app ROUTE (`robots.txt`, `icon`, `sitemap.xml`) does. For an app PAGE that
+ * Next classified SSG, `build/templates/app-page-runtime.js` instead throws
+ * `E132` ("Page changed from static to dynamic at runtime"), which
+ * `ResponseCache.revalidate` catches and answers by re-setting the PREVIOUS
+ * GOOD entry with a 3..30s revalidate. Either way the degraded render is not
+ * stored, which is the property. Measured both ways in
+ * `docs/projects/isr-migration/phase4-blockers-result.md` (vivreal-hq).
+ */
+const CONFIGURED_EXPIRE_TIME = 3600;
+
+test('a FALLBACK_SITE_DATA render collects revalidate 0, which is Next\'s "do not store"', async () => {
+  // Seeded the way the route's `export const revalidate = 300` literal seeds it,
+  // so this is the healthy value being taken AWAY, not an absent one.
+  const { store, prerenderRevalidate, error } = await underPrerender(
+    () => bailOutOfCachingDegradedRender(),
+    ISR_REVALIDATE_SECONDS,
+  );
+
+  assert.equal(error, undefined, 'the bail itself must not surface as the render error');
+  assert.equal(store.dynamicUsageDescription, 'connection', 'Next must have recorded the bail');
+  assert.equal(prerenderRevalidate, 0, 'the collected revalidate must be 0, i.e. do not store');
+
+  // What that value becomes on the wire for the app ROUTES that share this path.
+  const header = emittedCacheControl(prerenderRevalidate, CONFIGURED_EXPIRE_TIME);
+  assert.equal(header, 'private, no-cache, no-store, max-age=0, must-revalidate');
+  assert.doesNotMatch(header, /s-maxage/, 'CloudFront stores anything carrying s-maxage');
+  assert.doesNotMatch(header, /stale-while-revalidate/);
+});
+
+test('a HEALTHY render is still cacheable, so the fix does not cost the ISR win', async () => {
+  // The healthy branch of `getSiteData()` never reaches the bail, so the store
+  // keeps the route literal. Without this test the fix could be "make
+  // everything uncacheable" and still pass the one above.
+  const { store, prerenderRevalidate, error } = await underPrerender(
+    async () => undefined,
+    ISR_REVALIDATE_SECONDS,
+  );
+
+  assert.equal(error, undefined);
+  assert.equal(store.dynamicUsageDescription, undefined, 'nothing may mark a healthy render dynamic');
+  assert.equal(prerenderRevalidate, ISR_REVALIDATE_SECONDS);
+
+  assert.equal(
+    emittedCacheControl(prerenderRevalidate, CONFIGURED_EXPIRE_TIME),
+    `s-maxage=${ISR_REVALIDATE_SECONDS}, stale-while-revalidate=${CONFIGURED_EXPIRE_TIME - ISR_REVALIDATE_SECONDS}`,
+  );
+});
+
+test('the bail is inert on a live request, so it can never 500 a page view', async () => {
+  // On a site that has NOT opted into ISR every affected route is dynamic, so
+  // this is the store the bail lands in on the whole rest of the fleet.
+  const { error } = await underRequest(() => bailOutOfCachingDegradedRender());
+  assert.equal(error, undefined);
+});
+
+test('CONTROL: connection() DOES throw inside generateStaticParams and unstable_cache', async () => {
+  // Without this control the two build-safety tests below would pass against a
+  // bail that had quietly stopped calling `connection()` at all.
+  for (const type of ['generate-static-params', 'unstable-cache'] as const) {
+    const { error } = await underWorkUnitStore(type, () => connection());
+    assert.ok(error, `connection() must throw in a ${type} store`);
+  }
+});
+
+test('the bail does NOT fail a build that runs during an upstream outage', async () => {
+  // `src/app/[slug]/page.tsx` calls `getSiteData()` from `generateStaticParams`.
+  // With the upstream down at build time that reaches the fallback branch, and a
+  // re-throwing implementation would hard-fail `next build` for every site in
+  // the fleet — in exactly the conditions this fix exists to survive. Nothing is
+  // lost by absorbing it: a `generate-static-params` scope produces no page
+  // response, so there is no cache entry to opt out of.
+  for (const type of ['generate-static-params', 'unstable-cache'] as const) {
+    const { error } = await underWorkUnitStore(type, () => bailOutOfCachingDegradedRender());
+    assert.equal(error, undefined, `the bail must be absorbed in a ${type} store`);
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -311,6 +474,110 @@ test('renderGate passes the REAL connection to the gate', () => {
   const gateSource = sourceOf('./renderGate.ts');
   assert.match(gateSource, /import \{ connection \} from 'next\/server';/);
   assert.match(gateSource, /return optOutOfPrerenderUnlessIsr\(connection\);/);
+  assert.match(gateSource, /return optOutOfCachingDegradedRender\(connection\);/);
+});
+
+test('EVERY return of FALLBACK_SITE_DATA bails out of caching first', () => {
+  // Structural, not a spot check: the regression this catches is a SECOND
+  // fallback return being added later without the bail, which is how the
+  // 2026-08-31 incident would come back. `src/lib/api/siteData/index.tsx` is
+  // `server-only` and carries JSX, so the plain-Node runner cannot import it;
+  // the mechanism it wires is driven for real in layer 2b.
+  const siteDataSource = sourceOf('./api/siteData/index.tsx');
+  const returns = [...siteDataSource.matchAll(/return FALLBACK_SITE_DATA;/g)];
+  assert.ok(returns.length > 0, 'getSiteData must still have a fallback branch');
+  for (const match of returns) {
+    const before = siteDataSource.slice(0, match.index);
+    assert.match(
+      before,
+      /await bailOutOfCachingDegradedRender\(\);\s*$/,
+      'every `return FALLBACK_SITE_DATA` must be immediately preceded by the cache bail',
+    );
+  }
+  assert.match(
+    siteDataSource,
+    /import \{ bailOutOfCachingDegradedRender \} from '@\/lib\/renderGate';/,
+  );
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// getSiteMap()'s degraded branch — the reader blocker 1 left behind
+//
+// `src/lib/api/siteData/index.tsx` imports `server-only`, so `node --test`
+// cannot load it and these claims are source-pinned, exactly as this suite
+// already pins the route literals and next.config.ts above.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SITE_DATA_SOURCE = '../lib/api/siteData/index.tsx';
+
+/** The body of `getSiteMap`, from its declaration to the end of the file. */
+function getSiteMapBody(): string {
+  const src = sourceOf(SITE_DATA_SOURCE);
+  const start = src.indexOf('export const getSiteMap');
+  assert.notEqual(start, -1, 'getSiteMap declaration not found — this pin is vacuous');
+  return src.slice(start);
+}
+
+test('getSiteMap bails out of caching on the DEGRADED branch', () => {
+  // Blocker 1 covered getSiteData() and was scoped to "these two only", which
+  // left this reader behind. A metadata route is still PRERENDERED: in the
+  // outage build sitemap.xml was the one route that stayed `○ 5m 1h` while
+  // every other route correctly reclassified to `ƒ`. So a fleet build during
+  // an Atlas episode bakes an EMPTY sitemap into the deployment and nothing
+  // expires it, because it is a successful render of a legitimately-empty list.
+  const body = getSiteMapBody();
+  assert.match(
+    body,
+    /if \(!raw\?\.siteDetails\?\.values\) \{[\s\S]*?await bailOutOfCachingDegradedRender\(\);[\s\S]*?return \[\];[\s\S]*?\}/,
+    'the !raw?.siteDetails?.values branch must bail before returning []',
+  );
+});
+
+test('getSiteMap does NOT bail on the isDemoSite branch', () => {
+  // The `[]` return is OVERLOADED and the bail must not be. A demo site's
+  // empty sitemap is correct, cacheable, and must stay prerendered; bailing
+  // there would drag every demo build dynamic for no reason.
+  const body = getSiteMapBody();
+  const demoIndex = body.indexOf('if (isDemoSite(siteData))');
+  assert.notEqual(demoIndex, -1, 'isDemoSite branch not found — this pin is vacuous');
+  // Everything from the demo guard to the end of that statement.
+  const demoBranch = body.slice(demoIndex, demoIndex + 200);
+  assert.doesNotMatch(
+    demoBranch,
+    /bailOutOfCachingDegradedRender/,
+    'a legitimate demo must stay prerendered',
+  );
+});
+
+test('getSiteMap imports the bail from the one place it is bound to real Next', () => {
+  assert.match(
+    sourceOf(SITE_DATA_SOURCE),
+    /^import \{ bailOutOfCachingDegradedRender \} from '@\/lib\/renderGate';$/m,
+    'must use the shared binding, never a local connection() call',
+  );
+});
+
+test('next.config.ts pins expireTime, so nobody inherits Next\'s one-year default', () => {
+  // Phase 4 blocker 2. Next's default `expireTime` is 31536000, and
+  // `getCacheControlHeader` emits `expire - revalidate`, which is where the
+  // fleet's `stale-while-revalidate=31535700` came from. CloudFront honours it:
+  // an `s-maxage=300` object was measured being served at `Age: 599`.
+  const configSource = fs.readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
+  assert.match(
+    configSource,
+    new RegExp(`^\\s*expireTime: ${CONFIGURED_EXPIRE_TIME},$`, 'm'),
+    'next.config.ts must set expireTime explicitly',
+  );
+
+  // The value is only meaningful through the header it produces.
+  assert.equal(
+    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
+    's-maxage=300, stale-while-revalidate=3300',
+  );
+  assert.notEqual(
+    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
+    's-maxage=300, stale-while-revalidate=31535700',
+  );
 });
 
 test('the revalidate literal stays under the 300s signed media-URL TTL', () => {

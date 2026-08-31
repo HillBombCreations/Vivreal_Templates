@@ -14,12 +14,34 @@ export const FALLBACK_SITE_DATA: SiteData = {
   // that has opted into `SITE_RENDER_MODE=isr`, and the change is worth stating
   // rather than discovering. `robots.tsx` used to be `force-dynamic`, so this
   // was re-evaluated on EVERY request and an outage's effect ended the moment
-  // the outage did. Under ISR the robots policy built from this fallback is
-  // cached for up to `revalidate` (300s) at the origin and at CloudFront, so a
-  // brief outage can withhold a LIVE site from crawlers for up to five minutes
-  // after it recovers. That is still the right side to fail on, for the reason
-  // below, and it is bounded: the read carries the `site:<id>` tag, so the next
-  // Studio save clears it early.
+  // the outage did. Under ISR a render built from this fallback used to be
+  // cached like any other.
+  //
+  // CORRECTION, Phase 4. An earlier version of this comment said that cache was
+  // "for up to `revalidate` (300s) at the origin and at CloudFront". The origin
+  // half was right. The CloudFront half was wrong, and it was measured wrong on
+  // 2026-08-31: an `s-maxage=300` object was served from the edge at `Age: 599`
+  // as an ordinary `X-Cache: Hit`, and two POPs served two different versions of
+  // the same URL at the same moment. CloudFront honours the
+  // `stale-while-revalidate` Next appends, so edge staleness was bounded by
+  // `300s + time to the next request at that POP + one more request`, not by
+  // 300s. Worse, the Amplify-managed distribution is in AWS's account, so there
+  // is no `create-invalidation` and `revalidateTag` cannot reach it (Spike B).
+  // Both halves of that are now bounded rather than described:
+  //
+  //   - `getSiteData()` calls `bailOutOfCachingDegradedRender()` before it
+  //     returns this constant, so a render built from it enters NEITHER cache.
+  //     `robots.txt` is an app ROUTE, so it simply serves uncached and an
+  //     outage's effect on a live site's robots policy once again ends when the
+  //     outage does. An app PAGE takes a different route through the framework
+  //     to the same guarantee; see `optOutOfCachingDegradedRender` in
+  //     `src/lib/renderMode.ts`. (Phase 4 blocker 1.)
+  //   - `expireTime` in `next.config.ts` is set to 3600, so the
+  //     `stale-while-revalidate` window on a HEALTHY render is one hour rather
+  //     than Next's default one year. (Phase 4 blocker 2.)
+  //
+  // Full measurements: `docs/projects/isr-migration/phase-4-result.md` and
+  // `phase4-blockers-result.md` in `vivreal-hq`.
   //
   // Without an explicit lifecycleState the key is absent, `isDemoSite()` takes
   // its existing-fleet default of "not a demo", and a sustained Client API

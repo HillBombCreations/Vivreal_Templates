@@ -1,5 +1,5 @@
 import { connection } from 'next/server';
-import { optOutOfPrerenderUnlessIsr } from '@/lib/renderMode';
+import { optOutOfCachingDegradedRender, optOutOfPrerenderUnlessIsr } from '@/lib/renderMode';
 
 /**
  * The route-facing ISR gate, and the ONE place `connection` is bound to the
@@ -30,4 +30,33 @@ import { optOutOfPrerenderUnlessIsr } from '@/lib/renderMode';
  */
 export function enforceDynamicUnlessIsr(): Promise<void> {
   return optOutOfPrerenderUnlessIsr(connection);
+}
+
+/**
+ * The degraded-render cache bail (ISR migration Phase 4, blocker 1), bound to
+ * the same real `connection` as the gate above. What it actually causes Next to
+ * do — which is NOT "emit an uncacheable 200", and was measured rather than
+ * assumed — is documented on `optOutOfCachingDegradedRender` in `renderMode.ts`.
+ * Read that before changing anything here.
+ *
+ * WHERE THIS IS CALLED FROM, AND WHY IT IS ONE PLACE AND NOT SEVEN
+ * ---------------------------------------------------------------
+ * `getSiteData()` (`src/lib/api/siteData/index.tsx`), on the branch that returns
+ * `FALLBACK_SITE_DATA`. That is the one place the degraded value is PRODUCED,
+ * so every route that renders from it is covered by construction: `/`,
+ * `/[slug]`, `/[slug]/[itemId]`, `/[...segments]`, `robots.txt`, `icon`,
+ * `apple-icon`, the root layout, and the Navbar / Footer / StaticPage server
+ * components underneath them. Putting it in `page.tsx`'s `!homePageConfig`
+ * branch instead would have fixed one route and mis-fired on a legitimate one:
+ * a site with no Studio home page config takes that same branch with perfectly
+ * healthy data, and that render SHOULD stay cacheable.
+ *
+ * Not in `clientFetchCached` either, one layer down. Its `fallback` parameter
+ * covers every read on the site, most of which degrade mildly (an empty
+ * collection list is a thin page, not a wrong one). Opting out there would make
+ * most renders uncacheable and give back the whole ISR win. `getSiteData()`
+ * failing is the specific condition that means "this site is live and empty".
+ */
+export function bailOutOfCachingDegradedRender(): Promise<void> {
+  return optOutOfCachingDegradedRender(connection);
 }

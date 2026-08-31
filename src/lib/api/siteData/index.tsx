@@ -16,6 +16,7 @@ import {
   buildSiteDetailsFallbackCapture,
 } from '@/lib/api/errorCapture';
 import { isRefusedOrigin, resolveSiteOriginResult } from '@/lib/og/ogImage';
+import { bailOutOfCachingDegradedRender } from '@/lib/renderGate';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
@@ -111,6 +112,21 @@ export const getSiteData = async (): Promise<SiteData> => {
       SITE_DETAILS_FALLBACK_MESSAGE,
       buildSiteDetailsFallbackCapture({ siteId: SITE_ID })
     );
+    // ISR migration Phase 4, blocker 1. Take THIS render off both caches before
+    // handing back the placeholder. Without it the degraded page is emitted with
+    // `s-maxage=300, stale-while-revalidate=<expireTime>` and pinned at the
+    // CloudFront edge, which no `revalidateTag` can reach (Spike B): on
+    // 2026-08-31 a 5m41s upstream outage produced 9m46s of a broken customer
+    // home page.
+    //
+    // It belongs HERE, at the one place the degraded value is produced, so every
+    // route that reads it is covered without seven separate edits. It must NOT
+    // move to `!homePageConfig` in page.tsx: a site with no Studio home config
+    // takes that branch with perfectly healthy data and belongs in the cache.
+    //
+    // What Next actually does with this is not the obvious thing — see
+    // `optOutOfCachingDegradedRender` in `src/lib/renderMode.ts`.
+    await bailOutOfCachingDegradedRender();
     return FALLBACK_SITE_DATA;
   }
 
@@ -357,7 +373,28 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // tell a demo from a live site. getSiteData() resolves that same condition to
   // FALLBACK_SITE_DATA, which carries no origin and an explicit demo
   // lifecycleState, so both readers agree on an empty sitemap here.
-  if (!raw?.siteDetails?.values) return [];
+  if (!raw?.siteDetails?.values) {
+    // ISR migration Phase 4, blocker 1, completed. This is the SAME degraded
+    // condition getSiteData() bails on twenty lines up, and it was the one
+    // reader left behind when that fix was scoped to "these two only".
+    //
+    // Why it matters despite sitemap.xml never being edge-cached: a metadata
+    // route is still PRERENDERED. In the outage build this was the single
+    // route that stayed `○ 5m 1h` while blocker 1 correctly reclassified every
+    // other route to `ƒ`, which means a fleet build that happens to run during
+    // an Atlas episode BAKES AN EMPTY SITEMAP into the deployment and serves
+    // it until the next build. Nothing expires it, because there is nothing
+    // wrong with it from the cache's point of view: it is a successful render
+    // of a legitimately-empty list.
+    //
+    // Scoped to THIS branch only, deliberately. The `isDemoSite()` return
+    // below is the identical `[]` for an entirely legitimate reason, and a
+    // demo site's empty sitemap is correct, cacheable, and must stay
+    // prerendered. Bailing there would drag every demo build dynamic for no
+    // reason. The `[]` is overloaded; the bail is not.
+    await bailOutOfCachingDegradedRender();
+    return [];
+  }
 
   // The SAME object getSiteData() returns its origin fields from, so the
   // sitemap can never resolve a different host from the canonical.
