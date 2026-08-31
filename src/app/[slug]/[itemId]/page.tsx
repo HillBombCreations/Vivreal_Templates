@@ -35,8 +35,55 @@ import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
+import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 
-export const dynamic = "force-dynamic";
+// ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
+// segment config out of this file's source and hard-fails the build on any
+// expression, so the SITE_RENDER_MODE gate cannot live here. It lives in the
+// render, in `enforceDynamicUnlessIsr()`. Keep 300 in step with
+// ISR_REVALIDATE_SECONDS (`src/lib/renderMode.ts`); `renderMode.test.ts` fails
+// if they drift.
+export const revalidate = 300;
+
+// Stated explicitly because it documents a MEASURED limit, not an intent.
+//
+// This route has no `generateStaticParams`, and in Next 16.3.3 that means the
+// `revalidate` above does nothing: a dynamic route with no enumerated params is
+// fully dynamic, `revalidate` is not even reported for it in the build output,
+// and every response carries `Cache-Control: private, no-cache, no-store`.
+// Measured with SITE_RENDER_MODE=isr: `ƒ /[slug]/[itemId]` with no revalidate
+// column, and `/blog/<id>` served no-store on both passes. Removing
+// `fetchCache` below changes nothing, which is how the cause was isolated.
+//
+// So detail pages gain NO caching in this phase. Enumerating them was rejected
+// here rather than deferred by accident: the params would have to come from
+// fetching every bound collection of every page config on every fleet build
+// (and a promote-stable rebuilds all 16 sites), `getCollectionItems` caps at
+// 100 items so the enumeration would be partial anyway, and the id-to-URL
+// mapping on this route runs through `applyScope`/`itemSegment`/`resolvePattern`
+// plus a depth-2 nested-page arm, where a wrong param is a wrong page at a real
+// URL. That is its own piece of work with its own verification, not a line in
+// this one. `dynamicParams = true` is stated so the intent survives if someone
+// does add `generateStaticParams` later.
+//
+// NB an empty `generateStaticParams` is NOT a safe placeholder here: on
+// `[slug]` it made Next classify the route as fully static and every URL
+// returned HTTP 500 with the gate off. See that route's docblock.
+export const dynamicParams = true;
+
+// KEPT, deliberately, and now load-bearing in a way it was not before. It used
+// to be redundant: `dynamic = "force-dynamic"` already implies
+// `fetchCache = "force-no-store"`. With `force-dynamic` gone it is the only
+// thing still pinning `getTikTokOEmbed`'s `next: { revalidate: 3600 }` to
+// no-store, which is today's behaviour. Removing it would change that on every
+// site the moment this merges, gate or no gate.
+//
+// It does NOT block prerendering. `markCurrentScopeAsDynamic` fires when a
+// fetch actually runs uncached outside a cache scope (`patch-fetch.js`), not
+// from the export itself, and every VR_Client_API read on this route goes
+// through `unstable_cache`, where dynamic tracking is a no-op. The one raw
+// read left is `getTikTokPosts` on the TikTok arm, which correctly keeps that
+// arm dynamic.
 export const fetchCache = "force-no-store";
 
 /**
@@ -99,6 +146,9 @@ interface Props {
 }
 
 export default async function DynamicItemPage({ params, searchParams }: Props) {
+  // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
+  // line runs during `next build`.
+  await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const pageConfig = getPageBySlug(siteData, slug);
@@ -702,6 +752,9 @@ function resolveMenuDetailCollections(pageConfig: { blocks?: unknown }): {
 }
 
 export async function generateMetadata({ params }: Props) {
+  // Same gate as the page, for the same reason: a gate-off build must not make
+  // a `siteDetails` read that `force-dynamic` used to skip.
+  await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";

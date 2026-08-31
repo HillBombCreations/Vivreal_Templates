@@ -99,11 +99,25 @@ async function readPreviewToken(): Promise<string | null> {
  * silently drop capture for a real visitor. Absent header (any caller that
  * isn't this middleware, or a not-yet-rebuilt deployment) resolves the same way.
  *
- * NOTE (ISR migration): this is the LAST unconditional `headers()` read in the
- * render path. Its only caller is `getProducts()`, and `products` stays
- * `force-dynamic` for v1 by owner decision, so it does not block Phase 1. It
- * DOES block Phase 3 for any route that reaches a product read — see
- * docs/projects/isr-migration/plan.md.
+ * NOTE (ISR migration Phase 3): this is the LAST unconditional `headers()` read
+ * in the render path, and it is now the thing that decides, PER CUSTOMER SITE,
+ * whether a page can be cached. Its only caller is `getProducts()`, reached by
+ * product detail and by any page whose Studio config binds a payments-provider
+ * integration — including `/` on a site whose home carries a product block.
+ *
+ * The try/catch does NOT hide that from Next.
+ * `throwToInterruptStaticGeneration` sets `prerenderStore.revalidate = 0`
+ * BEFORE it throws (`next/dist/server/app-render/dynamic-rendering.js`), so
+ * swallowing the `DynamicServerError` still leaves the page marked dynamic.
+ * Measured: same commit, same env, only the site's content differs — a home
+ * page without a product block builds `○ / 5m`, one with a product block builds
+ * `ƒ /`, both exit 0.
+ *
+ * So owner decision 6 ("keep those routes dynamic") is enforced by Next itself
+ * from each site's own data, which is the only place it CAN be enforced: route
+ * segment config is per file, and "carries a product block" is per site.
+ * Removing this `headers()` read (threading the verdict in as a parameter, or
+ * dropping it on cached reads) is what would let those pages cache.
  */
 export async function readBotVerdict(): Promise<'0' | '1'> {
   try {
@@ -161,8 +175,9 @@ export async function clientFetchSafe<T>(
  * siteDetails / site-chrome call hit on every page render). Caches the unwrapped
  * result for `revalidateSeconds` via the Next.js Data Cache, so crawler/traffic
  * bursts are served from cache instead of re-hitting VR_Client_API (and Mongo)
- * on every render. Works even though the content routes are `force-dynamic` —
- * unstable_cache is independent of route segment config.
+ * on every render. Independent of route segment config, so it worked when every
+ * content route was `force-dynamic` and it still works now that they carry
+ * `revalidate = 300` — it is the DATA cache, one layer under the page cache.
  *
  * Safety:
  * - Preview requests (draft mode on, carrying a per-session token) BYPASS the

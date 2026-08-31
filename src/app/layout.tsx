@@ -171,10 +171,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
           >
               <Providers siteData={siteData}>
                   {/*
-                    Route-transition feedback. Every page here is
-                    `force-dynamic`, so a navigation waits on a server render
-                    with nothing on screen changing — the site looks frozen and
-                    people click again. Suspense because RouteProgress reads
+                    Route-transition feedback. Any page this site's content
+                    keeps dynamic waits on a server render with nothing on
+                    screen changing — the site looks frozen and people click
+                    again. Suspense because RouteProgress reads
                     useSearchParams, which opts the tree into client rendering
                     without one.
                   */}

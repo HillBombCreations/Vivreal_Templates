@@ -9,8 +9,14 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "@/components/HomeLoading";
+import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 
-export const dynamic = "force-dynamic";
+// ISR migration Phase 3. `revalidate` must be a literal — Next 16 parses it
+// out of this file's source and hard-fails the build on any expression, so
+// the SITE_RENDER_MODE gate cannot live here. It lives in the render, in
+// `enforceDynamicUnlessIsr()`. Keep this in step with ISR_REVALIDATE_SECONDS
+// (`src/lib/renderMode.ts`); `renderMode.test.ts` fails if they drift.
+export const revalidate = 300;
 
 async function Resolved() {
   const siteData = await getSiteData();
@@ -66,7 +72,11 @@ async function Resolved() {
 // so this is documentary only — no behavioural change. Any future guard on
 // this route MUST run in `HomePage` itself (the un-suspended parent), not
 // inside `Resolved()`.
-export default function HomePage() {
+export default async function HomePage() {
+  // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
+  // line runs during `next build`, which is what keeps a fleet build's upstream
+  // traffic identical to the pre-change build.
+  await enforceDynamicUnlessIsr();
   return (
     <Suspense fallback={<HomeLoading />}>
       <Resolved />
@@ -75,6 +85,10 @@ export default function HomePage() {
 }
 
 export const generateMetadata = async () => {
+  // Same gate as the page. Without it a gate-off build would still run this
+  // function and make a `siteDetails` read per gated route that
+  // `force-dynamic` used to skip entirely.
+  await enforceDynamicUnlessIsr();
   const siteData = await getSiteData();
   const siteName = siteData?.businessInfo?.name || siteData?.name || "Home";
   // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
