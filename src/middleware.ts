@@ -2,10 +2,12 @@ import { NextResponse, NextRequest } from 'next/server'
 import { computeBotVerdict, BOT_VERDICT_HEADER } from '@/lib/botVerdict'
 import {
   getEdgeSiteMap,
+  isSiteFrozen,
   isSkippablePath,
   isLiveContentPath,
   isSelfRedirectLoop,
 } from '@/lib/edgeSiteMap'
+import { FROZEN_HEADERS, FROZEN_STATUS, renderFrozenPage } from '@/lib/frozenGate'
 import { resolveMissingItemRedirect } from '@/lib/redirects'
 import {
   PREVIEW_QUERY_PARAM,
@@ -113,6 +115,48 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   const siteMap = await getEdgeSiteMap()
+
+  // WHY MIDDLEWARE, and why the freeze is enforced HERE and nowhere else.
+  //
+  // A frozen account used to keep serving its real site indefinitely.
+  // Measured at 367 seconds and unbounded in principle, because THREE
+  // independent stale-on-error layers each keep the last good answer:
+  //
+  //   1. `unstable_cache` (clientFetchCached) keeps the last good siteDetails
+  //      when its background revalidation throws, so getSiteData() never even
+  //      observes the freeze.
+  //   2. Next's response cache re-serves the previous good page whenever a
+  //      render fails, so making the render fail just re-serves the real site.
+  //   3. CloudFront serves stale, and there is no invalidation API for an
+  //      Amplify-managed distribution.
+  //
+  // No change inside the render can defeat all three: on an SSG route Next
+  // 16.3.3 has no uncacheable-200 state at all, so a render that SUCCEEDS with
+  // the frozen page is storable (and would then be pinned at the edge for up
+  // to an hour AFTER unfreezing, with no purge available), while a render that
+  // FAILS is re-served from the previous good entry. Middleware is the only
+  // layer above all three, and its response is not an ISR entry, so it is the
+  // only place that can answer uncached. See `frozenGate.ts`.
+  //
+  // Ordering is deliberate. This sits AFTER the preview-cookie and
+  // `isSkippablePath` returns above, which is what keeps three things working
+  // on a frozen site: the owner's portal preview (so they can still see their
+  // own site while sorting billing), `/_next/*` and `/api/*`, and robots.txt
+  // and sitemap.xml. That last one is a decision, not an accident: a freeze is
+  // usually a declined card that clears in days, and suppressing a site's
+  // crawlable surface over it risks deindexing the customer for a transient
+  // billing problem.
+  //
+  // `isSiteFrozen()` is a pure read of a verdict the `getEdgeSiteMap()` call
+  // above already refreshed. No extra fetch, no extra latency, and it fails
+  // open on every ambiguous state.
+  if (isSiteFrozen()) {
+    return new NextResponse(renderFrozenPage(), {
+      status: FROZEN_STATUS,
+      headers: FROZEN_HEADERS,
+    })
+  }
+
   if (!siteMap) {
     // Cold-and-in-flight, or the upstream fetch failed (fail-open by design
     // -- see edgeSiteMap.ts). Degrade depends on the page layer's OWN 60s

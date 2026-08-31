@@ -7,9 +7,12 @@ import {
   isLiveContentPath,
   isSelfRedirectLoop,
   getEdgeSiteMap,
+  isSiteFrozen,
   TTL_MS,
   __resetEdgeSiteMapCacheForTests,
   __setCacheFetchedAtForTests,
+  __setFrozenObservedAtForTests,
+  __setLastFailureAtForTests,
 } from './edgeSiteMap.ts';
 
 // docs/bugs/templates-soft-404-and-301-status, Change 1a — the SWR module
@@ -333,6 +336,220 @@ test('getEdgeSiteMap: negative cache -- a second call within the failure window 
     const second = await getEdgeSiteMap();
     assert.equal(second, null);
     assert.equal(fetchCallCount, 1, 'negative cache should have skipped this network call');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing-freeze verdict
+//
+// The gate this feeds takes a customer's site off the internet, so the tests
+// that matter most here are the FAIL-OPEN ones. A false positive shows a
+// paying customer's visitors an "unavailable" page, which is far worse than a
+// frozen site serving for another minute.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Drive one getEdgeSiteMap() call against a stubbed upstream response. */
+async function withUpstream(makeResponse: () => Response, run: () => void | Promise<void>) {
+  const originalFetch = globalThis.fetch;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => makeResponse();
+  try {
+    await getEdgeSiteMap();
+    await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+const frozenBody = JSON.stringify({
+  success: false,
+  data: null,
+  error: 'The group is frozen please resume go to portal to activate',
+  code: 'GroupFrozen',
+});
+
+const okBody = JSON.stringify({
+  success: true,
+  data: { pages: [{ slug: 'shop' }], siteDetails: { values: {} } },
+  error: null,
+});
+
+test('isSiteFrozen: false before anything has been observed', () => {
+  __resetEdgeSiteMapCacheForTests();
+  assert.equal(isSiteFrozen(), false);
+});
+
+test('isSiteFrozen: a 400 carrying code GroupFrozen is a freeze', async () => {
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response(frozenBody, { status: 400 }),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+});
+
+test('isSiteFrozen: gates on the CODE, not on the human sentence', async () => {
+  // Rewording the message must never un-freeze a site, so the code alone
+  // decides. Same status, same shape, only the sentence differs.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () =>
+      new Response(
+        JSON.stringify({ success: false, data: null, error: 'totally different wording', code: 'GroupFrozen' }),
+        { status: 400 },
+      ),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+});
+
+test('isSiteFrozen: an ordinary validation 400 is NOT a freeze', async () => {
+  // The reason a code was added upstream at all: GroupFrozen and
+  // IntegrationNotActive are BOTH 400, so status cannot discriminate.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () =>
+      new Response(
+        JSON.stringify({ success: false, data: null, error: 'siteId is required' }),
+        { status: 400 },
+      ),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: a DIFFERENT CustomError code at 400 is NOT a freeze', async () => {
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () =>
+      new Response(
+        JSON.stringify({
+          success: false,
+          data: null,
+          error: "That integration isn't active",
+          code: 'IntegrationNotActive',
+        }),
+        { status: 400 },
+      ),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: a 402 quota denial is NOT a freeze', async () => {
+  // 402 is the quota / spending-cap path, a different state with different
+  // copy. Only 400 + GroupFrozen freezes.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () =>
+      new Response(
+        JSON.stringify({ success: false, data: null, error: 'Monthly API usage quota reached.' }),
+        { status: 402 },
+      ),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: a 500 is NOT a freeze', async () => {
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response('upstream exploded', { status: 500 }),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: an unreadable 400 body fails OPEN', async () => {
+  // Cannot confirm a freeze, so must not claim one.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response('<html>gateway error</html>', { status: 400 }),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: a successful read clears a previous freeze immediately', async () => {
+  // This is what makes UNFREEZING fast. The customer paid and is waiting; the
+  // first good read on this instance must bring the site back with no
+  // separate signal and no webhook.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response(frozenBody, { status: 400 }),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+  // Cross the negative-cache window WITHOUT resetting the module, so the live
+  // freeze verdict is still in place when the good read lands.
+  __setLastFailureAtForTests(null);
+  await withUpstream(
+    () => new Response(okBody, { status: 200 }),
+    () => {
+      assert.equal(isSiteFrozen(), false);
+    },
+  );
+});
+
+test('isSiteFrozen: a stale verdict fails OPEN', async () => {
+  // If the upstream becomes unreachable while a site is frozen, the verdict
+  // ages out and the site serves again. Never take a paying customer down
+  // because the API blinked.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response(frozenBody, { status: 400 }),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+  __setFrozenObservedAtForTests(Date.now() - 90_001);
+  assert.equal(isSiteFrozen(), false, 'a verdict older than the TTL must not hold a site down');
+});
+
+test('isSiteFrozen: a transient error does NOT clear a live freeze', async () => {
+  // Only a definitive answer moves the verdict. A 500 in the middle of a real
+  // freeze must not un-freeze the site.
+  __resetEdgeSiteMapCacheForTests();
+  await withUpstream(
+    () => new Response(frozenBody, { status: 400 }),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+  await withUpstream(
+    () => new Response('boom', { status: 500 }),
+    () => {
+      assert.equal(isSiteFrozen(), true);
+    },
+  );
+});
+
+test('isSiteFrozen: reading it never issues a network call', () => {
+  // middleware.ts consults this on every document request of every site. It
+  // must be a pure read of the verdict getEdgeSiteMap() already refreshed.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  let called = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => {
+    called += 1;
+    return new Response(okBody, { status: 200 });
+  };
+  try {
+    isSiteFrozen();
+    isSiteFrozen();
+    assert.equal(called, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
