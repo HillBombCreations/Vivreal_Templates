@@ -103,7 +103,15 @@ export default function SubscribeClient({
               className="h-12 w-12 mx-auto mb-4"
               style={{ color: siteData?.primary || "#1a1a2e" }}
             />
-            <h2 className="text-xl font-semibold mb-2">You are subscribed!</h2>
+            {/* NOT "you are subscribed". Capture writes
+                `subscriberStatus: 'pending'` and the campaign send path
+                allow-lists `'subscribed'`, so this person cannot receive
+                anything until they click the link in the confirmation email.
+                Saying they are subscribed is false at the moment they read it,
+                and it removes their reason to go and finish -- the list then
+                fills with addresses that can never be mailed, and the owner
+                sees signups that never convert. */}
+            <h2 className="text-xl font-semibold mb-2">Almost there</h2>
             <p
               className="text-sm"
               style={{
@@ -111,7 +119,7 @@ export default function SubscribeClient({
               }}
             >
               {labels?.successMessage ||
-                "Thanks for subscribing. We will keep you in the loop."}
+                "We sent you an email. Click the link in it to confirm, and you are all set."}
             </p>
             <button
               type="button"
@@ -178,6 +186,14 @@ export default function SubscribeClient({
                 color: siteData?.["text-secondary"] || "rgba(0,0,0,0.4)",
               }}
             >
+              {/* This one is TRUE, and only recently. It rests on a chain that
+                  has to stay intact: the campaign compiler emits an
+                  `{{unsubscribeUrl}}` placeholder into a footer nobody can
+                  delete, VR_Secure_API's `dispatchCampaign` REFUSES to queue
+                  any campaign whose HTML lacks that placeholder, and
+                  VR_Main_API's send worker substitutes a real per-recipient
+                  URL for it. Break any link and this sentence becomes a lie
+                  on every customer site at once. */}
               {labels?.disclaimer ||
                 "We respect your privacy. Unsubscribe at any time."}
             </p>
