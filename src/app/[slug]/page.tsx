@@ -213,6 +213,15 @@ const COMPOSE_FORMATS = new Set<string>([
   // `pricing` is also a layout dispatchId and a home-section; those are
   // different namespaces and this Set is keyed on page.format.
   "pricing",
+  // recipes → the recipe LIBRARY page (bakery, and any food/craft/how-to
+  // vertical after it). The index needs no component of its own: it composes
+  // like `collection-list`, and each kit picks its own layout (capped-tiles,
+  // cards, gallery) as a config choice. Route recognition is the only thing
+  // the format needs here, and per the `intake`/`pricing` notes above, omitting
+  // it serves HTTP 200 with a soft-404 body — so the recipes DETAIL arm in
+  // `[slug]/[itemId]/page.tsx` would resolve every recipe under a library page
+  // that itself reads as missing. The two lines belong in one change.
+  "recipes",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
