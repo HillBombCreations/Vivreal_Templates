@@ -13,6 +13,7 @@ import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
 import { subscribeUser } from '@/lib/api/subscribe/client';
+import { requestDeliveryQuote } from '@/lib/delivery/quoteClient';
 import { trackLeadConversion } from '@/lib/analytics';
 import { pagesNeedCart, type CartGatePage } from '@/lib/payments';
 
@@ -112,6 +113,26 @@ const Providers = ({
                 if (ok) trackLeadConversion({ method: _source || 'inline' });
                 return ok;
             }}
+            // The delivery coverage check. `DeliveryCheck` reads this off the
+            // renderer context and DISABLES ITSELF when it is absent, so
+            // without this line the block ships a heading, a greyed-out ZIP
+            // box and a dead button on every live site, and the proxy plus the
+            // whole VR_Client_API endpoint behind it are unreachable from the
+            // product. Passed by reference, not wrapped: there is nothing for
+            // this layer to add, and an inline arrow here would be a second
+            // place for the failure contract to drift.
+            //
+            // Passed UNCONDITIONALLY. A site with no API key gets a 503 from
+            // the proxy, which `requestDeliveryQuote` turns into "could not
+            // check right now", which is an honest degrade. Gating the prop on config
+            // instead would hand the owner the disabled control, which reads
+            // as the feature being broken rather than not yet set up.
+            //
+            // Needs the renderer to forward `onDeliveryQuote` through
+            // `NextSiteRendererProvider` (1.64.0, unpublished at the time of
+            // writing). Until that lands the prop is accepted and dropped, and
+            // the block stays in exactly the disabled state it is in today.
+            onDeliveryQuote={requestDeliveryQuote}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
