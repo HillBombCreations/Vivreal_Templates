@@ -27,6 +27,15 @@ test('generateMetadata composes its robots policy through the shared builder', (
   );
 });
 
+test('recipes is a recognised page format', () => {
+  // COMPOSE_FORMATS is keyed on page.format and gates route RECOGNITION. A
+  // format missing from it does not degrade to a plain page: the file's own
+  // measured note records HTTP 200 with a soft-404 body, which no status check
+  // can see. So a recipe library page would read as missing while its detail
+  // route happily served every recipe under it.
+  assert.match(source, /^\s*"recipes",$/m, 'the recipes library page must be routable');
+});
+
 test('the robots policy is no longer decided inline in the route module', () => {
   // The pre-change form. Inline, it could only ever see the author-set flag, so
   // the Stripe checkout result pages emitted no `noindex` at all — and being

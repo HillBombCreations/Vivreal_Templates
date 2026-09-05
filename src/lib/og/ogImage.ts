@@ -14,12 +14,10 @@ export type {
 } from './siteOrigin';
 
 /**
- * Build the Open Graph image URL for a page. Always points at the dynamic
- * `/og/[slug]` route (a stable, non-expiring URL crawlers can cache). That route
- * proxies the page's Studio-uploaded image (`labels.ogImage`) when present and
- * otherwise generates a branded card — so the emitted `og:image` never carries a
- * short-lived signed media URL.
+ * The OG-image URL builders. They live in `./ogCard.ts` (pure, no
+ * `server-only`) so `node --experimental-strip-types --test` can import and
+ * CALL them; this module re-exports them so every existing
+ * `@/lib/og/ogImage` import is unchanged, and so a server component still
+ * reaches them through the server-only barrel.
  */
-export function buildOgImageUrl(origin: string, slug: string): string {
-  return `${origin}/og/${encodeURIComponent(slug)}`;
-}
+export { buildOgImageUrl, buildOgItemImageUrl } from './ogCard';

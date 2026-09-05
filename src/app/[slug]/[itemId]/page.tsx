@@ -7,7 +7,12 @@ import type { SiteData as RendererSiteData } from "@hillbombcreations/site-rende
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import type { SiteData } from "@/types/SiteData";
-import { resolveSiteOrigin, buildOgImageUrl, buildDetailUrl } from "@/lib/og/ogImage";
+import {
+  resolveSiteOrigin,
+  buildOgImageUrl,
+  buildOgItemImageUrl,
+  buildDetailUrl,
+} from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
 import { getShowById } from "@/lib/api/shows";
 import { getTeamMembers } from "@/lib/api/team";
@@ -29,8 +34,17 @@ import type {
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
-import { applyScope, itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
+// `applyScope` moved behind `lookupDetailItem` with the rest of the item
+// resolution, so this file no longer calls it directly.
+import { itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
+import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import {
+  RECIPES_FORMAT,
+  detailJsonLdFormat,
+  servesCollectionDetail,
+} from "@/lib/detail/detailFormats";
+import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -478,25 +492,27 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // `location-hub` page (§15.5 — no new semantic-marker format) host a
   // scoped detail route: "a page that scopes a collection also hosts detail
   // routes for the items in that scope, rendered in that page's context."
+  //
+  // ALSO fires for `format:'recipes'`. A recipe is an ordinary collection
+  // object, so this arm serves it with no new fetch path — but without the
+  // arm claiming it, a recipes page matches nothing above and every recipe URL
+  // reaches the `notFound()` at the bottom of this function. An unknown page
+  // FORMAT hard-404s here (unlike an unknown detail SECTION, which the
+  // renderer skips silently), so "the renderer will ship the format later" is
+  // not a fallback. `servesCollectionDetail` owns that list and is tested by
+  // being CALLED (`src/lib/detail/detailFormats.test.ts`); this file's JSX
+  // means nothing inline here could be.
   const scopedDetailPage = pageConfig.detailPage;
-  if (pageConfig.format === "collection-list" || scopedDetailPage?.itemCollectionId) {
-    const collectionId =
-      scopedDetailPage?.itemCollectionId || getPageCollectionId(siteData, pageConfig.name, "");
-    if (!collectionId) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
-
-    // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
-    // API 502s on larger limits, and the list view already caps at 100.
-    const { items: unscopedItems } = await getCollectionItems(collectionId, { limit: 100 });
-
-    // §7.2 step 5 — `scope` restricts WHICH ITEMS ARE ADDRESSABLE here.
-    // Absent/malformed scope ⇒ identity (applyScope's own contract), so an
-    // unscoped collection-list page is byte-identical to before.
-    const scopedItems = applyScope(unscopedItems, scopedDetailPage?.scope);
-
-    // §7.2 step 6 — `_id` tried FIRST unconditionally (no existing URL can
-    // change meaning), then `raw[itemKeyField]` when configured.
+  if (servesCollectionDetail(pageConfig)) {
+    // §7.2 steps 5-6 — one shared resolver, because `/og/[slug]/[itemId]` has
+    // to land on the SAME item for the same URL or a correct page ships under
+    // another recipe's social card. `_id` first unconditionally (no existing
+    // URL can change meaning), then `raw[itemKeyField]` when configured;
+    // `scope` restricts which items are addressable, absent scope ⇒ identity.
+    const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
+    if (!lookup) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    const { collectionId, unscopedItems, item } = lookup;
     const itemKeyField = scopedDetailPage?.itemKeyField;
-    const item = resolveItem(scopedItems, itemId, itemKeyField);
 
     if (!item) {
       // §7.2 step 7 — the doorway-page guard: an item that exists in the
@@ -528,17 +544,50 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       typeof effectiveItem.description === "string"
         ? effectiveItem.description.replace(/<[^>]*>/g, "").slice(0, 500)
         : undefined;
+    // A recipe's own fields: the authored ingredient and step lines verbatim,
+    // and the three time scalars whose SUM is the total (derived here, never
+    // authored, so it cannot contradict its parts).
+    const recipe =
+      pageConfig.format === RECIPES_FORMAT
+        ? readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined)
+        : undefined;
+    // `durable`, not `deployed`: a Recipe's image sits in Google's index for
+    // weeks, so an Amplify build host must be refused here exactly as it is for
+    // the `url` two lines below.
+    const durableOrigin = recipe ? resolveSiteOrigin(siteData, { surface: "durable" }) : "";
+    const recipeCardUrl = durableOrigin
+      ? buildOgItemImageUrl(durableOrigin, slug, itemId)
+      : undefined;
     const itemJsonLd = buildDetailJsonLd({
-      format: "products",
+      // The format is passed rather than hardcoded `"products"`. It had to be:
+      // with the hardcode in place a `case 'recipes'` in buildDetailJsonLd is
+      // unreachable, so the whole Recipe branch would be dead code that still
+      // reads like coverage. `detailJsonLdFormat` maps everything that is not
+      // recipes back to today's `"products"` on purpose — see its doc comment.
+      format: detailJsonLdFormat(pageConfig.format),
       title: effectiveItem.title || pageConfig.name,
-      description: cleanDesc,
+      description: cleanDesc ?? recipe?.summary,
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
-      // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
+      // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
       imageUrl: unsignMediaUrl(effectiveItem.imageUrl),
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
+      ...(recipe
+        ? {
+            durableImageUrl: recipeCardUrl,
+            recipeIngredients: recipe.ingredients,
+            recipeInstructions: recipe.steps,
+            prepMinutes: recipe.prepMinutes,
+            cookMinutes: recipe.cookMinutes,
+            restMinutes: recipe.restMinutes,
+            recipeYield: recipe.recipeYield,
+            // The bakery is the author of its own recipes.
+            authorName: siteData.businessInfo?.name,
+            datePublished: effectiveItem.date,
+          }
+        : {}),
     });
 
     return (
@@ -877,6 +926,7 @@ export async function generateMetadata({ params }: Props) {
   // defect where every item under a page shared one title, §2.3).
   const detailPage = pageConfig.detailPage;
   const seoPatterns = detailPage?.seo;
+  const isRecipe = pageConfig.format === RECIPES_FORMAT;
   const hasDetailRouteConfig = !!(
     detailPage?.itemCollectionId ||
     detailPage?.itemKeyField ||
@@ -885,13 +935,15 @@ export async function generateMetadata({ params }: Props) {
     seoPatterns
   );
 
-  if (hasDetailRouteConfig) {
-    const collectionId =
-      detailPage?.itemCollectionId || getPageCollectionId(siteData, pageConfig.name, "");
-    if (collectionId) {
-      const { items: unscopedItems } = await getCollectionItems(collectionId, { limit: 100 });
-      const scopedItems = applyScope(unscopedItems, detailPage?.scope);
-      const item = resolveItem(scopedItems, itemId, detailPage?.itemKeyField);
+  // `recipes` joins the per-item fetch UNCONDITIONALLY, config or not. The
+  // whole point of a recipe page is that its link gets pasted into a caption,
+  // and without the item in hand every recipe on the site shares one card and
+  // one title. Every other format keeps the existing gate exactly, so no page
+  // on the fleet gains a fetch it did not have.
+  if (hasDetailRouteConfig || isRecipe) {
+    const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
+    if (lookup) {
+      const item = lookup.item;
       if (item) {
         const contextRaw = await resolveDetailContext(detailPage?.context);
         const effectiveItem = applyContextOverrides(item, contextRaw, detailPage?.context?.overrides);
@@ -904,12 +956,43 @@ export async function generateMetadata({ params }: Props) {
         const patternTitle = resolvePattern(seoPatterns?.titlePattern, patternData);
         const patternDescription = resolvePattern(seoPatterns?.descriptionPattern, patternData);
 
-        const title = seo?.metaTitle || patternTitle || `${pageConfig.name} | ${siteName}`;
+        const itemTitle =
+          typeof effectiveItem.title === "string" && effectiveItem.title.trim()
+            ? effectiveItem.title.trim()
+            : undefined;
+        // Only recipes derive the default title from the ITEM. Widening this to
+        // every format would rewrite the <title> of every scoped-detail page in
+        // the fleet on the next promote-stable, which is a real SEO change and
+        // not this feature's to make.
+        const derivedTitleBase = isRecipe && itemTitle ? itemTitle : pageConfig.name;
+        const recipeSummary = isRecipe
+          ? readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary
+          : undefined;
+
+        const title = seo?.metaTitle || patternTitle || `${derivedTitleBase} | ${siteName}`;
         const description =
           seo?.metaDescription ||
           patternDescription ||
+          recipeSummary?.slice(0, 160) ||
           pageConfig.labels?.subtitle ||
-          `${pageConfig.name} — ${siteName}`;
+          `${derivedTitleBase} — ${siteName}`;
+
+        // The card, and only for recipes in this phase. Two things change:
+        //
+        //  - the IMAGE points at `/og/<slug>/<itemId>` instead of the page's
+        //    card, so two recipes cannot share one picture;
+        //  - `og:title` is the RECIPE's title even when the author set a
+        //    page-level SEO title. A page-level title is authored for the page;
+        //    letting it win here is what put one name on every recipe card. The
+        //    document <title> still honours it, matching every other format.
+        //
+        // Other formats keep the page-level card. Flipping the whole fleet's
+        // social images in the same change that introduces the route would be a
+        // fleet-wide visual change nobody asked for and nothing here verifies.
+        const cardImageUrl = isRecipe
+          ? buildOgItemImageUrl(origin, slug, itemId)
+          : ogImageUrl;
+        const cardTitle = isRecipe && itemTitle ? itemTitle : title;
 
         // §15.2 — 'self' is the default the moment `scope` is authored (cells
         // are distinct by construction); otherwise absent ⇒ no canonical tag,
@@ -929,18 +1012,18 @@ export async function generateMetadata({ params }: Props) {
           description,
           ...buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`, canonical),
           openGraph: {
-            title,
+            title: cardTitle,
             description,
             url: itemUrl,
             type: "article",
             siteName,
-            images: [ogImageUrl],
+            images: [cardImageUrl],
           },
           twitter: {
             card: "summary_large_image",
-            title,
+            title: cardTitle,
             description,
-            images: [ogImageUrl],
+            images: [cardImageUrl],
           },
         };
       }
