@@ -1,0 +1,56 @@
+{
+  "slug": "recipes",
+  "path": "/recipes",
+  "name": "Recipes",
+  "format": "recipes",
+  "collections": [],
+  "integrations": [],
+  "displayOnHeader": true,
+  "displayOnFooter": false,
+  "enabled": true,
+  "optional": false,
+  "order": 3,
+  "blocks": [
+    {
+      "id": "preset-block-0",
+      "type": {
+        "kind": "static",
+        "dispatchId": "section-header"
+      },
+      "order": 0,
+      "enabled": true,
+      "config": {
+        "labels": {
+          "title": "Recipes",
+          "subtitle": "What we make, and how we make it.",
+          "align": "left"
+        }
+      }
+    },
+    {
+      "id": "preset-block-1",
+      "type": {
+        "kind": "layout",
+        "dispatchId": "cards"
+      },
+      "order": 1,
+      "enabled": true,
+      "config": {
+        "bindings": [
+          {
+            "displayAs": "cards",
+            "enabled": true,
+            "sectionConfig": {
+              "showHeader": false
+            },
+            "collectionId": "6a9cb88fbe11d924f146f000"
+          }
+        ]
+      }
+    }
+  ],
+  "detailPage": {
+    "integrations": [],
+    "enabled": true
+  }
+}
