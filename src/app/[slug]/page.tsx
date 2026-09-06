@@ -729,7 +729,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const description =
     seo?.metaDescription ||
     pageConfig?.labels?.subtitle ||
-    `${derivedTitle} — ${siteName}`;
+    `${derivedTitle} | ${siteName}`;
 
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);

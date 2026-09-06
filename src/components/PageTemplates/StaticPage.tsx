@@ -55,7 +55,7 @@ function buildDefaultContent(pageName: string, opts: { businessName: string; ema
       <h2>Returns &amp; Refunds</h2>
       <p>Our return and refund policy, if applicable, is described separately on our website. If no specific policy is posted, ${contactLine} to discuss returns or issues with your order.</p>
       <h2>Intellectual Property</h2>
-      <p>All content on this site — including text, images, logos, and design — is owned by ${businessName} or our licensors and is protected by copyright and trademark laws. You may not copy, distribute, modify, or commercially exploit any content without prior written permission.</p>
+      <p>All content on this site, including text, images, logos, and design, is owned by ${businessName} or our licensors and is protected by copyright and trademark laws. You may not copy, distribute, modify, or commercially exploit any content without prior written permission.</p>
       <h2>Third-Party Links</h2>
       <p>This site may contain links to third-party websites or services. We are not responsible for the content, accuracy, or practices of those sites. Accessing them is at your own risk.</p>
       <h2>Disclaimer of Warranties</h2>

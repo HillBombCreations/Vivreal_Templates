@@ -817,7 +817,7 @@ export async function generateMetadata({ params }: Props) {
     const derived = nestedPage.labels?.title || nestedPage.name;
     const title = seo?.metaTitle || `${derived} | ${siteName}`;
     const description =
-      seo?.metaDescription || nestedPage.labels?.subtitle || `${derived} — ${siteName}`;
+      seo?.metaDescription || nestedPage.labels?.subtitle || `${derived} | ${siteName}`;
     // OG route is a single dynamic segment; use the first URL segment so it
     // always resolves (nested pages fall back to the site card).
     const ogImageUrl = buildOgImageUrl(origin, slug);
@@ -866,7 +866,7 @@ export async function generateMetadata({ params }: Props) {
     }
     const cleanDesc = show.description?.replace(/<[^>]*>/g, "").slice(0, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
-    const description = seo?.metaDescription || cleanDesc || `${show.title} — ${siteName}`;
+    const description = seo?.metaDescription || cleanDesc || `${show.title} | ${siteName}`;
     return {
       title,
       description,
@@ -975,7 +975,7 @@ export async function generateMetadata({ params }: Props) {
           patternDescription ||
           recipeSummary?.slice(0, 160) ||
           pageConfig.labels?.subtitle ||
-          `${derivedTitleBase} — ${siteName}`;
+          `${derivedTitleBase} | ${siteName}`;
 
         // The card, and only for recipes in this phase. Two things change:
         //
@@ -1037,7 +1037,7 @@ export async function generateMetadata({ params }: Props) {
   // section name is the sensible default title. `seo` still overrides.
   const title = seo?.metaTitle || `${pageConfig.name} | ${siteName}`;
   const description =
-    seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} — ${siteName}`;
+    seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} | ${siteName}`;
   return {
     title,
     description,
