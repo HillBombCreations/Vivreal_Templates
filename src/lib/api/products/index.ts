@@ -5,6 +5,9 @@ import { BOT_VERDICT_HEADER } from "../../botVerdict";
 // under plain Node (`node --test`) — this file is `server-only` and cannot be
 // loaded there. Same split as `../collections/mapItem.ts`.
 import { transformProduct } from "./transformProduct.ts";
+// Same split, same reason: the query builder is pure so `node --test` can pin
+// the fetch window. See that module's docblock for why the limit is explicit.
+import { buildProductsQuery } from "./productsQuery.ts";
 import type { Product, Filter } from "@/types/Products";
 
 const SITE_ID = process.env.SITE_ID || "";
@@ -46,14 +49,7 @@ export async function getProducts(opts?: {
   sortVal?: string;
   integrationType?: string;
 }): Promise<Product[]> {
-  const params = new URLSearchParams({ type: opts?.integrationType || "stripe" });
-  if (opts?.filters) {
-    for (const [key, val] of Object.entries(opts.filters)) {
-      if (key && val) params.set(`filters[${key}]`, val);
-    }
-  }
-  if (opts?.searchVal) params.set("search", opts.searchVal);
-  if (opts?.sortVal) params.set("sort", opts.sortVal);
+  const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
   // Task 14 item 3 (dashboard-insights-phase-3-capture/plan.md, D7) --
@@ -76,6 +72,13 @@ export async function getProducts(opts?: {
 export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
   // Omitted integrationType falls back to stripe inside getProducts — the
   // legacy default for callers that don't know the page's payments provider.
+  //
+  // There is no by-id read on VR_Client_API, so this detail page can only find
+  // a product inside the window `getProducts` asks for. That window used to be
+  // the server's 20-row default, which meant a merchant's 21st product had no
+  // detail page — its card linked to a 404 with no error anywhere. It is now
+  // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
+  // required. See ./productsQuery.ts.
   const products = await getProducts({ integrationType });
   return products.find((p) => p._id === productId) ?? null;
 }
