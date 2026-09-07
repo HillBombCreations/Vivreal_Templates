@@ -509,6 +509,12 @@ export interface SiteData {
         stamp?: { text?: string | null; label?: string | null } | null;
         /** Poilâne round — 'wordmark' only: the service-ticker marquee items. */
         ticker?: string[] | null;
+        /**
+         * vivreal.io relaunch R4 — how many grid columns the footer brand block
+         * spans. Passed to `<Footer brandSpan>`; absent/null ⇒ the span-2
+         * default. Mirrors the renderer's own `SiteData.footer.brandSpan`.
+         */
+        brandSpan?: 1 | 2 | null;
     } | null;
     /**
      * Footer newsletter signup (parity #9) — TOP-LEVEL field, mirrors the

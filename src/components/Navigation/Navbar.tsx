@@ -132,6 +132,13 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       // Typed in NavbarProps as of renderer 1.24.0 — spread-cast retired.
       headerWidth={siteData?.navigation?.headerWidth ?? null}
       logoHeight={siteData?.navigation?.brand?.logoHeight ?? null}
+      // Item-18 lockstep, the direction that had slipped. The Studio preview
+      // wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) has passed
+      // this since Lens-2 E and this file never did, so an author who set a
+      // mobile logo height saw it in the Studio and the live site kept the
+      // derived one. Absent ⇒ null ⇒ the renderer's own min(logoHeight, 64),
+      // byte-identical for every site that has not set it.
+      logoHeightMobile={siteData?.navigation?.brand?.logoHeightMobile ?? null}
       // H2 (renderer 1.54) — authored MINIMUM nav-row height, [40,120];
       // mobile derives as min(barHeight, 72) unless barHeightMobile is set.
       // Absent ⇒ today's logo-derived bar height, byte-identical.

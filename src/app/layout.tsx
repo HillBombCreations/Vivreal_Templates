@@ -3,6 +3,24 @@ import type { Metadata } from 'next';
 import '@/styles/globals.css';
 import '@hillbombcreations/site-renderer/styles/content-grid.css';
 import '@hillbombcreations/site-renderer/styles/animations.css';
+/*
+ * The third renderer stylesheet, which this app was not importing. It backs the
+ * two IMAGE_TREATMENTS entries that are real CSS rather than Tailwind utilities
+ * (`image-duotone-primary`, `image-mask-vignette`); the renderer's own docblock
+ * says a consumer must import it, and the Studio preview shell already did. That
+ * asymmetry is what this line removes: from here the two surfaces load the same
+ * three renderer stylesheets.
+ *
+ * A verified no-op for what live sites paint TODAY. At renderer 1.65.0 the only
+ * component that can emit either class is `HomeSections/HeroSplit`, reached only
+ * through `HomeSectionRenderer`, and `composition/blocks.ts`'s `mapHomeSection`
+ * returns null for every home-section dispatchId except `hero` (which renders
+ * `PageHero`, not HeroSplit). So no element on either surface carries either
+ * class and neither rule can match. Adding the import now means the day a
+ * component does emit one, the preview and the URL agree by default instead of
+ * diverging silently.
+ */
+import '@hillbombcreations/site-renderer/styles/image-treatments.css';
 import { getSiteData } from '@/lib/api/siteData';
 import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { buildRootMetadata } from '@/lib/seo/rootMetadata';
