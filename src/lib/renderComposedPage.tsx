@@ -3,10 +3,14 @@ import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navigation/Navbar';
 import Footer from '@/components/Footer';
-import { composePage, ComposedPageSkeleton } from '@hillbombcreations/site-renderer';
+import {
+  composePage,
+  ComposedPageSkeleton,
+  TitleBand,
+  shouldRenderTitleBand,
+} from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
-import { willRenderHeroBanner, hasHomeSectionBlock } from '@/lib/heroBanner';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
 
@@ -100,38 +104,34 @@ export function renderComposedPage({
   /** Server-side products query (f_/search/sort) for the storefront round-trip. */
   productQuery?: ProductQuery;
 }) {
-  const format = composedPage.format;
-
   // SP-6 Task 5 Concern-3: transitional title band (B-wrapper fallback).
-  // Mirrors [slug]/page.tsx exactly. Self-disables once the page carries a
-  // section-header block (B-author model). Synchronous — stays in the shell.
-  const isGenericFormat = GENERIC_FORMATS.has(format);
-  const hasLabelTitle = !!(composedPage.labels?.title);
-  const hasSectionHeaderBlock = (composedPage.blocks ?? []).some(
-    (b) => b?.type?.dispatchId === 'section-header',
+  //
+  // The GATE and the MARKUP both come from the renderer now (>= 1.66.0,
+  // preview-parity Wave 4, audit D9). They used to live here, hand-duplicated
+  // in [slug]/page.tsx, and re-derived a third time inside the renderer's own
+  // mapBlocks — three copies of one condition, each carrying a comment asking
+  // the next person to keep them in step. They drifted, and /studio-demo
+  // printed "Build a site in under 60 seconds" twice. Worse, the Studio
+  // preview rendered no page heading at all, because the band was Templates
+  // JSX the preview shell never had: a page title that existed at the URL and
+  // not in the editor.
+  //
+  // `shouldRenderTitleBand` carries every clause this file used to spell out —
+  // generic format, an authored labels.title, no section-header block (the
+  // B-author model owns the heading), no home-section block, and no synthetic
+  // hero banner from mapBlocks. `TitleBand` carries the markup, both the
+  // light-chrome layout and the dark full-width gradient, verbatim.
+  //
+  // The MOUNT POINT stays here deliberately. The renderer also offers
+  // `options.titleBand: true`, which renders the band inside composePage; that
+  // is the seam the Studio preview uses. This route streams, and the band
+  // being synchronous OUTSIDE the Suspense boundary is what puts the real page
+  // heading on screen before the collection fetches resolve. Owning the mount
+  // point is what obliges this file to keep passing `suppressSrTitle` below,
+  // so composePage does not stack its sr-only h1 on top.
+  const showTransitionalTitleBand = shouldRenderTitleBand(
+    composedPage as unknown as RendererPageConfig,
   );
-  // Part 2 dedupe (2026-07-10): a standard page authored with BOTH
-  // labels.buttonLabel + labels.buttonLink gets a synthetic hero banner from
-  // the renderer's mapBlocks (composePage below, kind:'banner') that ALREADY
-  // renders this same labels.title + subtitle + button. Without this guard the
-  // bare title band ABOVE the banner double-renders the same title (confirmed
-  // on /studio-demo: "Build a site in under 60 seconds" appeared twice — once
-  // bare/button-less here, once correctly inside the banner with its button).
-  // A page without both fields is unaffected — same band as today. See
-  // `heroBanner.ts` for the shared gate (kept in lockstep with the renderer's
-  // own condition, single source of truth for both page wrappers).
-  // Gate-2 masthead dedupe: a page with a real home-section hero block (the
-  // masthead-carousel prepend) renders its own H1 — the bare band above it
-  // would double-title AND push the 100svh masthead below the fold top.
-  const showTransitionalTitleBand =
-    isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock &&
-    !hasHomeSectionBlock(composedPage) && !willRenderHeroBanner(composedPage);
-
-  // Dark-chrome transitional title band: when siteData.chrome === 'dark', the
-  // band gets a full-width navy gradient (matching BannerLayout / SectionHeaderBlock
-  // dark treatment) with text-inverse text, centered layout, and generous padding.
-  // Light-chrome behavior is byte-identical to the previous implementation.
-  const darkChrome = siteData.chrome === 'dark';
 
   // The transitional title band already renders the page title in the shell for
   // generic formats — strip labels from the skeleton there so the fallback
@@ -143,54 +143,14 @@ export function renderComposedPage({
     <>
       <Navbar page={composedPage as unknown as RendererPageConfig} />
       {showTransitionalTitleBand && (
-        // Transitional title band: renders the legacy page.labels.title/subtitle
-        // so generic pages that haven't been SP-3-backfilled still show their H1.
-        // Self-disables once the page carries a section-header block (B-author model).
-        darkChrome ? (
-          // Dark-chrome: full-width navy hero band, centered, text-inverse.
-          // Outer div carries the full-width background; inner content-grid constrains
-          // the text (same split used by BannerLayout and SectionHeaderBlock dark mode).
-          <div
-            style={{
-              background:
-                'linear-gradient(135deg, var(--surface-alt, #1a1a2e), color-mix(in srgb, var(--surface-alt, #1a1a2e) 88%, var(--primary, #111)))',
-            }}
-          >
-            <div className="content-grid pt-32 pb-16 text-center">
-              <h1
-                className="text-3xl md:text-5xl font-bold tracking-tight"
-                style={{ color: 'var(--text-inverse, #ffffff)', fontFamily: 'var(--font-display)' }}
-              >
-                {composedPage.labels.title}
-              </h1>
-              {composedPage.labels.subtitle && (
-                <p
-                  className="mt-4 text-base md:text-lg max-w-2xl mx-auto leading-relaxed"
-                  style={{ color: 'color-mix(in srgb, var(--text-inverse, #fff) 70%, transparent)' }}
-                >
-                  {composedPage.labels.subtitle}
-                </p>
-              )}
-            </div>
-          </div>
-        ) : (
-          // Light-chrome: legacy layout (content-grid pt-28 pb-0, left-aligned h1).
-          <div className="content-grid pt-28 pb-0">
-            <header className="mb-8">
-              <h1
-                className="text-3xl md:text-4xl font-bold tracking-tight"
-                style={{ color: 'var(--text-primary)' }}
-              >
-                {composedPage.labels.title}
-              </h1>
-              {composedPage.labels.subtitle && (
-                <p className="mt-2 text-lg text-muted-foreground">
-                  {composedPage.labels.subtitle}
-                </p>
-              )}
-            </header>
-          </div>
-        )
+        // The band's markup, both the light-chrome layout and the dark
+        // full-width gradient, is the renderer's `TitleBand`. It was carried
+        // over from this file verbatim, so a site that renders it today keeps
+        // rendering exactly the same bytes.
+        <TitleBand
+          page={composedPage as unknown as RendererPageConfig}
+          chrome={siteData.chrome}
+        />
       )}
       {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
           this is a page-authored Suspense boundary, not the deleted implicit
