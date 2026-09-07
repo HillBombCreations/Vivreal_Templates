@@ -98,6 +98,13 @@ const Footer = async () => {
       // A Bakeshop feedback round (renderer 1.34.0): footer logo render height
       // — FooterProps declares it, so it rides as a plain prop.
       logoHeight={siteData?.footer?.brand?.logoHeight ?? null}
+      // Same slipped-lockstep class as `logoHeightMobile` on the Navbar, on the
+      // footer side: the Studio preview wrapper has passed `brandSpan` since the
+      // vivreal.io relaunch round and this file never did, so a one-column brand
+      // block previewed narrow and shipped spanning two. FooterProps declares it
+      // (renderer 1.65.0), so it rides as a plain prop. Absent ⇒ null ⇒ today's
+      // span-2 grid, byte-identical for every site that has not set it.
+      brandSpan={siteData?.footer?.brandSpan ?? null}
       // Wave D + owner pass 2: these land in FooterProps on the next renderer
       // bump — drop this spread-cast then and pass them as plain props.
       {...({
