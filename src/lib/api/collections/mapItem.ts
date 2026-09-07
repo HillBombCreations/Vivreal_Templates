@@ -3,8 +3,7 @@
  *
  * Extracted from `./index.ts` (which is `server-only` and imports `next/*`, so
  * it cannot be loaded under plain Node) so this dependency-free logic can be
- * unit-tested directly with the repo's `node --test` harness — the same reason
- * `lib/heroBanner.ts` lives apart from its server-only callers. `index.ts`
+ * unit-tested directly with the repo's `node --test` harness. `index.ts`
  * re-imports `toContentItem` for its fetchers; behaviour is unchanged.
  */
 // Explicit `.ts` extension (allowed by tsconfig `allowImportingTsExtensions`)

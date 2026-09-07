@@ -21,9 +21,8 @@ import { getPageBySlug } from "@/lib/pages";
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import { renderComposedPage } from "@/lib/renderComposedPage";
-import { composePage } from "@hillbombcreations/site-renderer";
+import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
-import { willRenderHeroBanner, hasHomeSectionBlock } from "@/lib/heroBanner";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -522,66 +521,33 @@ export default async function DynamicPage({
       components = { ...components, SubscribePage: SubscribeClientAdapter };
     }
 
-    // SP-6 Task 5 — Concern-3 transitional title band (B-wrapper fallback).
+    // SP-6 Task 5 Concern-3 transitional title band (B-wrapper fallback).
     //
-    // buildGenericSections emits flat layout sections but NO page-level title band
-    // (the legacy PageShell provided it). Per the epic model (B-author), the SP-3
-    // backfill will emit a leading Section Header block that composePage renders
-    // as the title — but until a generic page is backfilled, the title would
-    // vanish. This guard self-disables once the page has a section-header block:
+    // Gate and markup both come from the renderer now (>= 1.66.0,
+    // preview-parity Wave 4, audit D9). This file used to spell the gate out
+    // in full and carry its own copy of the band's JSX, hand-mirrored from
+    // renderComposedPage.tsx under a "cannot drift" comment. It had already
+    // drifted: renderComposedPage grew the dark-chrome full-width band and
+    // this copy never did.
     //
-    //   - Show the fallback band ONLY when:
-    //       (a) the format is generic (standard/list/grid)
-    //       (b) the page has a labels.title
-    //       (c) the page's blocks[] does NOT already lead with a section-header
-    //
-    // Any section-header block anywhere in blocks[] (not just leading) suppresses
-    // the fallback, because post-backfill the block owns the heading role.
-    const isGenericFormat = format === "standard" || format === "list" || format === "grid";
-    const hasLabelTitle = !!(composedPage.labels?.title);
-    const hasSectionHeaderBlock = (composedPage.blocks ?? []).some(
-      // A Section Header block has type.kind:'static' + type.dispatchId:'section-header'
-      // (renderer registry.js:152, defaultBlocks.js:100). 'section-header' is a
-      // dispatchId, NOT a BlockKind — so match on dispatchId. Matching kind here would
-      // never fire → double-title once SP-3 backfills the leading Section Header.
-      (b) => b?.type?.dispatchId === "section-header",
+    // This arm is currently UNREACHABLE for a generic page: standard / list /
+    // grid return early through renderComposedPage above, so
+    // `shouldRenderTitleBand`, which requires one of those three formats, is
+    // always false here. Kept, and kept correct, per this file's own lockstep
+    // contract in case that early return ever narrows. Adopting the shared
+    // band is what makes "kept correct" free instead of manual.
+    const showTransitionalTitleBand = shouldRenderTitleBand(
+      composedPage as unknown as RendererPageConfig,
     );
-    // Part 2 dedupe (2026-07-10) — mirrors the identical fix in renderComposedPage.tsx
-    // (this arm is currently unreachable for standard/list/grid, which return early via
-    // renderComposedPage above; kept in lockstep per this file's own "cannot drift"
-    // contract in case that early-return ever narrows). See `heroBanner.ts` for the
-    // shared gate + full rationale: a synthetic hero banner (renderer mapBlocks)
-    // already renders labels.title + subtitle + button, so the bare title band here
-    // must self-disable.
-    // Gate-2 masthead dedupe (mirrors renderComposedPage.tsx — lockstep contract):
-    // a home-section hero block owns the H1; the bare band would double-title.
-    const showTransitionalTitleBand =
-      isGenericFormat && hasLabelTitle && !hasSectionHeaderBlock &&
-      !hasHomeSectionBlock(composedPage) && !willRenderHeroBanner(composedPage);
 
     return (
       <>
         <Navbar page={composedPage as unknown as RendererPageConfig} />
         {showTransitionalTitleBand && (
-          // Transitional title band: renders the legacy page.labels.title/subtitle
-          // so generic pages that haven't been SP-3-backfilled still show their H1.
-          // Self-disables once the page carries a section-header block (B-author model).
-          // Matches the PageShell header styling (content-grid pt-28 pb-0).
-          <div className="content-grid pt-28 pb-0">
-            <header className="mb-8">
-              <h1
-                className="text-3xl md:text-4xl font-bold tracking-tight"
-                style={{ color: "var(--text-primary)" }}
-              >
-                {composedPage.labels.title}
-              </h1>
-              {composedPage.labels.subtitle && (
-                <p className="mt-2 text-lg text-muted-foreground">
-                  {composedPage.labels.subtitle}
-                </p>
-              )}
-            </header>
-          </div>
+          <TitleBand
+            page={composedPage as unknown as RendererPageConfig}
+            chrome={siteData.chrome}
+          />
         )}
         {/* Streaming split (2026-07-13): buildPageContext's collection fetches
             are the slow half — they stream in behind this boundary while the
