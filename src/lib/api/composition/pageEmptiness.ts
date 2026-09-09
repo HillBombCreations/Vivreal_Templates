@@ -132,15 +132,33 @@ export function decidePageEmptiness(args: {
 
   if (!couldBeEmpty) return { isEmpty: false, emptinessUnknown: false };
 
-  // Ordered before the count, deliberately. Counting first and checking the
-  // flag second is the same bug in a new place: `count === 0` is exactly what a
-  // failed read looks like.
+  // ITEMS IN HAND SETTLE IT, and they settle it before the degraded flag is
+  // consulted. `count > 0` is POSITIVE PROOF that a read succeeded: a degraded
+  // read always resolves to the empty sentinel (`../degradedRead.ts`), so
+  // `degraded` implies `count === 0` unconditionally and a non-zero count can
+  // never be a fallback artifact.
+  //
+  // Checking `degraded` first instead looks safer and is not. A generic page
+  // routinely carries more than one binding: a collection block's primary plus
+  // its filter collection, or a collection alongside a storefront group under
+  // the universal page model. When the primary returns twelve items and the
+  // filter read fails, the page has content in hand, rendered fine before this
+  // change, and must keep rendering. Refusing it would turn a partial upstream
+  // wobble into a hard error on a page that is demonstrably not empty, and it
+  // would get MORE likely the more bindings a page has, which is backwards.
+  //
+  // Note this is not the mirror of the defect being fixed. That defect read
+  // `count === 0` as evidence of emptiness, which is exactly what a failed read
+  // produces. This reads `count > 0` as evidence of a successful read, which a
+  // failed read cannot produce. One direction is sound and the other is not.
+  const everyReadEmpty = args.reads.every((read) => read.count === 0);
+  if (!everyReadEmpty) return { isEmpty: false, emptinessUnknown: false };
+
+  // Nothing came back from anything. Now, and only now, does it matter whether
+  // that is an answer or a silence.
   if (args.reads.some((read) => read.degraded)) {
     return { isEmpty: false, emptinessUnknown: true };
   }
 
-  return {
-    isEmpty: args.reads.every((read) => read.count === 0),
-    emptinessUnknown: false,
-  };
+  return { isEmpty: true, emptinessUnknown: false };
 }

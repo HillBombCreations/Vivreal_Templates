@@ -201,3 +201,49 @@ export function buildOriginRefusalCapture({
     },
   };
 }
+
+
+/**
+ * Fingerprint root for "a page refused to answer rather than 404 itself out of
+ * the index" (the degraded-collection-read refusal).
+ *
+ * A FOURTH distinct business condition, and the one this module's own preamble
+ * predicts: `src/instrumentation.ts` exports no `onRequestError` hook, so a
+ * throw from a server component reaches Sentry only through `error.tsx`, on the
+ * CLIENT, where Next has already replaced the message with a digest. Without an
+ * explicit capture the refusal is invisible: an operator would see a spike of
+ * FETCH_FAILURE events and have no way to tell whether any page actually
+ * refused, which is precisely the "working 200 with something missing" blindness
+ * this module was created for, inverted.
+ *
+ * No tenant component in the fingerprint, for the same reason as
+ * `buildSiteDetailsFallbackCapture`: a fleet-wide upstream episode must collapse
+ * into one Issue whose event count an alert rule can threshold on.
+ */
+export const DEGRADED_REFUSAL_FINGERPRINT = 'templates.degradedRead.refused';
+
+/**
+ * Capture context for "a composed page refused rather than answer 404 from a
+ * failed collection read".
+ *
+ * `format` is tagged rather than the slug: the slug is per-tenant and would
+ * explode cardinality exactly as the raw query path would in
+ * `buildFetchFailureCapture`, while the format is a closed set and says which
+ * kind of page is affected.
+ */
+export function buildDegradedRefusalCapture({
+  siteId,
+  format,
+}: {
+  siteId: string | undefined;
+  format: string | undefined;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [DEGRADED_REFUSAL_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      format: format || 'unknown',
+    },
+  };
+}

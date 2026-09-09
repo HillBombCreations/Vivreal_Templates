@@ -69,6 +69,14 @@ import type { SiteData } from '@/types/SiteData';
  */
 export class DegradedUpstreamError extends Error {
   readonly surface: string;
+  /**
+   * Which root produced this refusal, as a readable field rather than only as
+   * prose inside `message`. Next redacts a server-component error's message in
+   * production and replaces it with a digest, so anything a handler needs to
+   * act on has to be a field it can read before the throw crosses that
+   * boundary. `surface` is here for the same reason.
+   */
+  readonly whatIsUnknown: string;
 
   /**
    * `whatIsUnknown` completes the sentence "VR_Client_API did not answer, so
@@ -90,6 +98,7 @@ export class DegradedUpstreamError extends Error {
     );
     this.name = 'DegradedUpstreamError';
     this.surface = surface;
+    this.whatIsUnknown = whatIsUnknown;
   }
 }
 

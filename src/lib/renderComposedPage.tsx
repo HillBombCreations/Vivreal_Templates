@@ -11,7 +11,7 @@ import {
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
-import { refuseDegradedClaim } from '@/lib/api/siteData/degraded';
+import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
 
@@ -159,10 +159,24 @@ export function renderComposedPage({
           begins the instant this boundary suspends, which flushes a 200
           shell before ComposedPageBody runs. Unlike home's HYPOTHETICAL
           hazard (app/page.tsx has no notFound() today), ComposedPageBody's
-          isEmpty guard DOES call notFound() at :256 — that is a real,
-          shipping soft-200, not a latent one. Any future fix to that guard
-          must run in the un-suspended parent (above this boundary), not
-          inside ComposedPageBody. */}
+          isEmpty guard DOES call notFound(), which is a real, shipping
+          soft-200, not a latent one.
+
+          AMENDED. This note used to end "any future fix to that guard must
+          run in the un-suspended parent (above this boundary), not inside
+          ComposedPageBody", and the degraded-read guard is inside
+          ComposedPageBody, so leaving that sentence standing would have left
+          this file carrying two directives that disagree.
+
+          The rule it was reaching for is narrower than it was written:
+          anything that needs to set a STATUS must run in the un-suspended
+          parent, because from here the status is already committed. The
+          degraded guard does not set a status and could not; it replaces a
+          body that says "page not found" with one that says "try again",
+          which is the half that can be fixed from here. Hoisting it would
+          mean awaiting buildPageContext above this boundary and deleting the
+          streaming split for every generic page. Reasoning in full at the
+          guard itself. */}
       <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
         <ComposedPageBody
           siteData={siteData}
@@ -250,12 +264,7 @@ async function ComposedPageBody({
   // Suspense boundary, which deletes the streaming split for every generic page
   // to buy a correct status on a rare edge. Recorded, not taken.
   if (GENERIC_FORMATS.has(composedPage.format)) {
-    if (emptinessUnknown) {
-      refuseDegradedClaim(
-        'a page-missing (404) verdict for a generic page',
-        'the collection items for this page are UNKNOWN (siteData itself is healthy)',
-      );
-    }
+    if (emptinessUnknown) refuseUnknownEmptiness(composedPage.format);
     if (isEmpty) return notFound();
   }
 

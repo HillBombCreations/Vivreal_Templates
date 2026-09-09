@@ -93,9 +93,22 @@ export async function getProductsRead(
 }
 
 /**
- * Products only, for callers that render what came back and conclude nothing
- * from an empty list. `getProductById` is one: it answers "not this id", which
- * is already the honest answer when the catalogue could not be read.
+ * Products only. The value-only view of `getProductsRead`, kept so the callers
+ * that only render what came back do not have to unwrap a flag they ignore.
+ *
+ * `getProductById` is NOT such a caller, and saying so would be wrong. It is a
+ * client-side `.find()` over this list, so a degraded read makes it return
+ * `null`, and `[slug]/[itemId]/page.tsx` turns that into `redirectOrNotFound()`
+ * on every product detail URL on the site. That is the same manufactured 404
+ * this change set exists to remove, on a different route.
+ *
+ * It is NOT fixed here on purpose. The detail route reaches its item-miss
+ * branch from six separate arms, each with its own redirect handling, and it
+ * differs from the generic-page case in a way that changes the answer: it runs
+ * in the UN-suspended page component, so a refusal there can set a real 5xx
+ * rather than the soft one this PR is limited to. It deserves that, and its own
+ * review. Recorded here rather than in a tracker so the next reader of this
+ * function finds it.
  */
 export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
   return (await getProductsRead(opts)).products;

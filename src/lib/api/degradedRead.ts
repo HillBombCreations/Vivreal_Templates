@@ -33,12 +33,39 @@
  * marker over an inference: only the fallback path can produce it, so it can
  * never be true of data that was actually read.
  *
- * The sentinel is built per call and frozen, so no two reads can share one and
- * nothing downstream can mutate it into looking like a real answer.
+ * The sentinel is built per call, so no two reads can share one and one read
+ * failing can never mark another. It is also frozen, though `Object.freeze` is
+ * SHALLOW and `sentinel.items` stays a mutable array: that freeze is a guard
+ * against a caller reusing the envelope, not a proof of anything. The identity
+ * check is what carries the correctness, and identity survives mutation anyway.
  *
  * A 402 is NOT a degraded read. Both fetch helpers re-throw it so the page can
  * render `QuotaExceeded`, which means it never reaches this comparison, and a
  * quota-exceeded site keeps behaving exactly as it did.
+ *
+ * KNOWN LIMIT, RECORDED RATHER THAN GUESSED AT
+ * ............................................
+ * This tells "did not answer" apart from "answered empty". It does NOT tell a
+ * TRANSIENT failure apart from a TERMINAL one, because `clientFetchCached`
+ * swallows a 404 and a 503 identically and `ApiError.status` is gone one line
+ * before this function could read it. So a collection that has genuinely been
+ * deleted, if the upstream answers 404 for it rather than an empty list, reads
+ * as degraded forever, and a page bound to it refuses permanently where it used
+ * to 404 permanently. Neither answer is good; a permanent 5xx is at least loud,
+ * and a deleted binding is a data-repair problem either way.
+ *
+ * The real fix is one layer up, and it is the same shape as this whole defect:
+ * `clientFetchCached` should hand back `{ value, degraded, status }` and let the
+ * callers that do not care discard it, rather than making the callers that DO
+ * care reconstruct it. That would delete this module. Deliberately not attempted
+ * in the same change as the 404 it exists to stop, because it touches every read
+ * in the app.
+ *
+ * A second, narrower hole is left open for the same reason: `doClientFetch`
+ * returns `envelope.data` verbatim, so a SUCCESSFUL response carrying
+ * `data: null` resolves to `undefined`, which is not the sentinel, and the
+ * caller still counts zero items. Pre-existing, unchanged here, and the same
+ * status-aware fetch would close it.
  *
  * WHY A PLAIN `.ts` MODULE WITH NO `server-only` AND NO NEXT IMPORT
  * ................................................................

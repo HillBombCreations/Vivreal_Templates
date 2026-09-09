@@ -97,6 +97,22 @@ test('two reads never share a sentinel, so one failing cannot mark the other', a
   );
 });
 
+test('readOrDegrade must NOT catch: the 402 quota page depends on the throw', () => {
+  // `clientFetchSafe` and `clientFetchCached` both re-throw a 402 so the page
+  // can render `QuotaExceeded` instead of a fallback. That only works while
+  // `readOrDegrade` lets the rejection through. Wrapping the await in a
+  // try/catch would look like hardening and would silently kill the quota page,
+  // so the contract is pinned rather than left to a comment.
+  const quota = Object.assign(new Error('VR_Client_API 402'), { status: 402 });
+  return assert.rejects(
+    () =>
+      readOrDegrade<Envelope>(emptyEnvelope, async () => {
+        throw quota;
+      }),
+    (err: unknown) => err === quota,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // The defect: a failed read must not read as "this page does not exist"
 // ---------------------------------------------------------------------------
@@ -153,6 +169,71 @@ test('one degraded read poisons the verdict even when a sibling read succeeded e
     ],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
+});
+
+test('PARTIAL DEGRADE: items in hand still render, and are NOT refused', () => {
+  // The failure mode the first cut of this fix introduced, and the reason the
+  // degraded flag is consulted only after the counts.
+  //
+  // A generic page routinely carries more than one binding: a collection
+  // block's primary plus its filter collection, or a collection alongside a
+  // storefront group. When the primary returns items and a sibling read fails,
+  // the page has content in hand and rendered fine before this change. It must
+  // keep rendering. Refusing it would trade a 404 on an absence for a hard
+  // error on a page that is demonstrably not empty, and it would get MORE
+  // likely the more bindings a page carries.
+  const combos: PageDataRead[][] = [
+    [
+      { count: 12, degraded: false },
+      { count: 0, degraded: true },
+    ],
+    [
+      { count: 0, degraded: true },
+      { count: 5, degraded: false },
+    ],
+  ];
+  for (const reads of combos) {
+    assert.deepEqual(
+      decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads }),
+      { isEmpty: false, emptinessUnknown: false },
+      'a page with items must render, whatever a sibling read did',
+    );
+  }
+});
+
+test('PARITY SWEEP: whatever rendered before still renders, for every read combination', () => {
+  // The refusal is only ever allowed to replace a 404, never a page. This
+  // replays the old verdict (`reads.every(count === 0)`, verbatim from
+  // `git show HEAD~1:buildPageContext.ts`) across the whole combination space
+  // and fails if anything that used to render now does not.
+  const counts = [0, 3];
+  const flags = [false, true];
+  for (const c1 of counts) {
+    for (const d1 of flags) {
+      for (const c2 of counts) {
+        for (const d2 of flags) {
+          // A degraded read always resolves to the empty sentinel, so
+          // `degraded` with a non-zero count is not a state the system can
+          // produce and is not worth asserting about.
+          if ((d1 && c1 > 0) || (d2 && c2 > 0)) continue;
+          const reads: PageDataRead[] = [
+            { count: c1, degraded: d1 },
+            { count: c2, degraded: d2 },
+          ];
+          const renderedBefore = !reads.every((r) => r.count === 0);
+          const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
+          const rendersNow = !verdict.isEmpty && !verdict.emptinessUnknown;
+          if (renderedBefore) {
+            assert.equal(
+              rendersNow,
+              true,
+              `regression: ${JSON.stringify(reads)} rendered before this change and does not now`,
+            );
+          }
+        }
+      }
+    }
+  }
 });
 
 test('INVARIANT: isEmpty and emptinessUnknown are never both true', () => {
@@ -281,13 +362,21 @@ test('SOURCE PIN: buildPageContext no longer infers emptiness from raw array len
 test('SOURCE PIN: both collection reads report whether the read happened', () => {
   const code = source('../collections/index.ts');
   assert.ok(code.includes('readOrDegrade'), 'the swallowed failure has to be caught where it is still visible');
-  // Two fetchers, `getCollectionItems` and `getIntegrationItems`. Both feed the
-  // emptiness verdict, so a fix to only one leaves half the bug shipping.
-  assert.equal(
-    code.split('readOrDegrade<PaginatedResponse>').length - 1,
-    2,
-    'both getCollectionItems and getIntegrationItems must report a failed read',
-  );
+  // Both fetchers feed the emptiness verdict, so fixing only one leaves half the
+  // bug shipping. Asserted per FUNCTION rather than as a whole-file occurrence
+  // count: a count breaks the moment a legitimate third fetcher is added, which
+  // is a false alarm, and it would also count mentions in comments.
+  for (const fn of ['getCollectionItems', 'getIntegrationItems']) {
+    const start = code.indexOf('export async function ' + fn + '(');
+    assert.ok(start > 0, 'sanity: ' + fn + ' not found, this assertion read nothing');
+    const nextExport = code.indexOf('\nexport ', start + 1);
+    const body = code.slice(start, nextExport === -1 ? undefined : nextExport);
+    assert.ok(
+      body.includes('readOrDegrade'),
+      fn + ' must report a failed read rather than swallow it into an empty list',
+    );
+    assert.ok(body.includes('degraded,'), fn + ' must return the flag it obtained');
+  }
   assert.ok(
     code.includes('degraded: boolean'),
     'the flag is non-optional so an un-updated caller cannot silently read false',
@@ -298,16 +387,33 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
   // A storefront group composes onto ordinary `grid` and `list` pages under the
   // universal page model, so a degraded PRODUCTS read reaches the same 404 that
   // a degraded collection read does.
+  //
+  // Anchored to CODE, not to prose. An earlier version of this test asserted
+  // only that the strings `getProductsRead` and `degraded` appeared in the
+  // file, and both appear in that file's own comments: reverting the call to
+  // `getProducts` and dropping the flag would have left it green.
   const code = source('./productBridge.ts');
-  assert.ok(code.includes('getProductsRead'), 'the bridge must use the read that reports degradation');
-  assert.ok(code.includes('degraded'), 'and it must pass the flag on to buildPageContext');
+  assert.ok(
+    code.includes('await getProductsRead({'),
+    'the bridge must CALL the read that reports degradation, not merely mention it',
+  );
+  assert.ok(
+    code.includes('return { items, degraded };'),
+    'and it must actually return the flag to buildPageContext',
+  );
 });
 
 test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()', () => {
   // `src/lib/renderComposedPage.tsx` is where standard/list/grid actually land:
   // `[slug]/page.tsx` returns early into it for every generic format.
-  const code = source('../../renderComposedPage.tsx');
-  const refusalAt = code.indexOf('refuseDegradedClaim(');
+  // Sliced to the function body, the same discipline the [slug] pin below uses.
+  // Over whole-file text one comment mentioning either call makes this pass or
+  // fail for no reason, and this file's comments are dense.
+  const whole = source('../../renderComposedPage.tsx');
+  const bodyAt = whole.indexOf('async function ComposedPageBody');
+  assert.ok(bodyAt > 0, 'sanity: this test read nothing');
+  const code = whole.slice(bodyAt);
+  const refusalAt = code.indexOf('refuseUnknownEmptiness(');
   const notFoundAt = code.indexOf('return notFound()');
   assert.ok(refusalAt > 0, 'the guard must refuse a degraded read rather than 404 it');
   assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');
@@ -318,6 +424,44 @@ test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()
   assert.ok(
     code.includes('GENERIC_FORMATS.has(composedPage.format)'),
     'the refusal stays scoped to the same formats the 404 was scoped to',
+  );
+});
+
+test('SOURCE PIN: both guards refuse through the SAME helper, so they cannot drift', () => {
+  // The two copies of this guard have drifted before on this exact boundary:
+  // the transitional title band was hand-mirrored between these same two files
+  // under a "cannot drift" comment and drifted anyway. Routing both through one
+  // function makes agreement structural; this pin is what stops a future edit
+  // from inlining one of them again and taking the Sentry capture with it.
+  for (const relative of ['../../renderComposedPage.tsx', '../../../app/[slug]/page.tsx']) {
+    const code = source(relative);
+    assert.ok(
+      code.includes('refuseUnknownEmptiness(') &&
+        code.includes('@/lib/degradedPageRefusal'),
+      `${relative} must refuse through the shared helper, not a local throw`,
+    );
+  }
+});
+
+test('SOURCE PIN: the refusal is CAPTURED, because a throw reaches Sentry from nowhere here', () => {
+  // `src/instrumentation.ts` exports no `onRequestError` hook, so a server
+  // component's throw reaches Sentry only through `error.tsx` on the client,
+  // where Next has already replaced the message with a digest. Without the
+  // explicit capture the refusal is invisible, and "fail visibly" is the entire
+  // argument for preferring it to a silent 404.
+  const helper = source('../../degradedPageRefusal.ts');
+  assert.ok(
+    helper.includes('Sentry.captureException('),
+    'the refusal must be captured explicitly or it cannot be counted',
+  );
+  assert.ok(
+    helper.includes('buildDegradedRefusalCapture('),
+    'and it must use the shared capture shape, so it is one alertable Issue fleet-wide',
+  );
+  const instrumentation = source('../../../instrumentation.ts');
+  assert.ok(
+    !instrumentation.includes('onRequestError'),
+    'if an onRequestError hook is ever added, revisit whether this capture is still needed',
   );
 });
 
@@ -332,7 +476,7 @@ test('SOURCE PIN: the [slug] mirror of the guard refuses first as well', () => {
   assert.ok(bodyAt > 0, 'sanity: this test read nothing');
   const body = whole.slice(bodyAt);
 
-  const refusalAt = body.indexOf('refuseDegradedClaim(');
+  const refusalAt = body.indexOf('refuseUnknownEmptiness(');
   const notFoundAt = body.indexOf('return notFound()');
   assert.ok(refusalAt > 0, 'the mirrored guard must refuse a degraded read too');
   assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');

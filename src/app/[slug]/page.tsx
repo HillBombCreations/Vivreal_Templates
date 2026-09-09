@@ -7,7 +7,8 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy, refuseDegradedClaim } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
@@ -666,12 +667,7 @@ async function ComposedFormatBody({
   // turned an upstream wobble into a 404 on real published pages. Refuse first,
   // 404 only on data that was actually read.
   if (format === "standard" || format === "list" || format === "grid") {
-    if (emptinessUnknown) {
-      refuseDegradedClaim(
-        "a page-missing (404) verdict for a generic page",
-        "the collection items for this page are UNKNOWN (siteData itself is healthy)",
-      );
-    }
+    if (emptinessUnknown) refuseUnknownEmptiness(format);
     if (isEmpty) return notFound();
   }
 
