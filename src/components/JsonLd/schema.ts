@@ -112,8 +112,37 @@ export interface DetailJsonLdInput {
   startDate?: string;
   location?: string;
   // Product-specific
+  /**
+   * The authored price. `objectValue` is Mongo Mixed, so this is whatever the
+   * CMS wrote: "9.00", 9, a Square-synced "8.50", or free text like "$9.00" or
+   * "From $12". Only a bare decimal is publishable, see `asOfferPrice`.
+   */
   price?: number | string;
+  /**
+   * ISO 4217 code for `price`, when the payments provider actually gave us one.
+   *
+   * Square sets it authoritatively from the connected merchant account and it
+   * survives all the way to this repo. Stripe products never captured it, so
+   * for the fleet default this is absent and the Offer falls back to
+   * `DEFAULT_OFFER_CURRENCY`. See that constant for why a fallback exists here
+   * at all when `availability` below gets none.
+   */
   currency?: string;
+  /**
+   * Whether the item can be bought right now, for a product that TRACKS stock.
+   *
+   * `undefined` means untracked, and untracked means omit the field: an absent
+   * `availability` is legal in the vocabulary and asserts nothing, while a
+   * present one is a claim Google acts on. This used to be hard-coded to
+   * `InStock` for every product on the fleet, so a sold-out product could ship
+   * a visible "Out of stock" button and an in-stock claim in the same HTML
+   * document.
+   *
+   * The caller computes it with the renderer's own `computeProductStockState`,
+   * the function that draws that button, so the claim and the button are
+   * derived from one place and cannot disagree.
+   */
+  inStock?: boolean;
   sku?: string;
   // Article-specific
   authorName?: string;
@@ -189,6 +218,87 @@ function asPublishDate(value: string | undefined): string | undefined {
 }
 
 /**
+ * A price we are willing to publish inside an `Offer`.
+ *
+ * Same reasoning and the same shape as `asPublishDate` above: `objectValue` is
+ * Mongo Mixed, so the stored price is whatever the CMS wrote. An authored
+ * `"$9.00"` used to be passed through verbatim by `String(...)`, which emits an
+ * `Offer` that fails validation and takes the whole `Product` down with it.
+ * schema.org wants the number alone, with no currency symbol and no thousands
+ * separator.
+ *
+ * It REJECTS rather than repairs, deliberately, which is the same call
+ * `asPublishDate` makes for "Autumn 2026". Stripping a `$` would be guessing at
+ * both the number and the currency it is denominated in, and this file has just
+ * stopped guessing at the second of those. A rejected price falls back to
+ * `Thing`, the branch that already exists for a product with no price at all:
+ * no rich result either way, but a valid document rather than a broken one.
+ */
+export function asOfferPrice(value: number | string | undefined): string | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value >= 0 ? String(value) : undefined;
+  }
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return /^\d+(\.\d+)?$/.test(trimmed) ? trimmed : undefined;
+}
+
+/**
+ * The currency an `Offer` falls back to when the payments provider never gave
+ * us one.
+ *
+ * This is a guess, it is named so that it reads as one, and it is kept anyway.
+ * The asymmetry with `availability` is not an inconsistency, it is the
+ * vocabulary: an `Offer` carrying a `price` must also carry a `priceCurrency`,
+ * so there is no assert-nothing option here the way there is for availability.
+ * The choices are a real value, a guess, or no `Offer` at all.
+ *
+ * Dropping the Offer is the honest third option and it is not this change's to
+ * take. Stripe is the fleet default and never captured a currency, so removing
+ * the fallback would delete the price from every Stripe product's structured
+ * data across the whole fleet on the next promote-stable. That is a real SEO
+ * change with its own blast radius, not a side effect of fixing a false
+ * in-stock claim.
+ *
+ * What DID change is that a real currency now wins wherever one exists. Square
+ * carries `priceCurrency` from the connected merchant account through
+ * VR_CMS_API and VR_Client_API into this repo, where the allowlist in
+ * `lib/api/products/transformProduct.ts` was dropping it; it is now threaded
+ * through. Capturing it for Stripe is a VR_CMS_API sync change plus a backfill
+ * of every existing product, which is why it is reported rather than faked.
+ */
+export const DEFAULT_OFFER_CURRENCY = 'USD';
+
+/**
+ * An ISO 4217 code we are willing to publish, or `undefined`.
+ *
+ * A Square item with a variable price stores `priceCurrency: ""` (observed in
+ * prod), and an empty or malformed code in an `Offer` is worse than the
+ * fallback: it fails validation instead of merely being possibly wrong.
+ */
+function asPriceCurrency(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && /^[A-Za-z]{3}$/.test(trimmed) ? trimmed.toUpperCase() : undefined;
+}
+
+/**
+ * `availability`, or nothing at all.
+ *
+ * Untracked (`undefined`) omits the field. `Product.stock` is absent for most
+ * of the fleet, and absence there means the merchant never opted into inventory
+ * tracking, not that everything is in stock. The old hard-coded `InStock`
+ * turned that absence into a claim, which is the same mistake the degraded-read
+ * work in this repo exists to stop, made against a different kind of missing
+ * data.
+ */
+function offerAvailability(inStock: boolean | undefined): Record<string, string> {
+  if (inStock === undefined) return {};
+  return {
+    availability: inStock ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+  };
+}
+
+/**
  * The Article shape, used both by the `default` arm and as the Recipe arm's
  * fallback when there is no image to satisfy Google's Recipe requirements.
  */
@@ -234,23 +344,29 @@ export function buildDetailJsonLd(
       };
 
     case 'products':
-    case 'collection-list':
-      // Only emit Product schema if we have at least a price — otherwise
+    case 'collection-list': {
+      // Only emit Product schema if we have a PUBLISHABLE price — otherwise
       // it'll fail Google's Rich Results validator. Fall back to base Thing.
-      if (input.price !== undefined) {
+      //
+      // The gate used to be `input.price !== undefined`, which let an authored
+      // "$9.00" through into `String(...)` and emitted exactly the invalid
+      // Offer this branch exists to prevent.
+      const offerPrice = asOfferPrice(input.price);
+      if (offerPrice !== undefined) {
         return {
           ...base,
           '@type': 'Product',
           ...(input.sku ? { sku: input.sku } : {}),
           offers: {
             '@type': 'Offer',
-            price: String(input.price),
-            priceCurrency: input.currency || 'USD',
-            availability: 'https://schema.org/InStock',
+            price: offerPrice,
+            priceCurrency: asPriceCurrency(input.currency) ?? DEFAULT_OFFER_CURRENCY,
+            ...offerAvailability(input.inStock),
           },
         };
       }
       return { ...base, '@type': 'Thing' };
+    }
 
     case 'recipes': {
       // Google's Recipe rich results REQUIRE an image. A photo-less recipe

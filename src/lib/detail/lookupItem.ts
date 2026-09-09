@@ -14,6 +14,17 @@ export interface DetailItemLookup {
   unscopedItems: PoolItem[];
   /** The addressable item, or undefined when `itemId` matches nothing in scope. */
   item: PoolItem | undefined;
+  /**
+   * Whether the pool read actually happened. See `@/lib/api/degradedRead`.
+   *
+   * An `item` of `undefined` has two completely different causes that are
+   * identical in the value: the id addresses nothing, or the collection could
+   * not be read at all. The detail route turns the first into a 404, so it has
+   * to be able to tell them apart (`@/lib/detail/itemMiss`). The OG card route
+   * deliberately ignores this and falls back to the page's own card either way:
+   * a social card must never be the thing that 404s a shared link.
+   */
+  degraded: boolean;
 }
 
 /**
@@ -46,7 +57,7 @@ export async function lookupDetailItem(
 
   // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
   // API 502s on larger limits, and the list view already caps at 100.
-  const { items: unscopedItems } = await getCollectionItems(collectionId, { limit: 100 });
+  const { items: unscopedItems, degraded } = await getCollectionItems(collectionId, { limit: 100 });
 
   // `scope` restricts WHICH ITEMS ARE ADDRESSABLE here. Absent/malformed scope
   // ⇒ identity (applyScope's own contract), so an unscoped page is
@@ -57,5 +68,6 @@ export async function lookupDetailItem(
     collectionId,
     unscopedItems,
     item: resolveItem(scopedItems, itemId, detailPage?.itemKeyField),
+    degraded,
   };
 }
