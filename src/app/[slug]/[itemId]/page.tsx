@@ -137,14 +137,15 @@ export const fetchCache = "force-no-store";
  * safety property holds, just for a different reason. Review note N3
  * (page-layer-unvalidated-redirect-target).
  *
- * The single caller is a degraded-read guard, not a refactor for tidiness: an
- * item missing because a READ FAILED is indistinguishable from an item that is
- * not there, and answering either a 404 or a 308 for the first is a durable
- * wrong claim about a live URL. `answerItemMissing()` carries that reasoning.
  * This is the same invariant `resolveRedirect()`'s doc comment
  * (`@/lib/redirects.ts`) documents for the pre-existing `!pageConfig` and
  * bottom-of-function redirect checks in this file; this helper extends it to
  * every named-format arm's missing-item (and misconfigured-page) path too.
+ *
+ * The single caller is a degraded-read guard, not a refactor for tidiness: an
+ * item missing because a READ FAILED is indistinguishable from an item that is
+ * not there, and answering either a 404 or a 308 for the first is a durable
+ * wrong claim about a live URL. `answerItemMissing()` carries that reasoning.
  *
  * Status: `permanentRedirect()` emits 308, not 301 — middleware.ts
  * (`src/middleware.ts`) owns the literal-301 path for a redirect it can see;

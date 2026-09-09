@@ -345,7 +345,7 @@ export function buildDetailJsonLd(
 
     case 'products':
     case 'collection-list': {
-      // Only emit Product schema if we have a PUBLISHABLE price — otherwise
+      // Only emit Product schema if we have a PUBLISHABLE price, otherwise
       // it'll fail Google's Rich Results validator. Fall back to base Thing.
       //
       // The gate used to be `input.price !== undefined`, which let an authored

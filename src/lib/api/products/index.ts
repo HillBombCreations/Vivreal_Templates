@@ -120,19 +120,28 @@ export async function getProductByIdRead(
   productId: string,
   integrationType?: string,
 ): Promise<{ product: Product | null; degraded: boolean }> {
-  // Omitted integrationType falls back to stripe inside getProductsRead — the
+  // Omitted integrationType falls back to stripe inside getProductsRead, the
   // legacy default for callers that don't know the page's payments provider.
   //
   // There is no by-id read on VR_Client_API, so this detail page can only find
   // a product inside the window `getProductsRead` asks for. That window used to
   // be the server's 20-row default, which meant a merchant's 21st product had
-  // no detail page — its card linked to a 404 with no error anywhere. It is now
+  // no detail page, its card linked to a 404 with no error anywhere. It is now
   // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
   // required. See ./productsQuery.ts.
   const { products, degraded } = await getProductsRead({ integrationType });
   return { product: products.find((p) => p._id === productId) ?? null, degraded };
 }
 
+/**
+ * The product only. No caller in this repo today: the detail route, which was
+ * the sole one, now takes the read above because it draws a verdict from a
+ * miss. Kept rather than deleted because `productsQuery.ts` documents the
+ * 100-row window in terms of this function by name, and because a caller that
+ * genuinely only renders what came back should not have to unwrap a flag it
+ * ignores. Anything that turns `null` into "this does not exist" must not use
+ * it.
+ */
 export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
   return (await getProductByIdRead(productId, integrationType)).product;
 }

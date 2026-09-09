@@ -96,6 +96,11 @@ export async function getShowsRead(
  * render what came back. Anything that turns "not in this list" into a verdict
  * must use the read above: `getShowById` returning `null` from a degraded read
  * is how the detail route 404'd a live show.
+ *
+ * No caller in this repo today. Its one caller was `getShowById`, which now
+ * goes through `getShowByIdRead` for exactly the reason in the sentence above.
+ * Kept as the value-only view of a cached, tagged read, which is the shape a
+ * shows LIST page would want.
  */
 export async function getShows(collectionId?: string): Promise<ShowData[]> {
   return (await getShowsRead(collectionId)).shows;

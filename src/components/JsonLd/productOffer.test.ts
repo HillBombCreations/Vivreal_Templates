@@ -49,7 +49,7 @@ const offerOf = (schema: Record<string, unknown>) =>
 
 test('a SOLD OUT product does not claim to be in stock', () => {
   // The defect, stated as a test. `inStock: false` is what the caller computes
-  // from `computeProductStockState(...).isOutOfStock` — the same function that
+  // from `computeProductStockState(...).isOutOfStock`, the same function that
   // draws the disabled "Out of stock" button on the page this schema ships on.
   const offer = offerOf(product({ inStock: false }));
   assert.equal(offer?.availability, 'https://schema.org/OutOfStock');
