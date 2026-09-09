@@ -2,6 +2,7 @@ import 'server-only';
 import type { TeamData, CMSTeamData } from '@/types/Team';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { collectionTags } from '@/lib/api/cacheTags';
+import { readOrDegrade } from '@/lib/api/degradedRead';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
@@ -25,18 +26,26 @@ interface PaginatedResponse<T> {
  * `collectionId` comes from the page's Studio binding (`getPageCollectionId`),
  * not from a query string, so the cache key space is bounded by site config.
  */
-export async function getTeamMembers(collectionId?: string): Promise<TeamData[]> {
+export async function getTeamMembersRead(
+  collectionId?: string
+): Promise<{ members: TeamData[]; degraded: boolean }> {
   const id = collectionId || TEAMMEMBERS_ID;
-  if (!id) return [];
-  const res = await clientFetchCached<PaginatedResponse<CMSTeamData>>(
-    `/tenant/collectionObjects?collectionId=${encodeURIComponent(id)}`,
-    { items: [], totalCount: 0 },
-    SITE_CACHE_TTL_SECONDS,
-    undefined,
-    collectionTags(SITE_ID, id)
+  // No roster collection configured. An answer, not a silence: this page's
+  // member URLs genuinely address nothing.
+  if (!id) return { members: [], degraded: false };
+  const { value: res, degraded } = await readOrDegrade<PaginatedResponse<CMSTeamData>>(
+    () => ({ items: [], totalCount: 0 }),
+    (fallback) =>
+      clientFetchCached<PaginatedResponse<CMSTeamData>>(
+        `/tenant/collectionObjects?collectionId=${encodeURIComponent(id)}`,
+        fallback,
+        SITE_CACHE_TTL_SECONDS,
+        undefined,
+        collectionTags(SITE_ID, id)
+      )
   );
 
-  return res.items.map((item) => ({
+  const members = res.items.map((item) => ({
     name: item.objectValue.name,
     description: item.objectValue.description,
     // Use the collection-object document _id (canonical) so detail links match
@@ -49,4 +58,16 @@ export async function getTeamMembers(collectionId?: string): Promise<TeamData[]>
     imageSrcSet: getSrcSet(item.objectValue.headshot) || undefined,
     socialLinks: item.objectValue.socialLinks,
   }));
+
+  return { members, degraded };
+}
+
+/**
+ * The roster only. The value-only view of `getTeamMembersRead`, for the callers
+ * that render whatever came back. The detail route uses the read above instead:
+ * a degraded roster read made `teamMembers.find(...)` miss, and that miss was a
+ * real 404 on a live member.
+ */
+export async function getTeamMembers(collectionId?: string): Promise<TeamData[]> {
+  return (await getTeamMembersRead(collectionId)).members;
 }

@@ -1,7 +1,10 @@
 import 'server-only';
 import * as Sentry from '@sentry/nextjs';
 import { DegradedUpstreamError } from '@/lib/api/siteData/degraded';
-import { buildDegradedRefusalCapture } from '@/lib/api/errorCapture';
+import {
+  buildDegradedRefusalCapture,
+  DEGRADED_DETAIL_REFUSAL_FINGERPRINT,
+} from '@/lib/api/errorCapture';
 
 /**
  * Refuse to answer "this page does not exist" when the read that would have
@@ -46,6 +49,44 @@ export function refuseUnknownEmptiness(format: string | undefined): never {
   Sentry.captureException(
     refusal,
     buildDegradedRefusalCapture({ siteId: process.env.SITE_ID, format }),
+  );
+  throw refusal;
+}
+
+/**
+ * Refuse to answer "this detail item does not exist" when the read that would
+ * have found it failed.
+ *
+ * The sibling of `refuseUnknownEmptiness` above, for
+ * `app/[slug]/[itemId]/page.tsx`, and it differs from it in one way worth
+ * stating at the throw rather than leaving to be rediscovered: this one runs in
+ * an UN-SUSPENDED server component, so it sets a real 5xx status instead of
+ * swapping the body under an already-flushed 200. That is the outcome the
+ * generic-page refusal wanted and structurally could not have, and it is why
+ * the detail route was the more damaging half of the pair: the 404 it replaces
+ * was a real 404 telling a crawler that a live item is gone.
+ *
+ * It refuses the REDIRECT arm too. `redirectOrNotFound()` resolves an authored
+ * 308 before falling back to 404, and a 308 issued because a read failed is the
+ * more durable wrong claim of the two. A retired item's authored redirect still
+ * resolves on the next request that gets an answer.
+ *
+ * Same shared-module reasoning as its sibling, doubled: the item-miss branch is
+ * reached from six arms of that one file, so a per-arm throw would be six
+ * chances to drift and six chances to lose the capture.
+ */
+export function refuseUnknownItemExistence(format: string | undefined): never {
+  const refusal = new DegradedUpstreamError(
+    'an item-missing (404) verdict for a detail page',
+    'whether this item exists is UNKNOWN (siteData itself is healthy)',
+  );
+  Sentry.captureException(
+    refusal,
+    buildDegradedRefusalCapture({
+      siteId: process.env.SITE_ID,
+      format,
+      fingerprint: DEGRADED_DETAIL_REFUSAL_FINGERPRINT,
+    }),
   );
   throw refusal;
 }

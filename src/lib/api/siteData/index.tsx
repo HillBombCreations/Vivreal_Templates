@@ -439,7 +439,33 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
     await Promise.all(
       sitemapPages.map(async (page) => {
         const detailPage = page.detailPage!;
-        const { items } = await getCollectionItems(detailPage.itemCollectionId!, { limit: 100 });
+        const { items, degraded } = await getCollectionItems(detailPage.itemCollectionId!, {
+          limit: 100,
+        });
+        // The SAME refusal the branch forty lines up makes, for the same
+        // reason, one layer down. Up there an unreadable `siteDetails` would
+        // have emitted a sitemap claiming the site has zero URLs; here a
+        // readable site with an unreadable detail COLLECTION emits one claiming
+        // the site has exactly the URLs that happened to come back. Both are
+        // positive claims manufactured from a failed read, and this one is the
+        // harder of the two to notice: a short sitemap is a perfectly
+        // successful render of a legitimately short list, so nothing
+        // downstream can tell it apart from the real thing. `getSiteMap`'s own
+        // comment already warns about exactly this shape for the build-time
+        // case.
+        //
+        // #149 made the sitemap refuse on degraded SITE data; this slips past
+        // that guard because `siteDetails` came back perfectly healthy.
+        //
+        // Blast radius is bounded by the filter above: only pages that author
+        // `detailPage.sitemap === true` are read at all, so a fleet default
+        // (zero such pages, zero fetches) cannot reach this line.
+        if (degraded) {
+          refuseDegradedClaim(
+            'sitemap.xml',
+            'the detail items for at least one page are UNKNOWN (siteDetails itself is healthy)',
+          );
+        }
         const scoped = applyScope(items, detailPage.scope);
         const slug = (page.slug as string).replace(/^\/+/, '');
         detailItemSegmentsByPage[slug] = scoped.map((it) => itemSegment(it, detailPage.itemKeyField));

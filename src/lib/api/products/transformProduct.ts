@@ -196,6 +196,17 @@ export function transformProduct(raw: Record<string, unknown>): Product {
       (typeof objectValue.variationId === "string" ? objectValue.variationId : undefined),
     quantityOptions: Array.isArray(objectValue.quantityOptions) ? objectValue.quantityOptions as number[] : undefined,
     quantityUnit: (objectValue.quantityUnit as Product["quantityUnit"]) ?? undefined,
+    // Square writes this from the connected merchant account and it reaches
+    // this repo intact (VR_Client_API projects the whole `objectValue`); this
+    // allowlist was the only thing dropping it, which is why every product on
+    // the fleet claimed USD in its JSON-LD. Stripe products carry no currency
+    // at all, so absent stays absent: the Offer builder owns the fallback and
+    // names it. A variable-price Square item stores "", which is not a currency
+    // and must not read as one.
+    priceCurrency:
+      typeof objectValue.priceCurrency === "string" && objectValue.priceCurrency.trim()
+        ? objectValue.priceCurrency.trim()
+        : undefined,
     stock: (objectValue.stock as Product["stock"]) ?? undefined,
     lowStockThreshold: typeof objectValue.lowStockThreshold === "number" ? objectValue.lowStockThreshold : undefined,
     // Public-sale DISPLAY fields (plan §5). Passed through verbatim — the

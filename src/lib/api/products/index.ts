@@ -98,34 +98,52 @@ export async function getProductsRead(
  *
  * `getProductById` is NOT such a caller, and saying so would be wrong. It is a
  * client-side `.find()` over this list, so a degraded read makes it return
- * `null`, and `[slug]/[itemId]/page.tsx` turns that into `redirectOrNotFound()`
- * on every product detail URL on the site. That is the same manufactured 404
- * this change set exists to remove, on a different route.
- *
- * It is NOT fixed here on purpose. The detail route reaches its item-miss
- * branch from six separate arms, each with its own redirect handling, and it
- * differs from the generic-page case in a way that changes the answer: it runs
- * in the UN-suspended page component, so a refusal there can set a real 5xx
- * rather than the soft one this PR is limited to. It deserves that, and its own
- * review. Recorded here rather than in a tracker so the next reader of this
- * function finds it.
+ * `null`, and `[slug]/[itemId]/page.tsx` turned that into `redirectOrNotFound()`
+ * on every product detail URL on the site. That was the same manufactured 404
+ * this change set exists to remove, on a different route, and it is why
+ * `getProductByIdRead` below exists.
  */
 export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
   return (await getProductsRead(opts)).products;
 }
 
-export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
-  // Omitted integrationType falls back to stripe inside getProducts — the
+/**
+ * One product, WITH whether the list it was looked up in was actually read.
+ *
+ * The detail route's product arm is the caller that has a verdict to draw: on a
+ * `products`-format page a miss is terminal and used to 404, and on any other
+ * page carrying a storefront binding a miss falls THROUGH to the collection and
+ * menu arms, which means this flag has to survive into them. Both are why it is
+ * returned rather than dropped here.
+ */
+export async function getProductByIdRead(
+  productId: string,
+  integrationType?: string,
+): Promise<{ product: Product | null; degraded: boolean }> {
+  // Omitted integrationType falls back to stripe inside getProductsRead, the
   // legacy default for callers that don't know the page's payments provider.
   //
   // There is no by-id read on VR_Client_API, so this detail page can only find
-  // a product inside the window `getProducts` asks for. That window used to be
-  // the server's 20-row default, which meant a merchant's 21st product had no
-  // detail page — its card linked to a 404 with no error anywhere. It is now
+  // a product inside the window `getProductsRead` asks for. That window used to
+  // be the server's 20-row default, which meant a merchant's 21st product had
+  // no detail page, its card linked to a 404 with no error anywhere. It is now
   // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
   // required. See ./productsQuery.ts.
-  const products = await getProducts({ integrationType });
-  return products.find((p) => p._id === productId) ?? null;
+  const { products, degraded } = await getProductsRead({ integrationType });
+  return { product: products.find((p) => p._id === productId) ?? null, degraded };
+}
+
+/**
+ * The product only. No caller in this repo today: the detail route, which was
+ * the sole one, now takes the read above because it draws a verdict from a
+ * miss. Kept rather than deleted because `productsQuery.ts` documents the
+ * 100-row window in terms of this function by name, and because a caller that
+ * genuinely only renders what came back should not have to unwrap a flag it
+ * ignores. Anything that turns `null` into "this does not exist" must not use
+ * it.
+ */
+export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
+  return (await getProductByIdRead(productId, integrationType)).product;
 }
 
 export async function getFilters(collectionId: string): Promise<Filter[]> {

@@ -223,24 +223,47 @@ export function buildOriginRefusalCapture({
 export const DEGRADED_REFUSAL_FINGERPRINT = 'templates.degradedRead.refused';
 
 /**
- * Capture context for "a composed page refused rather than answer 404 from a
- * failed collection read".
+ * The DETAIL-ROUTE sibling of the root above, and a separate Issue on purpose.
+ *
+ * Both refusals have the same cause and the same fix, but not the same
+ * consequence, and an operator triaging one needs to know which they are
+ * looking at. The generic-page refusal fires inside a Suspense boundary, so the
+ * 200 has already flushed and only the body changes. This one fires in an
+ * un-suspended page component, so the response really is a 5xx. Collapsing them
+ * into one Issue would hide that difference behind an event count, and it would
+ * make "did any page actually fail" unanswerable again, which is the exact
+ * blindness the explicit capture exists to remove.
+ *
+ * Both still collapse FLEET-WIDE for the same reason: no tenant component.
+ */
+export const DEGRADED_DETAIL_REFUSAL_FINGERPRINT = 'templates.degradedRead.refusedDetailItem';
+
+/**
+ * Capture context for "a page refused rather than answer 404 from a failed
+ * read".
  *
  * `format` is tagged rather than the slug: the slug is per-tenant and would
  * explode cardinality exactly as the raw query path would in
  * `buildFetchFailureCapture`, while the format is a closed set and says which
  * kind of page is affected.
+ *
+ * `fingerprint` defaults to the generic-page root, so every existing call site
+ * is byte-identical; the detail route passes its own. One builder rather than
+ * two near-copies, because the SHAPE (level, tags, no tenant in the
+ * fingerprint) is the part that has to stay identical between them.
  */
 export function buildDegradedRefusalCapture({
   siteId,
   format,
+  fingerprint = DEGRADED_REFUSAL_FINGERPRINT,
 }: {
   siteId: string | undefined;
   format: string | undefined;
+  fingerprint?: string;
 }): SentryCaptureContext {
   return {
     level: 'error',
-    fingerprint: [DEGRADED_REFUSAL_FINGERPRINT],
+    fingerprint: [fingerprint],
     tags: {
       siteId: siteId || UNKNOWN_SITE_ID,
       format: format || 'unknown',
