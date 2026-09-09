@@ -23,6 +23,7 @@ import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { FALLBACK_SITE_DATA } from './fallback';
+import { refuseDegradedClaim } from './degraded';
 import { getCollectionItems } from '@/lib/api/collections';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
 
@@ -396,7 +397,19 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
     // prerendered. Bailing there would drag every demo build dynamic for no
     // reason. The `[]` is overloaded; the bail is not.
     await bailOutOfCachingDegradedRender();
-    return [];
+    // ...and the bail is no longer enough on its own. Keeping the render out of
+    // both caches bounds how LONG a wrong answer is served; it does not stop it
+    // being served, and it does nothing at all about a crawler that reads it
+    // once. An empty sitemap is a positive claim ("this site has zero URLs")
+    // manufactured from a failed read, and because it is a perfectly successful
+    // render of a legitimately empty list, nothing downstream can tell it apart
+    // from the real thing.
+    //
+    // Refuse instead, so the route 5xxs and the crawler keeps the sitemap it
+    // already has. This is the same decision `buildSiteMapForSite` makes for
+    // the same condition; it is repeated here because this branch returns
+    // BEFORE that function is ever reached.
+    refuseDegradedClaim('sitemap.xml');
   }
 
   // The SAME object getSiteData() returns its origin fields from, so the

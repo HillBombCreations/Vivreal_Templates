@@ -7,6 +7,7 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
@@ -238,6 +239,18 @@ export default async function DynamicPage({
   await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
+  // A degraded read must never 404 a page that exists. `getSiteData()` hands
+  // back `FALLBACK_SITE_DATA` when VR_Client_API cannot be read, and its
+  // `pageConfigs: []` makes `getPageBySlug` miss EVERY real slug on the site,
+  // so without this line a transient upstream wobble answers 404 on every page
+  // except /privacy and /terms. A 404 tells a crawler the URL is gone and to
+  // drop it; a 5xx tells it to come back. See `assertUpstreamHealthy`.
+  //
+  // Placed before the lookup, not inside the `!pageConfig` branch, so it also
+  // covers the redirect resolution below: `siteData.redirects` is absent on a
+  // degraded read too, which would otherwise turn every authored 301 into a
+  // 404 for the duration.
+  assertUpstreamHealthy(siteData);
   const pageConfig = getPageBySlug(siteData, slug);
 
   // Privacy and terms always render on every site, even if not in page config

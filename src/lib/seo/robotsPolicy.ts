@@ -5,11 +5,12 @@ import type { SiteData } from '@/types/SiteData';
 // `node --experimental-strip-types --test`, which has no tsconfig `paths`
 // resolution. Same convention routeMetadata.ts / rootMetadata.ts follow.
 import { isDemoSite } from './demoSafety.ts';
+import { isDegradedSiteData, refuseDegradedClaim } from '../api/siteData/degraded.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 
 type RobotsSiteData = Pick<
   SiteData,
-  'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState'
+  'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState' | 'degraded'
 >;
 
 /**
@@ -36,6 +37,20 @@ type RobotsSiteData = Pick<
  * (so generic search crawlers don't try to follow `/mcp` or `/llms.txt`).
  */
 export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robots {
+  // DEGRADED READ ⇒ REFUSE. Checked FIRST, before the demo gate below, because
+  // `robots.txt` is the single most damaging thing in this app to get wrong
+  // from missing data: a `Disallow: /` served with a 200 is an authoritative,
+  // cacheable, site-wide instruction, and the upstream recovering does not
+  // retract it from a crawler that already read it.
+  //
+  // Throwing makes the route 5xx. Google keeps using the last robots.txt it
+  // successfully fetched when the current one errors, so a transient wobble
+  // leaves the site's real policy in force instead of replacing it with a
+  // wrong one. That is strictly better than every 200 we could serve here:
+  // a permissive policy would un-gate a real demo, and a restrictive one is
+  // the deindexing bug.
+  if (isDegradedSiteData(siteData)) refuseDegradedClaim('robots.txt');
+
   // SEO demo-safety: a pre-cutover demo site is a near-duplicate of the
   // prospect's real site — lock every crawler out and advertise no sitemap so it
   // can never be indexed. Cutover flips lifecycleState to 'live' and this reverts

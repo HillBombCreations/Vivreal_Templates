@@ -664,6 +664,18 @@ export interface SiteData {
      */
     lifecycleState?: 'demo' | 'live';
     /**
+     * Set ONLY by `FALLBACK_SITE_DATA`. This object is not a site, it is the
+     * placeholder returned when VR_Client_API could not be read at all.
+     *
+     * It exists so the surfaces that make durable, machine-read claims
+     * (`robots.txt`, `sitemap.xml`, the indexing meta, and the 404 verdict) can
+     * tell "unknown" apart from every real answer and refuse rather than
+     * guess. Never present on data that came back from the upstream, so it can
+     * never be true of a real site, however empty that site is. See
+     * `src/lib/api/siteData/degraded.ts`.
+     */
+    degraded?: true;
+    /**
      * The prospect's ORIGINAL live URL, carried from the migration source
      * (`inventory.meta.sourceUrl`). On a `demo` site the root-layout metadata
      * emits `<link rel="canonical">` → this URL so even a crawler that reaches

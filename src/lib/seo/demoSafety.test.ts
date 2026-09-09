@@ -206,19 +206,42 @@ test('GATE 4 (JSON-LD): a demo detail URL never resolves onto the write-ahead ap
   );
 });
 
-test('ALL GATES: an upstream outage fails CLOSED, because FALLBACK_SITE_DATA is an explicit demo', () => {
-  // getSiteData() returns FALLBACK_SITE_DATA whenever VR_Client_API gives us
-  // nothing, and robots.tsx is force-dynamic so it re-evaluates every request.
-  // With no lifecycleState the key is absent, isDemoSite() takes its
-  // existing-fleet "not a demo" default, and a sustained outage silently
-  // un-gates every demo site in the fleet (review-templates-106.md,
-  // "The demo gate is fail-open on an upstream outage").
+test('ALL GATES: an upstream outage fails CLOSED, and no longer does so by LYING about the lifecycle', () => {
+  // WHAT THIS TEST USED TO SAY, AND WHY IT CHANGED.
+  //
+  // It used to assert `FALLBACK_SITE_DATA.lifecycleState === 'demo'` and pin
+  // all four gates to the demo outcome, on the reasoning that leaving the key
+  // absent makes isDemoSite() take its existing-fleet "not a demo" default and
+  // a sustained outage then un-gates every demo site in the fleet
+  // (review-templates-106.md, "The demo gate is fail-open on an upstream
+  // outage"). That danger is real and this suite still protects against it.
+  //
+  // What the old version missed is the cost on the other side: claiming 'demo'
+  // meant any upstream wobble served `Disallow: /` and `noindex, nofollow`
+  // across a LIVE site, which is exactly how vivreal.io lost ten days of
+  // indexing once already. The fallback now claims neither, and the durable
+  // surfaces refuse to answer instead, so both failures are avoided rather than
+  // one being traded for the other. Full argument:
+  // `src/lib/api/siteData/degraded.ts`; full pins: `./degradedRender.test.ts`.
+  //
+  // What is asserted HERE is only the fail-closed net that survives the change:
+  // isDemoSite() still answers "demo" for degraded data, so any caller that
+  // does not refuse keeps the old conservative behaviour.
   delete process.env.SITE_LIFECYCLE;
   delete process.env.NEXT_PUBLIC_SITE_URL;
-  assert.equal(FALLBACK_SITE_DATA.lifecycleState, 'demo', 'the fallback must declare itself a demo');
-  assert.equal(isDemoSite(FALLBACK_SITE_DATA), true);
-  assert.deepEqual(buildRobotsPolicy(FALLBACK_SITE_DATA).rules, [{ userAgent: '*', disallow: '/' }]);
-  assert.equal(buildRobotsPolicy(FALLBACK_SITE_DATA).sitemap, undefined);
-  assert.deepEqual(buildSiteMapForSite(FALLBACK_SITE_DATA, PAGES), []);
-  assert.deepEqual(buildRootMetadata(FALLBACK_SITE_DATA).robots, { index: false, follow: false });
+  assert.equal(
+    FALLBACK_SITE_DATA.lifecycleState,
+    undefined,
+    'the fallback must not assert a lifecycle it never read',
+  );
+  assert.equal(
+    isDemoSite(FALLBACK_SITE_DATA),
+    true,
+    'unknown still reads as demo for any consumer that cannot refuse',
+  );
+  // The four gates no longer answer at all on degraded data. Pinned in
+  // ./degradedRender.test.ts, which owns this behaviour end to end.
+  assert.throws(() => buildRobotsPolicy(FALLBACK_SITE_DATA));
+  assert.throws(() => buildSiteMapForSite(FALLBACK_SITE_DATA, PAGES));
+  assert.equal(buildRootMetadata(FALLBACK_SITE_DATA).robots, undefined);
 });

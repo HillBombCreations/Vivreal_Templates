@@ -1,6 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -55,6 +56,11 @@ export default async function DeepRedirectCatchAll({
 }) {
   const { segments } = await params;
   const siteData = await getSiteData();
+  // This route's whole job is to answer "no such path", so a degraded read is
+  // the one state in which it must not answer at all. `siteData.redirects` is
+  // absent on that read, so every authored deep 301 would resolve to nothing
+  // and 404 instead, losing the link equity the redirect map exists to keep.
+  assertUpstreamHealthy(siteData);
   const path = `/${segments.join("/")}`;
   const redirectTarget = resolveMissingItemRedirect(siteData.redirects, path);
   if (redirectTarget) permanentRedirect(redirectTarget);

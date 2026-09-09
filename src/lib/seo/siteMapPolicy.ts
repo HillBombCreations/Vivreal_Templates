@@ -5,12 +5,13 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 // `node --experimental-strip-types --test`, which has no tsconfig `paths`
 // resolution.
 import { isDemoSite } from './demoSafety.ts';
+import { isDegradedSiteData, refuseDegradedClaim } from '../api/siteData/degraded.ts';
 import { buildSitemapEntries } from './sitemap.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 
 type SiteMapSiteData = Pick<
   SiteData,
-  'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState'
+  'canonicalUrl' | 'domainName' | 'domainInformation' | 'lifecycleState' | 'degraded'
 >;
 
 /**
@@ -36,6 +37,16 @@ export function buildSiteMapForSite(
   pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo'>[] | undefined,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
+  // DEGRADED READ ⇒ REFUSE, and checked before the demo gate for the same
+  // reason robots.txt is. An empty sitemap is the most deceptive artifact in
+  // this whole app, because it is a SUCCESSFUL render of a legitimately empty
+  // list: nothing about it looks wrong, nothing expires it, and a fleet build
+  // that happens to run during an upstream episode bakes it into the
+  // deployment and serves it until the next build. `getSiteMap()` already
+  // documents that exact scenario. A 5xx is the only answer here that a
+  // crawler will come back from.
+  if (isDegradedSiteData(siteData)) refuseDegradedClaim('sitemap.xml');
+
   // SEO demo-safety: emit NO sitemap for a pre-cutover demo. A sitemap actively
   // invites indexing of a near-duplicate of the prospect's real site. Cutover
   // flips lifecycleState to 'live' and the full sitemap returns.

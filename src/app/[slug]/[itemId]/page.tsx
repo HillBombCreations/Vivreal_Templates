@@ -6,6 +6,7 @@ import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import type { SiteData } from "@/types/SiteData";
 import {
   resolveSiteOrigin,
@@ -165,6 +166,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
+  // Same guard, same reason as `[slug]/page.tsx`: on a degraded read every
+  // detail URL on the site would 404, because the page list it resolves
+  // against is empty for lack of data rather than for lack of pages.
+  assertUpstreamHealthy(siteData);
   const pageConfig = getPageBySlug(siteData, slug);
 
   // CP-11: Resolve depth-2 nested sub-pages (e.g. /features/ai-sites) that the

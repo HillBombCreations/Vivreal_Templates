@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
@@ -72,11 +73,32 @@ async function Resolved() {
 // so this is documentary only — no behavioural change. Any future guard on
 // this route MUST run in `HomePage` itself (the un-suspended parent), not
 // inside `Resolved()`.
+//
+// The degraded-render guard below is the first such guard, and it sits here
+// BECAUSE of that note. Inside `Resolved()` it would have been worthless: the
+// shell has already flushed by then, so the throw would swap the body and leave
+// a 200 on the wire, which is the soft-status bug this route was audited for
+// once already.
 export default async function HomePage() {
   // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
   // line runs during `next build`, which is what keeps a fleet build's upstream
   // traffic identical to the pre-change build.
   await enforceDynamicUnlessIsr();
+  // The 2026-08-31 incident in one line. A degraded read has no
+  // `homePageConfig`, so `Resolved()` served the customer's home page as
+  // `<h1>Welcome</h1>` with a `Home` title and zero occurrences of their brand,
+  // at HTTP 200. ISR Phase 4 stopped that render being CACHED; it never stopped
+  // it being SERVED, and a crawler that reads it once is unaffected by how
+  // briefly it was stored.
+  //
+  // Guarded on `degraded`, deliberately NOT on `!homePageConfig`, which is the same
+  // distinction `renderGate.ts` draws about where the cache bail belongs. A
+  // healthy site with no Studio home config renders the welcome placeholder
+  // exactly as it always has. Only a failed read is refused.
+  //
+  // The extra read is free: `getSiteData()` goes through `unstable_cache` and
+  // `Resolved()` asks for the same value in the same request.
+  assertUpstreamHealthy(await getSiteData());
   return (
     <Suspense fallback={<HomeLoading />}>
       <Resolved />
