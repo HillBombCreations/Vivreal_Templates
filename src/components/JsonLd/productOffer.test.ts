@@ -193,9 +193,33 @@ test('SOURCE PIN: the route derives the claim from the SAME function as the butt
   const start = whole.indexOf('const productJsonLd = buildDetailJsonLd({');
   assert.ok(start > 0, 'sanity: the product JSON-LD call site was not found');
   const arm = whole.slice(start, whole.indexOf('});', start));
+  // Asserted over the import SECTION rather than one exact import line. The
+  // first version of this pin matched `import { computeProductStockState }`
+  // literally and broke the moment the import grew a second name, which is a
+  // false alarm rather than a finding. What has to stay true is that the stock
+  // state comes from the renderer and is not reimplemented here.
+  const header = whole.slice(0, whole.indexOf('export const revalidate'));
+  assert.ok(header.length > 0, 'sanity: the import section was not found');
+  // COMMENT LINES STRIPPED FIRST. The import block carries a comment naming
+  // these same helpers, so a whole-text search passes on the explanation alone:
+  // deleting the import and keeping the comment left this green, found by
+  // mutation testing. It is the same vacuity that made one of #150's pins
+  // useless, in a file that had already been warned about it.
+  const importedCode = header
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      return t !== '' && !t.startsWith('//') && !t.startsWith('*') && !t.startsWith('/*');
+    })
+    .join('\n');
   assert.ok(
-    whole.includes('import { computeProductStockState }'),
+    importedCode.includes('computeProductStockState') &&
+      importedCode.includes('@hillbombcreations/site-renderer'),
     'the stock state must come from the renderer, not a local copy',
+  );
+  assert.ok(
+    !whole.includes('function computeProductStockState'),
+    'and it must not be reimplemented in this file, or the button and the claim can drift',
   );
   assert.ok(
     arm.includes('inStock: productStock.tracked ? !productStock.isOutOfStock : undefined'),

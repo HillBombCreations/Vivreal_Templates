@@ -351,6 +351,19 @@ export function buildDetailJsonLd(
       // The gate used to be `input.price !== undefined`, which let an authored
       // "$9.00" through into `String(...)` and emitted exactly the invalid
       // Offer this branch exists to prevent.
+      //
+      // ONE `Offer`, never an `AggregateOffer`, and that is a decision rather
+      // than an omission. A variant-priced product reaches here with the price
+      // of the variant its page actually renders (see
+      // `lib/detail/productOffer.ts`), so there is a single real price to state
+      // and no range to express. `AggregateOffer` would be the wrong type even
+      // if there were: schema.org defines it as aggregating offers from
+      // DIFFERENT MERCHANTS, Google's product guidance says "Don't use
+      // AggregateOffer to describe a set of product variants", and its merchant
+      // listing guidance excludes the type entirely because "the merchant has
+      // to be the seller of the product in order to be eligible". `lowPrice`
+      // and `highPrice` live only on that type, which is why no range appears
+      // here.
       const offerPrice = asOfferPrice(input.price);
       if (offerPrice !== undefined) {
         return {

@@ -38,13 +38,21 @@ import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
 import { itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
-// The renderer's own inventory aggregate, imported rather than reimplemented so
+// The renderer's own inventory helpers, imported rather than reimplemented so
 // the "Out of stock" button and the JSON-LD availability claim on the same page
-// cannot disagree. Its contract: `tracked: false` means untracked, not zero.
-import { computeProductStockState } from "@hillbombcreations/site-renderer";
+// cannot disagree. Their contract: `tracked: false` means untracked, not zero.
+// `resolveStock` + `computeStockState` is the pair `DetailAddToCart` uses for
+// the rendered variant; `computeProductStockState` is the whole-product
+// aggregate, correct only where there is no variant to resolve against.
+import {
+  computeProductStockState,
+  computeStockState,
+  resolveStock,
+} from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
+import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
 import { refuseUnknownItemExistence } from "@/lib/degradedPageRefusal";
 import {
   RECIPES_FORMAT,
@@ -463,32 +471,65 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       })
     );
 
-    // Product JSON-LD: only emit Product schema when name/price/image are
-    // plain strings (not variant maps) — otherwise we'd need to pick a
-    // default variant, which is a renderer-level concern. Fall back to
-    // the generic detail JSON-LD (Thing) when variant-keyed.
-    const productName =
-      typeof product.name === 'string' ? product.name : undefined;
-    const productPrice =
-      typeof product.price === 'string' ? product.price : undefined;
+    // Product JSON-LD describes THE VARIANT THIS PAGE RENDERS.
+    //
+    // It used to require `typeof === 'string'` on every field, which meant a
+    // variant-priced product (a map) resolved to no price, fell through to
+    // `Thing`, and shipped no price, no currency and no availability at all.
+    // The comment here said picking a default variant was "a renderer-level
+    // concern"; it is, and the renderer has already picked one. With nothing
+    // selected it resolves the active variant to the first authored value, and
+    // the hero's price and the buy box's enabled state are both computed for
+    // that variant. So the variant on display is a fact about the response, and
+    // reading these fields for it is what makes the schema agree with the HTML
+    // rather than describe a product the page is not showing.
+    //
+    // `@/lib/detail/productOffer` carries the full reasoning, including why an
+    // `AggregateOffer` price range is the wrong shape (Google: "Don't use
+    // AggregateOffer to describe a set of product variants") and why Google's
+    // own `ProductGroup` variant markup is unreachable from a route that cannot
+    // preselect a variant by URL.
+    const offerVariant = offerVariantKey(product.usingVariant);
+    const variantValues = product.usingVariant?.values;
+    const productName = offerFieldValue(product.name, offerVariant, variantValues);
+    const productPrice = offerFieldValue(product.price, offerVariant, variantValues);
+    // Image stays scalar-only, deliberately, and is the one field NOT widened
+    // here. `unsignMediaUrl`'s docblock records that a stripped media URL 403s
+    // on this distribution "regardless of approach", so the JSON-LD `image` is
+    // unusable today and its absence is an accepted degradation. Widening it
+    // would add a knowingly-unfetchable URL to nine more products, which is
+    // more wrong claims, not fewer.
     const productImage =
       typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
-    const productDescription =
-      typeof product.description === 'string'
-        ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
-        : undefined;
+    const productDescriptionRaw = offerFieldValue(product.description, offerVariant, variantValues);
+    const productDescription = productDescriptionRaw
+      ? productDescriptionRaw.replace(/<[^>]*>/g, '').slice(0, 500)
+      : undefined;
 
-    // The claim and the button come from ONE function. `computeProductStockState`
-    // is the renderer's own aggregate, the same one that draws the disabled
-    // "Out of stock" control in the buy box, so the JSON-LD cannot say In Stock
-    // on a page that says otherwise. `tracked: false` means the merchant never
-    // opted into inventory tracking, and that is passed on as `undefined` so
-    // the field is omitted rather than guessed at.
+    // The claim and the button come from ONE function, evaluated at the SAME
+    // variant. `resolveStock` + `computeStockState` is exactly the pair
+    // `DetailAddToCart` uses to decide whether to draw the disabled "Out of
+    // stock" control, so the JSON-LD cannot say In Stock on a page that says
+    // otherwise. `tracked: false` means the merchant never opted into inventory
+    // tracking, and that is passed on as `undefined` so the field is omitted
+    // rather than guessed at.
+    //
+    // A product with no variants keeps `computeProductStockState`, byte for
+    // byte as before: with no variant key there is nothing to resolve against,
+    // and that helper is the one that reduces a scalar count to the same answer.
+    //
+    // Deliberately NOT the product-level aggregate for a variant product. That
+    // is what a product CARD shows, and pairing an aggregate "in stock" with
+    // the rendered variant's price is a pair that stops being jointly true the
+    // moment the rendered variant is the sold-out one, which is this bug again
+    // one level up.
     //
     // Only this arm has stock to report. The collection and menu arms below
     // serve collection objects, which carry no inventory in the platform model,
     // so they emit no availability at all rather than a made-up one.
-    const productStock = computeProductStockState(product.stock, product.lowStockThreshold);
+    const productStock = offerVariant
+      ? computeStockState(resolveStock(product.stock, offerVariant), product.lowStockThreshold)
+      : computeProductStockState(product.stock, product.lowStockThreshold);
     const productJsonLd = buildDetailJsonLd({
       format: 'products',
       title: productName || 'Product',
