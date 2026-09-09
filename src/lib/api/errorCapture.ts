@@ -70,7 +70,7 @@ export const SITE_DETAILS_FALLBACK_FINGERPRINT = 'templates.siteDetails.fallback
 
 /** Message body for the fallback-render capture (there is no error object). */
 export const SITE_DETAILS_FALLBACK_MESSAGE =
-  'siteDetails unavailable — site rendered from FALLBACK_SITE_DATA';
+  'siteDetails unavailable, site rendered from FALLBACK_SITE_DATA';
 
 /**
  * Fingerprint root for "this site authored an origin and the resolver refused
@@ -87,7 +87,7 @@ export const ORIGIN_REFUSAL_FINGERPRINT = 'templates.siteOrigin.refused';
 
 /** Message body for the origin-refusal capture (there is no error object). */
 export const ORIGIN_REFUSAL_MESSAGE =
-  'site origin refused — no canonical, no robots.txt Sitemap: directive, no sitemap <loc>';
+  'site origin refused (no canonical, no robots.txt Sitemap: directive, no sitemap <loc>)';
 
 /** Tag value used when a tenant identifier is not available at capture time. */
 const UNKNOWN_SITE_ID = 'unknown';
