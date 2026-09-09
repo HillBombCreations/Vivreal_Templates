@@ -18,7 +18,7 @@ function buildDefaultContent(pageName: string, opts: { businessName: string; ema
       <p><strong>Effective Date:</strong> ${year}</p>
       <p>Your privacy matters to us. This Privacy Policy describes what information ${businessName} collects, why we collect it, how we use it, and the choices available to you.</p>
       <h2>Information We Collect</h2>
-      <p>We may collect personal information you voluntarily provide — such as your name, email address, shipping address, and payment details — when you make a purchase, submit a form, or contact us. We also automatically collect certain technical data including your browser type, device, IP address, and pages visited to help us improve the site.</p>
+      <p>We may collect personal information you voluntarily provide (such as your name, email address, shipping address, and payment details) when you make a purchase, submit a form, or contact us. We also automatically collect certain technical data including your browser type, device, IP address, and pages visited to help us improve the site.</p>
       <h2>How We Use Your Information</h2>
       <p>We use the information we collect to process orders and payments, respond to your inquiries, send order confirmations and updates, improve our website and services, and comply with legal obligations. We do not sell or rent your personal information to third parties.</p>
       <h2>Payment Processing</h2>

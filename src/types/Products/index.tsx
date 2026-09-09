@@ -42,6 +42,18 @@ export interface Product {
     quantityOptions?: number[];
     /** Unit label beside the quantity picker — scalar, or a per-variant map (matches `price`'s keys). */
     quantityUnit?: Variantable<string>;
+    /**
+     * ISO 4217 currency for `price`, when the payments provider gave us one.
+     *
+     * Square sets it authoritatively from the connected merchant account (its
+     * own sync refuses to accept a user-supplied value), so it is real data
+     * rather than a default. Stripe products never captured it, so this is
+     * absent for the fleet default. Absent means UNKNOWN, never "USD": the one
+     * consumer that has to publish a currency anyway is the `Offer` in
+     * `components/JsonLd/schema.ts`, and it names its fallback rather than
+     * hiding it here.
+     */
+    priceCurrency?: string;
     /** Inventory count — scalar (single-price) or a map keyed by variant value. */
     stock?: Variantable<number>;
     /** Per-product low-stock trigger; renderer falls back to its global default. */

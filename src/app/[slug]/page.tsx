@@ -7,6 +7,8 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
@@ -238,6 +240,18 @@ export default async function DynamicPage({
   await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
+  // A degraded read must never 404 a page that exists. `getSiteData()` hands
+  // back `FALLBACK_SITE_DATA` when VR_Client_API cannot be read, and its
+  // `pageConfigs: []` makes `getPageBySlug` miss EVERY real slug on the site,
+  // so without this line a transient upstream wobble answers 404 on every page
+  // except /privacy and /terms. A 404 tells a crawler the URL is gone and to
+  // drop it; a 5xx tells it to come back. See `assertUpstreamHealthy`.
+  //
+  // Placed before the lookup, not inside the `!pageConfig` branch, so it also
+  // covers the redirect resolution below: `siteData.redirects` is absent on a
+  // degraded read too, which would otherwise turn every authored 301 into a
+  // 404 for the duration.
+  assertUpstreamHealthy(siteData);
   const pageConfig = getPageBySlug(siteData, slug);
 
   // Privacy and terms always render on every site, even if not in page config
@@ -625,7 +639,7 @@ async function ComposedFormatBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -637,8 +651,24 @@ async function ComposedFormatBody({
   // that fall through to buildGenericSections (not static/checkout/shows etc —
   // those have non-empty content by definition or their own empty handling).
   // buildPageContext.isEmpty already excludes static/checkout-success/-cancel.
-  if (isEmpty && (format === "standard" || format === "list" || format === "grid")) {
-    return notFound();
+  //
+  // REACHABILITY, measured rather than assumed: standard / list / grid all
+  // return early through `renderComposedPage` at the generic arm above, so this
+  // copy of the guard cannot currently fire for any of the three formats it
+  // tests. It is the same dead-but-maintained arm the transitional title band
+  // above documents, and it is kept in lockstep for the same reason: the
+  // conditions under which the early return narrows are not this file's to
+  // predict, and a stale copy of a 404 rule is how the band drifted.
+  //
+  // The LIVE copy, and the full reasoning for the ordering, the GENERIC_FORMATS
+  // scope and what a mid-stream refusal can and cannot set, is
+  // `src/lib/renderComposedPage.tsx`. In one line: a failed collection read
+  // resolves to `[]` exactly as an empty collection does, so `isEmpty` alone
+  // turned an upstream wobble into a 404 on real published pages. Refuse first,
+  // 404 only on data that was actually read.
+  if (format === "standard" || format === "list" || format === "grid") {
+    if (emptinessUnknown) refuseUnknownEmptiness(format);
+    if (isEmpty) return notFound();
   }
 
   return (

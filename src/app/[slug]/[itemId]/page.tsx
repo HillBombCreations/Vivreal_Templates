@@ -6,6 +6,7 @@ import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
+import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import type { SiteData } from "@/types/SiteData";
 import {
   resolveSiteOrigin,
@@ -14,10 +15,10 @@ import {
   buildDetailUrl,
 } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
-import { getShowById } from "@/lib/api/shows";
-import { getTeamMembers } from "@/lib/api/team";
+import { getShowById, getShowByIdRead } from "@/lib/api/shows";
+import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
-import { getProductById } from "@/lib/api/products";
+import { getProductByIdRead } from "@/lib/api/products";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
 import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
@@ -37,14 +38,29 @@ import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
 import { itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
+// The renderer's own inventory helpers, imported rather than reimplemented so
+// the "Out of stock" button and the JSON-LD availability claim on the same page
+// cannot disagree. Their contract: `tracked: false` means untracked, not zero.
+// `resolveStock` + `computeStockState` is the pair `DetailAddToCart` uses for
+// the rendered variant; `computeProductStockState` is the whole-product
+// aggregate, correct only where there is no variant to resolve against.
+import {
+  computeProductStockState,
+  computeStockState,
+  resolveStock,
+} from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
+import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
+import { refuseUnknownItemExistence } from "@/lib/degradedPageRefusal";
 import {
   RECIPES_FORMAT,
   detailJsonLdFormat,
   servesCollectionDetail,
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
+import { plainMeta } from "@/lib/seo/plainMeta";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -116,22 +132,29 @@ export const fetchCache = "force-no-store";
  * path FIRST; fall back to `notFound()` only when there is none (or the
  * authored `to` fails the same-origin guard).
  *
- * NEVER SHADOW LIVE CONTENT: this function's only callers are each format
- * arm's OWN "can't serve a real item here" branch — never the success path,
- * so an existing item can never be redirected. Most callers are literally
- * `if (!item) return redirectOrNotFound(...)` (shows, team, the generic
- * collection-list item, the menu item), but two are not an item-missing
- * check at all: the `!collectionId` branch (no `itemCollectionId`/page
- * binding resolves to a collection) and the `!itemsCollectionId &&
- * siblingCollectionIds.length === 0` branch (a menu page with no items
- * binding at all) are the PAGE misconfigured, not any specific item
- * missing — no item could exist to shadow in either case, so the same
+ * NEVER SHADOW LIVE CONTENT: this function now has exactly ONE caller,
+ * `answerItemMissing()` inside the page component, and that helper is called
+ * only from each format arm's OWN "can't serve a real item here" branch, never
+ * the success path, so an existing item can never be redirected. Most of those
+ * branches are literally `if (!item) return answerItemMissing(item)` (shows,
+ * team, the generic collection-list item, the menu item), but two are not an
+ * item-missing check at all: the `!collectionId` branch (no
+ * `itemCollectionId`/page binding resolves to a collection) and the
+ * `!itemsCollectionId && siblingCollectionIds.length === 0` branch (a menu page
+ * with no items binding at all) are the PAGE misconfigured, not any specific
+ * item missing. No item could exist to shadow in either case, so the same
  * safety property holds, just for a different reason. Review note N3
  * (page-layer-unvalidated-redirect-target).
+ *
  * This is the same invariant `resolveRedirect()`'s doc comment
  * (`@/lib/redirects.ts`) documents for the pre-existing `!pageConfig` and
  * bottom-of-function redirect checks in this file; this helper extends it to
  * every named-format arm's missing-item (and misconfigured-page) path too.
+ *
+ * The single caller is a degraded-read guard, not a refactor for tidiness: an
+ * item missing because a READ FAILED is indistinguishable from an item that is
+ * not there, and answering either a 404 or a 308 for the first is a durable
+ * wrong claim about a live URL. `answerItemMissing()` carries that reasoning.
  *
  * Status: `permanentRedirect()` emits 308, not 301 — middleware.ts
  * (`src/middleware.ts`) owns the literal-301 path for a redirect it can see;
@@ -165,6 +188,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
+  // Same guard, same reason as `[slug]/page.tsx`: on a degraded read every
+  // detail URL on the site would 404, because the page list it resolves
+  // against is empty for lack of data rather than for lack of pages.
+  assertUpstreamHealthy(siteData);
   const pageConfig = getPageBySlug(siteData, slug);
 
   // CP-11: Resolve depth-2 nested sub-pages (e.g. /features/ai-sites) that the
@@ -241,18 +268,59 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Guard: if detail pages are explicitly disabled for this page, return 404
   if (pageConfig.detailPage?.enabled === false) return notFound();
 
+  // EVERY read below whose pool could have held this item, and whether it
+  // actually happened (`@/lib/api/degradedRead`). Accumulated rather than
+  // gathered in one place because this route resolves an item across arms that
+  // return early: the products read runs first for any page carrying a
+  // storefront binding and falls THROUGH to the collection and menu arms on a
+  // miss, so its flag has to survive into them.
+  const reads: DetailItemReads = [];
+
+  /**
+   * The one place this route answers "there is no item at this URL", and the
+   * only place allowed to.
+   *
+   * WHAT CHANGED AND WHY. Every arm below used to answer that question by
+   * calling `redirectOrNotFound()` directly on a miss. A miss is exactly what a
+   * FAILED read looks like: the fetch helpers swallow the error and hand back
+   * an empty list, so "the item is not in this list" and "this list was never
+   * read" are the same value (`@/lib/api/degradedRead`). A transient
+   * VR_Client_API wobble therefore made every detail URL on the site answer
+   * 404, and unlike the generic-page sibling of this defect (fixed in
+   * `renderComposedPage.tsx`, which sits inside a Suspense boundary and could
+   * only swap the body under an already-flushed 200) this component is
+   * UN-SUSPENDED. The 404 was real, and a real 404 tells a crawler that a live,
+   * published item is gone.
+   *
+   * Being un-suspended is also what makes the fix strictly better here: the
+   * throw sets a genuine 5xx, which is "come back later" rather than "drop
+   * this". It is the same property `assertUpstreamHealthy()` relies on at the
+   * top of this component.
+   *
+   * The verdict lives in `decideDetailItemMiss` rather than inline, because the
+   * ORDER is the decision and it is not the obvious one: an item in hand
+   * settles it before any degraded flag is consulted. See that module.
+   */
+  const answerItemMissing = (found: unknown): never => {
+    const { existenceUnknown } = decideDetailItemMiss({ found, reads });
+    if (existenceUnknown) refuseUnknownItemExistence(pageConfig.format);
+    return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+  };
+
   // Show/event detail
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
-    const show = await getShowById(itemId, collectionId);
+    const { show, degraded } = await getShowByIdRead(itemId, collectionId);
+    reads.push({ source: "shows", degraded });
 
     // Change B (docs/bugs/templates-soft-404-and-301-status): this arm used
     // to render a hand-rolled "Not found" page here at a soft status 200 —
     // the only arm in this file that did not call notFound() on a miss. Now
-    // consistent with every other format: redirectOrNotFound() resolves an
+    // consistent with every other format: answerItemMissing() resolves an
     // authored redirect first, else notFound() (a real 404 via
-    // src/app/not-found.tsx, same as every other arm below).
-    if (!show) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    // src/app/not-found.tsx, same as every other arm below), and refuses both
+    // of those when the read above is the reason `show` came back null.
+    if (!show) return answerItemMissing(show);
 
     const showStartDate =
       show.date && show.time
@@ -291,10 +359,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Team member detail
   if (pageConfig.format === "team") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.TEAMMEMBERS_ID || "");
-    const teamMembers = await getTeamMembers(collectionId);
+    const { members: teamMembers, degraded } = await getTeamMembersRead(collectionId);
+    reads.push({ source: "team", degraded });
     const member = teamMembers.find((m) => m.id === itemId);
 
-    if (!member) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    if (!member) return answerItemMissing(member);
 
     // Fetch TikTok posts and match by handle
     const tiktokHandle = member.socialLinks?.tiktok;
@@ -373,16 +442,22 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // undefined ⇒ getProducts' legacy stripe default.
   const { integrationTypes } = collectBindingTargets(pageConfig);
   const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
-  const product =
+  const productRead =
     pageConfig.format === "products" || paymentsProvider
-      ? await getProductById(itemId, paymentsProvider ?? "stripe")
+      ? await getProductByIdRead(itemId, paymentsProvider ?? "stripe")
       : null;
+  const product = productRead?.product ?? null;
+  // Recorded whether or not this arm serves the request. On a non-products page
+  // a product miss falls THROUGH to the collection and menu arms below, so a
+  // degraded products read has to still be accountable when one of those arms
+  // reaches its own miss: the item may well have been in the list that failed.
+  if (productRead) reads.push({ source: "products", degraded: productRead.degraded });
   // A products page has no other arm that could serve this id → 404 on a miss
   // (unchanged). Non-products pages can carry BOTH a storefront and plain
   // collection tiles that link to /<slug>/<itemId> — a product miss there
   // falls through to the collection/menu arms below instead.
   if (!product && pageConfig.format === "products")
-    return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    return answerItemMissing(product);
   if (product) {
     // Fetch supplemental integrations for the detail page (non-payments ones —
     // the page's payments binding must not double-render as a supplemental feed)
@@ -397,21 +472,65 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       })
     );
 
-    // Product JSON-LD: only emit Product schema when name/price/image are
-    // plain strings (not variant maps) — otherwise we'd need to pick a
-    // default variant, which is a renderer-level concern. Fall back to
-    // the generic detail JSON-LD (Thing) when variant-keyed.
-    const productName =
-      typeof product.name === 'string' ? product.name : undefined;
-    const productPrice =
-      typeof product.price === 'string' ? product.price : undefined;
+    // Product JSON-LD describes THE VARIANT THIS PAGE RENDERS.
+    //
+    // It used to require `typeof === 'string'` on every field, which meant a
+    // variant-priced product (a map) resolved to no price, fell through to
+    // `Thing`, and shipped no price, no currency and no availability at all.
+    // The comment here said picking a default variant was "a renderer-level
+    // concern"; it is, and the renderer has already picked one. With nothing
+    // selected it resolves the active variant to the first authored value, and
+    // the hero's price and the buy box's enabled state are both computed for
+    // that variant. So the variant on display is a fact about the response, and
+    // reading these fields for it is what makes the schema agree with the HTML
+    // rather than describe a product the page is not showing.
+    //
+    // `@/lib/detail/productOffer` carries the full reasoning, including why an
+    // `AggregateOffer` price range is the wrong shape (Google: "Don't use
+    // AggregateOffer to describe a set of product variants") and why Google's
+    // own `ProductGroup` variant markup is unreachable from a route that cannot
+    // preselect a variant by URL.
+    const offerVariant = offerVariantKey(product.usingVariant);
+    const variantValues = product.usingVariant?.values;
+    const productName = offerFieldValue(product.name, offerVariant, variantValues);
+    const productPrice = offerFieldValue(product.price, offerVariant, variantValues);
+    // Image stays scalar-only, deliberately, and is the one field NOT widened
+    // here. `unsignMediaUrl`'s docblock records that a stripped media URL 403s
+    // on this distribution "regardless of approach", so the JSON-LD `image` is
+    // unusable today and its absence is an accepted degradation. Widening it
+    // would add a knowingly-unfetchable URL to nine more products, which is
+    // more wrong claims, not fewer.
     const productImage =
       typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
-    const productDescription =
-      typeof product.description === 'string'
-        ? product.description.replace(/<[^>]*>/g, '').slice(0, 500)
-        : undefined;
+    const productDescriptionRaw = offerFieldValue(product.description, offerVariant, variantValues);
+    const productDescription = productDescriptionRaw
+      ? productDescriptionRaw.replace(/<[^>]*>/g, '').slice(0, 500)
+      : undefined;
 
+    // The claim and the button come from ONE function, evaluated at the SAME
+    // variant. `resolveStock` + `computeStockState` is exactly the pair
+    // `DetailAddToCart` uses to decide whether to draw the disabled "Out of
+    // stock" control, so the JSON-LD cannot say In Stock on a page that says
+    // otherwise. `tracked: false` means the merchant never opted into inventory
+    // tracking, and that is passed on as `undefined` so the field is omitted
+    // rather than guessed at.
+    //
+    // A product with no variants keeps `computeProductStockState`, byte for
+    // byte as before: with no variant key there is nothing to resolve against,
+    // and that helper is the one that reduces a scalar count to the same answer.
+    //
+    // Deliberately NOT the product-level aggregate for a variant product. That
+    // is what a product CARD shows, and pairing an aggregate "in stock" with
+    // the rendered variant's price is a pair that stops being jointly true the
+    // moment the rendered variant is the sold-out one, which is this bug again
+    // one level up.
+    //
+    // Only this arm has stock to report. The collection and menu arms below
+    // serve collection objects, which carry no inventory in the platform model,
+    // so they emit no availability at all rather than a made-up one.
+    const productStock = offerVariant
+      ? computeStockState(resolveStock(product.stock, offerVariant), product.lowStockThreshold)
+      : computeProductStockState(product.stock, product.lowStockThreshold);
     const productJsonLd = buildDetailJsonLd({
       format: 'products',
       title: productName || 'Product',
@@ -419,6 +538,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       imageUrl: productImage,
       url: buildDetailUrl(siteData, slug, itemId),
       price: productPrice,
+      // Real, when the provider gave us one. Square does; Stripe never captured
+      // it, and the Offer builder owns that fallback and names it.
+      currency: product.priceCurrency,
+      inStock: productStock.tracked ? !productStock.isOutOfStock : undefined,
       sku: product._id,
     });
 
@@ -510,8 +633,14 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // URL can change meaning), then `raw[itemKeyField]` when configured;
     // `scope` restricts which items are addressable, absent scope ⇒ identity.
     const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
-    if (!lookup) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    // `null` means the PAGE addresses no collection at all, which is a
+    // misconfiguration rather than a failed read: nothing was fetched, so there
+    // is nothing to record. A degraded PRODUCTS read from the arm above can
+    // still make the answer unknowable, which is why this goes through the
+    // shared helper rather than straight to `redirectOrNotFound`.
+    if (!lookup) return answerItemMissing(undefined);
     const { collectionId, unscopedItems, item } = lookup;
+    reads.push({ source: "collection", degraded: lookup.degraded });
     const itemKeyField = scopedDetailPage?.itemKeyField;
 
     if (!item) {
@@ -528,7 +657,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
           `[detail-route] doorway-page guard: "${itemId}" exists in collection ${collectionId} but is excluded by page "${slug}"'s scope`,
         );
       }
-      return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+      // A degraded read cannot reach the warning above: `unscopedItems` is
+      // empty on one, so `isDoorwayMiss` is false. The two verdicts do not
+      // overlap, and only this one can be manufactured out of an absence.
+      return answerItemMissing(item);
     }
 
     // §7.2 step 8 — resolve ONE context object (e.g. the location this page
@@ -566,7 +698,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // recipes back to today's `"products"` on purpose — see its doc comment.
       format: detailJsonLdFormat(pageConfig.format),
       title: effectiveItem.title || pageConfig.name,
-      description: cleanDesc ?? recipe?.summary,
+      // Same C15 defect one field over: `cleanDesc` strips the ITEM's
+      // description, and the fallback reached the recipe `summary` raw. This
+      // value is embedded in long-lived Recipe JSON-LD that crawler caches
+      // outlive, so shipping markup here is worse than shipping it in a meta
+      // tag. 500, not 160: JSON-LD has room and is not a preview card.
+      description: cleanDesc ?? plainMeta(recipe?.summary, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
@@ -621,8 +758,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // gate — TS narrowing proves it can't recur here.
     const { itemsCollectionId, siblingCollectionIds } =
       resolveMenuDetailCollections(pageConfig);
+    // The PAGE carries no items binding at all: misconfigured, not unread.
+    // Routed through the shared helper for the same reason as the arm above, a
+    // degraded products read from earlier in this request can still make the
+    // answer unknowable.
     if (!itemsCollectionId && siblingCollectionIds.length === 0)
-      return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+      return answerItemMissing(undefined);
 
     // The ITEMS binding is the primary pool; SIBLING bindings (the extra
     // collections a menu page carries around the pair — e.g. the bakery
@@ -639,15 +780,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // arm above via `resolveItem` so both arms agree on lookup semantics.
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
-      const { items } = await getCollectionItems(itemsCollectionId, {
+      const { items, degraded } = await getCollectionItems(itemsCollectionId, {
         limit: 100,
       });
+      reads.push({ source: "menu-items", degraded });
       item = resolveItem(items, itemId, menuItemKeyField);
       if (item) pool = items;
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items } = await getCollectionItems(cid, { limit: 100 });
+        const { items, degraded } = await getCollectionItems(cid, { limit: 100 });
+        reads.push({ source: "menu-sibling", degraded });
         const hit = resolveItem(items, itemId, menuItemKeyField);
         if (hit) {
           item = hit;
@@ -656,7 +799,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         }
       }
     }
-    if (!item) return redirectOrNotFound(siteData, `/${slug}/${itemId}`);
+    // This is the arm where the ordering inside `decideDetailItemMiss` earns
+    // its keep: the loop above stops at the first hit, so a page whose ITEMS
+    // read failed and whose second sibling then produced the item has both a
+    // degraded read and the item in hand. It rendered before this change and
+    // still does. Refusing on the flag first would have broken it, and would
+    // have broken it MORE often the more bindings a menu page carries.
+    if (!item) return answerItemMissing(item);
 
     // Related shelf: same category first (excluding self), then the rest —
     // href OVERRIDDEN to the item's own detail page so the shelf never
@@ -720,9 +869,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   //
   // Now REDUNDANT for every named format (shows/team/products/collection-
   // list/menu): each of those arms' own missing-item branch calls
-  // `redirectOrNotFound()` above, which resolves the identical redirect via
-  // the same `resolveMissingItemRedirect()` (which already composes
-  // `resolveRedirect()` with the `isSameOriginRedirectTarget()` guard).
+  // `answerItemMissing()` above, which reaches the identical redirect through
+  // the same `redirectOrNotFound()` and the same `resolveMissingItemRedirect()`
+  // (which already composes `resolveRedirect()` with the
+  // `isSameOriginRedirectTarget()` guard).
   //
   // docs/bugs/page-layer-unvalidated-redirect-target: the guard gap this
   // comment used to note here ("a pre-existing gap this diff does not close
@@ -742,10 +892,14 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // site with nothing renamed (the fleet default), so `resolveRedirect`
   // short-circuits to `undefined` with one length check — zero extra
   // upstream calls, byte-identical to today.
-  const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}/${itemId}`);
-  if (redirectTarget) permanentRedirect(redirectTarget);
-
-  return notFound();
+  // Routed through the same helper as every arm above rather than resolving the
+  // redirect inline. On healthy data it is byte-identical (the helper reaches
+  // the same authored redirect via the same `resolveMissingItemRedirect()`, and
+  // falls back to the same `notFound()`); what it adds is the one case this
+  // fallthrough can still be wrong about. A page whose format matches no arm
+  // here can still carry a storefront binding, so the products read above may
+  // have failed and this URL may be a real product.
+  return answerItemMissing(undefined);
 }
 
 /**
@@ -965,15 +1119,21 @@ export async function generateMetadata({ params }: Props) {
         // the fleet on the next promote-stable, which is a real SEO change and
         // not this feature's to make.
         const derivedTitleBase = isRecipe && itemTitle ? itemTitle : pageConfig.name;
+        // Walk 4 C15. `summary` is declared `longText`, the rich-text widget,
+        // so it legitimately holds HTML, and `readRecipeFields`'s `toText` is
+        // trim-only. Sliced raw, the FIRST 160 characters of a recipe intro are
+        // typically `<p>` and the opening words, which is what a pasted link
+        // previewed with. `plainMeta` strips the tags and decodes the entities;
+        // see its header for why the decode is not optional.
         const recipeSummary = isRecipe
-          ? readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary
+          ? plainMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary, 160)
           : undefined;
 
         const title = seo?.metaTitle || patternTitle || `${derivedTitleBase} | ${siteName}`;
         const description =
           seo?.metaDescription ||
           patternDescription ||
-          recipeSummary?.slice(0, 160) ||
+          recipeSummary ||
           pageConfig.labels?.subtitle ||
           `${derivedTitleBase} | ${siteName}`;
 

@@ -43,22 +43,43 @@ export const FALLBACK_SITE_DATA: SiteData = {
   // Full measurements: `docs/projects/isr-migration/phase-4-result.md` and
   // `phase4-blockers-result.md` in `vivreal-hq`.
   //
-  // Without an explicit lifecycleState the key is absent, `isDemoSite()` takes
-  // its existing-fleet default of "not a demo", and a sustained Client API
-  // outage silently un-gates every demo site in the fleet: full permissive
-  // robots policy and no noindex on a near-duplicate of a prospect's real
-  // website (review-templates-106.md, "The demo gate is fail-open on an
-  // upstream outage").
+  // THIS CONSTANT MAKES NO LIFECYCLE CLAIM. That is the whole point of the
+  // `degraded` marker below, and it is a correction of what this comment used
+  // to say.
   //
-  // The trade this makes, deliberately: during that same outage a LIVE site
-  // also serves `Disallow: /` and `noindex, nofollow`. That is the right side
-  // to fail on. The page being served on this path has no nav, no content and
-  // no logo (see the Sentry capture in getSiteData), so the real choice is
-  // between "a prospect's demo gets indexed" plus "an empty page gets indexed"
-  // versus "a broken page is withheld until the next successful read."
-  // Indexability recovers on that read; a demo indexed against the prospect we
-  // are courting does not.
-  lifecycleState: 'demo',
+  // It used to set `lifecycleState: 'demo'`, and the reasoning was sound as far
+  // as it went. Leaving the key absent makes `isDemoSite()` take its
+  // existing-fleet default of "not a demo", so a sustained Client API outage
+  // silently un-gates every demo site in the fleet: a full permissive robots
+  // policy and no noindex on a near-duplicate of a prospect's real website
+  // (review-templates-106.md, "The demo gate is fail-open on an upstream
+  // outage"). That failure is real and it is not undone by the upstream
+  // recovering.
+  //
+  // What the old comment got wrong was believing this was a two-sided trade
+  // with no third option. It said the choice was between "a prospect's demo
+  // gets indexed" and "a broken page is withheld until the next successful
+  // read", and picked the second. But claiming `demo` means that during any
+  // upstream wobble a LIVE site serves `Disallow: /` and `noindex, nofollow`
+  // across every page, which is precisely how `vivreal.io` lost ten days of
+  // indexing once already (a `lifecycleState` reading `demo` when it should
+  // have read `live`). The degraded path reproduced that incident by itself,
+  // under load, with nobody touching anything, and it did so invisibly: the
+  // Sentry capture at the swallow in `client.ts` reaches nothing while org-wide
+  // error ingestion is down.
+  //
+  // The third option is to claim NEITHER, and let the four surfaces that make
+  // durable machine-read claims refuse to answer instead. A 5xx withholds the
+  // page from indexing, so an un-gated demo cannot be indexed either (there is
+  // no 200 to index), AND removes nothing already indexed, because crawlers
+  // read 5xx as "come back later" rather than "this is gone". Both halves of
+  // the old trade are satisfied at once. See `./degraded.ts` for the full
+  // argument, and `src/lib/seo/degradedRender.test.ts` for the pins.
+  //
+  // `isDemoSite()` still fails CLOSED on this object, so any consumer this
+  // change did not reach keeps the old conservative behaviour rather than
+  // regressing to fail-open. Nothing about a REAL demo site changes.
+  degraded: true,
   primary: '#000000',
   secondary: '#333333',
   hover: '#555555',

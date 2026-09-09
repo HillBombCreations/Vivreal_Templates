@@ -17,6 +17,7 @@ import {
   ORIGIN_REFUSAL_FINGERPRINT,
   SITE_DETAILS_FALLBACK_FINGERPRINT,
   buildFetchFailureCapture,
+  buildDegradedRefusalCapture,
   buildOriginRefusalCapture,
   buildSiteDetailsFallbackCapture,
   formatRefusedOriginCandidates,
@@ -203,4 +204,36 @@ test('an absent SITE_ID degrades to "unknown" on the origin refusal too', () => 
     }).tags.siteId,
     'unknown',
   );
+});
+
+
+test('the degraded refusal is a DISTINCT Issue from the fetch failure that caused it. "A page refused to render" and "a read failed" are different incidents with different responses', () => {
+  const refusal = buildDegradedRefusalCapture({ siteId: 'aaaa', format: 'list' });
+  const fetchFailure = buildFetchFailureCapture({
+    source: 'clientFetchCached',
+    path: '/tenant/collectionObjects?collectionId=x',
+    siteId: 'aaaa',
+  });
+  assert.notDeepEqual(refusal.fingerprint, fetchFailure.fingerprint);
+  assert.equal(refusal.level, 'error');
+});
+
+test('the degraded-refusal fingerprint carries no tenant component, because a fleet-wide upstream episode must roll into ONE Issue whose event count an alert rule can threshold on', () => {
+  const a = buildDegradedRefusalCapture({ siteId: 'aaaa', format: 'list' });
+  const b = buildDegradedRefusalCapture({ siteId: 'bbbb', format: 'grid' });
+  assert.deepEqual(a.fingerprint, b.fingerprint);
+  assert.equal(a.tags.siteId, 'aaaa');
+  assert.equal(b.tags.siteId, 'bbbb');
+});
+
+test('the degraded refusal tags the page FORMAT, never the slug, because a slug is per-tenant and would explode cardinality exactly as a raw query path would', () => {
+  const capture = buildDegradedRefusalCapture({ siteId: 'aaaa', format: 'standard' });
+  assert.equal(capture.tags.format, 'standard');
+  assert.deepEqual(Object.keys(capture.tags).sort(), ['format', 'siteId']);
+});
+
+test('an absent SITE_ID and an absent format both degrade to "unknown" rather than an empty tag', () => {
+  const capture = buildDegradedRefusalCapture({ siteId: undefined, format: undefined });
+  assert.equal(capture.tags.siteId, 'unknown');
+  assert.equal(capture.tags.format, 'unknown');
 });

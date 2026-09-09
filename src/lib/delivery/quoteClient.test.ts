@@ -135,7 +135,7 @@ test('a payload with no status it can read is not passed on as an answer', async
 });
 
 test('an envelope reporting failure is not an answer', async () => {
-  stubFetch({ json: { success: false, data: null, error: 'Validation failed' } });
+  stubFetch({ json: { success: false, data: null, error: 'the server said no' } });
   assert.equal(await requestDeliveryQuote({ zip: '37659' }), null);
 });
 

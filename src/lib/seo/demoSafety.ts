@@ -40,8 +40,26 @@ import type { SiteData } from '@/types/SiteData';
  *     any form, including `null`) at all.
  */
 export const isDemoSite = (
-  siteData?: Pick<SiteData, 'lifecycleState'> | null,
+  siteData?: Pick<SiteData, 'lifecycleState' | 'degraded'> | null,
 ): boolean => {
+  // A degraded read is not a demo and not a live site. It is UNKNOWN, and the
+  // four surfaces that matter (robots.txt, sitemap.xml, the root metadata, and
+  // the 404 verdict) all refuse before they reach this function, so none of
+  // them can turn that unknown into a claim. See `../api/siteData/degraded.ts`.
+  //
+  // This branch exists purely as the net under anything that does NOT refuse:
+  // an existing caller this change did not reach, or a future one written
+  // without knowing about any of it. For that caller "treat unknown as a demo"
+  // is still the right default, because the two failure modes are not
+  // symmetric. Withholding a live site from indexing is undone by the next
+  // successful read; indexing a demo publishes a near-duplicate of a
+  // prospect's own website against them, and nothing undoes that.
+  //
+  // Deliberately NOT the same answer the refusing surfaces give. They can do
+  // better than a conservative default because they can decline to answer at
+  // all; a `boolean` return has no such option.
+  if (siteData?.degraded === true) return true;
+
   const docState = siteData?.lifecycleState;
   if (docState === undefined) {
     // The key is truly missing — fall back to the build-time env flag, same

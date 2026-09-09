@@ -1,6 +1,10 @@
 import "server-only";
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS, readBotVerdict } from "../client";
 import { BOT_VERDICT_HEADER } from "../../botVerdict";
+// A failed read and an empty catalogue are the same value once the fetch helper
+// has swallowed the error, so any caller that concludes something from
+// emptiness has to be told which one it got. See ../degradedRead.ts.
+import { readOrDegrade } from "../degradedRead";
 // Pure raw → Product mapping lives in its own module so it can be unit-tested
 // under plain Node (`node --test`) — this file is `server-only` and cannot be
 // loaded there. Same split as `../collections/mapItem.ts`.
@@ -43,12 +47,27 @@ function unwrapItems(raw: PaginatedResponse | Record<string, unknown>[]): Record
   return (raw as PaginatedResponse)?.items ?? [];
 }
 
-export async function getProducts(opts?: {
+export interface ProductsOpts {
   filters?: Record<string, string>;
   searchVal?: string;
   sortVal?: string;
   integrationType?: string;
-}): Promise<Product[]> {
+}
+
+/**
+ * The products read, WITH whether it actually happened.
+ *
+ * `getProducts` below is the value-only view of this, for the callers that have
+ * no verdict to draw from an empty result. Anything that could turn "no
+ * products" into a claim (the generic-format 404 in
+ * `../composition/pageEmptiness.ts`, reached through the products bridge) must
+ * use this one: a storefront group composes onto ordinary `grid` and `list`
+ * pages, so a degraded products read can reach that 404 exactly as a degraded
+ * collection read can.
+ */
+export async function getProductsRead(
+  opts?: ProductsOpts,
+): Promise<{ products: Product[]; degraded: boolean }> {
   const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
@@ -59,28 +78,72 @@ export async function getProducts(opts?: {
   // CACHE MISS -- which is the correct and sufficient scope: a repeat/
   // cached bot hit was never going to be captured a second time anyway.
   const botVerdict = await readBotVerdict();
-  const raw = await clientFetchCached<PaginatedResponse>(
-    `/tenant/integrationObjects?${params}`,
-    { items: [], totalCount: 0 },
-    SITE_CACHE_TTL_SECONDS,
-    { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
-    productTags(type)
+  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+    () => ({ items: [], totalCount: 0 }),
+    (fallback) =>
+      clientFetchCached<PaginatedResponse>(
+        `/tenant/integrationObjects?${params}`,
+        fallback,
+        SITE_CACHE_TTL_SECONDS,
+        { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
+        productTags(type)
+      )
   );
-  return unwrapItems(raw).map(transformProduct);
+  return { products: unwrapItems(raw).map(transformProduct), degraded };
 }
 
-export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
-  // Omitted integrationType falls back to stripe inside getProducts — the
+/**
+ * Products only. The value-only view of `getProductsRead`, kept so the callers
+ * that only render what came back do not have to unwrap a flag they ignore.
+ *
+ * `getProductById` is NOT such a caller, and saying so would be wrong. It is a
+ * client-side `.find()` over this list, so a degraded read makes it return
+ * `null`, and `[slug]/[itemId]/page.tsx` turned that into `redirectOrNotFound()`
+ * on every product detail URL on the site. That was the same manufactured 404
+ * this change set exists to remove, on a different route, and it is why
+ * `getProductByIdRead` below exists.
+ */
+export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
+  return (await getProductsRead(opts)).products;
+}
+
+/**
+ * One product, WITH whether the list it was looked up in was actually read.
+ *
+ * The detail route's product arm is the caller that has a verdict to draw: on a
+ * `products`-format page a miss is terminal and used to 404, and on any other
+ * page carrying a storefront binding a miss falls THROUGH to the collection and
+ * menu arms, which means this flag has to survive into them. Both are why it is
+ * returned rather than dropped here.
+ */
+export async function getProductByIdRead(
+  productId: string,
+  integrationType?: string,
+): Promise<{ product: Product | null; degraded: boolean }> {
+  // Omitted integrationType falls back to stripe inside getProductsRead, the
   // legacy default for callers that don't know the page's payments provider.
   //
   // There is no by-id read on VR_Client_API, so this detail page can only find
-  // a product inside the window `getProducts` asks for. That window used to be
-  // the server's 20-row default, which meant a merchant's 21st product had no
-  // detail page — its card linked to a 404 with no error anywhere. It is now
+  // a product inside the window `getProductsRead` asks for. That window used to
+  // be the server's 20-row default, which meant a merchant's 21st product had
+  // no detail page, its card linked to a 404 with no error anywhere. It is now
   // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
   // required. See ./productsQuery.ts.
-  const products = await getProducts({ integrationType });
-  return products.find((p) => p._id === productId) ?? null;
+  const { products, degraded } = await getProductsRead({ integrationType });
+  return { product: products.find((p) => p._id === productId) ?? null, degraded };
+}
+
+/**
+ * The product only. No caller in this repo today: the detail route, which was
+ * the sole one, now takes the read above because it draws a verdict from a
+ * miss. Kept rather than deleted because `productsQuery.ts` documents the
+ * 100-row window in terms of this function by name, and because a caller that
+ * genuinely only renders what came back should not have to unwrap a flag it
+ * ignores. Anything that turns `null` into "this does not exist" must not use
+ * it.
+ */
+export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
+  return (await getProductByIdRead(productId, integrationType)).product;
 }
 
 export async function getFilters(collectionId: string): Promise<Filter[]> {

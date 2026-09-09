@@ -192,9 +192,9 @@ export async function doClientFetch<T>(
     // `Response` to see the `GroupFrozen` code at all.
     const { code, serverMessage } = await readErrorEnvelope(res);
     console.error(
-      `[clientFetch] ${res.status} ${res.statusText} — ${url}` +
-        (code ? ` — code=${code}` : '') +
-        (serverMessage ? ` — ${serverMessage}` : ''),
+      `[clientFetch] ${res.status} ${res.statusText} on ${url}` +
+        (code ? ` (code=${code})` : '') +
+        (serverMessage ? ` (${serverMessage})` : ''),
     );
     throw new ApiError(
       describeFailure(res.status, res.statusText, code, serverMessage),
