@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: data.error ?? data.message ?? "Coupon validation failed", detail: text.slice(0, 200) },
+        { error: data.error ?? data.message ?? "We could not check that code. Please try again.", detail: text.slice(0, 200) },
         { status: res.status }
       );
     }

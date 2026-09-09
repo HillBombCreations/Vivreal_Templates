@@ -89,6 +89,23 @@ const JARGON = [
   'schema',
   'boolean',
   'MIME',
+  // Widened to the rest of the standing list in `copy-standards.md`, matching
+  // the portal's copy of this rule. The portal's list sat at 11 words and
+  // matched none of the terms walk 2 actually found, so the lint reported clean
+  // over live violations. Widening it there found 14; the same widening belongs
+  // here, on the repo that renders the customer's own site.
+  //
+  // Still deliberately absent: `api`, `token`, `config`, `sync`, `null`,
+  // `undefined`, `metadata` are ordinary identifiers in strings no one reads.
+  'DNS',
+  'SSL',
+  'render',
+  'validation',
+  'unsupported',
+  'exceeds',
+  // Banned by name in `brand/voice.md` for owner-visible copy.
+  'PWA',
+  'CMS',
 ];
 
 /** Only meaningful attached to a number: "320px". Never `px-3`. */
