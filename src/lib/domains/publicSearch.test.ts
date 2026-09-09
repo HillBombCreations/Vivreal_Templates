@@ -1,0 +1,354 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+// Explicit .ts extension: runs under `node --experimental-strip-types --test`.
+import {
+  DEFAULT_DOMAIN_SEARCH_API,
+  DOMAIN_SEARCH_COPY,
+  FREE_YEAR_OFFER,
+  SIMPLE_GET_INIT,
+  VIVREAL_MARKETING_SITE_ID,
+  availabilityUrl,
+  domainSearchApiBase,
+  evaluateQuery,
+  messageForFailure,
+  normalizeQuery,
+  parseAvailability,
+  parseSuggestions,
+  registerHref,
+  servesPublicDomainSearch,
+  suggestionsUrl,
+} from './publicSearch.ts';
+
+// ─── The fleet gate ──────────────────────────────────────────────────────
+//
+// This is the highest-consequence assertion in the file. Vivreal_Templates is
+// one codebase for vivreal.io AND every customer site, promoted fleet-wide in
+// one action, and a static route under src/app/ outranks `[slug]`. Get this
+// wrong and a bakery's own domain grows a page selling Vivreal web addresses.
+
+test('the gate passes only the Vivreal marketing site', () => {
+  assert.equal(servesPublicDomainSearch(VIVREAL_MARKETING_SITE_ID), true);
+  assert.equal(servesPublicDomainSearch('6900a3f732b0727413c502b7'), false, 'comedy collective');
+  assert.equal(servesPublicDomainSearch('68adda65762dfc328d91382d'), false, 'waves of grain');
+});
+
+test('the gate fails closed on every shape of missing site id', () => {
+  for (const bad of [undefined, null, '', '   ', 0, false, {}, []] as unknown[]) {
+    assert.equal(
+      servesPublicDomainSearch(bad as string | null | undefined),
+      false,
+      `expected false for ${JSON.stringify(bad)}`,
+    );
+  }
+});
+
+test('the gate trims, because an Amplify env value can carry whitespace', () => {
+  assert.equal(servesPublicDomainSearch(` ${VIVREAL_MARKETING_SITE_ID}\n`), true);
+});
+
+test('the gate is not a prefix or substring match', () => {
+  assert.equal(servesPublicDomainSearch(`${VIVREAL_MARKETING_SITE_ID}0`), false);
+  assert.equal(servesPublicDomainSearch(VIVREAL_MARKETING_SITE_ID.slice(0, -1)), false);
+});
+
+test('the expected site id is overridable, so a re-created site is config not a deploy', () => {
+  assert.equal(servesPublicDomainSearch('abc123', 'abc123'), true);
+  assert.equal(servesPublicDomainSearch(VIVREAL_MARKETING_SITE_ID, 'abc123'), false);
+});
+
+// ─── The API base ────────────────────────────────────────────────────────
+
+test('the API base defaults to the live service', () => {
+  assert.equal(domainSearchApiBase(undefined), DEFAULT_DOMAIN_SEARCH_API);
+  assert.equal(domainSearchApiBase(''), DEFAULT_DOMAIN_SEARCH_API);
+  assert.equal(domainSearchApiBase('   '), DEFAULT_DOMAIN_SEARCH_API);
+});
+
+test('a trailing slash is stripped, or every request 404s on a doubled slash', () => {
+  assert.equal(domainSearchApiBase('https://example.test/'), 'https://example.test');
+  assert.equal(domainSearchApiBase('https://example.test///'), 'https://example.test');
+  assert.equal(
+    availabilityUrl('mybusiness.com', domainSearchApiBase('https://example.test/')),
+    'https://example.test/public/availability?domain=mybusiness.com',
+  );
+});
+
+test('both routes are built against the paths the service actually registers', () => {
+  // `src/main.js` ROUTES on vivreal-domain-search: /public/parked,
+  // /public/availability, /public/suggestions. The query parameter is `domain`,
+  // and it is the only one the origin request policy forwards.
+  assert.equal(
+    availabilityUrl('mybusiness.com', 'https://d.test'),
+    'https://d.test/public/availability?domain=mybusiness.com',
+  );
+  assert.equal(
+    suggestionsUrl('mybusiness.com', 'https://d.test'),
+    'https://d.test/public/suggestions?domain=mybusiness.com',
+  );
+});
+
+test('the domain is encoded, so a crafted value cannot add a query parameter', () => {
+  const url = availabilityUrl('a.com&domain=b.com', 'https://d.test');
+  assert.equal(url, 'https://d.test/public/availability?domain=a.com%26domain%3Db.com');
+  assert.equal(url.split('domain=').length - 1, 1, 'exactly one domain parameter');
+});
+
+// ─── The request has to stay a SIMPLE request ────────────────────────────
+//
+// The domain-search distribution allows GET and HEAD only and answers OPTIONS
+// with a 403 of its own, verified live 2026-09-08. Anything that makes the
+// browser preflight dies at the edge before the CORS policy is consulted, and
+// surfaces as a CORS error naming nothing. This is the guard on that.
+
+test('the fetch init carries nothing that would trigger a preflight', () => {
+  assert.equal(SIMPLE_GET_INIT.method, 'GET');
+  const keys = Object.keys(SIMPLE_GET_INIT);
+  assert.deepEqual(keys, ['method'], `unexpected init keys: ${keys.join(', ')}`);
+  assert.ok(Object.isFrozen(SIMPLE_GET_INIT), 'frozen, so a caller cannot add headers to it');
+});
+
+// ─── Input validation ────────────────────────────────────────────────────
+//
+// Behaviour ported from the portal's evaluateQuery. A name accepted here must
+// be a name the hub accepts after signup, or this page has made a promise the
+// next screen breaks.
+
+test('a plausible address passes', () => {
+  for (const good of ['mybusiness.com', 'my-business.co.uk', 'a1.io', 'x-y-z.net']) {
+    assert.equal(evaluateQuery(good).ok, true, good);
+  }
+});
+
+test('the rejections carry the hint the portal shows for the same input', () => {
+  assert.deepEqual(evaluateQuery(''), { ok: false, hint: null });
+  assert.deepEqual(evaluateQuery('mybusiness'), {
+    ok: false,
+    hint: 'Add an ending like .com, for example mybusiness.com',
+  });
+  assert.deepEqual(evaluateQuery('.com'), {
+    ok: false,
+    hint: 'Put a name before the ending, for example mybusiness.com',
+  });
+  assert.deepEqual(evaluateQuery('mybusiness.c'), {
+    ok: false,
+    hint: 'The ending needs at least two letters, like .com',
+  });
+  assert.deepEqual(evaluateQuery('my business.com'), {
+    ok: false,
+    hint: 'Use letters, numbers and dashes only',
+  });
+});
+
+test('case and padding do not change the verdict, and normalizeQuery is what is sent', () => {
+  assert.equal(evaluateQuery('  MyBusiness.COM  ').ok, true);
+  assert.equal(normalizeQuery('  MyBusiness.COM  '), 'mybusiness.com');
+});
+
+// ─── The handoff ─────────────────────────────────────────────────────────
+
+test('the register link is relative and carries the address the portal reads', () => {
+  // Relative because CloudFront routes /app and /app/* on this same host to the
+  // portal. An absolute URL would also force apex visitors through www.
+  const href = registerHref('mybusiness.com');
+  assert.equal(href, '/app/register?domain=mybusiness.com');
+  assert.ok(!href.startsWith('http'), 'must not be absolute');
+  assert.match(href, /^\/app\/register\?domain=/);
+});
+
+test('the register link encodes the address', () => {
+  assert.equal(
+    registerHref('a.com&next=/evil'),
+    '/app/register?domain=a.com%26next%3D%2Fevil',
+  );
+});
+
+// ─── Reading the service's answers ───────────────────────────────────────
+
+test('an available answer keeps its price', () => {
+  const parsed = parseAvailability({
+    domain: 'mybusiness.com',
+    status: 'available',
+    price: {
+      tld: 'com',
+      priceId: 'price_123',
+      unitAmount: 2500,
+      currency: 'usd',
+      displayPrice: '25.00',
+    },
+  });
+  assert.ok(parsed, 'expected a parsed answer');
+  assert.equal(parsed.status, 'available');
+  assert.ok(parsed.price, 'expected a price');
+  assert.equal(parsed.price.displayPrice, '25.00');
+  assert.equal(parsed.price.unitAmount, 2500);
+});
+
+test('a price is dropped from every status except available', () => {
+  // The service already guarantees this. Enforced again here because a price
+  // rendered beside an address we cannot sell is the exact failure the
+  // service's own header calls out.
+  for (const status of ['taken', 'unsupported', 'unknown'] as const) {
+    const parsed = parseAvailability({
+      domain: 'mybusiness.com',
+      status,
+      price: { tld: 'com', priceId: 'p', unitAmount: 2500, currency: 'usd', displayPrice: '25.00' },
+    });
+    assert.ok(parsed, status);
+    assert.equal(parsed.price, null, `${status} must carry no price`);
+  }
+});
+
+test('a malformed body is refused rather than guessed at', () => {
+  const bad: unknown[] = [
+    null,
+    undefined,
+    'available',
+    42,
+    {},
+    { domain: 'a.com' },
+    { status: 'available' },
+    { domain: '', status: 'available' },
+    { domain: 'a.com', status: 'maybe' },
+    { domain: 'a.com', status: 'AVAILABLE' },
+  ];
+  for (const raw of bad) {
+    assert.equal(parseAvailability(raw), null, `expected null for ${JSON.stringify(raw)}`);
+  }
+});
+
+test('an available answer with an unreadable price is available with no price', () => {
+  // Better than refusing the whole answer: the visitor still learns the name is
+  // free. The page renders no number rather than a wrong one.
+  const parsed = parseAvailability({
+    domain: 'a.com',
+    status: 'available',
+    price: { unitAmount: 'lots', displayPrice: '25.00' },
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.status, 'available');
+  assert.equal(parsed.price, null);
+});
+
+test('suggestions parse, and unpriced entries are dropped', () => {
+  const parsed = parseSuggestions({
+    domain: 'mybusiness.com',
+    suggestions: [
+      { domain: 'mybusiness.net', price: { tld: 'net', priceId: 'p1', unitAmount: 2500, currency: 'usd', displayPrice: '25.00' } },
+      { domain: 'mybusiness.us' },
+      { domain: '', price: { tld: 'com', priceId: 'p2', unitAmount: 2500, currency: 'usd', displayPrice: '25.00' } },
+      'nonsense',
+    ],
+  });
+  assert.ok(parsed, 'expected a list');
+  assert.equal(parsed.length, 1, 'exactly one usable suggestion survived');
+  assert.equal(parsed[0].domain, 'mybusiness.net');
+  assert.equal(parsed[0].price.displayPrice, '25.00');
+});
+
+test('an empty suggestion list is an answer, and a broken body is not', () => {
+  // These must never look the same on screen: one says "nothing close", the
+  // other says "we could not ask".
+  assert.deepEqual(parseSuggestions({ domain: 'a.com', suggestions: [] }), []);
+  assert.equal(parseSuggestions({ domain: 'a.com' }), null);
+  assert.equal(parseSuggestions({ domain: 'a.com', suggestions: 'none' }), null);
+  assert.equal(parseSuggestions(null), null);
+});
+
+// ─── Failure copy ────────────────────────────────────────────────────────
+//
+// This is the branch that runs TODAY. Both search routes 503 because
+// STRIPE_RESTRICTED_KEY is empty on the live function, so until that is fixed
+// every search on this page ends in messageForFailure().
+
+test('a failure never says anything about the address itself', () => {
+  for (const status of [null, 500, 502, 503, 504]) {
+    const message = messageForFailure(status);
+    assert.ok(message.length > 0);
+    for (const forbidden of ['taken', 'unavailable', 'available', 'free']) {
+      assert.ok(
+        !message.toLowerCase().includes(forbidden),
+        `"${forbidden}" in a failure message would answer a question nobody asked: ${message}`,
+      );
+    }
+  }
+});
+
+test('the 503 message says plainly that the name is not the problem', () => {
+  assert.match(messageForFailure(503), /Nothing is wrong with the name you typed/);
+});
+
+test('rate limiting and bad input get their own message', () => {
+  assert.match(messageForFailure(429), /Give it a minute/);
+  assert.match(messageForFailure(400), /mybusiness\.com/);
+  assert.notEqual(messageForFailure(429), messageForFailure(503));
+});
+
+// ─── The offer ───────────────────────────────────────────────────────────
+
+test('the free-year sentence is the portal\'s, byte for byte', () => {
+  // Source of truth: Vivreal_Portal_Mobile/src/lib/domains/freeYear.ts,
+  // FREE_YEAR_OFFER, itself built from DOMAIN_BUNDLE in
+  // @hillbombcreations/tier-quotas. Pinned as a literal here because a second
+  // private GitHub Packages dependency is a known way to break the fleet build.
+  // If this test fails, the portal changed the offer and this page is now
+  // contradicting it.
+  assert.equal(
+    FREE_YEAR_OFFER,
+    'Free for the first year on yearly Pro or Pro Plus, on addresses up to $25. One per account.',
+  );
+  assert.equal(DOMAIN_SEARCH_COPY.freeYearOffer, FREE_YEAR_OFFER);
+});
+
+test('the page claims no per-result entitlement', () => {
+  // A stranger has no tier, no subscription and no prior order, so the four
+  // conditions cannot be evaluated. Every phrasing below would assert one.
+  const all = Object.values(DOMAIN_SEARCH_COPY).join(' ').toLowerCase();
+  for (const claim of [
+    'your plan',
+    'your first year is free',
+    'this one is free',
+    'you qualify',
+    'covered',
+  ]) {
+    assert.ok(!all.includes(claim), `copy must not claim entitlement: "${claim}"`);
+  }
+});
+
+// ─── Voice ───────────────────────────────────────────────────────────────
+//
+// Same shape as frozenGate.test.ts. This page is the first thing a stranger
+// reads, so it gets the check the frozen page gets.
+
+test('copy obeys brand/voice.md: zero em dashes and zero en dashes', () => {
+  const values = Object.values(DOMAIN_SEARCH_COPY);
+  assert.ok(values.length > 0, 'copy map is empty, so this test would pass vacuously');
+  for (const value of values) {
+    assert.equal(value.includes('—'), false, `em dash found in: ${value}`);
+    assert.equal(value.includes('–'), false, `en dash found in: ${value}`);
+  }
+});
+
+test('copy is owner-visible language, with none of the words the brand guide bans', () => {
+  const all = Object.values(DOMAIN_SEARCH_COPY).join(' ').toLowerCase();
+  assert.ok(all.length > 0, 'copy map is empty, so this test would pass vacuously');
+  for (const jargon of [
+    'pwa',
+    'dns',
+    'tld',
+    'api',
+    'registrar',
+    'nameserver',
+    'schema',
+    'render',
+    'endpoint',
+    'domain registration',
+  ]) {
+    assert.ok(!all.includes(jargon), `jargon in customer copy: "${jargon}"`);
+  }
+});
+
+test('the copy says address, which is the word the rename settled on', () => {
+  assert.match(DOMAIN_SEARCH_COPY.heading, /web address/);
+  assert.match(DOMAIN_SEARCH_COPY.inputLabel, /address/);
+  assert.match(DOMAIN_SEARCH_COPY.choose, /address/);
+});
