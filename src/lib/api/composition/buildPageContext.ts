@@ -12,17 +12,28 @@ import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
 import { isPaymentsProvider } from '@/lib/payments';
-import { hasFormBlock, hasStaticContentBlock } from './pageEmptiness';
+import { decidePageEmptiness } from './pageEmptiness';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
   input: ComposePageInput;
   /**
-   * True when the composed body resolves to no content — the caller decides
-   * `notFound()` (generic formats only). Mirrors the live generic-page guard
-   * in `app/[slug]/page.tsx`.
+   * True when the composed body resolves to no content ON DATA THAT WAS READ.
+   * The caller decides `notFound()` (generic formats only). Mirrors the live
+   * generic-page guard in `app/[slug]/page.tsx`.
    */
   isEmpty: boolean;
+  /**
+   * True when the page's whole body would have been collection items and at
+   * least one of those reads FAILED, so emptiness is not knowable.
+   *
+   * Never true at the same time as `isEmpty`. A caller that would have answered
+   * `notFound()` must refuse instead: `[]` from a failed read used to be
+   * indistinguishable from `[]` from an empty collection, which is how an
+   * upstream wobble took real published pages off the site with a 404. See
+   * `../degradedRead.ts` and `./pageEmptiness.ts`.
+   */
+  emptinessUnknown: boolean;
 }
 
 interface BuildArgs {
@@ -62,11 +73,18 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const { collectionIds, integrationTypes } = collectBindingTargets(page);
 
   // 2. Fetch everything in parallel — server-side, already-signed.
+  //
+  // Every entry carries `degraded` alongside its items. That third slot is the
+  // whole fix: the fetch helpers swallow an upstream failure and hand back an
+  // empty envelope, so by the time these arrays exist a failed read and an
+  // empty collection are the same value and no amount of inspecting them can
+  // tell the two apart. Step 5 must not try; it reads the flag instead.
   const [collectionEntries, integrationEntries] = await Promise.all([
     Promise.all(
-      collectionIds.map(
-        async (id) => [id, (await getCollectionItems(id, { limit: 100 })).items] as const,
-      ),
+      collectionIds.map(async (id) => {
+        const { items, degraded } = await getCollectionItems(id, { limit: 100 });
+        return [id, items, degraded] as const;
+      }),
     ),
     Promise.all(
       integrationTypes.map(async (type) => {
@@ -75,15 +93,24 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
         // filter/sort/search (controlled query) applies. Other integrations
         // use the plain fetch.
         if (isPaymentsProvider(type) || page.format === 'products') {
-          return [type, await getProductsAsContentItems({ integrationType: type, ...productQuery })] as const;
+          const { items, degraded } = await getProductsAsContentItems({
+            integrationType: type,
+            ...productQuery,
+          });
+          return [type, items, degraded] as const;
         }
-        return [type, (await getIntegrationItems(type, { limit: 100 })).items] as const;
+        const { items, degraded } = await getIntegrationItems(type, { limit: 100 });
+        return [type, items, degraded] as const;
       }),
     ),
   ]);
 
-  const itemsByCollection = new Map<string, ContentItem[]>(collectionEntries);
-  const itemsByIntegration = new Map<string, ContentItem[]>(integrationEntries);
+  const itemsByCollection = new Map<string, ContentItem[]>(
+    collectionEntries.map(([id, items]) => [id, items]),
+  );
+  const itemsByIntegration = new Map<string, ContentItem[]>(
+    integrationEntries.map(([type, items]) => [type, items]),
+  );
 
   // 3. Sync getters over the prefetched maps. `getSignedUrl` omitted (see docblock).
   const data: PageDataContextValue = {
@@ -102,18 +129,27 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     options: { mode: 'live', emitSectionAnchors: false },
   };
 
-  // 5. Emptiness check for the generic-format `notFound()` parity.
-  // Predicates live in ./pageEmptiness (pure, node --test-able): a FORM block
-  // or a labels-bearing STATIC block is content with zero collection items BY
-  // DESIGN — see that module's docblocks (A Bakeshop Weddings/Tea-Time 404s).
-  const isEmpty =
-    !isHome &&
-    page.format !== 'static' &&
-    page.format !== 'checkout-success' &&
-    page.format !== 'checkout-cancel' &&
-    !hasFormBlock((page as { blocks?: unknown }).blocks) &&
-    !hasStaticContentBlock((page as { blocks?: unknown }).blocks) &&
-    [...itemsByCollection.values(), ...itemsByIntegration.values()].every((a) => a.length === 0);
+  // 5. Emptiness verdict for the generic-format `notFound()` parity.
+  //
+  // The decision itself lives in ./pageEmptiness (pure, node --test-able): a
+  // FORM block or a labels-bearing STATIC block is content with zero collection
+  // items BY DESIGN (see that module's docblocks, A Bakeshop Weddings/Tea-Time
+  // 404s), and a read that FAILED is not a collection that is empty.
+  //
+  // It used to be an inline expression ending in an `every()` length count
+  // over the two maps above, which is why it is a decision over `reads` here
+  // rather than over the maps: the maps hold only items, and the flag that says
+  // whether those items are an answer or a placeholder does not survive the
+  // trip into them.
+  const reads = [...collectionEntries, ...integrationEntries].map(
+    ([, items, degraded]) => ({ count: items.length, degraded }),
+  );
+  const { isEmpty, emptinessUnknown } = decidePageEmptiness({
+    isHome,
+    format: page.format,
+    blocks: (page as { blocks?: unknown }).blocks,
+    reads,
+  });
 
-  return { input, isEmpty };
+  return { input, isEmpty, emptinessUnknown };
 }

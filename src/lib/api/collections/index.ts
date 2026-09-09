@@ -8,6 +8,7 @@ import 'server-only';
 
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '../client';
 import { collectionTags, integrationTags } from '../cacheTags';
+import { readOrDegrade } from '../degradedRead';
 import { toContentItem } from './mapItem';
 import type { ContentItem } from '@/types/ContentItem';
 
@@ -33,7 +34,26 @@ interface FetchOpts {
 interface FetchResult {
   items: ContentItem[];
   totalCount: number;
+  /**
+   * True when VR_Client_API could not be read and `items` is a placeholder
+   * rather than an answer.
+   *
+   * The two states are IDENTICAL in the value (`[]` either way), so a caller
+   * that draws a conclusion from emptiness (a "this page does not exist"
+   * verdict, most of all) has to read this instead of counting. See
+   * `../degradedRead.ts` for why the distinction cannot be recovered from the
+   * payload, and `../composition/pageEmptiness.ts` for the one consumer whose
+   * verdict depends on it.
+   *
+   * Always present, never optional: an optional flag reads as `false` on a
+   * result built by a caller that has not been updated, which is exactly the
+   * fail-open this exists to prevent.
+   */
+  degraded: boolean;
 }
+
+/** A fresh, private empty envelope for one read's degraded sentinel. */
+const emptyPage = (): PaginatedResponse => ({ items: [], totalCount: 0 });
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -89,18 +109,23 @@ export async function getCollectionItems(
   const params = buildParams(opts);
   params.set('collectionId', collectionId);
 
-  const raw = await clientFetchCached<PaginatedResponse>(
-    `/tenant/collectionObjects?${params}`,
-    { items: [], totalCount: 0 },
-    SITE_CACHE_TTL_SECONDS,
-    undefined,
-    collectionTags(SITE_ID, collectionId)
+  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+    emptyPage,
+    (fallback) =>
+      clientFetchCached<PaginatedResponse>(
+        `/tenant/collectionObjects?${params}`,
+        fallback,
+        SITE_CACHE_TTL_SECONDS,
+        undefined,
+        collectionTags(SITE_ID, collectionId)
+      )
   );
 
   const { items, totalCount } = unwrap(raw);
   return {
     items: items.map((item) => toContentItem(item, 'collection')),
     totalCount,
+    degraded,
   };
 }
 
@@ -117,17 +142,22 @@ export async function getIntegrationItems(
   const params = buildParams(opts);
   params.set('type', type);
 
-  const raw = await clientFetchCached<PaginatedResponse>(
-    `/tenant/integrationObjects?${params}`,
-    { items: [], totalCount: 0 },
-    SITE_CACHE_TTL_SECONDS,
-    undefined,
-    integrationTags(SITE_ID, type)
+  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+    emptyPage,
+    (fallback) =>
+      clientFetchCached<PaginatedResponse>(
+        `/tenant/integrationObjects?${params}`,
+        fallback,
+        SITE_CACHE_TTL_SECONDS,
+        undefined,
+        integrationTags(SITE_ID, type)
+      )
   );
 
   const { items, totalCount } = unwrap(raw);
   return {
     items: items.map((item) => toContentItem(item, 'integration', type)),
     totalCount,
+    degraded,
   };
 }

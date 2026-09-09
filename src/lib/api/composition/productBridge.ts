@@ -1,7 +1,7 @@
 import 'server-only';
 
 import type { ContentItem } from '@hillbombcreations/site-renderer';
-import { getProducts } from '@/lib/api/products';
+import { getProductsRead } from '@/lib/api/products';
 import { getSafeFieldValue } from '@/lib/utils/variantUtils';
 
 /**
@@ -28,15 +28,20 @@ export async function getProductsAsContentItems(opts: {
   filters?: Record<string, string>;
   search?: string;
   sort?: string;
-}): Promise<ContentItem[]> {
-  const products = await getProducts({
+}): Promise<{ items: ContentItem[]; degraded: boolean }> {
+  // `getProductsRead`, not `getProducts`: the only consumer of this bridge is
+  // `buildPageContext`, whose emptiness verdict can end in a 404. An empty
+  // catalogue and a catalogue that could not be read are the same array here,
+  // so the flag has to travel with the items or the verdict is drawn from an
+  // absence. See ../degradedRead.ts.
+  const { products, degraded } = await getProductsRead({
     integrationType: opts.integrationType,
     filters: opts.filters,
     searchVal: opts.search,
     sortVal: opts.sort,
   });
 
-  return products.map((product) => {
+  const items = products.map((product) => {
     const defaultVariant = product.usingVariant?.values?.[0] ?? null;
     return {
       id: String(product._id ?? ''),
@@ -52,4 +57,6 @@ export async function getProductsAsContentItems(opts: {
       lowStockThreshold: product.lowStockThreshold,
     };
   });
+
+  return { items, degraded };
 }

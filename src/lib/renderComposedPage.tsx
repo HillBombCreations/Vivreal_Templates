@@ -11,6 +11,7 @@ import {
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
+import { refuseDegradedClaim } from '@/lib/api/siteData/degraded';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
 
@@ -180,11 +181,16 @@ export function renderComposedPage({
  * The slow half — collection fetches (buildPageContext) + composePage. Runs
  * behind the Suspense boundary above so the shell + skeleton flush first.
  *
- * notFound() note: the isEmpty guard now fires mid-stream (after the shell
+ * notFound() note: the isEmpty guard fires mid-stream (after the shell
  * flushed). Next.js handles a notFound() thrown during streaming by emitting a
  * client-side correction to the not-found boundary — the user still lands on
  * the 404 UI. Crawler-visible status for this edge (an EMPTY generic page) is
  * an accepted tradeoff for streaming the 99% case.
+ *
+ * That accepted tradeoff was only ever priced for a GENUINELY empty page, which
+ * is rare and whose 404 is correct. It was never priced for a page with real
+ * content whose collection read failed, and until `emptinessUnknown` existed
+ * that page took the same branch. See the guard below.
  */
 async function ComposedPageBody({
   siteData,
@@ -204,7 +210,7 @@ async function ComposedPageBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -213,8 +219,44 @@ async function ComposedPageBody({
 
   // SP-6 Task 5 isEmpty guard — only fires for generic formats.
   // Mirrors the guard in [slug]/page.tsx so the two stay in sync.
-  if (isEmpty && GENERIC_FORMATS.has(composedPage.format)) {
-    return notFound();
+  //
+  // The refusal is ordered FIRST, and the ordering is the fix. `isEmpty` used
+  // to be true whenever the collection read came back empty, and a read that
+  // FAILED comes back empty too (the fetch helpers swallow the error and return
+  // the caller's fallback). So a transient VR_Client_API wobble answered
+  // `notFound()` on real, published pages: a removal signal to every crawler,
+  // manufactured out of an absence of data. Same shape as the degraded
+  // site-data path (`@/lib/api/siteData/degraded`), but one layer down and on
+  // otherwise HEALTHY `siteData`, so the `assertUpstreamHealthy` guard the
+  // routes run above this boundary never sees it.
+  //
+  // Scoped to GENERIC_FORMATS on purpose, the same set the 404 was scoped to.
+  // Every other format renders whatever came back and asserts nothing about the
+  // page existing, so a refusal there would be a new behaviour change with its
+  // own blast radius rather than a fix for this one.
+  //
+  // WHAT THIS CANNOT DO, AND WHY IT IS STILL WORTH DOING. Per the GUARD NOTE on
+  // the boundary above, this component runs after the 200 shell has flushed, so
+  // neither branch here can set an HTTP status: the 404 was already a soft 404
+  // and the refusal is a soft 5xx. What DOES change is the body, and for a
+  // crawler the body is the signal that gets read. Google classifies a soft 404
+  // by content, and `not-found.tsx` renders literally "404 / Oops! Page not
+  // found", which is the canonical trigger. `error.tsx` renders "We're having
+  // trouble loading this page. Please try again in a moment", which is true and
+  // not a removal signal, and it captures to Sentry from the client on top of
+  // the server-side capture at the swallow.
+  //
+  // Setting a real status would mean resolving buildPageContext ABOVE the
+  // Suspense boundary, which deletes the streaming split for every generic page
+  // to buy a correct status on a rare edge. Recorded, not taken.
+  if (GENERIC_FORMATS.has(composedPage.format)) {
+    if (emptinessUnknown) {
+      refuseDegradedClaim(
+        'a page-missing (404) verdict for a generic page',
+        'the collection items for this page are UNKNOWN (siteData itself is healthy)',
+      );
+    }
+    if (isEmpty) return notFound();
   }
 
   // Mirror ComposedFormatBody ([slug]/page.tsx): inject the live component

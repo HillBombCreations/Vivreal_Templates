@@ -7,7 +7,7 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, refuseDegradedClaim } from "@/lib/api/siteData/degraded";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
@@ -638,7 +638,7 @@ async function ComposedFormatBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -650,8 +650,29 @@ async function ComposedFormatBody({
   // that fall through to buildGenericSections (not static/checkout/shows etc —
   // those have non-empty content by definition or their own empty handling).
   // buildPageContext.isEmpty already excludes static/checkout-success/-cancel.
-  if (isEmpty && (format === "standard" || format === "list" || format === "grid")) {
-    return notFound();
+  //
+  // REACHABILITY, measured rather than assumed: standard / list / grid all
+  // return early through `renderComposedPage` at the generic arm above, so this
+  // copy of the guard cannot currently fire for any of the three formats it
+  // tests. It is the same dead-but-maintained arm the transitional title band
+  // above documents, and it is kept in lockstep for the same reason: the
+  // conditions under which the early return narrows are not this file's to
+  // predict, and a stale copy of a 404 rule is how the band drifted.
+  //
+  // The LIVE copy, and the full reasoning for the ordering, the GENERIC_FORMATS
+  // scope and what a mid-stream refusal can and cannot set, is
+  // `src/lib/renderComposedPage.tsx`. In one line: a failed collection read
+  // resolves to `[]` exactly as an empty collection does, so `isEmpty` alone
+  // turned an upstream wobble into a 404 on real published pages. Refuse first,
+  // 404 only on data that was actually read.
+  if (format === "standard" || format === "list" || format === "grid") {
+    if (emptinessUnknown) {
+      refuseDegradedClaim(
+        "a page-missing (404) verdict for a generic page",
+        "the collection items for this page are UNKNOWN (siteData itself is healthy)",
+      );
+    }
+    if (isEmpty) return notFound();
   }
 
   return (

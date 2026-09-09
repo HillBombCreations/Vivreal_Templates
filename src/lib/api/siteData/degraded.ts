@@ -70,10 +70,22 @@ import type { SiteData } from '@/types/SiteData';
 export class DegradedUpstreamError extends Error {
   readonly surface: string;
 
-  constructor(surface: string) {
+  /**
+   * `whatIsUnknown` completes the sentence "VR_Client_API did not answer, so
+   * ...", and it is a parameter because this error now covers TWO roots that a
+   * reader has to be able to tell apart from the Sentry title alone.
+   *
+   * The default is the `getSiteData()` root: `FALLBACK_SITE_DATA`, where the
+   * lifecycle and the page list really are unknown. The other root is a failed
+   * COLLECTION read on a site whose `siteDetails` came back perfectly healthy
+   * (`../degradedRead.ts`), where saying the page list is unknown would send
+   * whoever reads this to the wrong layer. Defaulted, so every existing call
+   * site is byte-identical.
+   */
+  constructor(surface: string, whatIsUnknown = 'the site lifecycle and page list are UNKNOWN') {
     super(
-      `Refusing to serve ${surface} from degraded site data. ` +
-        'VR_Client_API did not answer, so the site lifecycle and page list are UNKNOWN. ' +
+      `Refusing to serve ${surface} from degraded upstream data. ` +
+        `VR_Client_API did not answer, so ${whatIsUnknown}. ` +
         'Serving a durable SEO claim from this state is how a transient outage deindexes a live site.',
     );
     this.name = 'DegradedUpstreamError';
@@ -104,8 +116,8 @@ export const isDegradedSiteData = (
  * Callers should use this rather than throwing inline so every refusal in the
  * app is the same type and names its surface.
  */
-export function refuseDegradedClaim(surface: string): never {
-  throw new DegradedUpstreamError(surface);
+export function refuseDegradedClaim(surface: string, whatIsUnknown?: string): never {
+  throw new DegradedUpstreamError(surface, whatIsUnknown);
 }
 
 /**

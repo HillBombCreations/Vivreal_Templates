@@ -1,6 +1,10 @@
 import "server-only";
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS, readBotVerdict } from "../client";
 import { BOT_VERDICT_HEADER } from "../../botVerdict";
+// A failed read and an empty catalogue are the same value once the fetch helper
+// has swallowed the error, so any caller that concludes something from
+// emptiness has to be told which one it got. See ../degradedRead.ts.
+import { readOrDegrade } from "../degradedRead";
 // Pure raw → Product mapping lives in its own module so it can be unit-tested
 // under plain Node (`node --test`) — this file is `server-only` and cannot be
 // loaded there. Same split as `../collections/mapItem.ts`.
@@ -43,12 +47,27 @@ function unwrapItems(raw: PaginatedResponse | Record<string, unknown>[]): Record
   return (raw as PaginatedResponse)?.items ?? [];
 }
 
-export async function getProducts(opts?: {
+export interface ProductsOpts {
   filters?: Record<string, string>;
   searchVal?: string;
   sortVal?: string;
   integrationType?: string;
-}): Promise<Product[]> {
+}
+
+/**
+ * The products read, WITH whether it actually happened.
+ *
+ * `getProducts` below is the value-only view of this, for the callers that have
+ * no verdict to draw from an empty result. Anything that could turn "no
+ * products" into a claim (the generic-format 404 in
+ * `../composition/pageEmptiness.ts`, reached through the products bridge) must
+ * use this one: a storefront group composes onto ordinary `grid` and `list`
+ * pages, so a degraded products read can reach that 404 exactly as a degraded
+ * collection read can.
+ */
+export async function getProductsRead(
+  opts?: ProductsOpts,
+): Promise<{ products: Product[]; degraded: boolean }> {
   const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
@@ -59,14 +78,27 @@ export async function getProducts(opts?: {
   // CACHE MISS -- which is the correct and sufficient scope: a repeat/
   // cached bot hit was never going to be captured a second time anyway.
   const botVerdict = await readBotVerdict();
-  const raw = await clientFetchCached<PaginatedResponse>(
-    `/tenant/integrationObjects?${params}`,
-    { items: [], totalCount: 0 },
-    SITE_CACHE_TTL_SECONDS,
-    { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
-    productTags(type)
+  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+    () => ({ items: [], totalCount: 0 }),
+    (fallback) =>
+      clientFetchCached<PaginatedResponse>(
+        `/tenant/integrationObjects?${params}`,
+        fallback,
+        SITE_CACHE_TTL_SECONDS,
+        { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
+        productTags(type)
+      )
   );
-  return unwrapItems(raw).map(transformProduct);
+  return { products: unwrapItems(raw).map(transformProduct), degraded };
+}
+
+/**
+ * Products only, for callers that render what came back and conclude nothing
+ * from an empty list. `getProductById` is one: it answers "not this id", which
+ * is already the honest answer when the catalogue could not be read.
+ */
+export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
+  return (await getProductsRead(opts)).products;
 }
 
 export async function getProductById(productId: string, integrationType?: string): Promise<Product | null> {
