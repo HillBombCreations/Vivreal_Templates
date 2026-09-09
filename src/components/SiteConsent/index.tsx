@@ -120,8 +120,8 @@ export default function SiteConsent({
             <p className="text-sm" style={{ color: 'var(--text-primary, #111111)' }}>
               We use cookies and similar technologies to analyse how this site is used, to
               improve it, and for marketing. If you accept, we also use a business-visitor
-              identification service that may work out who you are — your name, work email
-              and employer — from your device and network, even if you never fill in a form,
+              identification service that may work out who you are (your name, work email
+              and employer) from your device and network, even if you never fill in a form,
               and we may contact you about Vivreal. See our{' '}
               <Link
                 href="/privacy"
@@ -170,7 +170,7 @@ export default function SiteConsent({
           type="button"
           onClick={onWithdraw}
           className="underline cursor-pointer"
-          aria-label="Cookie settings — withdraw or change your consent"
+          aria-label="Cookie settings. Withdraw or change your consent"
         >
           Cookie settings
         </button>
