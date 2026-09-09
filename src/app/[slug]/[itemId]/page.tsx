@@ -60,6 +60,7 @@ import {
   servesCollectionDetail,
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
+import { plainMeta } from "@/lib/seo/plainMeta";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -697,7 +698,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // recipes back to today's `"products"` on purpose — see its doc comment.
       format: detailJsonLdFormat(pageConfig.format),
       title: effectiveItem.title || pageConfig.name,
-      description: cleanDesc ?? recipe?.summary,
+      // Same C15 defect one field over: `cleanDesc` strips the ITEM's
+      // description, and the fallback reached the recipe `summary` raw. This
+      // value is embedded in long-lived Recipe JSON-LD that crawler caches
+      // outlive, so shipping markup here is worse than shipping it in a meta
+      // tag. 500, not 160: JSON-LD has room and is not a preview card.
+      description: cleanDesc ?? plainMeta(recipe?.summary, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
@@ -1113,15 +1119,21 @@ export async function generateMetadata({ params }: Props) {
         // the fleet on the next promote-stable, which is a real SEO change and
         // not this feature's to make.
         const derivedTitleBase = isRecipe && itemTitle ? itemTitle : pageConfig.name;
+        // Walk 4 C15. `summary` is declared `longText`, the rich-text widget,
+        // so it legitimately holds HTML, and `readRecipeFields`'s `toText` is
+        // trim-only. Sliced raw, the FIRST 160 characters of a recipe intro are
+        // typically `<p>` and the opening words, which is what a pasted link
+        // previewed with. `plainMeta` strips the tags and decodes the entities;
+        // see its header for why the decode is not optional.
         const recipeSummary = isRecipe
-          ? readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary
+          ? plainMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary, 160)
           : undefined;
 
         const title = seo?.metaTitle || patternTitle || `${derivedTitleBase} | ${siteName}`;
         const description =
           seo?.metaDescription ||
           patternDescription ||
-          recipeSummary?.slice(0, 160) ||
+          recipeSummary ||
           pageConfig.labels?.subtitle ||
           `${derivedTitleBase} | ${siteName}`;
 
