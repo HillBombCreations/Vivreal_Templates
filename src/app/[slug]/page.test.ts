@@ -36,6 +36,20 @@ test('recipes is a recognised page format', () => {
   assert.match(source, /^\s*"recipes",$/m, 'the recipes library page must be routable');
 });
 
+test('the search results page must be routable AND must receive the query', () => {
+  // Two halves of one change. Route recognition alone serves the page's
+  // collection UNFILTERED at every URL — a search that always returns
+  // everything, which reads as working and is worse than the soft-404 the
+  // comment above describes. Neither half is worth having without the other,
+  // so both are pinned in one test.
+  assert.match(source, /^\s*"lookup",$/m, 'the search results page is not a recognized route');
+  assert.match(
+    source,
+    /lookupQuery: readLookupQuery\(sp, composedPage\)/,
+    'the results page is routable but never sees ?q=',
+  );
+});
+
 test('the robots policy is no longer decided inline in the route module', () => {
   // The pre-change form. Inline, it could only ever see the author-set flag, so
   // the Stripe checkout result pages emitted no `noindex` at all — and being

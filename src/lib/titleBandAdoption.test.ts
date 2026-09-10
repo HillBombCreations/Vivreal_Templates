@@ -307,9 +307,26 @@ const LIGHT_HTML =
   '<p class="mt-2 text-lg text-muted-foreground">Who we are</p>' +
   '</header></div>';
 
+/*
+ * DELIBERATE DIVERGENCE FROM THE ORIGINAL MIGRATION SNAPSHOT, 2026-09-09.
+ *
+ * The dark ground used to be `var(--surface-alt, #1a1a2e)`. That was a defect,
+ * not a style: `--surface-alt` is a CONTENT-PANEL token that four of the six
+ * palette presets author LIGHT, and a `var()` fallback only applies when the
+ * property is UNSET, so the dark literal never once rescued a real site.
+ * Measured on help.vivreal.io, whose `--surface-alt` is #eeeff0: white
+ * `--text-inverse` over that ground is 1.15:1 against a 4.5 floor, on all 60
+ * article pages.
+ *
+ * The parity CLAIM this file makes is unchanged and still enforced -- Templates
+ * paints exactly what the renderer paints, byte for byte. Only the bytes moved,
+ * and they moved because the renderer fixed the band. See
+ * `composition/titleBand.tsx` for the fleet law ("a dark band must never read
+ * --surface-alt") this restores.
+ */
 const DARK_HTML =
-  '<div style="background:linear-gradient(135deg, var(--surface-alt, #1a1a2e), ' +
-  'color-mix(in srgb, var(--surface-alt, #1a1a2e) 88%, var(--primary, #111)))">' +
+  '<div style="background:linear-gradient(135deg, #0f1729, ' +
+  'color-mix(in srgb, #0f1729 88%, var(--primary, #111)))">' +
   '<div class="content-grid pt-32 pb-16 text-center">' +
   '<h1 class="text-3xl md:text-5xl font-bold tracking-tight" ' +
   'style="color:var(--text-inverse, #ffffff);font-family:var(--font-display)">About us</h1>' +
