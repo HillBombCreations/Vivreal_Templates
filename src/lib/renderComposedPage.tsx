@@ -90,6 +90,7 @@ export function renderComposedPage({
   composedPage,
   components,
   productQuery,
+  lookupQuery,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -104,6 +105,16 @@ export function renderComposedPage({
   components?: ComposeComponents;
   /** Server-side products query (f_/search/sort) for the storefront round-trip. */
   productQuery?: ProductQuery;
+  /**
+   * The reader's search query on a `format:'lookup'` page (help-site kit 5.6).
+   *
+   * `composePage` has no request, so this is the only channel the results
+   * grammar has to the URL. Undefined on every other format — and, on a lookup
+   * page reached with no query, undefined is CORRECT and means "show the whole
+   * collection", which is the landing state of a results page nobody has
+   * searched yet.
+   */
+  lookupQuery?: string;
 }) {
   // SP-6 Task 5 Concern-3: transitional title band (B-wrapper fallback).
   //
@@ -183,6 +194,7 @@ export function renderComposedPage({
           composedPage={composedPage}
           components={components}
           productQuery={productQuery}
+          lookupQuery={lookupQuery}
           suppressSrTitle={showTransitionalTitleBand}
         />
       </Suspense>
@@ -211,12 +223,15 @@ async function ComposedPageBody({
   composedPage,
   components,
   productQuery,
+  lookupQuery,
   suppressSrTitle,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
   components?: ComposeComponents;
   productQuery?: ProductQuery;
+  /** The reader's `?q=` on a `format:'lookup'` page. See renderComposedPage. */
+  lookupQuery?: string;
   /**
    * §11.8 (renderer ≥1.45.1): true when the transitional title band above
    * already renders the page-title h1 — composePage must not add its sr-only
@@ -279,6 +294,11 @@ async function ComposedPageBody({
     ...(components ? { components } : {}),
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
+    // Only when a query was actually read, so every non-lookup format's options
+    // object stays byte-identical and composePage's own `format === 'lookup'`
+    // gate stays the thing that decides whether any of this runs.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(lookupQuery !== undefined ? ({ lookupQuery } as any) : {}),
   };
   return (
     <>

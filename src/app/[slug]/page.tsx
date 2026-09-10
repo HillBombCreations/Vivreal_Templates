@@ -28,6 +28,7 @@ import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
+import { readLookupQuery } from "@/lib/composition/lookupQuery";
 import type { PageConfig, SiteData } from "@/types/SiteData";
 // S2/OD#3 — schedule view type for ?view= param validation.
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
@@ -223,6 +224,20 @@ const COMPOSE_FORMATS = new Set<string>([
   // `[slug]/[itemId]/page.tsx` would resolve every recipe under a library page
   // that itself reads as missing. The two lines belong in one change.
   "recipes",
+  // lookup → the SEARCH RESULTS page (help-site kit 5.6). The renderer has
+  // shipped the whole grammar since 1.66 (`composition/lookup.tsx`): it ranks
+  // the bound collection against the query SERVER-SIDE and hands the binding
+  // the ranked subset, so the results page is crawlable, shareable by URL and
+  // works with JavaScript off. None of that was reachable, because this Set is
+  // what decides whether the route exists at all, and per the `intake` /
+  // `pricing` / `recipes` notes above the failure mode of omitting it is HTTP
+  // 200 with a soft-404 body.
+  //
+  // It travels with the `lookupQuery` thread below. Route recognition without
+  // the query would serve the page's UNFILTERED collection at every URL, which
+  // is worse than a 404: a search that always returns everything looks like it
+  // worked. The two changes are one change.
+  "lookup",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -469,7 +484,11 @@ export default async function DynamicPage({
         // renders the bare uncontrolled arm — no CartAdapter, so Add/Buy
         // silently no-op (the first live Square E2E finding).
         format === "booking-hub" ||
-        format === "quiz"
+        format === "quiz" ||
+        // lookup (help-site kit 5.6) — the search RESULTS page. It composes
+        // exactly like `collection-list`; the only thing that makes it a
+        // results page is the `lookupQuery` threaded through below.
+        format === "lookup"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page
@@ -484,6 +503,7 @@ export default async function DynamicPage({
           composedPage,
           components: LIVE_PRODUCTS_OVERRIDES,
           productQuery: parseProductQuery(sp),
+          lookupQuery: readLookupQuery(sp, composedPage),
         });
       }
     }
