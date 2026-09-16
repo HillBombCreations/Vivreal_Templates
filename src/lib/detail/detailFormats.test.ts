@@ -51,3 +51,14 @@ test('every other format keeps emitting what it emits today', () => {
   assert.equal(detailJsonLdFormat('location-hub'), 'products');
   assert.equal(detailJsonLdFormat(undefined), 'products');
 });
+
+test('Phase 0.4: a catalog page is served by the collection detail arm (D3)', () => {
+  // Renderer 1.72.0 links a catalog tile with no order link to /<slug>/<id>.
+  // Without this the route falls through to notFound() and every such tile
+  // opens a 404. This must reach main before the renderer bump does.
+  assert.equal(servesCollectionDetail({ format: 'catalog' }), true);
+});
+
+test('a products page without a collection id is still not a collection page', () => {
+  assert.equal(servesCollectionDetail({ format: 'products' }), false);
+});
