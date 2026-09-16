@@ -7,6 +7,7 @@ import { getSiteData } from "@/lib/api/siteData";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import Link from "next/link";
+import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import { JsonLd } from "@/components/JsonLd";
 import {
   DOMAIN_GUIDE as GUIDE,
@@ -68,6 +69,23 @@ import {
 // route in the app.
 export const revalidate = 300;
 
+/**
+ * The masthead this route actually has, described for the header.
+ *
+ * vivreal.io's header is `transparent-on-hero`. The Navbar shell picks its ink
+ * from the CURRENT page's authored hero (`resolveMastheadTone`), and a route
+ * with no CMS page passes none, so the header kept its over-a-photo styling:
+ * white logo and links on this page's white top. Live on 2026-09-16 that read
+ * as no logo and no menu at all, only the Start Free button.
+ *
+ * This page's top IS a plain light masthead with no media, which is exactly
+ * what `{ hero: { variant: 'minimal' } }` means to the renderer (gradient by
+ * default, a surface variant, so `'light'`), and a light masthead lands the
+ * header on its solid token set. Nothing else on the object is read:
+ * `resolveHeaderPinned` sees no bindings and keeps the header pinned.
+ */
+const LIGHT_MASTHEAD = { hero: { variant: "minimal" } } as unknown as RendererPageConfig;
+
 export async function generateMetadata(): Promise<Metadata> {
   // Same gate as the page, for the same reason `src/app/page.tsx` gives: without
   // it a gate-off build would still run this function and make a `siteDetails`
@@ -94,7 +112,7 @@ export default async function DomainsPage() {
 
   return (
     <>
-      <Navbar />
+      <Navbar page={LIGHT_MASTHEAD} />
       <main className="content-grid py-16 md:py-24">
         <div className="mx-auto w-full max-w-2xl text-center">
           <h1 className="text-3xl font-bold tracking-tight md:text-4xl">{COPY.heading}</h1>
