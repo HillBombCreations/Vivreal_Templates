@@ -24,8 +24,11 @@ export const RECIPES_FORMAT = 'recipes';
  * silently). So a format that has no arm here does not degrade: every one of
  * its item URLs is a 404. `recipes` is listed for exactly that reason.
  *
- * The three clauses, in the order the route evaluates them:
+ * The four clauses, in the order the route evaluates them:
  *   - `collection-list` — the original generic-collection arm.
+ *   - `catalog`         — Storefront Phase 0.4 (D3). A catalog tile with no
+ *                         authored order link now opens its item, which is an
+ *                         ordinary collection object this arm already serves.
  *   - `recipes`         — a recipe is an ordinary collection object; the arm
  *                         serves it unchanged and passes the format straight
  *                         through to `DetailPageTemplate`, which resolves the
@@ -39,6 +42,7 @@ export function servesCollectionDetail(page: {
 }): boolean {
   return (
     page.format === 'collection-list' ||
+    page.format === 'catalog' ||
     page.format === RECIPES_FORMAT ||
     !!page.detailPage?.itemCollectionId
   );
