@@ -20,6 +20,7 @@
  * `client.ts` remains the only place that reads `API_KEY`.
  */
 import { PREVIEW_FORWARD_HEADER } from './previewToken.ts';
+import { describeNetworkError, fetchWithReconnect } from './fetchWithReconnect.ts';
 
 /** Where to send the request, and what to authenticate it with. */
 export interface ClientApiConfig {
@@ -178,11 +179,21 @@ export async function doClientFetch<T>(
 ): Promise<T> {
   const url = `${config.baseUrl}${path}`;
 
-  const res = await fetch(url, {
-    ...init,
-    headers: buildClientFetchHeaders(config.apiKey, previewToken, init?.headers),
-    cache: 'no-store',
-  });
+  // A GET whose pooled socket died while Amplify had the process frozen fails
+  // before reaching VR_Client_API; retry it on a fresh connection instead of
+  // serving degraded data (see `./fetchWithReconnect.ts` for the measurements).
+  const res = await fetchWithReconnect(
+    url,
+    {
+      ...init,
+      headers: buildClientFetchHeaders(config.apiKey, previewToken, init?.headers),
+      cache: 'no-store',
+    },
+    {
+      onRetry: (err, retry) =>
+        console.warn(`[clientFetch] connection failed on ${url} (${describeNetworkError(err)}), retry ${retry}`),
+    },
+  );
 
   if (!res.ok) {
     // Read the body BEFORE throwing. Until v2.6.2 this module discarded it

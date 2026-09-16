@@ -554,3 +554,100 @@ test('isSiteFrozen: reading it never issues a network call', () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Amplify compute freezes the process between requests (2026-09-16, measured
+// on Dougs Kitchen, The Comedy Collective and Waves of Grain). Two failures
+// followed from that, and both must stay fixed.
+
+/** What undici throws when a pooled socket died while the process was frozen. */
+function deadSocket(code = 'ECONNRESET'): TypeError {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) });
+}
+
+test('getEdgeSiteMap: a connection that died during a freeze is retried and the map loads', async () => {
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  let calls = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => {
+    calls += 1;
+    if (calls === 1) throw deadSocket('ETIMEDOUT');
+    return new Response(okBody, { status: 200 });
+  };
+  console.warn = () => {};
+  try {
+    const map = await getEdgeSiteMap();
+    assert.ok(map, 'a single dead socket must not fail the whole refresh open');
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+  }
+});
+
+test('getEdgeSiteMap: a freeze in the middle of the fetch does not abort it on thaw', async (t) => {
+  // Production: 33 of 40 edgeSiteMap aborts were logged 1 to 194 ms after an
+  // invocation started, because the 800 ms wall-clock timer ran out while the
+  // process was frozen and fired on thaw. Here a minute passes on the clock
+  // while the fetch is pending, then the process "thaws" and the fetch answers.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const gate: { release?: () => void } = {};
+  let aborted = false;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
+    new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => {
+        aborted = true;
+        reject(new DOMException('This operation was aborted', 'AbortError'));
+      });
+      gate.release = () => resolve(new Response(okBody, { status: 200 }));
+    });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  try {
+    const pending = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(gate.release, 'the fetch has started');
+
+    t.mock.timers.setTime(Date.now() + 60_000); // frozen for a minute
+    t.mock.timers.tick(100); // thawed: every overdue timer fires now
+    assert.equal(aborted, false, 'the thaw must not abort a fetch that never got its 800 ms');
+
+    gate.release!();
+    const map = await pending;
+    assert.ok(map, 'the refresh completes after the thaw');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('getEdgeSiteMap: a fetch that is genuinely slow while awake is still aborted at 800 ms', async (t) => {
+  // The bound the timeout exists for: a cold-cache request must not block on a
+  // hung upstream. Awake time still counts in full.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('This operation was aborted', 'AbortError')),
+      );
+    });
+  console.error = () => {};
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  try {
+    const pending = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+    for (let i = 0; i < 9; i += 1) t.mock.timers.tick(100);
+    const map = await pending;
+    assert.equal(map, null, 'awake for 900 ms with no answer fails open');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});

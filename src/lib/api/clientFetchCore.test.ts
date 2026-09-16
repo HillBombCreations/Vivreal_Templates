@@ -326,3 +326,46 @@ test('isQuotaError stays 402-only and is not swayed by a code', async () => {
     (err: unknown) => err instanceof ApiError && !isQuotaError(err),
   );
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2026-09-16: after a freeze, the first request on an Amplify compute instance
+// can hit a dead pooled socket (`write ETIMEDOUT` on The Comedy Collective,
+// `ECONNRESET` on Waves of Grain). That fell straight through to degraded data
+// and made robots.txt refuse; the next request always succeeded.
+
+function deadSocket(code = 'ECONNRESET'): TypeError {
+  return new TypeError('fetch failed', { cause: Object.assign(new Error(code), { code }) });
+}
+
+test('a GET that hits a dead pooled socket is retried and the envelope is unwrapped', async () => {
+  let calls = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => {
+    calls += 1;
+    if (calls === 1) throw deadSocket('ETIMEDOUT');
+    return new Response(JSON.stringify({ success: true, data: { ok: 1 }, error: null }), { status: 200 });
+  };
+  const originalWarn = console.warn;
+  const warnings: string[] = [];
+  console.warn = (msg: string) => warnings.push(msg);
+  try {
+    const data = await doClientFetch<{ ok: number }>(CONFIG, '/tenant/siteDetails?siteId=s', null);
+    assert.deepEqual(data, { ok: 1 });
+    assert.equal(calls, 2);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /ETIMEDOUT/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
+test('a POST that hits a dead socket is not replayed', async () => {
+  let calls = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => {
+    calls += 1;
+    throw deadSocket();
+  };
+  await assert.rejects(() => doClientFetch(CONFIG, '/tenant/x', null, { method: 'POST', body: '{}' }));
+  assert.equal(calls, 1);
+});
