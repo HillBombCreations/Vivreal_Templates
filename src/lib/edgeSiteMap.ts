@@ -17,6 +17,8 @@
  * request that triggered it).
  */
 import type { SiteRedirect } from '@/lib/redirects';
+import { describeNetworkError, fetchWithReconnect } from './api/fetchWithReconnect.ts';
+import { startAwakeTimeout } from './awakeTimeout.ts';
 
 const CLIENT_API_URL = process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 // API_KEY/SITE_ID are read INSIDE fetchSiteMap (call-time), not hoisted to a
@@ -32,6 +34,12 @@ const CLIENT_API_URL = process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.viv
 // Exported so tests can force staleness (Date.now() - TTL_MS - 1) without
 // waiting 300s of real time.
 export const TTL_MS = 300_000;
+// Measured in AWAKE time (`./awakeTimeout.ts`), not wall time. Amplify compute
+// freezes the process between requests, and a wall-clock 800 ms armed by a
+// background refresh fired on thaw before the fetch could resume: 33 of 40
+// aborts on three live sites (2026-09-16) were logged 1 to 194 ms into the
+// next invocation. The bound still holds for a cold-cache request, which is
+// awake the whole time it waits.
 const FETCH_TIMEOUT_MS = 800;
 
 // Negative-cache window (review pass 1 hardening note): on SUSTAINED
@@ -286,14 +294,20 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = startAwakeTimeout(FETCH_TIMEOUT_MS, () => controller.abort());
   try {
-    const res = await fetch(
+    // A pooled socket that died while the process was frozen fails fast;
+    // `fetchWithReconnect` tries a fresh connection inside the same budget.
+    const res = await fetchWithReconnect(
       `${CLIENT_API_URL}/tenant/siteDetails?siteId=${encodeURIComponent(siteId)}`,
       {
         headers: { Authorization: apiKey },
         signal: controller.signal,
         cache: 'no-store',
+      },
+      {
+        onRetry: (err, retry) =>
+          console.warn(`[edgeSiteMap] connection failed (${describeNetworkError(err)}), retry ${retry}`),
       },
     );
     if (!res.ok) {
@@ -327,13 +341,14 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
     frozenState = { frozen: false, observedAt: Date.now() };
     return { slugs, redirects };
   } catch (err) {
-    // Deliberate fail-open: network error, the 800ms abort-timeout, or a
-    // malformed body must never throw out of middleware — a throw there
+    // Deliberate fail-open: a network error that survived the reconnect
+    // retries, the 800ms awake-time abort, or a malformed body must never
+    // throw out of middleware — a throw there
     // takes the whole request down on EVERY route. Log and fall back.
     console.error('[edgeSiteMap] fetch failed, failing open:', err);
     return null;
   } finally {
-    clearTimeout(timeout);
+    timeout.cancel();
   }
 }
 
@@ -348,7 +363,7 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
  * - Cold cache (first request on this instance, no prior `cache` entry):
  *   every concurrent caller observes `cache === null` and falls through to
  *   `return inFlight` at the bottom — ALL of them await the shared,
- *   deduped promise, bounded by the 800ms AbortController timeout in
+ *   deduped promise, bounded by the 800ms awake-time abort in
  *   `fetchSiteMap`. Only a warm cache (fresh or stale) ever avoids blocking.
  * - Any failure: returns the last-known value, or `null` if there is none.
  *   `middleware.ts` treats `null` as "fall through, do nothing" — never as
