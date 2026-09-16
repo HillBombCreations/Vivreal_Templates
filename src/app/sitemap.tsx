@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { getSiteMap } from '@/lib/api/siteData';
 import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
+import { withDomainsSitemapEntry } from '@/lib/domains/publicSearch';
 
 // ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -17,7 +18,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteMap = await getSiteMap();
 
   if (Array.isArray(siteMap)) {
-    return siteMap;
+    // `/domains` is a route, not a CMS page, so the CMS-built map never lists
+    // it. Gated to the Vivreal marketing deployment like the page itself.
+    return withDomainsSitemapEntry(siteMap, process.env.SITE_ID, (url) => ({
+      url,
+      changeFrequency: 'monthly',
+      priority: 0.8,
+    }));
   }
 
   return [];

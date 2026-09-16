@@ -234,11 +234,14 @@ function Answer({
       <div className="rounded-xl border border-black/15 p-4">
         <p className="flex items-start gap-2 text-[15px] font-medium">
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          {/* break-all, for the reason the portal's rows give: at 390px a long
-              address loses more than half of itself and two results in the same
-              search start to look identical. */}
-          <span className="break-all">
-            {answer.domain} {COPY.availableSuffix}
+          {/* break-all on the ADDRESS only, for the reason the portal's rows give:
+              at 390px a long address loses more than half of itself and two
+              results in the same search start to look identical. It used to wrap
+              the whole sentence, which split the words after it too ("free to ta /
+              ke." at 390, seen live 2026-09-16). The taken and unknown lines below
+              already scope it this way. */}
+          <span>
+            <span className="break-all">{answer.domain}</span> {COPY.availableSuffix}
           </span>
         </p>
         <div className="mt-3">

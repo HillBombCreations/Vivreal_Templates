@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`.
 import {
   DEFAULT_DOMAIN_SEARCH_API,
+  DOMAIN_GUIDE,
   DOMAIN_SEARCH_COPY,
+  domainFaqSchema,
+  domainGuideStrings,
+  withDomainsSitemapEntry,
   FREE_YEAR_OFFER,
   SIMPLE_GET_INIT,
   VIVREAL_MARKETING_SITE_ID,
@@ -351,4 +355,100 @@ test('the copy says address, which is the word the rename settled on', () => {
   assert.match(DOMAIN_SEARCH_COPY.heading, /web address/);
   assert.match(DOMAIN_SEARCH_COPY.inputLabel, /address/);
   assert.match(DOMAIN_SEARCH_COPY.choose, /address/);
+});
+
+
+// ─── The guide (what a search engine reads) ──────────────────────────────
+
+test('the guide is not empty, so every guide test below is reading something', () => {
+  const strings = domainGuideStrings();
+  assert.ok(strings.length >= 20, `expected the guide to carry real content, got ${strings.length} strings`);
+  assert.ok(DOMAIN_GUIDE.faq.length >= 5, 'the FAQ is the part people search for');
+  assert.equal(DOMAIN_GUIDE.ways.length, 3, 'the portal offers exactly three ways');
+});
+
+test('guide copy obeys brand/voice.md: zero em dashes and zero en dashes', () => {
+  for (const value of domainGuideStrings()) {
+    assert.equal(value.includes('—'), false, `em dash found in: ${value}`);
+    assert.equal(value.includes('–'), false, `en dash found in: ${value}`);
+  }
+});
+
+test('guide copy carries none of the words the brand guide bans', () => {
+  const all = domainGuideStrings().join(' ').toLowerCase();
+  for (const jargon of ['pwa', 'dns', 'tld', 'api', 'registrar', 'nameserver', 'schema', 'render', 'endpoint', 'domain registration']) {
+    assert.ok(!all.includes(jargon), `jargon in customer copy: "${jargon}"`);
+  }
+});
+
+test('the guide names the three ways exactly as the portal labels them', () => {
+  // Vivreal_Portal_Mobile/src/components/Domains/AddDomain/index.tsx
+  assert.deepEqual(
+    DOMAIN_GUIDE.ways.map((w) => w.label),
+    ['Buy a new address', 'Use one you already own', 'Move one over to us'],
+  );
+});
+
+test('the free year appears in the guide only as the canonical sentence', () => {
+  const freeAnswer = DOMAIN_GUIDE.faq.find((f) => /free/i.test(f.question));
+  assert.ok(freeAnswer, 'the "is it free" question is what people search for');
+  assert.ok(freeAnswer.answer.startsWith(FREE_YEAR_OFFER), 'the offer must be stated whole, first');
+  const all = domainGuideStrings().join(' ').toLowerCase();
+  for (const claim of ['free domain', 'annual', 'your plan', 'you qualify', 'covered', 'pro alone']) {
+    assert.ok(!all.includes(claim), `guide must not paraphrase or narrow the offer: "${claim}"`);
+  }
+});
+
+test('nothing on the page promises to hold or reserve the address', () => {
+  // domain_claim only remembers the name across signup; nothing reserves it.
+  const all = [...Object.values(DOMAIN_SEARCH_COPY), ...domainGuideStrings()].join(' ').toLowerCase();
+  for (const promise of ['hold it', 'we hold', 'holding', 'reserve', 'reserved']) {
+    assert.ok(!all.includes(promise), `copy promises a reservation that does not exist: "${promise}"`);
+  }
+});
+
+test('the search result title carries both phrasings people search for', () => {
+  assert.match(DOMAIN_SEARCH_COPY.metaTitle, /web address/i);
+  assert.match(DOMAIN_SEARCH_COPY.metaTitle, /domain name/i);
+  assert.ok(DOMAIN_SEARCH_COPY.metaTitle.length <= 65, 'titles past ~65 characters get cut in results');
+  assert.ok(DOMAIN_SEARCH_COPY.metaDescription.length <= 160, 'descriptions past ~160 characters get cut');
+});
+
+test('the FAQ structured data says exactly what the page shows, and nothing else', () => {
+  const schema = domainFaqSchema() as { '@type': string; mainEntity: Array<{ name: string; acceptedAnswer: { text: string } }> };
+  assert.equal(schema['@type'], 'FAQPage');
+  assert.equal(schema.mainEntity.length, DOMAIN_GUIDE.faq.length);
+  schema.mainEntity.forEach((entry, i) => {
+    assert.equal(entry.name, DOMAIN_GUIDE.faq[i].question);
+    assert.equal(entry.acceptedAnswer.text, DOMAIN_GUIDE.faq[i].answer);
+  });
+});
+
+// ─── The sitemap entry ───────────────────────────────────────────────────
+
+const build = (url: string) => ({ url, changeFrequency: 'monthly' as const, priority: 0.8 });
+
+test('the sitemap gains /domains on the marketing site, on the sitemap own origin', () => {
+  const map = [{ url: 'https://vivreal.io' }, { url: 'https://vivreal.io/pricing' }];
+  const out = withDomainsSitemapEntry(map, VIVREAL_MARKETING_SITE_ID, build);
+  assert.equal(out.length, 3);
+  assert.equal(out[2].url, 'https://vivreal.io/domains');
+});
+
+test('no other site in the fleet ever gains the entry', () => {
+  const map = [{ url: 'https://wavesofgrain.com' }];
+  for (const other of ['68adda65762dfc328d91382d', '', undefined, null]) {
+    assert.deepEqual(withDomainsSitemapEntry(map, other as string | null | undefined, build), map);
+  }
+});
+
+test('an empty sitemap stays empty, and an unreadable origin changes nothing', () => {
+  assert.deepEqual(withDomainsSitemapEntry([], VIVREAL_MARKETING_SITE_ID, build), []);
+  const bad = [{ url: 'not a url' }];
+  assert.deepEqual(withDomainsSitemapEntry(bad, VIVREAL_MARKETING_SITE_ID, build), bad);
+});
+
+test('the entry is never added twice', () => {
+  const map = [{ url: 'https://vivreal.io' }, { url: 'https://vivreal.io/domains' }];
+  assert.equal(withDomainsSitemapEntry(map, VIVREAL_MARKETING_SITE_ID, build).length, 2);
 });
