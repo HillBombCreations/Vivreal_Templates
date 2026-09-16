@@ -6,7 +6,14 @@ import DomainSearch from "@/components/DomainSearch";
 import { getSiteData } from "@/lib/api/siteData";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
-import { DOMAIN_SEARCH_COPY as COPY, servesPublicDomainSearch } from "@/lib/domains/publicSearch";
+import Link from "next/link";
+import { JsonLd } from "@/components/JsonLd";
+import {
+  DOMAIN_GUIDE as GUIDE,
+  DOMAIN_SEARCH_COPY as COPY,
+  domainFaqSchema,
+  servesPublicDomainSearch,
+} from "@/lib/domains/publicSearch";
 
 /**
  * `vivreal.io/domains`: the public address search.
@@ -70,8 +77,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
   const siteData = await getSiteData();
   return {
-    title: COPY.title,
-    description: COPY.intro,
+    // The search result is this page's front door, so it gets the phrasings
+    // people type rather than the short in-page heading.
+    title: COPY.metaTitle,
+    description: COPY.metaDescription,
     ...buildRouteCanonicalMetadata(siteData, "/domains"),
   };
 }
@@ -96,7 +105,84 @@ export default async function DomainsPage() {
         <div className="mt-10">
           <DomainSearch />
         </div>
+
+        {/* The guide. Server-rendered on purpose: it is what a search engine
+            reads, so it must be in the HTML, not behind the client component. */}
+        <div className="mx-auto mt-20 w-full max-w-3xl space-y-14 text-base leading-relaxed md:text-lg">
+          <section aria-labelledby="domains-what">
+            <h2 id="domains-what" className="text-2xl font-bold tracking-tight md:text-3xl">
+              {GUIDE.answerHeading}
+            </h2>
+            <p className="mt-4">{GUIDE.answer}</p>
+          </section>
+
+          <section aria-labelledby="domains-ways">
+            <h2 id="domains-ways" className="text-2xl font-bold tracking-tight md:text-3xl">
+              {GUIDE.waysHeading}
+            </h2>
+            {/* A real table, because it is tabular: the comparison is the
+                content, and a crawler reads a table as one. Scrolls sideways on
+                a phone rather than squeezing four columns into 390px. */}
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-left text-sm md:text-base">
+                <thead>
+                  <tr>
+                    {GUIDE.waysColumns.map((column, index) => (
+                      <th
+                        key={column || `col-${index}`}
+                        scope="col"
+                        className="border-b-2 py-3 pr-4 font-semibold"
+                      >
+                        {column}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {GUIDE.ways.map((way) => (
+                    <tr key={way.label} className="align-top">
+                      <th scope="row" className="border-b py-4 pr-4 font-semibold">
+                        {way.label}
+                      </th>
+                      <td className="border-b py-4 pr-4">{way.goodFor}</td>
+                      <td className="border-b py-4 pr-4">{way.what}</td>
+                      <td className="border-b py-4">{way.billing}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section aria-labelledby="domains-cost">
+            <h2 id="domains-cost" className="text-2xl font-bold tracking-tight md:text-3xl">
+              {GUIDE.costHeading}
+            </h2>
+            <p className="mt-4">{GUIDE.cost}</p>
+            <p className="mt-4 font-semibold">{COPY.freeYearOffer}</p>
+            <p className="mt-4">
+              <Link href="/pricing" className="font-semibold underline underline-offset-4">
+                {GUIDE.pricingLinkLabel}
+              </Link>
+            </p>
+          </section>
+
+          <section aria-labelledby="domains-faq">
+            <h2 id="domains-faq" className="text-2xl font-bold tracking-tight md:text-3xl">
+              {GUIDE.faqHeading}
+            </h2>
+            <div className="mt-6 space-y-8">
+              {GUIDE.faq.map((item) => (
+                <div key={item.question}>
+                  <h3 className="text-lg font-semibold md:text-xl">{item.question}</h3>
+                  <p className="mt-2">{item.answer}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </main>
+      <JsonLd schema={domainFaqSchema()} />
       <Footer />
     </>
   );

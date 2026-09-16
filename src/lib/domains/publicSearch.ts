@@ -303,6 +303,13 @@ export const FREE_YEAR_OFFER =
 /** Every visible string on the page, in one place, so one test can read them all. */
 export const DOMAIN_SEARCH_COPY = Object.freeze({
   title: 'Get a web address',
+  // What a search result shows. Carries both phrasings people actually type
+  // ("web address", "domain name") because the page exists to be found by
+  // someone who has not heard of Vivreal yet. The heading below stays in the
+  // owner's word.
+  metaTitle: 'Get a Web Address (Domain Name) for Your Business | Vivreal',
+  metaDescription:
+    'Search for the web address you want and see what it costs each year. Buy a new domain name, use one you already own, or move one over to Vivreal.',
   heading: 'Get the web address for your business',
   intro:
     'Type the name you want and we will tell you whether it is free and what it costs. You do not need an account to look.',
@@ -321,6 +328,165 @@ export const DOMAIN_SEARCH_COPY = Object.freeze({
   noAlternatives: 'We could not find a close one we can sell. Try another name.',
   freeYearHeading: FREE_YEAR_HEADING,
   freeYearOffer: FREE_YEAR_OFFER,
+  // NOT "we hold it for you". Nothing reserves the address with anyone: the
+  // portal's `domain_claim` cookie only remembers the NAME across signup
+  // (`Vivreal_Portal_Mobile/src/lib/domains/claimIntent.ts`), so someone else
+  // can still buy it in the meantime. Promising a hold is the kind of claim a
+  // stranger acts on and then finds was never true.
   nextStepNote:
-    'Choosing an address takes you to sign up. We hold it for you while you make your account.',
+    'Choosing an address takes you to sign up, and the name comes with you, so it is waiting in your search once your account is ready.',
 } as const);
+
+/**
+ * The guide under the search box: what a web address is, the three ways to get
+ * one, what it costs, and the questions people type into a search engine.
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────
+ *
+ * The page's job is to be FOUND by someone searching "how do I get a web
+ * address for my business" or "custom domain for my website", and a heading,
+ * one sentence and a search box give a search engine nothing to rank. The
+ * domains plan (task 4.3) asked for this shape: a one-paragraph direct answer,
+ * then a comparison, then detail.
+ *
+ * ── EVERY CLAIM IS THE PORTAL'S ──────────────────────────────────────────
+ *
+ * Checked on 2026-09-16 against Vivreal_Portal_Mobile `stable` (v0.21.1):
+ * - the three ways and their one-line summaries: `Domains/AddDomain/index.tsx`
+ * - "a few minutes to a day", and a site must be published first:
+ *   `AddDomain/ConnectOwnDomain.tsx`
+ * - 5 to 10 days, site and email keep working, confirm within 5 days, adds a
+ *   year, billed once a year: `AddDomain/TransferDomain.tsx`
+ * - every site starts on a free `<name>.vivreal.io` address: help.vivreal.io,
+ *   Creating a site
+ * - the free year: FREE_YEAR_OFFER, byte for byte, never paraphrased
+ *
+ * If the portal changes any of these, this copy is now wrong. No time is given
+ * for buying, because the portal gives none.
+ */
+export const DOMAIN_GUIDE = Object.freeze({
+  answerHeading: 'What a web address is',
+  answer:
+    'A web address, also called a domain name or a custom domain, is the name people type to find your business online, like yourbusiness.com. It is yours for as long as you renew it, once a year. In Vivreal you can buy a new one, use one you already own, or move one over to us, and it opens your Vivreal site.',
+  waysHeading: 'Three ways to get your address',
+  waysColumns: Object.freeze(['', 'Good for', 'What happens', 'Who bills you'] as const),
+  ways: Object.freeze([
+    Object.freeze({
+      label: 'Buy a new address',
+      goodFor: 'A new business, or a name you do not own yet',
+      what: 'Search for the name you want and buy it in Vivreal. We set it up for you, so there is nothing to copy or change.',
+      billing: 'Vivreal, once a year',
+    }),
+    Object.freeze({
+      label: 'Use one you already own',
+      goodFor: 'An address you bought somewhere else and want to keep there',
+      what: 'Keep it where you bought it. Vivreal shows you a few lines to copy there, and it starts opening your site within a few minutes to a day. Your site needs to be published first.',
+      billing: 'Wherever you bought it',
+    }),
+    Object.freeze({
+      label: 'Move one over to us',
+      goodFor: 'An address you own and want to manage and pay for in one place',
+      what: 'Bring the address and its yearly bill to Vivreal. Your site and your email keep working the whole time. It usually takes 5 to 10 days, and moving adds a year to how long you own it.',
+      billing: 'Vivreal, once a year',
+    }),
+  ]),
+  costHeading: 'What it costs',
+  cost: 'The yearly price depends on the ending you choose, so one ending can cost more than another. Search for the address you want above and the price shows next to it.',
+  faqHeading: 'Questions people ask',
+  faq: Object.freeze([
+    Object.freeze({
+      question: 'How do I get a web address for my business?',
+      answer:
+        'Search for the name you want on this page. If it is free, choose it, make your Vivreal account, and finish buying it in Addresses. We set it up for you, so there is nothing technical to do.',
+    }),
+    Object.freeze({
+      question: 'Can I use a domain name I already own?',
+      answer:
+        'Yes. Keep it where you bought it and connect it from Addresses in Vivreal. We show you a few lines to copy into the place you bought it, and it can take from a few minutes to a day to start working. Your site needs to be published first.',
+    }),
+    Object.freeze({
+      question: 'Can I move my domain name to Vivreal?',
+      answer:
+        'Yes. Moving brings the address and its yearly bill to Vivreal, so you look after everything in one place. It usually takes 5 to 10 days, and your site and your email keep working the whole time. We email you a link to confirm the move, and you have 5 days to open it. Moving adds a year to how long you own the address.',
+    }),
+    Object.freeze({
+      question: 'Is the web address free?',
+      answer: `${FREE_YEAR_OFFER} Otherwise you pay the yearly price shown next to each address.`,
+    }),
+    Object.freeze({
+      question: 'What is the difference between a website and a web address?',
+      answer:
+        'Your website is the pages people see. Your web address is the name that takes them there. Every Vivreal site starts with a free address made from its name, like yourbusiness.vivreal.io, and you can add your own custom domain whenever you are ready.',
+    }),
+    Object.freeze({
+      question: 'Do I need to know anything technical?',
+      answer:
+        'No. When you buy an address in Vivreal, we set everything up for you. If you connect one you already own, Vivreal shows you exactly what to copy and tells you when it is live.',
+    }),
+  ]),
+  pricingLinkLabel: 'See plans and prices',
+} as const);
+
+/** Every visible string in DOMAIN_GUIDE, flattened, so one test can read them all. */
+export function domainGuideStrings(guide: typeof DOMAIN_GUIDE = DOMAIN_GUIDE): string[] {
+  const out: string[] = [];
+  const walk = (value: unknown) => {
+    if (typeof value === 'string') {
+      if (value) out.push(value);
+    } else if (Array.isArray(value)) {
+      value.forEach(walk);
+    } else if (value && typeof value === 'object') {
+      Object.values(value).forEach(walk);
+    }
+  };
+  walk(guide);
+  return out;
+}
+
+/**
+ * The FAQPage structured data for the guide's questions.
+ *
+ * Built from the SAME array the page prints, so the markup can never claim a
+ * question or answer a visitor cannot see, which is Google's rule for FAQ rich
+ * results and the only honest way to do it.
+ */
+export function domainFaqSchema(
+  faq: ReadonlyArray<{ question: string; answer: string }> = DOMAIN_GUIDE.faq,
+): Record<string, unknown> {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: faq.map((item) => ({
+      '@type': 'Question',
+      name: item.question,
+      acceptedAnswer: { '@type': 'Answer', text: item.answer },
+    })),
+  };
+}
+
+/**
+ * Add `/domains` to the sitemap on the one deployment that serves it.
+ *
+ * The sitemap is built from CMS pages, and this page is a route rather than a
+ * CMS page, so without this it is invisible to the crawler that is the page's
+ * whole audience. The origin is read from the sitemap's own first entry, so the
+ * URL can never disagree with the canonical the rest of the sitemap already
+ * resolved. Same fleet gate as the page: no other site ever gains the entry.
+ * An empty sitemap stays empty (a demo, or a refused degraded read).
+ */
+export function withDomainsSitemapEntry<T extends { url: string }>(
+  siteMap: T[],
+  siteId: string | null | undefined,
+  build: (url: string) => T,
+): T[] {
+  if (!servesPublicDomainSearch(siteId) || siteMap.length === 0) return siteMap;
+  let origin: string;
+  try {
+    origin = new URL(siteMap[0].url).origin;
+  } catch {
+    return siteMap;
+  }
+  const url = `${origin}/domains`;
+  if (siteMap.some((entry) => entry.url === url)) return siteMap;
+  return [...siteMap, build(url)];
+}
