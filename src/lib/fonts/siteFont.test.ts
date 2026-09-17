@@ -198,3 +198,25 @@ test('absent or blank resolves to null, which is what keeps every other site unc
   }
   assert.equal(resolve(42 as unknown as string), null, 'a non-string must not throw');
 });
+
+/* ── Storefront Phase 0.7: weights a site declares (Contract 3) ──────────── */
+
+test('Phase 0.7: the adapter hands the declared weights to the shared resolver', () => {
+  const source = readSource();
+  assert.match(source, /export function resolveSiteFont\(fontFamily\?: string \| null, fontWeights\?: unknown\): SiteFontResolution \| null/);
+  assert.match(source, /resolveSharedSiteFont\(fontFamily, \{\s*definedFontVariables: TEMPLATES_FONT_VARIABLES,\s*fontWeights,\s*\}\)/);
+});
+
+test('Phase 0.7: the root layout passes siteData.fontWeights to both font calls', () => {
+  const layout = fs.readFileSync(new URL('../../app/layout.tsx', import.meta.url), 'utf8');
+  assert.ok(layout.includes('resolveSiteFont('), 'read the real layout');
+  assert.match(layout, /resolveSiteFont\(siteData\.fontFamily, siteData\.fontWeights\)/);
+  assert.match(layout, /resolveSiteFont\(\(siteData as \{ fontFamilyBody\?: string \| null \}\)\.fontFamilyBody, siteData\.fontWeights\)/);
+});
+
+test('Phase 0.7: called the way the adapter calls it, declared weights narrow the request and absent ones get the default weights', () => {
+  const declared = resolveSiteFont('Cinzel', { definedFontVariables: templatesFontVariables(), fontWeights: [700, 400] });
+  assert.equal(declared?.googleFontsHref, 'https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+  const absent = resolveSiteFont('Cabin', { definedFontVariables: templatesFontVariables(), fontWeights: undefined });
+  assert.equal(absent?.googleFontsHref, 'https://fonts.googleapis.com/css2?family=Cabin:wght@300;400;500;600;700;800;900&display=swap');
+});

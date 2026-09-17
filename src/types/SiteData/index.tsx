@@ -621,6 +621,15 @@ export interface SiteData {
      */
     fontFamily?: string;
     /**
+     * Storefront Phase 0.7 (Contract 3): the font weights this site's design
+     * draws, declared by its kit as `theme.fontWeights` and stored flat in
+     * `siteDetails.values`, so it arrives through `getSiteData`'s values spread
+     * with no VR_Client_API change. Absent (every site built before it, Dougs
+     * Kitchen and Waves of Grain included) requests the renderer's default
+     * weights, decided 2026-09-16. The renderer validates the list.
+     */
+    fontWeights?: number[];
+    /**
      * Per-site web-analytics config (migration continuity + portal-editable).
      * Stored flat inside `siteDetails.values` (same precedent as `favicon`/
      * `fontFamily`/`chrome`), so it round-trips through `getSiteData`'s
