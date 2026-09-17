@@ -9,8 +9,12 @@
  * sibling `loading.tsx` files used to flush a 200 shell first). This module
  * supplies the data middleware needs to make that call.
  *
- * EDGE RUNTIME CONSTRAINT: this file imports ONLY `fetch`, `URL` (both
- * ambient Web APIs), and the pure `@/lib/redirects` helper. No `server-only`,
+ * EDGE RUNTIME CONSTRAINT: this file imports ONLY `fetch`, `URL`,
+ * `AbortController` and the `setTimeout`/`clearTimeout` pair (all ambient Web
+ * APIs, and all four are provided by the Next middleware sandbox:
+ * next/dist/server/web/sandbox/context.js wires `setTimeout`/`clearTimeout` to
+ * its TimeoutsManager). Plus the pure `@/lib/redirects` helper.
+ * No `server-only`,
  * no `next/headers`, no `next/cache`, no `@/lib/api/client` — those either
  * don't exist at the edge or assume a per-request scope this module's
  * background refresh does not have (the SWR refresh below can outlive the
@@ -49,6 +53,34 @@ const FETCH_TIMEOUT_MS = 800;
 // last failure restores the plan's stated property that only the FIRST
 // request per instance (per failure window) can ever block.
 const NEGATIVE_CACHE_MS = 30_000;
+
+// Hard ceiling, in WALL-CLOCK ms, on how long any one request may block on the
+// cold-cache branch of getEdgeSiteMap(), and the age at which a cold in-flight
+// fetch is abandoned outright.
+//
+// This is the fix for the help.vivreal.io outage
+// (docs/projects/portal-changes-2026-09-16/help-site-504.md, 2026-09-17).
+// Before it, the cold branch returned the shared `inFlight` promise bare, and
+// `inFlight` was cleared only in `.finally()`. A fetch that neither completed
+// nor aborted was therefore handed to EVERY later request on that instance, so
+// one stuck fetch took every page URL on the site to a 28s Amplify origin
+// timeout permanently, while `/robots.txt`, `/api/*` and every other
+// isSkippablePath() URL kept serving normally. The site was down for five days
+// and a redeploy bought 3.5 minutes.
+//
+// WALL clock, not awake time, and applied only on the blocking branch. A
+// cold-cache caller is awake for every millisecond it waits (nothing is served
+// until it answers), so the two clocks are the same thing there. A BACKGROUND
+// refresh is the opposite case and is deliberately left alone: it can
+// legitimately span a Lambda freeze, which is exactly what `./awakeTimeout.ts`
+// exists to tolerate, and no visitor is blocked on it.
+//
+// 1500 sits above FETCH_TIMEOUT_MS (800 awake ms, which also covers
+// fetchWithReconnect's retries) so the ordinary abort still wins on a healthy
+// instance, and far below Amplify's 28s origin timeout. Exceeding it costs one
+// request its authored-redirect resolution and nothing else; see the
+// `if (!siteMap)` fall-through in middleware.ts.
+export const COLD_FETCH_DEADLINE_MS = 1_500;
 
 /**
  * The stable discriminator VR_Client_API sends for a billing freeze
@@ -105,6 +137,18 @@ let cache: CacheEntry | null = null;
 // Dedupe: at most one in-flight network refresh at a time, shared by every
 // concurrent request that observes a stale/absent cache.
 let inFlight: Promise<EdgeSiteMap | null> | null = null;
+// Wall-clock start of `inFlight`. The cold branch enforces ONE absolute
+// deadline across every caller sharing that promise, rather than giving each
+// caller a fresh countdown of its own (which would let a late arrival wait
+// COLD_FETCH_DEADLINE_MS past a deadline that had already blown).
+let inFlightStartedAt = 0;
+// Abort handle for `inFlight`, so abandoning it also releases the socket
+// instead of leaving a doomed request running against an upstream that is
+// already struggling.
+let inFlightAbort: AbortController | null = null;
+// Bumped once per fetch. Abandonment makes two fetches able to overlap for the
+// first time, so a straggler must be stopped from overwriting a newer answer.
+let fetchGeneration = 0;
 // Negative cache: timestamp of the most recent fetchSiteMap() failure, or
 // null if the last attempt succeeded (or none has run yet).
 let lastFailureAt: number | null = null;
@@ -277,7 +321,20 @@ export function isSiteFrozen(): boolean {
   return Date.now() - frozenState.observedAt < FROZEN_SIGNAL_TTL_MS;
 }
 
-async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
+/**
+ * One read of the upstream site map.
+ *
+ * `controller` is owned by the CALLER (`startRefresh`) rather than created
+ * here, so there are two independent ways to stop this fetch: the awake-time
+ * budget below, and `abandonInFlight()` when a caller's wall-clock deadline
+ * blows. Before the deadline existed there was only the awake timer, and a
+ * fetch it failed to stop was unstoppable.
+ *
+ * Total by construction: it returns `null` for every failure and never throws.
+ * `getEdgeSiteMap()` is awaited directly by middleware on a cold instance, so
+ * a throw escaping here would 500 every route on the site.
+ */
+async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | null> {
   // Read call-time, not hoisted to a module-scope const -- see the comment
   // above CLIENT_API_URL.
   const apiKey = process.env.API_KEY || '';
@@ -293,7 +350,6 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
     return null;
   }
 
-  const controller = new AbortController();
   const timeout = startAwakeTimeout(FETCH_TIMEOUT_MS, () => controller.abort());
   try {
     // A pooled socket that died while the process was frozen fails fast;
@@ -353,6 +409,119 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
 }
 
 /**
+ * Arm the one shared refresh, and return it.
+ *
+ * Synchronous: `inFlight`, `inFlightStartedAt` and `inFlightAbort` are all set
+ * before this returns, so a caller can rely on the module state immediately.
+ */
+function startRefresh(now: number): Promise<EdgeSiteMap | null> {
+  const controller = new AbortController();
+  const generation = (fetchGeneration += 1);
+  const promise: Promise<EdgeSiteMap | null> = fetchSiteMap(controller)
+    .then((value) => {
+      // Only the most recently STARTED fetch may write shared state. Before
+      // abandonment existed there could only ever be one fetch at a time, so
+      // this was implicit; an abandoned fetch can now settle after a newer one
+      // has already answered, and must not overwrite it with older data.
+      if (generation !== fetchGeneration) return value;
+      if (value) {
+        cache = { value, fetchedAt: Date.now() };
+        lastFailureAt = null;
+      } else {
+        lastFailureAt = Date.now();
+      }
+      return value;
+    })
+    .catch((err) => {
+      // Unreachable today: fetchSiteMap() catches every failure and returns
+      // null. It stays because middleware awaits this promise DIRECTLY on a
+      // cold instance, so a rejection escaping here throws out of middleware
+      // and 500s every route on the site, which is the precise failure this
+      // whole module is built to avoid.
+      console.error('[edgeSiteMap] in-flight refresh rejected, failing open:', err);
+      if (generation === fetchGeneration) lastFailureAt = Date.now();
+      return null;
+    })
+    .finally(() => {
+      // Guarded: an abandoned fetch settling late must not clear a NEWER
+      // in-flight promise that has since replaced it.
+      if (inFlight === promise) {
+        inFlight = null;
+        inFlightAbort = null;
+      }
+    });
+  inFlight = promise;
+  inFlightStartedAt = now;
+  inFlightAbort = controller;
+  return promise;
+}
+
+/**
+ * Give up on the shared in-flight fetch.
+ *
+ * This is the line the help.vivreal.io outage turned on. `inFlight` used to be
+ * cleared ONLY by `.finally()`, so a promise that never settled was handed to
+ * every subsequent request on the instance forever. Clearing it here means the
+ * worst a stuck fetch can do is cost ONE request its deadline.
+ *
+ * No-op unless `pending` is still the current promise, so a caller whose
+ * deadline blew after someone else already replaced it cannot clobber the
+ * replacement.
+ */
+function abandonInFlight(pending: Promise<EdgeSiteMap | null>): void {
+  if (inFlight !== pending) return;
+  // Release the socket too. A fetch nobody is waiting on must not keep running
+  // against the upstream whose slowness caused this.
+  inFlightAbort?.abort();
+  inFlight = null;
+  inFlightAbort = null;
+  // Count it as a failure so the negative cache absorbs the next
+  // NEGATIVE_CACHE_MS. Without this, request 2 would immediately start another
+  // fetch against the same sick upstream and pay the same deadline, turning
+  // one slow request into a slow request for every visitor.
+  lastFailureAt = Date.now();
+}
+
+/** Sentinel: the deadline, not the fetch, won the race in `awaitWithDeadline`. */
+const DEADLINE_EXPIRED = Symbol('edgeSiteMap.deadlineExpired');
+
+/**
+ * Await `pending`, but never past `deadlineMs`.
+ *
+ * On expiry it abandons the shared fetch and degrades to the last-known value,
+ * or `null`. `middleware.ts` already treats `null` as "fall through, do
+ * nothing", so the degrade is a behaviour that is documented and tested there
+ * rather than a new failure mode.
+ *
+ * A one-shot `setTimeout` is the whole of the timer dependency here, and it is
+ * deliberately NOT the awake-time interval in `./awakeTimeout.ts`: that one has
+ * to accumulate eight 100ms ticks to reach its 800ms budget, and its own header
+ * documents that it "runs somewhat long" whenever the event loop is busy. That
+ * is the right tradeoff for a background refresh and the wrong one for the
+ * branch a visitor is blocked on. Nothing can bound its own await without a
+ * timer of some kind; the timer-FREE half of the ceiling is the `Date.now()`
+ * check in `getEdgeSiteMap()`, which protects every request after the first.
+ */
+async function awaitWithDeadline(
+  pending: Promise<EdgeSiteMap | null>,
+  deadlineMs: number,
+): Promise<EdgeSiteMap | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<typeof DEADLINE_EXPIRED>((resolve) => {
+    timer = setTimeout(() => resolve(DEADLINE_EXPIRED), deadlineMs);
+  });
+  try {
+    const winner = await Promise.race([pending, deadline]);
+    if (winner !== DEADLINE_EXPIRED) return winner;
+    console.error(`[edgeSiteMap] cold read exceeded ${deadlineMs}ms, falling through`);
+    abandonInFlight(pending);
+    return cache ? cache.value : null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Stale-while-revalidate read of the edge site map.
  *
  * - Fresh cache: return immediately, no network.
@@ -361,23 +530,42 @@ async function fetchSiteMap(): Promise<EdgeSiteMap | null> {
  *   creates `inFlight` does NOT await it either; it reads `cache` and
  *   returns synchronously below, same as every other stale-cache caller.
  * - Cold cache (first request on this instance, no prior `cache` entry):
- *   every concurrent caller observes `cache === null` and falls through to
- *   `return inFlight` at the bottom — ALL of them await the shared,
- *   deduped promise, bounded by the 800ms awake-time abort in
- *   `fetchSiteMap`. Only a warm cache (fresh or stale) ever avoids blocking.
+ *   every concurrent caller observes `cache === null` and waits on the shared,
+ *   deduped promise, but only until ONE absolute deadline,
+ *   `inFlightStartedAt + COLD_FETCH_DEADLINE_MS`, shared by all of them. Past
+ *   that the fetch is abandoned and aborted and the call degrades to `null`.
+ *   Only a warm cache (fresh or stale) ever avoids waiting at all.
  * - Any failure: returns the last-known value, or `null` if there is none.
  *   `middleware.ts` treats `null` as "fall through, do nothing" — never as
  *   an error to propagate.
- * - Negative cache: within NEGATIVE_CACHE_MS of the last failure, skips the
- *   network call entirely (returns the last-known value, or `null`) rather
- *   than re-attempting and re-blocking up to FETCH_TIMEOUT_MS on sustained
- *   upstream outage.
+ * - Negative cache: within NEGATIVE_CACHE_MS of the last failure (a blown
+ *   deadline counts as one), skips the network call entirely and returns the
+ *   last-known value, or `null`, rather than re-attempting and re-blocking.
+ *
+ * The property the whole file exists to hold, stated once: NO request may
+ * inherit another request's stuck promise, and no request may block past the
+ * deadline. One stuck fetch costs at most one slow request per
+ * NEGATIVE_CACHE_MS window; it can never take the instance down.
  */
 export async function getEdgeSiteMap(): Promise<EdgeSiteMap | null> {
   const now = Date.now();
 
   if (cache && now - cache.fetchedAt < TTL_MS) {
     return cache.value;
+  }
+
+  // THE TIMER-FREE CEILING. A plain clock comparison, so this holds even if no
+  // timer in the middleware sandbox ever fires.
+  //
+  // Scoped to `!cache` on purpose: that is exactly the state in which a caller
+  // BLOCKS on `inFlight` (every warm caller returns `cache.value` below without
+  // awaiting it), and a cold caller is awake for the whole wait, so wall clock
+  // is the right clock. A background refresh is never abandoned here, because
+  // it can legitimately span a Lambda freeze and be minutes old in wall clock
+  // while having had almost no awake time. Abandoning those would undo the
+  // 2026-09-16 awake-timeout fix and stop quiet sites refreshing at all.
+  if (!cache && inFlight && now - inFlightStartedAt >= COLD_FETCH_DEADLINE_MS) {
+    abandonInFlight(inFlight);
   }
 
   if (
@@ -390,21 +578,7 @@ export async function getEdgeSiteMap(): Promise<EdgeSiteMap | null> {
     return cache ? cache.value : null;
   }
 
-  if (!inFlight) {
-    inFlight = fetchSiteMap()
-      .then((value) => {
-        if (value) {
-          cache = { value, fetchedAt: Date.now() };
-          lastFailureAt = null;
-        } else {
-          lastFailureAt = Date.now();
-        }
-        return value;
-      })
-      .finally(() => {
-        inFlight = null;
-      });
-  }
+  const pending = inFlight ?? startRefresh(now);
 
   if (cache) {
     // Stale-while-revalidate: serve the stale value now. The in-flight
@@ -413,9 +587,11 @@ export async function getEdgeSiteMap(): Promise<EdgeSiteMap | null> {
     return cache.value;
   }
 
-  // Cold cache: this call (and every concurrent call sharing `inFlight`)
-  // must actually wait for the network.
-  return inFlight;
+  // Cold cache: this call (and every concurrent call sharing `pending`) does
+  // have to wait for the network, but only until the shared absolute deadline.
+  // The subtraction is positive here: a `pending` older than that was already
+  // abandoned above, and a `pending` created by startRefresh() started at `now`.
+  return awaitWithDeadline(pending, inFlightStartedAt + COLD_FETCH_DEADLINE_MS - now);
 }
 
 /**
@@ -429,8 +605,13 @@ export async function getEdgeSiteMap(): Promise<EdgeSiteMap | null> {
 export function __resetEdgeSiteMapCacheForTests(): void {
   cache = null;
   inFlight = null;
+  inFlightStartedAt = 0;
+  inFlightAbort = null;
   lastFailureAt = null;
   frozenState = null;
+  // Bump the generation too, so a never-settling fetch left behind by an
+  // earlier case cannot write into the next one if it ever does settle.
+  fetchGeneration += 1;
 }
 
 /**

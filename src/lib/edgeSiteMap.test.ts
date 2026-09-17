@@ -8,6 +8,7 @@ import {
   isSelfRedirectLoop,
   getEdgeSiteMap,
   isSiteFrozen,
+  COLD_FETCH_DEADLINE_MS,
   TTL_MS,
   __resetEdgeSiteMapCacheForTests,
   __setCacheFetchedAtForTests,
@@ -587,37 +588,64 @@ test('getEdgeSiteMap: a connection that died during a freeze is retried and the 
   }
 });
 
-test('getEdgeSiteMap: a freeze in the middle of the fetch does not abort it on thaw', async (t) => {
+test('getEdgeSiteMap: a freeze in the middle of a BACKGROUND refresh does not abort it on thaw', async (t) => {
   // Production: 33 of 40 edgeSiteMap aborts were logged 1 to 194 ms after an
   // invocation started, because the 800 ms wall-clock timer ran out while the
   // process was frozen and fired on thaw. Here a minute passes on the clock
   // while the fetch is pending, then the process "thaws" and the fetch answers.
+  //
+  // This case now runs on the BACKGROUND refresh path, which is the only path a
+  // freeze can happen on: Amplify freezes the process when a RESPONSE is sent,
+  // and a cold-cache request holds its response open until the map answers, so
+  // the process cannot be frozen mid cold fetch. The cold path is deliberately
+  // NOT exempt from the wall clock any more (see COLD_FETCH_DEADLINE_MS and the
+  // cold-hang cases at the end of this file); the refresh path still is, and
+  // that is what this asserts.
   __resetEdgeSiteMapCacheForTests();
   const originalFetch = globalThis.fetch;
   const gate: { release?: () => void } = {};
   let aborted = false;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
-  (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
-    new Promise<Response>((resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => {
-        aborted = true;
-        reject(new DOMException('This operation was aborted', 'AbortError'));
-      });
-      gate.release = () => resolve(new Response(okBody, { status: 200 }));
-    });
-  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  const refreshedBody = JSON.stringify({
+    success: true,
+    data: { pages: [{ slug: 'refreshed' }], siteDetails: { values: {} } },
+    error: null,
+  });
   try {
-    const pending = getEdgeSiteMap();
+    // Warm the cache, so the next read takes the background-refresh path.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async () => new Response(okBody, { status: 200 });
+    assert.ok(await getEdgeSiteMap(), 'cache warmed');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(new DOMException('This operation was aborted', 'AbortError'));
+        });
+        gate.release = () => resolve(new Response(refreshedBody, { status: 200 }));
+      });
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+    __setCacheFetchedAtForTests(Date.now() - TTL_MS - 1);
+
+    const stale = await getEdgeSiteMap();
+    assert.ok(stale, 'a stale cache answers immediately and arms the refresh');
+    assert.ok(stale!.slugs.has('shop'), 'the stale value is the last-known one');
     await new Promise((resolve) => setImmediate(resolve));
-    assert.ok(gate.release, 'the fetch has started');
+    assert.ok(gate.release, 'the background refresh has started');
 
     t.mock.timers.setTime(Date.now() + 60_000); // frozen for a minute
     t.mock.timers.tick(100); // thawed: every overdue timer fires now
     assert.equal(aborted, false, 'the thaw must not abort a fetch that never got its 800 ms');
 
     gate.release!();
-    const map = await pending;
-    assert.ok(map, 'the refresh completes after the thaw');
+    let landed = false;
+    for (let i = 0; i < 20 && !landed; i += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const after = await getEdgeSiteMap();
+      landed = after !== null && after.slugs.has('refreshed');
+    }
+    assert.ok(landed, 'the refresh completes after the thaw and lands in the cache');
   } finally {
     t.mock.timers.reset();
     globalThis.fetch = originalFetch;
@@ -645,6 +673,178 @@ test('getEdgeSiteMap: a fetch that is genuinely slow while awake is still aborte
     for (let i = 0; i < 9; i += 1) t.mock.timers.tick(100);
     const map = await pending;
     assert.equal(map, null, 'awake for 900 ms with no answer fails open');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+// =============================================================================
+// The cold-cache hang that took help.vivreal.io down for five days
+// (docs/projects/portal-changes-2026-09-16/help-site-504.md, 2026-09-17).
+//
+// Shape of the bug: `getEdgeSiteMap()` returned the shared `inFlight` promise
+// bare on a cold instance, and `inFlight` was cleared only in `.finally()`. A
+// fetch that neither completed nor aborted was therefore handed to every later
+// request on that instance, so one stuck fetch took EVERY page URL to Amplify's
+// 28s origin timeout, permanently, while `/robots.txt`, `/api/*` and every
+// other isSkippablePath() URL kept serving. What a visitor saw was a blank 504
+// on every page of an otherwise healthy site, for five days.
+//
+// Every case below drives a fetch that NEVER settles and never honours its
+// abort signal. That is the production condition: logging was off during the
+// incident, so whether the socket was dead or the abort never fired was not
+// directly proven, and the fix has to hold either way.
+// =============================================================================
+
+/**
+ * The REAL `setTimeout`, captured before any `t.mock.timers.enable()` can
+ * replace it. The hang guard below has to outlive a mocked clock: without it, a
+ * regression of this defect would hang the whole suite instead of failing it.
+ */
+const realSetTimeout = globalThis.setTimeout;
+
+/** Comfortably above COLD_FETCH_DEADLINE_MS, in REAL milliseconds. */
+const HANG_GUARD_MS = 4_000;
+
+/** A fetch that never resolves, never rejects, and ignores `signal`. */
+function neverSettles(): Promise<Response> {
+  return new Promise<Response>(() => {});
+}
+
+/**
+ * Await `promise`, but fail the assertion instead of hanging if it never
+ * settles. This is what turns "the site is down" into a red test.
+ */
+async function withHangGuard<T>(promise: Promise<T>, label: string): Promise<T> {
+  const HUNG = Symbol('hung');
+  let timer: ReturnType<typeof realSetTimeout> | undefined;
+  const guard = new Promise<typeof HUNG>((resolve) => {
+    timer = realSetTimeout(() => resolve(HUNG), HANG_GUARD_MS);
+  });
+  try {
+    const winner = await Promise.race([promise, guard]);
+    assert.notEqual(winner, HUNG, `${label} (still pending after ${HANG_GUARD_MS}ms)`);
+    return winner as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test('getEdgeSiteMap: a COLD instance whose fetch never settles falls through instead of hanging', async (t) => {
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = () => neverSettles();
+  console.error = () => {};
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  try {
+    const pending = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // A cold-cache request is awake for every millisecond it waits, so plain
+    // elapsed time is the right clock here.
+    t.mock.timers.tick(COLD_FETCH_DEADLINE_MS + 100);
+
+    const map = await withHangGuard(
+      pending,
+      'a cold read must answer within its deadline, not block until Amplify 504s',
+    );
+    assert.equal(map, null, 'it degrades to null, which middleware.ts treats as fall through');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+test('getEdgeSiteMap: one stuck fetch does not poison the instance for every later request', async (t) => {
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  let calls = 0;
+  let stuck = true;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = () => {
+    calls += 1;
+    return stuck ? neverSettles() : Promise.resolve(new Response(okBody, { status: 200 }));
+  };
+  console.error = () => {};
+  try {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+
+    const first = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+    t.mock.timers.tick(COLD_FETCH_DEADLINE_MS + 100);
+    assert.equal(await withHangGuard(first, 'request 1 must answer'), null);
+    assert.equal(calls, 1, 'exactly one fetch so far');
+
+    // Request 2 on the SAME instance. This is the request that was down for
+    // five days: it used to be handed the same stuck promise and 504.
+    const second = await withHangGuard(
+      getEdgeSiteMap(),
+      'request 2 must not inherit request 1 stuck promise',
+    );
+    assert.equal(second, null, 'request 2 falls through too');
+    assert.equal(
+      calls,
+      1,
+      'and inside the negative-cache window it must not start another doomed fetch either',
+    );
+
+    t.mock.timers.reset();
+
+    // The instance RECOVERS on its own. Once the negative-cache window passes
+    // and the upstream answers, a later request gets a real map, which is only
+    // possible if `inFlight` was genuinely cleared rather than reused.
+    stuck = false;
+    __setLastFailureAtForTests(null);
+    const third = await withHangGuard(getEdgeSiteMap(), 'a recovered upstream must produce a map');
+    assert.ok(third, 'the instance serves a real map again with no redeploy');
+    assert.ok(third!.slugs.has('shop'));
+    assert.equal(calls, 2, 'a NEW fetch ran, proving inFlight was cleared and not re-handed out');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+  }
+});
+
+test('getEdgeSiteMap: the ceiling for a later request is the CLOCK, with no timer firing at all', async (t) => {
+  // Point 3 of the durable fix: a `setInterval` tick inside the middleware
+  // sandbox must not be the only thing between a page URL and a 28s origin
+  // timeout. Nothing is ticked in this case, so NO timer fires: not the cold
+  // deadline's one-shot setTimeout, not awakeTimeout's interval. Only the clock
+  // moves, exactly as it does across an Amplify freeze and thaw.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  let calls = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = () => {
+    calls += 1;
+    return neverSettles();
+  };
+  console.error = () => {};
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  try {
+    const first = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1, 'request 1 armed the one shared fetch');
+
+    // setTime moves the clock WITHOUT running any timer (tick is what runs
+    // them). That is the whole point of this case.
+    t.mock.timers.setTime(Date.now() + COLD_FETCH_DEADLINE_MS + 1);
+
+    const second = await withHangGuard(
+      getEdgeSiteMap(),
+      'request 2 must be bounded by the clock alone, with every timer dead',
+    );
+    assert.equal(second, null, 'it abandons the stuck promise and falls through');
+    assert.equal(calls, 1, 'and does not start a second doomed fetch');
+    assert.ok(first, 'request 1 is deliberately left pending: nothing can settle it');
   } finally {
     t.mock.timers.reset();
     globalThis.fetch = originalFetch;
