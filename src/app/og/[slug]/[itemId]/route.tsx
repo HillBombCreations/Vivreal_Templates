@@ -2,6 +2,7 @@ import { getSiteData } from '@/lib/api/siteData';
 import { getPageBySlug } from '@/lib/pages';
 import { getSignedUrl } from '@/lib/api/media';
 import { lookupDetailItem } from '@/lib/detail/lookupItem';
+import { resolveStorefrontItemSummary } from '@/lib/detail/storefrontItem';
 import { planOgItemCard, resolvePageOgHeading } from '@/lib/og/ogCard';
 import { proxyImageBytes, renderBrandedOgCard } from '@/lib/og/ogCardRender';
 
@@ -42,8 +43,15 @@ export async function GET(
   // A missing page, a page addressing no collection, or an id that matches
   // nothing all land on the same safe answer: the page's own card. A social
   // card must never be the thing that 404s a shared link.
-  const lookup = pageConfig ? await lookupDetailItem(siteData, pageConfig, itemId) : null;
-  const plan = planOgItemCard(lookup?.item, pageHeading);
+  //
+  // Storefront Phase 0.3: a products page's card resolves through the same
+  // summary its metadata uses, so a provider product gets its own card too.
+  const summary =
+    pageConfig?.format === 'products'
+      ? await resolveStorefrontItemSummary(siteData, pageConfig, itemId)
+      : null;
+  const lookup = !summary && pageConfig ? await lookupDetailItem(siteData, pageConfig, itemId) : null;
+  const plan = planOgItemCard(summary ?? lookup?.item, pageHeading);
 
   if (plan.kind === 'photo') {
     const proxied = await proxyImageBytes(plan.signedUrl);

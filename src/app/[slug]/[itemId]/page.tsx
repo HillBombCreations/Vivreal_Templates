@@ -24,6 +24,8 @@ import { isPaymentsProvider } from "@/lib/payments";
 import { contentItemToProduct, resolveStorefrontSectionConfig } from "@hillbombcreations/site-renderer";
 import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDetailRenderer/templatesProductToRenderer";
 import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
+import { productItemMetaText } from "@/lib/seo/productItemMeta";
+import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
 import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
@@ -1100,6 +1102,34 @@ export async function generateMetadata({ params }: Props) {
         images: [ogImageUrl],
       },
     };
+  }
+
+  // Storefront Phase 0.3 (D4): a products page describes the product it shows,
+  // provider or collection sourced, resolved in the page's own order. The
+  // shop's `seo.metaTitle` is authored for the shop and is not applied to its
+  // items, or every product would keep one title, which is the defect.
+  if (pageConfig.format === "products") {
+    const summary = await resolveStorefrontItemSummary(siteData, pageConfig, itemId);
+    if (summary) {
+      const patternData = { item: summary.raw, context: null, siteName };
+      const { title, description } = productItemMetaText({
+        itemTitle: summary.title,
+        itemDescription: summary.description,
+        siteName,
+        patternTitle: resolvePattern(pageConfig.detailPage?.seo?.titlePattern, patternData),
+        patternDescription: resolvePattern(pageConfig.detailPage?.seo?.descriptionPattern, patternData),
+        pageSubtitle: pageConfig.labels?.subtitle,
+        pageName: pageConfig.name,
+      });
+      const productCardUrl = buildOgItemImageUrl(origin, slug, itemId);
+      return {
+        title,
+        description,
+        ...routeCanonicalMetadata,
+        openGraph: { title, description, url: itemUrl, type: "article", siteName, images: [productCardUrl] },
+        twitter: { card: "summary_large_image", title, description, images: [productCardUrl] },
+      };
+    }
   }
 
   // Two-axis detail-route design, Phase 3 (§7.2/§7.3, T3) — per-item/per-cell
