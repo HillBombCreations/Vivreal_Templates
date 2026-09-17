@@ -753,6 +753,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
             detailPage={scopedDetailPage as DetailPageConfig | undefined}
             cta={pageConfig.cta as RendererPageCtaConfig | undefined}
             storefrontConfig={storefrontConfig}
+            // Storefront designs (plan-2a): a look's product page reads the item's
+            // own fields and its sibling items (a venue's seasons). The look itself
+            // rides `storefrontConfig.shell`.
+            productSource={effectiveItem.raw as Record<string, unknown> | undefined}
+            collectionItems={unscopedItems}
           />
           <Footer />
         </>

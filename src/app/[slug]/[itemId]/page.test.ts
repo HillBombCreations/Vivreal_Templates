@@ -98,3 +98,13 @@ test('Phase 0.3: a product page describes its own product, with its own card', (
   assert.match(source, /productItemMetaText\(\{/);
   assert.match(source, /const productCardUrl = buildOgItemImageUrl\(origin, slug, itemId\);/);
 });
+
+test('the collection products render hands a look page the item fields and the pool the route already read', () => {
+  // plan-2a Task 12. A look's product page reads servings, lead time and tags
+  // from the item's own fields, and a venue space reads its seasons from the
+  // rest of the collection (data-contract.md 5.11). Both come from data this
+  // arm already holds; neither costs a read.
+  assert.match(source, /productSource=\{effectiveItem\.raw as Record<string, unknown> \| undefined\}/);
+  assert.match(source, /collectionItems=\{unscopedItems\}/);
+  assert.equal((source.match(/collectionItems=\{/g) ?? []).length, 1, 'only the collection arm has a pool to pass');
+});

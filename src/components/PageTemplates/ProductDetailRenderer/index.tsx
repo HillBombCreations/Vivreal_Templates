@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type {
+  ContentItem,
   DetailPageConfig,
   DetailProductData,
   SiteData as RendererSiteData,
@@ -24,6 +25,18 @@ interface ProductDetailRendererProps {
   cta?: RendererPageCtaConfig;
   /** Storefront Phase 0: the page's storefront binding config (Contract 1: purchase mode, spec fields, shell). */
   storefrontConfig?: StorefrontSectionConfig;
+  /**
+   * The product's own authored fields (a collection item's `raw`), for a look's
+   * product page: servings, lead time, dietary tags. Absent for a provider
+   * product, whose Templates `Product` carries no authored fields.
+   */
+  productSource?: Record<string, unknown>;
+  /**
+   * Every item of the collection this product came from, as the route already
+   * read it (data-contract.md 5.11): a venue space reads its seasons here.
+   * Absent for a provider product.
+   */
+  collectionItems?: ContentItem[];
 }
 
 /**
@@ -39,6 +52,8 @@ export default function ProductDetailRenderer({
   detailPage,
   cta,
   storefrontConfig,
+  productSource,
+  collectionItems,
 }: ProductDetailRendererProps) {
   const cartCtx = useOptionalCart();
   const cartProduct = useMemo(() => rendererProductToTemplates(item), [item]);
@@ -60,6 +75,8 @@ export default function ProductDetailRenderer({
         detailPage={detailPage}
         cta={cta}
         storefrontConfig={storefrontConfig}
+        productSource={productSource}
+        collectionItems={collectionItems}
         onProductAddedToCart={({ variant, quantity }) => {
           setAddedVariant(variant);
           setAddedQuantity(quantity);
