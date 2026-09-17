@@ -12,8 +12,14 @@ import fs from 'node:fs';
 const source = fs.readFileSync(new URL('./route.tsx', import.meta.url), 'utf8');
 
 test('the card is planned by the tested decision function', () => {
-  assert.match(source, /planOgItemCard\(lookup\?\.item, pageHeading\)/);
+  // Storefront Phase 0.3: a product card is planned from the storefront summary
+  // first, so the card and the product page resolve the same item.
+  assert.match(source, /planOgItemCard\(summary \?\? lookup\?\.item, pageHeading\)/);
   assert.match(source, /from '@\/lib\/og\/ogCard'/);
+});
+
+test('Phase 0.3: a products page card resolves its item through the storefront summary', () => {
+  assert.match(source, /pageConfig\?\.format === 'products'\s*\?\s*await resolveStorefrontItemSummary\(siteData, pageConfig, itemId\)/);
 });
 
 test('the card resolves its item through the same helper the page uses', () => {

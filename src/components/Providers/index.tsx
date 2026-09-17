@@ -104,6 +104,8 @@ const Providers = ({
     const content = (
         <NextProvider
             mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+            // Storefront Phase 0.2: opts every storefront into the purchase rule.
+            commerce={{ paymentsProvider: siteData.paymentsProvider }}
             onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) => {
                 const ok = await subscribeUser(email, subscribersCollectionId, fields);
                 // C5 — the one conversion event. Self-gates on GA4 being

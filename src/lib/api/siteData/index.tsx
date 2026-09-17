@@ -85,6 +85,7 @@ interface SiteDetailsResponse {
   // below (raw.X ?? values.X) should a future portal-authored surface add it.
   redirects?: SiteData['redirects'];
   tier?: string;
+  paymentsProvider?: 'stripe' | 'square' | null;
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -246,6 +247,7 @@ export const getSiteData = async (): Promise<SiteData> => {
     // to sign it. A top-level copy would arrive unsigned and render nothing.
     defaultOgImage: (raw.siteDetails.values as SiteData).defaultOgImage,
     tier: raw.tier,
+    paymentsProvider: raw.paymentsProvider,
   };
 };
 

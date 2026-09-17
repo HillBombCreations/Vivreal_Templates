@@ -16,6 +16,8 @@
  * Shopify is EXCLUDED on purpose — its checkout is a hosted-redirect fork
  * (Phase 5) and it is not in the backend mutex set.
  */
+import { storefrontSectionConfigOf } from "./storefront/storefrontConfig.ts";
+
 export const PAYMENTS_PROVIDER_TYPES: ReadonlySet<string> = new Set([
   "stripe",
   "square",
@@ -61,17 +63,32 @@ function blockHasPaymentsBinding(block: BlockLike): boolean {
 }
 
 /**
+ * Storefront Phase 0.2: a products page that only takes inquiries (the venue
+ * storefronts) needs no bag. True only when the page's storefront, read from
+ * the SAME first binding the renderer's listing reads, says
+ * `purchaseMode: 'inquiry'` exactly, and nothing on the page names a payments
+ * provider. Inquiry on a later binding does not count: the listing draws Add
+ * buttons from the first binding, and those need a bag.
+ */
+export function isInquiryOnlyPage(page: CartGatePage): boolean {
+  if (storefrontSectionConfigOf(page)?.purchaseMode !== "inquiry") return false;
+  if ((page.blocks ?? []).some(blockHasPaymentsBinding)) return false;
+  return !(page.integrations ?? []).some((i) => isPaymentsProvider(i.type ?? i.name));
+}
+
+/**
  * The CartProvider mount gate: does any page need the cart wired?
  *
  * Three prongs, in the order they historically accreted:
- *  1. legacy `format === 'products'` pages;
+ *  1. legacy `format === 'products'` pages; Storefront Phase 0.2: an
+ *     inquiry-only products page does not count (prong 1).
  *  2. legacy `page.integrations[]` naming a payments provider;
  *  3. block-authored pages whose bindings (at ANY depth, incl. coordinated
  *     group children) name a payments provider (SP-4 + the child recursion).
  */
 export function pagesNeedCart(pages: CartGatePage[]): boolean {
   return (
-    pages.some((p) => p.format === "products") ||
+    pages.some((p) => p.format === "products" && !isInquiryOnlyPage(p)) ||
     pages.some((p) =>
       (p.integrations ?? []).some((i) => isPaymentsProvider(i.type ?? i.name)),
     ) ||
