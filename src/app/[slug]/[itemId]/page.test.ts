@@ -77,3 +77,18 @@ test('the page and the card resolve the item through one function', () => {
   const calls = source.match(/lookupDetailItem\(siteData, pageConfig, itemId\)/g) ?? [];
   assert.equal(calls.length, 2, 'the render and the metadata both use the shared lookup');
 });
+
+test('Phase 0.1: a products page misses to the collection arm when one serves it', () => {
+  assert.match(source, /if \(!product && providerMissIsFinal\(pageConfig\)\)/);
+  assert.doesNotMatch(source, /if \(!product && pageConfig\.format === "products"\)/);
+});
+
+test('Phase 0.1: the provider read asks the shared source order', () => {
+  assert.match(source, /storefrontItemSources\(pageConfig, paymentsProvider\)\.includes\("provider"\)/);
+});
+
+test('Phase 0.1: a collection-sourced products item renders through the product renderer', () => {
+  assert.match(source, /contentItemToProduct\(effectiveItem, \{ specFields: storefrontConfig\?\.specFields \}\)/);
+  const renderers = source.match(/<ProductDetailRenderer/g) ?? [];
+  assert.equal(renderers.length, 2, 'the provider arm and the collection arm');
+});

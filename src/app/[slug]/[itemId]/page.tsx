@@ -21,6 +21,9 @@ import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductByIdRead } from "@/lib/api/products";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
+import { contentItemToProduct, resolveStorefrontSectionConfig } from "@hillbombcreations/site-renderer";
+import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDetailRenderer/templatesProductToRenderer";
+import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
 import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
@@ -188,6 +191,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
+  // Same fallback the products list and the old client wrapper applied.
+  const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
   // Same guard, same reason as `[slug]/page.tsx`: on a degraded read every
   // detail URL on the site would 404, because the page list it resolves
   // against is empty for lack of data rather than for lack of pages.
@@ -442,21 +447,20 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // undefined ⇒ getProducts' legacy stripe default.
   const { integrationTypes } = collectBindingTargets(pageConfig);
   const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
-  const productRead =
-    pageConfig.format === "products" || paymentsProvider
-      ? await getProductByIdRead(itemId, paymentsProvider ?? "stripe")
-      : null;
+  const productRead = storefrontItemSources(pageConfig, paymentsProvider).includes("provider")
+    ? await getProductByIdRead(itemId, paymentsProvider ?? "stripe")
+    : null;
   const product = productRead?.product ?? null;
   // Recorded whether or not this arm serves the request. On a non-products page
   // a product miss falls THROUGH to the collection and menu arms below, so a
   // degraded products read has to still be accountable when one of those arms
   // reaches its own miss: the item may well have been in the list that failed.
   if (productRead) reads.push({ source: "products", degraded: productRead.degraded });
-  // A products page has no other arm that could serve this id → 404 on a miss
-  // (unchanged). Non-products pages can carry BOTH a storefront and plain
-  // collection tiles that link to /<slug>/<itemId> — a product miss there
-  // falls through to the collection/menu arms below instead.
-  if (!product && pageConfig.format === "products")
+  // A products page with no collection behind it has no other arm that could
+  // serve this id, so a miss there is a 404. Storefront Phase 0.1 (D1): when
+  // the page's detail route serves a collection, the miss falls through to the
+  // collection arm below instead of 404ing a real seeded item.
+  if (!product && providerMissIsFinal(pageConfig))
     return answerItemMissing(product);
   if (product) {
     // Fetch supplemental integrations for the detail page (non-payments ones —
@@ -577,11 +581,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         <JsonLd schema={productJsonLd} />
         <Navbar />
         <ProductDetailRenderer
-          product={product}
+          item={templatesProductToRenderer(product, siteLogo)}
           siteData={siteData}
           slug={slug}
           detailPage={rendererDetailPage}
           cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+          storefrontConfig={resolveStorefrontSectionConfig(pageConfig)}
         />
         {detailSupplemental.length > 0 && (
           <div className="content-grid py-8">
@@ -726,6 +731,31 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
           }
         : {}),
     });
+
+    // Storefront Phase 0.1: a `products` page bound to a collection (the resale
+    // shop, and every kit storefront Phase 3 authors) is a PRODUCT page. Same buy
+    // box, spec pairs and purchase rule as a provider product. The JSON-LD above
+    // already describes it as a product (`detailJsonLdFormat` maps it so).
+    if (pageConfig.format === "products") {
+      const storefrontConfig = resolveStorefrontSectionConfig(pageConfig);
+      const collectionProduct = contentItemToProduct(effectiveItem, { specFields: storefrontConfig?.specFields });
+      return (
+        <>
+          <JsonLd schema={itemJsonLd} />
+          <Navbar />
+          <ProductDetailRenderer
+            item={{ ...collectionProduct, imageUrl: collectionProduct.imageUrl || siteLogo }}
+            siteData={siteData}
+            slug={slug}
+            // Same Templates-to-renderer config bridge the generic arm below uses.
+            detailPage={scopedDetailPage as DetailPageConfig | undefined}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            storefrontConfig={storefrontConfig}
+          />
+          <Footer />
+        </>
+      );
+    }
 
     return (
       <>
