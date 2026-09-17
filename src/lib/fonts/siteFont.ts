@@ -144,12 +144,15 @@ export type SiteFontResolution = {
  *
  * @param fontFamily - `siteData.fontFamily`, the migrator's normalized capture
  *   (e.g. `'Geist'`), an explicit Studio-authored value, or absent.
+ * @param fontWeights - `siteData.fontWeights`, the weights the site declares
+ *   (Storefront Phase 0.7). Absent requests the renderer's default weights.
  * @returns `null` when there is nothing to override (absent/blank input) —
  *   callers must render NO font wiring at all in that case (see file header).
  */
-export function resolveSiteFont(fontFamily?: string | null): SiteFontResolution | null {
+export function resolveSiteFont(fontFamily?: string | null, fontWeights?: unknown): SiteFontResolution | null {
   const resolved = resolveSharedSiteFont(fontFamily, {
     definedFontVariables: TEMPLATES_FONT_VARIABLES,
+    fontWeights,
   });
   if (!resolved) return null;
 
