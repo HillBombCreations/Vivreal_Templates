@@ -169,13 +169,16 @@ test('only the two next/font families carry a fontVariable, and it is the right 
 test('an uncurated family gets the literal name plus a Google Fonts stylesheet', () => {
   // Three of the four fleet sites that set fontFamily land here (Cabin twice,
   // Cinzel), so this is the common path, not the exotic one.
+  // Since renderer 1.72.0 the href carries the resolver's DEFAULT_FONT_WEIGHTS
+  // when a site declares none, so an uncurated family gets real bold instead of a
+  // single 400 face. The declared-weights path is pinned separately.
   const cabin = resolve('Cabin');
   assert.equal(cabin?.cssValue, `'Cabin', ${SANS_FALLBACK}`);
-  assert.equal(cabin?.googleFontsHref, 'https://fonts.googleapis.com/css2?family=Cabin&display=swap');
+  assert.equal(cabin?.googleFontsHref, 'https://fonts.googleapis.com/css2?family=Cabin:wght@300;400;500;600;700;800;900&display=swap');
   assert.equal(cabin?.fontVariable, undefined);
   assert.equal(
     resolve('Libre Baskerville')?.googleFontsHref,
-    'https://fonts.googleapis.com/css2?family=Libre+Baskerville&display=swap',
+    'https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@300;400;500;600;700;800;900&display=swap',
   );
 });
 
