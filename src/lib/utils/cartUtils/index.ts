@@ -20,7 +20,7 @@ export function handleAddToCart({
   quantity,
   cart,
   setCart,
-}: AddToCartProps): void {
+}: AddToCartProps): boolean {
   const variant = resolveVariant(selectedVariant, product) ?? "default";
   const cartKey = `${product._id}_${variant}`;
   const baseName = getSafeFieldValue(product, "name", selectedVariant) ?? "";
@@ -31,6 +31,9 @@ export function handleAddToCart({
   // (Stripe price id / Square variationId); identical value on legacy Stripe
   // products, which only carry `default_price`.
   const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
+  // Storefront Phase 0.2: an item with no checkout price (a template-seeded
+  // collection item) cannot be bought, so it never becomes a bag line.
+  if (!priceID.trim()) return false;
   // Resolve the unit for THIS line's variant so the cart stores a plain string
   // (e.g. "lb"), never the whole variant→unit map.
   const unit = resolveVariantableString(product.quantityUnit, selectedVariant);
@@ -50,6 +53,7 @@ export function handleAddToCart({
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));
+  return true;
 }
 
 interface CheckoutProps {
@@ -72,12 +76,31 @@ export class CheckoutCouponError extends Error {
   }
 }
 
+/** Storefront Phase 0.2: shown when a bag holds a line with no checkout price. */
+export const UNBUYABLE_LINE_MESSAGE =
+  "Something in your bag can't be bought online yet. Remove it, then check out.";
+
+/** Thrown before any request when a bag line has no checkout price. */
+export class CheckoutLineError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckoutLineError";
+  }
+}
+
 export async function handleCheckout({
   cart,
   requiresShipping,
   originUrl,
   code,
 }: CheckoutProps): Promise<void> {
+  // Storefront Phase 0.2: /api/checkout refuses an empty price with a 400. A
+  // bag saved before this fix can still hold such a line, so refuse here, before
+  // any request, with words the cart dialog shows as they are.
+  if (Object.values(cart).some((item) => !item.priceID?.trim())) {
+    throw new CheckoutLineError(UNBUYABLE_LINE_MESSAGE);
+  }
+
   const products = Object.values(cart).map((item) => ({
     price: item.priceID,
     quantity: item.quantity,

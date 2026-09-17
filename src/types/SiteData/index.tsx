@@ -543,6 +543,12 @@ export interface SiteData {
     /** Group subscription tier — gates the footer "Powered by Vivreal" toggle. */
     tier?: string;
     /**
+     * Storefront Phase 0.2: the group's single active payments provider, or
+     * null when none is active. Absent from an older VR_Client_API, which the
+     * purchase rule reads as "unknown" and does not block on.
+     */
+    paymentsProvider?: 'stripe' | 'square' | null;
+    /**
      * Site-wide "get in touch" floating action button (parity #3). Stored flat on
      * the site doc (like `chrome` / `emailPopup`); the root layout mounts
      * {@link FloatingCta} from it. Absent ⇒ no FAB (back-compat).
