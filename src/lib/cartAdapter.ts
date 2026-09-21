@@ -4,9 +4,18 @@ import { useMemo } from "react";
 import type { CartAdapter } from "@hillbombcreations/site-renderer";
 import { useOptionalCart } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
-import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
+import {
+  handleAddToCart,
+  handleCheckout,
+  BUY_NOW_FAILED_MESSAGE,
+  UNBUYABLE_ITEM_MESSAGE,
+} from "@/lib/utils/cartUtils";
 import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
+import { toast } from "@/hooks/use-toast";
+
+/** How long a refusal stays up. Longer than a confirmation: it has to be read. */
+const FAILURE_TOAST_MS = 8000;
 
 /**
  * Builds a `CartAdapter` (the renderer's injected cart contract) backed by the
@@ -27,13 +36,24 @@ export function useCartAdapter(): CartAdapter | null {
     const { cart, setCart } = cartCtx;
     return {
       addToCart: ({ product, variant, quantity }) => {
-        handleAddToCart({
+        const added = handleAddToCart({
           product: rendererProductToTemplates(product),
           selectedVariant: variant,
           quantity,
           cart,
           setCart,
         });
+        // `handleAddToCart` returns false for an item with no checkout price.
+        // That answer used to be discarded here, so the button animated and
+        // nothing joined the bag, with nothing said (H45's "dead button").
+        if (!added) {
+          toast({
+            variant: "destructive",
+            title: "Not available online",
+            description: UNBUYABLE_ITEM_MESSAGE,
+            duration: FAILURE_TOAST_MS,
+          });
+        }
       },
 
       buyNow: async ({ product, variant, quantity }) => {
@@ -47,21 +67,44 @@ export function useCartAdapter(): CartAdapter | null {
         const price = getSafeFieldValue(templatesProduct, "price", variant) ?? "";
         const imageUrl = getSafeFieldValue(templatesProduct, "imageUrl", variant) ?? "";
 
-        await handleCheckout({
-          cart: {
-            [`${templatesProduct._id}_${resolvedVariant}`]: {
-              _id: templatesProduct._id,
-              quantity,
-              name,
-              price,
-              priceID,
-              imageUrl,
-              variant: resolvedVariant,
+        try {
+          await handleCheckout({
+            cart: {
+              [`${templatesProduct._id}_${resolvedVariant}`]: {
+                _id: templatesProduct._id,
+                quantity,
+                name,
+                price,
+                priceID,
+                imageUrl,
+                variant: resolvedVariant,
+              },
             },
-          },
-          requiresShipping: siteData?.businessInfo?.shipping !== false,
-          originUrl: typeof window !== "undefined" ? window.location.origin : "",
-        });
+            requiresShipping: siteData?.businessInfo?.shipping !== false,
+            originUrl: typeof window !== "undefined" ? window.location.origin : "",
+          });
+        } catch (err) {
+          // H45/H33: this hop had NO catch. Every refusal checkout can give
+          // (an unbuyable line, a group with no provider active, an upstream
+          // wobble) became an unhandled rejection: the spinner stopped, the
+          // page stayed put, and the shopper was told nothing. The cart dialog
+          // has always shown these; the product page showed none of them.
+          //
+          // Swallowed deliberately rather than rethrown: the renderer's
+          // DetailAddToCart awaits this with no catch of its own, so a rethrow
+          // is an unhandled rejection again. The toast IS the handling.
+          //
+          // `err.message` is the edge route's shopper-facing sentence, which is
+          // chosen by status and never echoes upstream prose (see
+          // api/checkout/route.ts). It is safe to show as-is.
+          toast({
+            variant: "destructive",
+            title: "Checkout could not start",
+            description:
+              err instanceof Error && err.message ? err.message : BUY_NOW_FAILED_MESSAGE,
+            duration: FAILURE_TOAST_MS,
+          });
+        }
       },
 
       getCartCount: () =>
