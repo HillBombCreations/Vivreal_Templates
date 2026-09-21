@@ -13,6 +13,7 @@ import {
 import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import { toast } from "@/hooks/use-toast";
+import { shipsOrders } from "@/lib/shipping";
 
 /** How long a refusal stays up. Longer than a confirmation: it has to be read. */
 const FAILURE_TOAST_MS = 8000;
@@ -80,7 +81,7 @@ export function useCartAdapter(): CartAdapter | null {
                 variant: resolvedVariant,
               },
             },
-            requiresShipping: siteData?.businessInfo?.shipping !== false,
+            requiresShipping: shipsOrders(siteData?.businessInfo),
             originUrl: typeof window !== "undefined" ? window.location.origin : "",
           });
         } catch (err) {

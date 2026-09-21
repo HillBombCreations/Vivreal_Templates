@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { HomeSectionProps } from "../index";
 import type { LandingSection } from "@/types/Landing";
 import { ArrowRight, Truck, Shield, Star } from "lucide-react";
+import { shipsOrders } from "@/lib/shipping";
 
 const HeroSectionEcommerce = ({ config, siteData, prefetchedData }: HomeSectionProps) => {
   const heroSection = prefetchedData?.heroSection as LandingSection | undefined;
@@ -21,7 +22,9 @@ const HeroSectionEcommerce = ({ config, siteData, prefetchedData }: HomeSectionP
   const ctaLabel = heroSection?.buttonLabel ?? "Shop new arrivals";
   const ctaHref = (config.linkTo as string) ?? "/products";
 
-  const hasShipping = siteData?.businessInfo?.shipping !== false;
+  // Aligned with the checkout default (H35): a site that collects no shipping
+  // address must not promise delivery in the same breath.
+  const hasShipping = shipsOrders(siteData?.businessInfo);
   const trustItems = [
     { icon: <Truck className="h-4 w-4" />, label: hasShipping ? "Fast delivery" : "Pickup available" },
     { icon: <Shield className="h-4 w-4" />, label: "Secure checkout" },

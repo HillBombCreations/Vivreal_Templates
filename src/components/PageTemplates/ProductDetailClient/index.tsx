@@ -9,6 +9,7 @@ import { getSafeFieldValue, resolveVariant, resolveVariantableString } from "@/l
 import { handleAddToCart, handleCheckout } from "@/lib/utils/cartUtils";
 import { useCartContext } from "@/contexts/CartContext";
 import FloatingCartDialog from "./FloatingCartDialog";
+import { shipsOrders } from "@/lib/shipping";
 
 interface ProductDetailClientProps {
   product: Product;
@@ -113,7 +114,7 @@ export default function ProductDetailClient({
               variant,
             },
         },
-        requiresShipping: siteData?.businessInfo?.shipping !== false,
+        requiresShipping: shipsOrders(siteData?.businessInfo),
         originUrl: window.location.origin,
       });
     } catch {

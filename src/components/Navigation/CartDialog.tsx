@@ -13,6 +13,7 @@ import {
   type CartLineItemInput,
 } from "@/lib/utils/cartUtils";
 import { cartSubtotal, cartUnitPrice, cartLineTotal } from "@/lib/cartPrice";
+import { shipsOrders } from "@/lib/shipping";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -157,7 +158,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     try {
       await handleCheckout({
         cart,
-        requiresShipping: !!businessInfo?.shipping,
+        requiresShipping: shipsOrders(businessInfo),
         originUrl: window.location.origin,
         ...(appliedCode ? { code: appliedCode } : {}),
       });
@@ -321,7 +322,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                           </div>
 
                           <div className="text-xs text-black/55">
-                            {businessInfo?.shipping
+                            {shipsOrders(businessInfo)
                               ? "Shipping calculated at checkout"
                               : "No shipping"}
                           </div>
