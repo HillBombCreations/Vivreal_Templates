@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { HomeSectionProps } from "../index";
 import type { LandingSection } from "@/types/Landing";
 import { ArrowRight, Truck, Shield, Star } from "lucide-react";
-import { shipsOrders } from "@/lib/shipping";
+import { verifiableFulfilmentClaim } from "@/lib/shipping";
 
 const HeroSectionEcommerce = ({ config, siteData, prefetchedData }: HomeSectionProps) => {
   const heroSection = prefetchedData?.heroSection as LandingSection | undefined;
@@ -22,11 +22,28 @@ const HeroSectionEcommerce = ({ config, siteData, prefetchedData }: HomeSectionP
   const ctaLabel = heroSection?.buttonLabel ?? "Shop new arrivals";
   const ctaHref = (config.linkTo as string) ?? "/products";
 
-  // Aligned with the checkout default (H35): a site that collects no shipping
-  // address must not promise delivery in the same breath.
-  const hasShipping = shipsOrders(siteData?.businessInfo);
+  // The fulfilment badge asserts something to a visitor, so it appears only
+  // when the owner has actually told us how they fulfil. On an unset flag we
+  // say NOTHING rather than guess: "Fast delivery" would be a claim the site
+  // contradicts at checkout by collecting no address (H35), and "Pickup
+  // available" would be a different unverified claim, false for exactly the
+  // salons and trades the H35 default was chosen for, who sell no physical
+  // goods at all. `brand/voice.md` asks us to verify a claim before asserting
+  // it, not to pick the more plausible guess.
+  //
+  // Dropping the badge is safe here rather than merely tolerable: the row below
+  // is `flex ... gap-6 justify-center lg:justify-start`, so it is gap-based and
+  // content-sized with no grid track, fixed width or `justify-between` to leave
+  // a hole. Two badges centre exactly as three do, and at 390 they have more
+  // room, not less.
+  const fulfilment = verifiableFulfilmentClaim(siteData?.businessInfo);
   const trustItems = [
-    { icon: <Truck className="h-4 w-4" />, label: hasShipping ? "Fast delivery" : "Pickup available" },
+    ...(fulfilment
+      ? [{
+          icon: <Truck className="h-4 w-4" />,
+          label: fulfilment === "ships" ? "Fast delivery" : "Pickup available",
+        }]
+      : []),
     { icon: <Shield className="h-4 w-4" />, label: "Secure checkout" },
     { icon: <Star className="h-4 w-4" />, label: "Top quality" },
   ];

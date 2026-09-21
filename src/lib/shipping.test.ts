@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { shipsOrders, declaresPickupOnly } from "./shipping.ts";
+import {
+  shipsOrders,
+  declaresPickupOnly,
+  verifiableFulfilmentClaim,
+  type FulfilmentClaim,
+} from "./shipping.ts";
 
 /**
  * The two expressions that used to decide `requiresShipping` inline, kept as
@@ -84,6 +89,78 @@ test("the two differ on exactly the unset case, and nowhere else", () => {
   assert.ok(differ.length > 0, "the two functions have collapsed into inverses");
   for (const b of differ) {
     assert.equal(b?.shipping, undefined);
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/* The honesty floor on the hero fulfilment badge                      */
+/* ------------------------------------------------------------------ */
+
+test("HONESTY FLOOR: an unset flag asserts NOTHING about fulfilment", () => {
+  // The case that matters. "Fast delivery" is contradicted at checkout, and
+  // "Pickup available" is a different unverified claim, false for the salons
+  // and trades this default was chosen for. Silence is the only honest answer.
+  assert.equal(verifiableFulfilmentClaim({}), null);
+  assert.equal(verifiableFulfilmentClaim(undefined), null);
+  assert.equal(verifiableFulfilmentClaim(null), null);
+  assert.equal(verifiableFulfilmentClaim({ shipping: undefined }), null);
+});
+
+test("a claim is made only when the owner actually told us", () => {
+  assert.equal(verifiableFulfilmentClaim({ shipping: true }), "ships");
+  assert.equal(verifiableFulfilmentClaim({ shipping: false }), "pickup");
+});
+
+test("SILENCE IS THE DEFAULT, not a special case for one known value", () => {
+  // The requirement is that a value nobody anticipated is safe WITHOUT anyone
+  // remembering to handle it. So feed the function inputs it was never written
+  // for: anything that is not an explicit true or false must come back null.
+  const unanticipated: unknown[] = [
+    {},
+    { shipping: null },
+    { shipping: 0 },
+    { shipping: 1 },
+    { shipping: "true" },
+    { shipping: "false" },
+    { shipping: "pickup" },
+    { shipping: [] },
+    { shipping: {} },
+    { shipping: NaN },
+  ];
+  for (const input of unanticipated) {
+    const claim = verifiableFulfilmentClaim(input as { shipping?: boolean });
+    assert.equal(
+      claim,
+      null,
+      `${JSON.stringify(input)} produced the claim "${claim}"; silence must be the fall-through`,
+    );
+  }
+});
+
+test("CONTROL: this would catch a badge that guesses on unset", () => {
+  // The exact shape that shipped before this change, and the one a future
+  // edit is most likely to reintroduce. If it ever passes, the honesty floor
+  // has gone.
+  const guessing = (b?: { shipping?: boolean } | null): FulfilmentClaim =>
+    shipsOrders(b) ? "ships" : "pickup";
+  assert.equal(guessing({}), "pickup", "the control itself is wrong");
+  assert.notEqual(
+    verifiableFulfilmentClaim({}),
+    guessing({}),
+    "the badge has gone back to guessing on an unset flag",
+  );
+});
+
+test("the claim never disagrees with what checkout actually does", () => {
+  // A badge saying "ships" while checkout collects no address is the original
+  // contradiction. These two must never drift apart again.
+  for (const b of [{ shipping: true }, { shipping: false }, {}, undefined, null]) {
+    if (verifiableFulfilmentClaim(b) === "ships") {
+      assert.equal(shipsOrders(b), true, `claimed delivery but ${JSON.stringify(b)} collects no address`);
+    }
+    if (verifiableFulfilmentClaim(b) === "pickup") {
+      assert.equal(shipsOrders(b), false, "claimed pickup while checkout collects an address");
+    }
   }
 });
 

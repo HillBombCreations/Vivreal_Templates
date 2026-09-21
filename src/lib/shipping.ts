@@ -73,3 +73,53 @@ export function declaresPickupOnly(
 ): boolean {
   return businessInfo?.shipping === false;
 }
+
+/**
+ * What we can HONESTLY say about how this business gets goods to a customer.
+ *
+ * `null` means "say nothing", and it is the DEFAULT rather than a special case.
+ * Read the `return null` at the bottom as the rule and the two branches above
+ * it as the exceptions, not the other way round: any state that is not an
+ * explicit, owner-supplied answer falls through to silence, so a field that
+ * gains a third value later is safe here without anyone remembering to come
+ * back.
+ *
+ * WHY THIS IS NOT JUST `shipsOrders()` INVERTED. `brand/voice.md` sets an
+ * honesty floor: verify a claim before asserting it. `shipsOrders()` returns a
+ * boolean because checkout has to DO something either way, and silence is a
+ * usable answer to "collect an address". A badge is different. It is an
+ * assertion to a visitor, and the two states are not exhaustive:
+ *
+ *   shipping === true   the owner told us they ship        -> we can say so
+ *   shipping === false  the owner told us they do not      -> we can say so
+ *   unset               the owner has told us NOTHING      -> we say nothing
+ *
+ * The tempting move on unset is "they sell goods and do not ship, so pickup
+ * must be the option". That reasoning holds for a shop and fails for exactly
+ * the businesses this default was chosen for: a salon or a trade sells no
+ * physical goods at all, so "Pickup available" is not a safer guess than "Fast
+ * delivery", it is a different unverified one. Swapping a claim we know is
+ * false for a claim we merely suspect is true does not clear the honesty floor.
+ */
+export type FulfilmentClaim = "ships" | "pickup" | null;
+
+export function verifiableFulfilmentClaim(
+  businessInfo: ShippingBusinessInfo | null | undefined,
+): FulfilmentClaim {
+  // STRICTLY `=== true`, where `shipsOrders()` is deliberately a `!!`. The two
+  // differ because they answer to different standards, and the difference is
+  // not fussiness: the field is typed `boolean` but arrives from the CMS over
+  // the wire, so the type is a statement of intent rather than a runtime
+  // guarantee. `!!` is right for checkout, which has to pick a behaviour for
+  // whatever shows up. It is wrong for an assertion to a visitor, because
+  // truthiness is not recognition: `1` and, worst of all, the STRING "false"
+  // are both truthy, and either would have printed "Fast delivery" on a site
+  // that ships nothing. A claim needs a value we actually recognise.
+  //
+  // This was not reasoned out in advance. The "silence is the default" test
+  // below fed the function values it was never written for, and `{shipping: 1}`
+  // came back claiming delivery.
+  if (businessInfo?.shipping === true) return "ships";
+  if (declaresPickupOnly(businessInfo)) return "pickup";
+  return null;
+}
