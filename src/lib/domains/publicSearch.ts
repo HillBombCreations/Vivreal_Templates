@@ -295,10 +295,17 @@ export function messageForFailure(status: number | null): string {
  * the offer before. A stranger has none of those. The hub answers it per
  * result once they do. Saying the sentence and stopping is the only thing this
  * page can say that cannot turn out to be wrong.
+ *
+ * IT NAMES ONE PLAN SINCE tier-quotas 4.0.0, and that is not an omission.
+ * Pro Plus folded into Pro, `DOMAIN_BUNDLE.eligibleTiers` reads `['pro']`, and
+ * `normalizeTier` resolves a stored `proPlus` onto `pro`, so a group that was
+ * on it keeps the offer. Naming Pro Plus here would point a stranger at a plan
+ * they cannot buy. Read the package before editing this line; it is the only
+ * thing that knows.
  */
 export const FREE_YEAR_HEADING = 'The first year can be free';
 export const FREE_YEAR_OFFER =
-  'Free for the first year on yearly Pro or Pro Plus, on addresses up to $25. One per account.';
+  'Free for the first year on yearly Pro, on addresses up to $25. One per account.';
 
 /** Every visible string on the page, in one place, so one test can read them all. */
 export const DOMAIN_SEARCH_COPY = Object.freeze({

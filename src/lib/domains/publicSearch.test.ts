@@ -298,7 +298,7 @@ test('the free-year sentence is the portal\'s, byte for byte', () => {
   // contradicting it.
   assert.equal(
     FREE_YEAR_OFFER,
-    'Free for the first year on yearly Pro or Pro Plus, on addresses up to $25. One per account.',
+    'Free for the first year on yearly Pro, on addresses up to $25. One per account.',
   );
   assert.equal(DOMAIN_SEARCH_COPY.freeYearOffer, FREE_YEAR_OFFER);
 });
