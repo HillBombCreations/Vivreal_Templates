@@ -5,13 +5,14 @@ import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide-react";
 import { BrandMark } from "@hillbombcreations/site-renderer";
-import type { CartDialogProps, CartItem } from "@/types/Cart";
+import type { CartDialogProps } from "@/types/Cart";
 import {
   handleCheckout,
   validateCoupon,
   type CouponPreview,
   type CartLineItemInput,
 } from "@/lib/utils/cartUtils";
+import { cartSubtotal, cartUnitPrice, cartLineTotal } from "@/lib/cartPrice";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -64,18 +65,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     return entries.map(([id, item]) => ({ id, ...item }));
   }, [cart]);
 
-  const resolvePrice = (item: CartItem) => {
-    return typeof item?.price === "object" && item?.variant
-      ? (item.price as unknown as Record<string, string>)[item.variant]
-      : item?.price;
-  };
-
-  const subtotal = useMemo(() => {
-    return itemsArray.reduce(
-      (acc, item) => acc + (Number(resolvePrice(item)) || 0) * (item.quantity || 0),
-      0
-    );
-  }, [itemsArray]);
+  // H34: prices are CMS display strings, so "$24.99" has to be read with the
+  // tolerant parser the product card already uses. A bare Number() made it NaN,
+  // the `|| 0` beside it floored that to zero, and the shopper saw a Subtotal
+  // of $0.00 while checkout charged the real amount. See lib/cartPrice.ts.
+  const subtotal = useMemo(() => cartSubtotal(itemsArray), [itemsArray]);
 
   const totalQty = useMemo(() => {
     return itemsArray.reduce((acc, item) => acc + (item.quantity || 0), 0);
@@ -253,8 +247,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           ) : (
             <div className="space-y-3">
               {itemsArray.map((item) => {
-                const priceEach = Number(resolvePrice(item)) || 0;
-                const line = priceEach * (item.quantity || 0);
+                const priceEach = cartUnitPrice(item);
+                const line = cartLineTotal(item);
                 return (
                   <div
                     key={item.id}
@@ -448,7 +442,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           </button>
 
           <div className="mt-2 text-[11px] text-black/50 text-center">
-            You&apos;ll be redirected to a secure Stripe checkout.
+            {/* H36: never name the payment company here. The group's active
+                provider is resolved server-side at checkout and can be Square,
+                so a hardcoded name told a Square shopper the wrong company was
+                about to take their card. This is the same neutral sentence the
+                renderer's own cart chrome uses. */}
+            You&apos;ll be redirected to a secure checkout.
           </div>
         </div>
       </section>
