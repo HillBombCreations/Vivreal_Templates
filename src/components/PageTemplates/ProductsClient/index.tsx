@@ -553,7 +553,7 @@ export default function ProductsClient({
             {/* Items count */}
             {products.length > 0 && !loading && (
               <div className="mt-3 text-center text-[12px] text-black/45">
-                Showing {(page - 1) * ITEMS_PER_PAGE + 1}–
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to{" "}
                 {Math.min(page * ITEMS_PER_PAGE, products.length)} of{" "}
                 {products.length} products
               </div>
