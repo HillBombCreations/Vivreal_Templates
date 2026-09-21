@@ -80,6 +80,23 @@ export class CheckoutCouponError extends Error {
 export const UNBUYABLE_LINE_MESSAGE =
   "Something in your bag can't be bought online yet. Remove it, then check out.";
 
+/**
+ * Shown when Add to cart refuses because the item carries no checkout price.
+ *
+ * `handleAddToCart` has always returned false for these, and the product page
+ * threw that answer away, so the button moved and nothing happened.
+ */
+export const UNBUYABLE_ITEM_MESSAGE =
+  "This one can't be bought online yet. Get in touch and we'll sort it out.";
+
+/**
+ * Shown when Buy now cannot start checkout and the server sent no words of its
+ * own. Every version of this says what to DO next: a message that only says no
+ * leaves the shopper on the same dead button.
+ */
+export const BUY_NOW_FAILED_MESSAGE =
+  "We could not start checkout. Refresh the page, then try again.";
+
 /** Thrown before any request when a bag line has no checkout price. */
 export class CheckoutLineError extends Error {
   constructor(message: string) {

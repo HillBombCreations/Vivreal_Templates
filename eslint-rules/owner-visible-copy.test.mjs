@@ -100,7 +100,48 @@ test('owner-visible-copy', () => {
         code: 'const el = <img alt="at least 320px wide" />;',
         errors: [{ messageId: 'px' }],
       },
+      // 11. THE SAME SENTENCE-ACROSS-NODES HOLE, IN ITS OTHER HALF. Case 7
+      // fixed it for a glyph inside a JSX EXPRESSION container. A dash written
+      // as plain JSX TEXT lands in a node of its own whose value is the dash
+      // and the indentation after it, which is the placeholder shape again,
+      // and whose parent is the ELEMENT rather than a container, so the case-7
+      // test could not reach it.
+      //
+      // This is not hypothetical: `Showing {from}–{to} of {n} products` shipped
+      // on the live products page and `npm run lint` reported the file clean.
+      {
+        code: 'const el = <div>Showing {from}–{to} of {n} products</div>;',
+        errors: [{ messageId: 'dash', data: { kind: 'en dash' } }],
+      },
+      // 12. The multi-line form, which is what Prettier actually emits and so
+      // what the live file looked like: the dash trails a newline and an indent.
+      {
+        code: 'const el = (\n  <div>\n    Showing {a}—\n    {b} of {c}\n  </div>\n);',
+        errors: [{ messageId: 'dash', data: { kind: 'em dash' } }],
+      },
     ],
+  });
+});
+
+/**
+ * The placeholder exemption must SURVIVE the case-11 fix.
+ *
+ * A dash alone in a cell is this repo's "no value here" convention, and it is
+ * the reason the exemption exists. Widening the rule until that fires is how a
+ * rule earns the reputation that gets it switched off, so these are pinned
+ * separately rather than buried in the valid list above.
+ */
+test('a bare glyph with nothing beside it is still typography, not a sentence', () => {
+  ruleTester.run('owner-visible-copy', rule, {
+    valid: [
+      // The only child of its element: nothing is beside it to make a sentence.
+      { code: 'const el = <td>—</td>;' },
+      { code: 'const el = <span>\n  —\n</span>;' },
+      // Reached through a ternary, so it is a placeholder by construction.
+      { code: 'const el = <td>{linked ? "yes" : "—"}</td>;' },
+      { code: 'const el = <td>{value ?? "—"}</td>;' },
+    ],
+    invalid: [],
   });
 });
 

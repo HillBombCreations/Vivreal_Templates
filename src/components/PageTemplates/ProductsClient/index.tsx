@@ -8,6 +8,7 @@ import type { Product, Filter, SortOption } from "@/types/Products";
 import ProductGrid from "./ProductGrid";
 import MobileFilterSheet from "./MobileFilterSheet";
 import AddedToCartToast from "./AddedToCartToast";
+import { declaresPickupOnly } from "@/lib/shipping";
 
 const SORT_OPTIONS: SortOption[] = [
   { key: "featured", label: "Featured" },
@@ -230,7 +231,10 @@ export default function ProductsClient({
 
   const surface = siteData?.surface ?? "#ffffff";
   const businessInfo = siteData?.businessInfo;
-  const hasNoShipping = businessInfo && businessInfo?.shipping === false;
+  // Deliberately the EXPLICIT reading, not !shipsOrders(): this badge is an
+  // affirmative claim on the storefront, and silence is not permission to
+  // print it. See declaresPickupOnly() in lib/shipping.ts.
+  const hasNoShipping = declaresPickupOnly(businessInfo);
 
   const [isPending, startTransition] = useTransition();
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -553,7 +557,7 @@ export default function ProductsClient({
             {/* Items count */}
             {products.length > 0 && !loading && (
               <div className="mt-3 text-center text-[12px] text-black/45">
-                Showing {(page - 1) * ITEMS_PER_PAGE + 1}–
+                Showing {(page - 1) * ITEMS_PER_PAGE + 1} to{" "}
                 {Math.min(page * ITEMS_PER_PAGE, products.length)} of{" "}
                 {products.length} products
               </div>

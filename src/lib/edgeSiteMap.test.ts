@@ -365,10 +365,14 @@ async function withUpstream(makeResponse: () => Response, run: () => void | Prom
   }
 }
 
+// The `error` sentence here is SAMPLE DATA and is never asserted: the gate is
+// the `code`. The 'totally different wording' case below is the control that
+// proves it, and VR_Client_API rewording this sentence (which it has now done)
+// froze exactly as many sites as before, which is the whole point of the code.
 const frozenBody = JSON.stringify({
   success: false,
   data: null,
-  error: 'The group is frozen please resume go to portal to activate',
+  error: 'This site is paused. The owner can turn it back on any time from their Vivreal account.',
   code: 'GroupFrozen',
 });
 

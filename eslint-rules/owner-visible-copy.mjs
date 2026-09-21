@@ -323,6 +323,31 @@ const rule = {
         return literal?.type === 'TemplateLiteral' && literal.expressions.length > 0;
       }
 
+      /**
+       * The JSXText half, which the expression-container test below cannot
+       * reach. `Showing {from}–{to} of {n} products` puts the en dash in a
+       * JSXText node of its own, whose value is the dash plus the indentation
+       * that follows it. That is character for character the placeholder shape,
+       * and the node's parent is the ELEMENT rather than an expression
+       * container, so the test below returns false and the exemption swallows a
+       * dash a shopper reads on every products page.
+       *
+       * A JSXText node is never reached through `??` or a ternary. It is
+       * literally the text between two tags, so it is never a placeholder in
+       * the sense the exemption means. The same question still decides it: is
+       * the dash alone in what the reader sees, or is there a word beside it.
+       *
+       * Found by control rather than by reading: the en dash above sat in a
+       * live products page while `npm run lint` reported the file clean.
+       */
+      if (node.type === 'JSXText') {
+        const parent = node.parent;
+        if (!parent || (parent.type !== 'JSXElement' && parent.type !== 'JSXFragment')) {
+          return false;
+        }
+        return parent.children.some((child) => child !== node && rendersText(child));
+      }
+
       const container = node.parent;
       if (!container || container.type !== 'JSXExpressionContainer') return false;
       // The dash must be the WHOLE expression. `value ?? '—'` fails here,

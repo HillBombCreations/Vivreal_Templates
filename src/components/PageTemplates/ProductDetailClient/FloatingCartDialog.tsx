@@ -7,6 +7,7 @@ import { useSiteData } from "@/contexts/SiteDataContext";
 import { getSafeFieldValue, resolveVariantableString } from "@/lib/utils/variantUtils";
 import { handleCheckout } from "@/lib/utils/cartUtils";
 import type { FloatingCartDialogProps } from "@/types/Cart";
+import { shipsOrders } from "@/lib/shipping";
 
 export default function FloatingCartDialog({
   open,
@@ -58,7 +59,7 @@ export default function FloatingCartDialog({
     try {
       await handleCheckout({
         cart,
-        requiresShipping: !!businessInfo?.shipping,
+        requiresShipping: shipsOrders(businessInfo),
         originUrl: window.location.origin,
       });
       setOpenCartMenu(false);
