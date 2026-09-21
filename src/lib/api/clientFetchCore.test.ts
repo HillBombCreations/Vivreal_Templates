@@ -215,12 +215,27 @@ test('buildClientFetchHeaders lets a caller override Content-Type but not the by
  * `edgeSiteMap`'s raw `Response` to find `GroupFrozen`.
  */
 
+/**
+ * The sentence VR_Client_API currently sends with a `GroupFrozen` 400.
+ *
+ * SAMPLE DATA, NOT A CONTRACT. It is asserted only as a ROUND TRIP: fed in at
+ * the top of the test and read back at the bottom, which proves this module
+ * carries whatever sentence it was handed onto `serverMessage` rather than
+ * proving the sentence is this one. Nothing in this repo branches on it. The
+ * gate is `code === 'GroupFrozen'` (`edgeSiteMap.ts`), which is why VR_Client_API
+ * could reword this without un-freezing a single site.
+ *
+ * Declared once so a future reword is one line here, not a hunt for literals.
+ */
+const FROZEN_SENTENCE =
+  'This site is paused. The owner can turn it back on any time from their Vivreal account.';
+
 test('a GroupFrozen 400 carries its code and the upstream sentence onto the error', async () => {
   captureFetch(
     {
       success: false,
       data: null,
-      error: 'The group is frozen please resume go to portal to activate',
+      error: FROZEN_SENTENCE,
       code: 'GroupFrozen',
     },
     400,
@@ -234,10 +249,7 @@ test('a GroupFrozen 400 carries its code and the upstream sentence onto the erro
       // The point of the whole ticket: a consumer can branch on an identifier
       // instead of string-matching a sentence that copy edits can change.
       assert.equal(err.code, 'GroupFrozen');
-      assert.equal(
-        err.serverMessage,
-        'The group is frozen please resume go to portal to activate',
-      );
+      assert.equal(err.serverMessage, FROZEN_SENTENCE);
       return true;
     },
   );

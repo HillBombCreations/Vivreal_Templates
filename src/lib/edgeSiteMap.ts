@@ -91,9 +91,20 @@ export const COLD_FETCH_DEADLINE_MS = 1_500;
  * alone:
  *  - the status cannot discriminate, because `GroupFrozen` and
  *    `IntegrationNotActive` are BOTH 400;
- *  - and matching the sentence would mean rewording "The group is frozen
- *    please resume go to portal to activate" silently un-freezes every frozen
- *    site in the fleet.
+ *  - and matching the sentence would mean a copy edit silently un-freezes
+ *    every frozen site in the fleet.
+ *
+ * That second one is not hypothetical, and the example below is the receipt.
+ * VR_Client_API used to send "The group is frozen please resume go to portal
+ * to activate". It now sends something else, and it is EXPECTED to change
+ * again: it is customer-facing copy, so it belongs to whoever is editing the
+ * voice that week. Because nothing here reads it, that reword froze exactly as
+ * many sites as before and cost this file nothing.
+ *
+ * Both sentences above are quoted as HISTORY, never as a contract. The
+ * contract is the code. If you find yourself updating a sentence in this file
+ * to keep it current, something has started depending on it and that is the
+ * bug.
  *
  * Note it is 400, NOT 402. 402 is the quota / spending-cap path
  * (`handlers.js`), which is a different state with different copy.
