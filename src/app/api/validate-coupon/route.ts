@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { redactSecrets } from "@/lib/log/redact";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: data.error ?? data.message ?? "We could not check that code. Please try again.", detail: text.slice(0, 200) },
+        { error: data.error ?? data.message ?? "We could not check that code. Please try again." },
         { status: res.status }
       );
     }
@@ -103,8 +104,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    // This used to return the raw message to the browser and log nothing, so
+    // an upstream outage was invisible on the server and quoted verbatim to the
+    // shopper. Redacted by SHAPE: a fetch failure quotes the URL it was calling
+    // (H37).
+    console.error("[validate-coupon] upstream request failed:", redactSecrets(message));
     return NextResponse.json(
-      { error: "Bad Gateway", detail: message },
+      { error: "We could not check that code. Please try again." },
       { status: 502 }
     );
   }
