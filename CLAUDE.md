@@ -14,8 +14,9 @@ The **universal** site template on `main` — a Next.js 16 site that renders ANY
 npm run dev          # Dev server (Turbopack)
 npm run dev:linked   # Dev against local ../vivreal-site-renderer (copies build via dev-sync.js)
 npm run build        # Production build (Turbopack)
-npm run lint         # ESLint
-npm test             # Node test runner (src/**/*.test.ts)
+npm run lint         # ESLint (includes the custom copy rule, see Key Patterns)
+npm test             # Node test runner. THREE globs, not one:
+                     #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
 ```
 
 ---
@@ -24,7 +25,7 @@ npm test             # Node test runner (src/**/*.test.ts)
 
 | Area | Choice |
 |---|---|
-| Framework | Next.js 16 (App Router, `experimental.viewTransition`) |
+| Framework | Next.js 16 (App Router). **Do not add `experimental.viewTransition`**. It was removed in the 16.3.0 bump because the flag GRADUATED, and 16.3.0 rejects the key as unrecognized. `next build` typechecks `next.config.ts`, so re-adding it is a hard build failure, not a warning. The `<ViewTransition>` wrappers in `layout.tsx` are unaffected; they import from `react` |
 | Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates, skeletons) — version in package.json |
 | Language | TypeScript 5 (strict) |
 | Styling | Tailwind CSS 4 |
@@ -50,10 +51,10 @@ src/
 │   │                               #   + depth-2 nested pages (pageConfig.slug = "features/ai-sites")
 │   ├── og/[slug]/route.tsx         # Dynamic OG image — proxies labels.ogImage or generates a branded card
 │   ├── api/                        # Proxy routes: review, subscribe, shows, contact, checkout,
-│   │                               #   validate-coupon, revalidate (webhook cache invalidation)
+│   │                               #   validate-coupon, delivery-quote, preview/enable,
+│   │                               #   revalidate (webhook cache invalidation)
 │   ├── feeds/schedule.ics/route.ts # Public iCal feed for the schedule page's Subscribe button
 │   ├── mcp/route.ts, .well-known/  # Site MCP + mcp.json + llms.txt
-│   ├── loading.tsx, [slug]/loading.tsx  # Page-shaped Suspense skeletons (palette-correct via SSR theme vars)
 │   ├── robots.tsx, sitemap.tsx
 │   └── icon.tsx, apple-icon.tsx    # Dynamic favicon from siteData
 ├── components/
@@ -123,8 +124,10 @@ NEXT_PUBLIC_CLIENT_API         # VR_Client_API base URL (default https://client.
 API_KEY                        # API key for VR_Client_API authorization
 SITE_ID                        # MongoDB site document ID; 'preview' in local/preview (disables SiteBeacon)
 NEXT_PUBLIC_SITE_URL           # Optional per-site origin override (CloudFront rewrites Host — never derive from request).
-                               #   NOT set by the deploy pipeline: verified unset on all 20 fleet Amplify apps, so this level is
-                               #   currently inert in production. The persisted `siteDetails.values.canonicalUrl` outranks it.
+                               #   NOT set by the deploy pipeline: measured unset across the fleet's Amplify apps at the time
+                               #   that was written, so this level was inert in production. That is an INFRASTRUCTURE snapshot,
+                               #   not a property of this repo, and nothing here can re-check it. Confirm against the apps
+                               #   before relying on it. The persisted `siteDetails.values.canonicalUrl` outranks it either way.
 SITE_CACHE_TTL_SECONDS         # Data Cache TTL (default 60; 86400 only after raising signed-URL TTL)
 REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verification
 NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
@@ -167,6 +170,31 @@ Pages are async Server Components that fetch data and pass it to Client Componen
 `generateMetadata()` reads `getSiteData()` per page. Studio `seo.metaTitle` is the EXACT title (no `title.template` in the root layout — the author owns the full string); `seo.metaDescription` likewise. `og:image` always points at the stable `/og/<slug>` route (proxies the page's `labels.ogImage` or generates a branded card — never emits a short-lived signed URL). Origin resolution is ONE chain in `src/lib/og/siteOrigin.ts`: `siteData.canonicalUrl` → `NEXT_PUBLIC_SITE_URL` → `domainInformation.live_url` → `https://<domainName>`, via `resolveSiteOrigin(siteData, { surface })`. Every candidate goes through the same HTTPS-origin allowlist (no path, query, fragment, credentials, port or non-public host). The required `surface` discriminant selects STRICTNESS, never order: `'durable'` (JSON-LD `url`, robots.txt `Sitemap:`, sitemap `<loc>`, the webcal schedule feed — crawler-cached) additionally refuses a `*.amplifyapp.com` candidate, `'deployed'` (metadataBase/OG — per-request) accepts it. `canonicalUrl` is demo-gated inside the resolver. The resolver cannot import Sentry (that would make it unloadable by the plain-Node test runner and cost it the suite that pins the demo gates), so `resolveSiteOriginResult()` returns the refused candidates as DATA and `getSiteData()` captures them — a refusal is never silent.
 
 **Page-level indexing.** `src/lib/seo/pageIndexing.ts` owns the one list of page FORMATS search engines must never be pointed at (today: `checkout-success` / `checkout-cancel`). It drives both the sitemap exclusion (`buildSitemapEntries`) and the page's `robots` metadata (`[slug]/page.tsx`), because absence from a sitemap does not deindex an already-crawled URL. Keyed on `pageConfig.format`, never the slug — the live checkout slugs are `checkoutsuccess`/`checkoutcancel`.
+
+### Copy is Lint-Enforced
+
+`eslint-rules/owner-visible-copy.mjs` is a custom rule, registered in
+`eslint.config.mjs` at **`error`** across all of `src/**`, that enforces `brand/voice.md`
+on anything a visitor or owner reads: no em or en dashes, no supplier names
+(`AWS`, `Amplify`, `Route 53`, `Cognito`, `DynamoDB`, `CloudFront`), no jargon, no `px`
+measurements. `npm run lint` is the gate; `eslint-rules/*.test.mjs` runs under `npm test`.
+
+Two things about it are load-bearing:
+
+- **It reads `JSXText`, not just string literals.** Most copy on a page is the text
+  between two tags, and a sweep that greps only quoted strings misses it. Thirteen live
+  violations hid that way in the portal.
+- **A bare glyph is exempt** as the "no value here" placeholder (`value ?? '—'`, a lone
+  `—` in a cell). The exemption is narrow on purpose, and it has now been the cause of
+  two escapes: a glyph in a `{"—"}` container, and a dash written as plain JSX text with
+  words beside it. Both are fixed and pinned. If you widen the exemption, add the
+  must-fail control with it.
+
+**`Stripe` and `Square` are deliberately NOT in the supplier list**, because an owner
+connects those themselves. That rationale is about the OWNER, and it does not extend to
+the SHOPPER: shopper-facing copy must never name the payment company at all, because the
+group's active provider is resolved server-side and is not always the same one. The rule
+cannot tell those two audiences apart, so that case is on you (see `H36`).
 
 ### Analytics — Two Distinct Components
 
