@@ -5,6 +5,7 @@ import type { PageConfig } from '@/types/SiteData';
 // `node --experimental-strip-types --test`, which has no tsconfig `paths`
 // resolution. Same convention robotsPolicy.ts / siteMapPolicy.ts follow.
 import { isAuthorHiddenPage, pageIndexingBlock } from './pageIndexing.ts';
+import { isPageTurnedOff } from '../pages/pageEnabled.ts';
 
 /**
  * Build sitemap entries from the site's REAL page configs.
@@ -16,11 +17,19 @@ import { isAuthorHiddenPage, pageIndexingBlock } from './pageIndexing.ts';
  * that authoritative page list instead.
  *
  * The home page is the root entry (priority 1.0); each navigable content page maps
- * to `/<slug>` with a descending priority. Three exclusions, each for its own
+ * to `/<slug>` with a descending priority. Four exclusions, each for its own
  * reason (they are kept as separate conditions rather than folded into one list
  * precisely because the reasons differ):
  *   - the home DUPLICATE. Home is in the sitemap, as the root entry, so a
  *     second `/home` entry would be a self-duplicate.
+ *   - a page the owner turned OFF (`isPageTurnedOff`). Not a search rule at
+ *     all, which is why it is a condition here rather than a
+ *     `pageIndexingBlock` cause: the page does not SERVE. The routes answer
+ *     `notFound()` for it off the same predicate, so submitting the URL would
+ *     be advertising a 404 to every crawler that reads the file, and it would
+ *     do it at the exact moment the owner thought they had taken the page
+ *     down. Detail items under that page go with it, because the loop at the
+ *     bottom walks this same filtered list.
  *   - the synthetic `subscribers` carrier page. VR_Client_API adds it as a data
  *     carrier for the EmailPopup and Templates `notFound()`s the route, so
  *     listing it would submit a 404.
@@ -68,7 +77,7 @@ import { isAuthorHiddenPage, pageIndexingBlock } from './pageIndexing.ts';
  * omitted entirely.
  */
 export function buildSitemapEntries(
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo'>[] | undefined,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled'>[] | undefined,
   siteOrigin: string,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
@@ -85,6 +94,7 @@ export function buildSitemapEntries(
       p.slug !== 'home' &&
       p.format !== 'home' &&
       p.format !== 'subscribers' &&
+      !isPageTurnedOff(p) &&
       pageIndexingBlock(p) === null,
   );
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];

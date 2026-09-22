@@ -13,6 +13,7 @@ import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { getPageBySlug } from "@/lib/pages";
+import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
 // component file is retained until it is retired post-dogfood validation.
@@ -268,6 +269,38 @@ export default async function DynamicPage({
   // 404 for the duration.
   assertUpstreamHealthy(siteData);
   const pageConfig = getPageBySlug(siteData, slug);
+
+  // The owner turned this page OFF. Until this line, `enabled` was a
+  // navigation flag and nothing else: the renderer dropped the page from the
+  // navbar and the footer and every other layer ignored it, so "off" meant
+  // hidden from the menu while the page carried on serving at its URL to
+  // anyone with the link, and `sitemap.xml` carried on handing that URL to
+  // search engines. This is the other half of what the switch says.
+  //
+  // `notFound()` rather than a redirect home. The owner retired ONE page, not
+  // its visitors: a 200 at this URL showing the home page is a soft 404 that
+  // keeps the URL indexed as a near-duplicate and leaves the person who
+  // followed an old link wondering what happened to the page they asked for. A
+  // 404 is true for both audiences, it is already what this route says for a
+  // page that was deleted instead of switched off, and it reverses when the
+  // owner switches the page back on, through the same path every other Studio
+  // edit to this page list already takes (the save fires `POST
+  // /api/revalidate`, which invalidates the `site:<id>` tag this route's
+  // `getSiteData()` read carries; `revalidate = 300` is the backstop).
+  //
+  // BEFORE the `STATIC_SLUGS` fallback below, deliberately. Privacy and terms
+  // render on every site even with no page config at all, so a site that HAS a
+  // privacy page and switched it off would otherwise fall through to that
+  // fallback and serve the built-in near-empty copy in place of the owner's.
+  //
+  // After `assertUpstreamHealthy`, equally deliberately: on a degraded read
+  // `pageConfigs` is empty, the lookup returns `undefined`, and `undefined` is
+  // not "off" (see `isPageTurnedOff`), so an upstream wobble cannot make this
+  // line 404 a live page.
+  //
+  // `buildSitemapEntries` drops the page through the SAME predicate, so the
+  // file and the route can never disagree about which pages exist.
+  if (isPageTurnedOff(pageConfig)) return notFound();
 
   // Privacy and terms always render on every site, even if not in page config
   const STATIC_SLUGS: Record<string, string> = {
@@ -731,6 +764,14 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
   if (!pageConfig && !STATIC_PAGE_TITLES[slug]) {
+    return { title: `Not Found | ${siteName}` };
+  }
+
+  // A page the owner turned off 404s in the render above. Metadata is resolved
+  // independently of that render, so without this line the 404 would still be
+  // titled, described and canonicalised as the retired page. Same answer this
+  // function already gives for a slug with no page at all.
+  if (isPageTurnedOff(pageConfig)) {
     return { title: `Not Found | ${siteName}` };
   }
 

@@ -34,7 +34,7 @@ type SiteMapSiteData = Pick<
  */
 export function buildSiteMapForSite(
   siteData: SiteMapSiteData,
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo'>[] | undefined,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled'>[] | undefined,
   detailItemSegmentsByPage?: Record<string, string[]>,
 ): MetadataRoute.Sitemap {
   // DEGRADED READ ⇒ REFUSE, and checked before the demo gate for the same

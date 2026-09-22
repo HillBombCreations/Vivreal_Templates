@@ -157,6 +157,24 @@ export interface PageConfig {
     blocks?: Block[];
     displayOnHeader?: boolean;
     displayOnFooter?: boolean;
+    /**
+     * The owner's per-page on/off switch. Mirror of the portal's
+     * `UniversalPage.enabled` ("Whether this page is currently active.
+     * Default true") and of the renderer's `PageConfig.enabled`.
+     *
+     * Absent means ON, which is what nearly every page in the fleet carries:
+     * the field was added after the fact and was never backfilled. Read it
+     * ONLY through `isPageTurnedOff` (`src/lib/pages/pageEnabled.ts`), which
+     * owns the `=== false` comparison for the route and the sitemap alike, so
+     * this app cannot grow a second, looser reading of the same switch.
+     *
+     * This mirror declared no `enabled` at all until the routes started
+     * reading it, which is how the flag stayed navigation-only here for so
+     * long: the renderer dropped an off page from the menu while this app,
+     * unable to even see the field, served it at its URL and submitted it to
+     * search engines.
+     */
+    enabled?: boolean;
     cta?: PageCtaConfig;
     /**
      * References the renderer's `DetailPageConfig` directly (two-axis

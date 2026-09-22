@@ -19,6 +19,7 @@ import { isRefusedOrigin, resolveSiteOriginResult } from '@/lib/og/ogImage';
 import { pageDetailCollectionId } from '@/lib/detail/detailCollection';
 import { bailOutOfCachingDegradedRender } from '@/lib/renderGate';
 import { isDemoSite } from '@/lib/seo/demoSafety';
+import { isPageTurnedOff } from '@/lib/pages/pageEnabled';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
 import { applyScheduleFeedUrl } from './scheduleFeed';
@@ -433,8 +434,16 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // arc produces authors `itemCollectionId` explicitly, so this covers the
   // real feature without doubling upstream calls. Absent/false `sitemap` on
   // every page (the fleet default) ⇒ zero extra fetches.
+  //
+  // The `isPageTurnedOff` clause is a perf short-circuit of the same kind as
+  // the demo gate above, not a second gate: a page the owner switched off is
+  // dropped, with its items, by `buildSitemapEntries`, which is where that
+  // rule is pinned by a test. Skipping it HERE only avoids reading a
+  // collection whose URLs cannot be listed, and it keeps a failed read of that
+  // collection from refusing the whole sitemap below over a page nobody was
+  // going to see.
   const sitemapPages = (raw.pages ?? []).filter(
-    (p) => p?.detailPage?.sitemap === true && !!p.detailPage.itemCollectionId,
+    (p) => p?.detailPage?.sitemap === true && !!p.detailPage.itemCollectionId && !isPageTurnedOff(p),
   );
   const detailItemSegmentsByPage: Record<string, string[]> = {};
   if (sitemapPages.length > 0) {

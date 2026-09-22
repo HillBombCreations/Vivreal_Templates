@@ -108,3 +108,38 @@ test('the collection products render hands a look page the item fields and the p
   assert.match(source, /collectionItems=\{unscopedItems\}/);
   assert.equal((source.match(/collectionItems=\{/g) ?? []).length, 1, 'only the collection arm has a pool to pass');
 });
+
+// ── the two arms of this route that an off page reaches ─────────────────────
+//
+// This file serves BOTH depth-2 nested pages (one config whose slug carries a
+// slash) and the detail items of a page one level up, so the owner's page
+// on/off switch has to be honoured twice here. Neither arm appears in
+// `[slug]/page.tsx`, which is the file a reader would expect to hold the whole
+// rule. The predicate's own behaviour is tested by calling it in
+// src/lib/pages/pageEnabled.test.ts.
+
+test('a nested page the owner turned off is not served', () => {
+  assert.match(source, /if \(isPageTurnedOff\(nestedPage\)\) return notFound\(\);/);
+  assert.match(source, /import \{ isPageTurnedOff \} from "@\/lib\/pages\/pageEnabled"/);
+});
+
+test('the nested off guard runs before the format allowlist, so no format can serve an off page', () => {
+  const guard = source.indexOf('if (isPageTurnedOff(nestedPage)) return notFound();');
+  const formats = source.indexOf('NON_NESTABLE_FORMATS.has(nestedPage.format)');
+  assert.ok(guard > 0 && formats > 0);
+  assert.ok(guard < formats, 'the off guard must come first');
+});
+
+test('an item under a page the owner turned off is not served either', () => {
+  // Otherwise the page 404s while every item under it keeps serving, which
+  // publishes the collection one URL at a time.
+  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) return notFound\(\);/);
+});
+
+test('the page switch did not replace the detail-page switch: both guards stand', () => {
+  // `detailPage.enabled` answers "this page has no per-item pages";
+  // `page.enabled` answers "this page is not live at all". Two switches, two
+  // subjects, and a change that folded one into the other would silently turn
+  // per-item pages back on for every page that had them off.
+  assert.match(source, /if \(pageConfig\.detailPage\?\.enabled === false\) return notFound\(\);/);
+});
