@@ -20,8 +20,36 @@ npm test             # Node test runner. THREE globs, not one:
                      # ONE spec reads the npm registry: src/lib/domains/freeYearPackage.test.ts
                      # needs the same NODE_AUTH_TOKEN `npm ci` already needs. See
                      # "The free-year sentence" below for why, and why it does not skip.
+npx tsc --noEmit     # THE TYPECHECK. `npm test` does NOT do this. Run it before you push.
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
 ```
+
+### `npm test` STRIPS types. It does not CHECK them.
+
+`--experimental-strip-types` erases the annotations and runs the JavaScript
+underneath. It never asks whether the annotations were true. **A green suite here
+is a weaker statement than it looks, and it is worth knowing exactly how weak.**
+
+Measured 2026-09-21, both legs:
+
+| Tree | `npm test` | `npx tsc --noEmit` |
+|---|---|---|
+| clean | rc 0, 1015 pass | rc 0 |
+| with `const x: number = 'a string'` planted in `src/lib/domains/publicSearch.ts` | **rc 0, 1015 pass** | **rc 2**, `error TS2322` naming the file and line |
+
+That module is imported by most of the domains suite, so this is not a file the
+runner skipped. The control is the second column: the error was real, and one
+of the two tools saw it.
+
+**Where a type error DOES surface: the Amplify build.** `next.config.ts` sets
+neither `typescript.ignoreBuildErrors` nor `eslint.ignoreDuringBuilds`, so
+`next build` typechecks. Amplify is the CI for this repo, and on `stable` that
+build is the **fleet** build. So the failure mode of skipping `npx tsc --noEmit`
+is not a red PR, it is a red promote, after every customer site has started
+rebuilding.
+
+`npm test` + `npm run lint` + `npx tsc --noEmit` is the local gate. Two of the
+three is not.
 
 ---
 
