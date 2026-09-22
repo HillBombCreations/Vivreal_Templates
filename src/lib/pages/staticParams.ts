@@ -1,4 +1,9 @@
 import type { PageConfig } from '@/types/SiteData';
+// Explicit .ts extension (not the `@/` alias): this module is imported
+// directly by staticParams.test.ts under `node --experimental-strip-types
+// --test`, which has no tsconfig `paths` resolution. The `PageConfig` import
+// above is type-only, so it is erased before the loader ever sees it.
+import { isPageTurnedOff } from './pageEnabled.ts';
 
 /**
  * The `slug` values `[slug]/page.tsx` should hand Next as prerender params.
@@ -7,7 +12,7 @@ import type { PageConfig } from '@/types/SiteData';
  * imports) so `node --test` can call it. The route's `generateStaticParams`
  * is then nothing but "fetch site data, call this, map to params".
  *
- * Four exclusions, each for a reason a future edit must not lose:
+ * Five exclusions, each for a reason a future edit must not lose:
  *
  *  - **Slugs containing `/`.** The migrator stores depth-2 pages as a single
  *    config with `slug: "features/ai-sites"`. Next matches that URL as
@@ -23,6 +28,13 @@ import type { PageConfig } from '@/types/SiteData';
  *    changing.
  *  - **Blank slugs.** A malformed config must not produce a `/` param that
  *    collides with the home route.
+ *  - **Pages the owner turned off** (`isPageTurnedOff`). `[slug]/page.tsx`
+ *    answers `notFound()` for them, so this is the same reason `subscribers`
+ *    is excluded one bullet up: prerendering a 404 spends a build slot and
+ *    puts a 404 in the prerender manifest. It cannot strand a page that comes
+ *    back, because `dynamicParams = true` renders any slug that was not
+ *    prerendered on first request, and the Studio save that flips the switch
+ *    fires the revalidate webhook.
  *
  * `alwaysOn` carries the slugs the route serves with no page config at all
  * (privacy, terms). They are appended rather than prepended so a real authored
@@ -51,6 +63,7 @@ export function slugsForStaticParams(
 
   for (const page of pageConfigs ?? []) {
     if (page?.format === 'subscribers') continue;
+    if (isPageTurnedOff(page)) continue;
     add(page?.slug);
   }
   for (const slug of alwaysOn) add(slug);

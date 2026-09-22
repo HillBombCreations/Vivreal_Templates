@@ -15,6 +15,7 @@ import {
   buildDetailUrl,
 } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
+import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { getShowById, getShowByIdRead } from "@/lib/api/shows";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
@@ -213,6 +214,19 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   const nestedSlug = `${slug}/${itemId}`;
   const nestedPage = getPageBySlug(siteData, nestedSlug);
   if (nestedPage) {
+    // The owner turned this nested page off. A depth-2 page (the migrator
+    // stores `/features/ai-sites` as one config with the slash in its slug) is
+    // a PAGE, served here only because Next matches the URL as two segments,
+    // so the switch has to mean the same thing on it as it does one level up.
+    // Missing this arm is how a fix like this ships half-done: the route file
+    // it obviously belongs in is `[slug]`, and the pages this arm serves never
+    // appear there.
+    //
+    // `sitemap.xml` drops the same page through the same predicate, and it
+    // lists these by their joined slug, so the file and the route agree here
+    // too.
+    if (isPageTurnedOff(nestedPage)) return notFound();
+
     // Defensive guard: formats needing runtime component overrides or their own
     // interactive arms never render via renderComposedPage. If one appears nested,
     // return notFound() rather than misrender. `menu` is deliberately NOT here:
@@ -271,6 +285,18 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     if (redirectTarget) permanentRedirect(redirectTarget);
     return notFound();
   }
+
+  // The owner turned the PARENT page off, so its items go with it. An item
+  // URL only exists because the page above it does: leaving `/menu/lasagne`
+  // serving while `/menu` 404s would publish the page's whole collection one
+  // URL at a time, through the exact links the page itself used to carry.
+  // `buildSitemapEntries` already drops a page's detail items with the page
+  // for the same reason, reading the same predicate.
+  //
+  // Distinct from the `detailPage.enabled` guard directly below it, which is a
+  // different switch with a different subject: that one says "this page has no
+  // per-item pages", this one says "this page is not live at all".
+  if (isPageTurnedOff(pageConfig)) return notFound();
 
   // Guard: if detail pages are explicitly disabled for this page, return 404
   if (pageConfig.detailPage?.enabled === false) return notFound();
@@ -1004,6 +1030,11 @@ export async function generateMetadata({ params }: Props) {
   // CP-11: metadata for nested sub-pages resolved via the joined slug.
   const nestedPage = getPageBySlug(siteData, `${slug}/${itemId}`);
   if (nestedPage) {
+    // Off nested page: the render 404s it, and metadata resolves separately,
+    // so without this the 404 would still be titled as the retired page.
+    if (isPageTurnedOff(nestedPage)) {
+      return { title: `Not Found | ${siteName}` };
+    }
     const seo = nestedPage.seo;
     const derived = nestedPage.labels?.title || nestedPage.name;
     const title = seo?.metaTitle || `${derived} | ${siteName}`;
@@ -1036,6 +1067,13 @@ export async function generateMetadata({ params }: Props) {
   const pageConfig = getPageBySlug(siteData, slug);
 
   if (!pageConfig) {
+    return { title: `Not Found | ${siteName}` };
+  }
+
+  // Parent page off: every item URL under it 404s in the render above, so the
+  // metadata says the same thing rather than describing an item on a page that
+  // is no longer live.
+  if (isPageTurnedOff(pageConfig)) {
     return { title: `Not Found | ${siteName}` };
   }
 

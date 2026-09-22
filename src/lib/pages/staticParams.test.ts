@@ -108,3 +108,26 @@ test('a malformed config entry cannot crash a build', () => {
   const ragged = [undefined, null, {}, page('about')] as unknown as PageConfig[];
   assert.deepEqual(slugsForStaticParams(ragged), ['about']);
 });
+
+test('a page the owner turned off is excluded, because the route now 404s it', () => {
+  // Same reason the synthetic subscribers page is excluded: prerendering a URL
+  // the route answers `notFound()` for spends a build slot and puts a 404 in
+  // the prerender manifest. Asserted as the exact surviving list, so an
+  // exclusion that took the wrong page with it still fails.
+  const off = { ...page('specials'), enabled: false } as PageConfig;
+  assert.deepEqual(slugsForStaticParams([page('about'), off, page('contact')]), ['about', 'contact']);
+});
+
+test('only the literal false is off: an unflagged page and an ON page are both prerendered', () => {
+  // The fleet default is no field at all. If absence read as off, a fleet
+  // build would stop prerendering nearly every page on nearly every site.
+  const on = { ...page('menu'), enabled: true } as PageConfig;
+  assert.deepEqual(slugsForStaticParams([page('about'), on]), ['about', 'menu']);
+});
+
+test('an off page cannot take the always-on slugs down with it', () => {
+  // The non-empty guarantee above is what keeps a gate-off build from 500ing
+  // every `/[slug]` URL, so it has to survive this exclusion too.
+  const off = { ...page('specials'), enabled: false } as PageConfig;
+  assert.deepEqual(slugsForStaticParams([off], ['privacy', 'terms']), ['privacy', 'terms']);
+});

@@ -367,3 +367,94 @@ test('a site with no pages at all still emits its root, because the author rule 
     'https://acme.test',
   ]);
 });
+
+// ── a page the owner turned OFF must not be advertised ───────────────────────
+//
+// `enabled: false` is the portal's per-page on/off switch. It used to be a
+// NAVIGATION flag and nothing else: the renderer dropped the page from the
+// navbar and the footer, and every other layer ignored it, so the page stayed
+// reachable at its URL AND stayed in `sitemap.xml`. The sitemap half is the
+// worse of the two, because it keeps inviting strangers to the page the owner
+// had just taken down. The routes now answer `notFound()` off the same
+// predicate this filter reads (`isPageTurnedOff`), so the two cannot drift.
+
+const pagesWithOneOff = [
+  { slug: 'home', format: 'home' },
+  { slug: 'about', format: 'about' },
+  { slug: 'specials', format: 'collection-list', enabled: false },
+  { slug: 'contact', format: 'form' },
+];
+
+test('DEFECT: a page the owner turned off is not submitted in the sitemap', () => {
+  const urls = buildSitemapEntries(pagesWithOneOff, 'https://acme.test').map((e) => e.url);
+  assert.ok(
+    !urls.includes('https://acme.test/specials'),
+    'the page the owner switched off must not be advertised to a crawler',
+  );
+});
+
+test('DEFECT: every OTHER page on that site is still submitted, in the same order', () => {
+  // The removal is surgical. A change that dropped the off page by dropping
+  // something else with it would satisfy the test above.
+  const urls = buildSitemapEntries(pagesWithOneOff, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, [
+    'https://acme.test',
+    'https://acme.test/about',
+    'https://acme.test/contact',
+  ]);
+});
+
+test('the off rule fires on the literal false ONLY, so no page in the fleet drops by accident', () => {
+  // Absent is the fleet default (the field was never backfilled) and `true` is
+  // the portal's on state. If either read as off, this one filter would empty
+  // most sitemaps in the fleet on the first deploy. Asserted as the exact list
+  // rather than a count, so a rule that kept the right NUMBER of wrong pages
+  // still fails.
+  const pages = [
+    { slug: 'home', format: 'home' },
+    { slug: 'about', format: 'about' },
+    { slug: 'menu', format: 'list', enabled: true },
+    { slug: 'contact', format: 'form', enabled: undefined },
+  ];
+  const urls = buildSitemapEntries(pages, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, [
+    'https://acme.test',
+    'https://acme.test/about',
+    'https://acme.test/menu',
+    'https://acme.test/contact',
+  ]);
+});
+
+test('a page turned off contributes none of its detail-item URLs either', () => {
+  // The item loop walks `eligiblePages`, so a page removed by the off rule
+  // takes its items with it. Without this the sitemap would advertise
+  // `/santa-monica/botox` while `/santa-monica` itself was gone from the file
+  // and answering 404 on the route.
+  const pages = [
+    { slug: 'home', format: 'home' },
+    {
+      slug: 'santa-monica',
+      format: 'collection-list',
+      detailPage: { sitemap: true },
+      enabled: false,
+    },
+  ];
+  const urls = buildSitemapEntries(pages, 'https://acme.test', {
+    'santa-monica': ['botox', 'juvederm'],
+  }).map((e) => e.url);
+  assert.deepStrictEqual(urls, ['https://acme.test'], 'root only, no page entry and no item entries');
+});
+
+test('turning the HOME page off does NOT remove the sitemap root entry', () => {
+  // Deliberate, and the one place this rule stops. `/` is served by
+  // app/page.tsx from `homePageConfig`, which never consults `enabled`, so a
+  // root entry removed here would advertise nothing for a page that still
+  // renders perfectly. Only the author flag (`seo.noindex`) may take the root,
+  // for the same reason the page-format rule may not.
+  const pages = [
+    { slug: 'home', format: 'home', enabled: false },
+    { slug: 'about', format: 'about' },
+  ];
+  const urls = buildSitemapEntries(pages, 'https://acme.test').map((e) => e.url);
+  assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/about']);
+});

@@ -56,3 +56,53 @@ test('the robots policy is no longer decided inline in the route module', () => 
   // inside a .tsx meant no test could reach it either.
   assert.doesNotMatch(source, /seo\?\.noindex \? \{ robots:/);
 });
+
+// ── a page the owner turned off must not serve ──────────────────────────────
+//
+// The behaviour of the predicate itself is tested for real, by calling it, in
+// src/lib/pages/pageEnabled.test.ts, and the sitemap half of the same rule in
+// src/lib/seo/sitemap.test.ts. These pin the two things only the route file
+// can carry: that it reaches that predicate, and WHERE.
+
+test('the route refuses to serve a page the owner turned off', () => {
+  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) return notFound\(\);/);
+  assert.match(
+    source,
+    /import \{ isPageTurnedOff \} from "@\/lib\/pages\/pageEnabled"/,
+    'off the same predicate buildSitemapEntries reads, so the route and sitemap.xml cannot drift',
+  );
+});
+
+test('the off guard runs BEFORE the privacy/terms fallback', () => {
+  // Order is the whole behaviour here. Those two slugs render on every site
+  // even with no page config at all, so an off privacy page reaching that
+  // fallback would serve the built-in near-empty copy instead of 404ing: the
+  // owner switched their page off and got a different page at the same URL.
+  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  const fallback = source.indexOf('const STATIC_SLUGS: Record<string, string> = {');
+  assert.ok(guard > 0, 'the off guard is present in the render');
+  assert.ok(fallback > 0, 'the privacy/terms fallback is present');
+  assert.ok(guard < fallback, 'the off guard must come first');
+});
+
+test('the off guard runs AFTER the degraded-read guard, so an upstream wobble cannot 404 a live page', () => {
+  // On a degraded read `pageConfigs` is empty and every lookup misses. Missing
+  // is not off (`isPageTurnedOff(undefined) === false`), but the ordering is
+  // what makes that reasoning safe to rely on, so it is pinned rather than
+  // assumed.
+  const healthy = source.indexOf('assertUpstreamHealthy(siteData);');
+  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  assert.ok(healthy > 0 && guard > 0);
+  assert.ok(healthy < guard, 'the health assertion must come first');
+});
+
+test('the 404 for an off page is titled as one, not as the retired page', () => {
+  // Metadata resolves independently of the render that calls notFound(), so
+  // without its own guard the 404 keeps the page title, description and
+  // canonical of the page the owner just took down.
+  assert.match(
+    source,
+    /if \(isPageTurnedOff\(pageConfig\)\) \{[\s\S]{0,80}?Not Found \| \$\{siteName\}/,
+    'generateMetadata answers Not Found for an off page',
+  );
+});
