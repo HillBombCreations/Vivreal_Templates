@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`.
 import {
   DEFAULT_DOMAIN_SEARCH_API,
@@ -9,11 +11,13 @@ import {
   domainGuideStrings,
   withDomainsSitemapEntry,
   FREE_YEAR_OFFER,
+  FREE_YEAR_SOURCE,
   SIMPLE_GET_INIT,
   VIVREAL_MARKETING_SITE_ID,
   availabilityUrl,
   domainSearchApiBase,
   evaluateQuery,
+  formatCapUsd,
   messageForFailure,
   normalizeQuery,
   parseAvailability,
@@ -277,6 +281,51 @@ test('a failure never says anything about the address itself', () => {
   }
 });
 
+// ─── D14-16: the docblock that said the whole page was dead ─────────────
+//
+// `messageForFailure` stated as present-tense fact that both public endpoints
+// had answered 503 to every request since Wave 4 and that its own branch was
+// the only one that runs. `vivreal-domain-search` fixed that in 2d82702 and
+// 57e35c2, both merged before that repo's origin/main, and the comment stayed.
+// An engineer reading it would have concluded the feature was dead while it was
+// working. Corrected, and pinned here so it cannot drift back unnoticed: a
+// comment is the one kind of claim nothing else in a build ever checks.
+//
+// The needles below are the ORIGINAL sentences, not fragments of them. The
+// correction quotes the old wording on purpose, in the past tense, so a
+// fragment match would fail against the fix itself.
+
+test('the failure docblock does not claim the public endpoints are dead', () => {
+  const source = fs.readFileSync(
+    path.join(import.meta.dirname, 'publicSearch.ts'),
+    'utf8',
+  );
+
+  // Control: guard the read before trusting the absences. A mis-resolved path
+  // returning an empty string would satisfy every assertion below.
+  assert.ok(source.length > 5000, 'publicSearch.ts read back too short to be the real file');
+  assert.ok(source.includes('export function messageForFailure'),
+    'messageForFailure is not in the file this test read');
+
+  for (const stale of [
+    'TODAY THIS IS THE ONLY BRANCH THAT RUNS',
+    'have answered 503 to every request',
+    'every search on this page ends here',
+  ]) {
+    assert.ok(!source.includes(stale), `publicSearch.ts still asserts: "${stale}"`);
+  }
+
+  // And the correction is present rather than the claim merely deleted.
+  assert.ok(source.includes('VERIFIED LIVE 2026-09-21'),
+    'the docblock no longer records when the live behaviour was checked');
+});
+
+// The service answers these routes correctly (verified live 2026-09-21: 200
+// with a real price object through the browser's own Origin, control 404 on a
+// bogus path on the same host). This branch is the exception again rather than
+// the only branch that runs, which is what messageForFailure's docblock used to
+// claim. The copy still has to be right, because this is what a visitor sees on
+// a bad day.
 test('the 503 message says plainly that the name is not the problem', () => {
   assert.match(messageForFailure(503), /Nothing is wrong with the name you typed/);
 });
@@ -301,6 +350,69 @@ test('the free-year sentence is the portal\'s, byte for byte', () => {
     'Free for the first year on yearly Pro, on addresses up to $25. One per account.',
   );
   assert.equal(DOMAIN_SEARCH_COPY.freeYearOffer, FREE_YEAR_OFFER);
+});
+
+// ─── D14-20: the sentence and the recorded package values, in lockstep ───
+//
+// The assertion above is a round trip: it pins a literal against a literal and
+// would stay green while the package it was copied from moved underneath it.
+// These tie every clause of the sentence to a field in FREE_YEAR_SOURCE, so
+// editing one alone is red. freeYearPackage.test.ts is the other half, and is
+// the one that reads the real package.
+
+test('the cap formatter turns package cents into the money string the sentence uses', () => {
+  assert.equal(formatCapUsd(2500), '$25');
+  assert.equal(formatCapUsd(4000), '$40');
+  // Not $25.5. The fraction branch exists for this, not because a fractional
+  // cap is expected.
+  assert.equal(formatCapUsd(2550), '$25.50');
+  assert.equal(formatCapUsd(0), '$0');
+});
+
+test('the price in the sentence is the recorded maxCatalogPriceCents, and the only price in it', () => {
+  const cap = formatCapUsd(FREE_YEAR_SOURCE.maxCatalogPriceCents);
+  assert.equal(cap, '$25', 'the recorded cap changed without this test being updated');
+  assert.ok(FREE_YEAR_OFFER.includes(cap), `sentence does not quote ${cap}: ${FREE_YEAR_OFFER}`);
+
+  // One money string, so nobody can add a second and have the check above
+  // keep passing on the first.
+  const amounts = FREE_YEAR_OFFER.match(/\$\d+(?:\.\d{2})?/g) ?? [];
+  assert.deepEqual(amounts, [cap]);
+});
+
+test('the sentence names the eligible tier, the eligible period, and the per-group limit', () => {
+  assert.deepEqual([...FREE_YEAR_SOURCE.eligibleTiers], ['pro']);
+  assert.deepEqual([...FREE_YEAR_SOURCE.eligibleBillingPeriods], ['annual']);
+  assert.equal(FREE_YEAR_SOURCE.perGroupLimit, 1);
+
+  const lower = FREE_YEAR_OFFER.toLowerCase();
+  for (const tier of FREE_YEAR_SOURCE.eligibleTiers) {
+    assert.ok(lower.includes(tier), `sentence does not name the eligible tier "${tier}"`);
+  }
+  // 'annual' is the package's word; 'yearly' is the owner's. The rule is that
+  // the sentence says one of them, never neither.
+  assert.ok(lower.includes('yearly') || lower.includes('annual'),
+    'sentence does not say the offer is on the yearly plan');
+  assert.ok(lower.includes('one per account'),
+    'sentence does not carry perGroupLimit: 1');
+});
+
+test('the sentence names no retired plan', () => {
+  // Pro Plus folded into Pro in tier-quotas 4.0.0. Naming it would point a
+  // stranger at a plan they cannot buy, and this is the exact string the
+  // repo-wide copy audit found still alive elsewhere.
+  const lower = FREE_YEAR_OFFER.toLowerCase();
+  for (const retired of ['pro plus', 'proplus', 'pro+']) {
+    assert.ok(!lower.includes(retired), `sentence names a retired plan: "${retired}"`);
+  }
+});
+
+test('the recorded package reading names its version and date', () => {
+  // Without these a reader cannot tell whether the values above are a week old
+  // or a year old, and freeYearPackage.test.ts prints the version in its own
+  // failure message so the two can be compared.
+  assert.match(FREE_YEAR_SOURCE.packageVersion, /^\d+\.\d+\.\d+$/);
+  assert.match(FREE_YEAR_SOURCE.readOn, /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('the page claims no per-result entitlement', () => {

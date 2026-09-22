@@ -17,6 +17,10 @@ npm run build        # Production build (Turbopack)
 npm run lint         # ESLint (includes the custom copy rule, see Key Patterns)
 npm test             # Node test runner. THREE globs, not one:
                      #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
+                     # ONE spec reads the npm registry: src/lib/domains/freeYearPackage.test.ts
+                     # needs the same NODE_AUTH_TOKEN `npm ci` already needs. See
+                     # "The free-year sentence" below for why, and why it does not skip.
+node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
 ```
 
 ---
@@ -184,11 +188,40 @@ Two things about it are load-bearing:
 - **It reads `JSXText`, not just string literals.** Most copy on a page is the text
   between two tags, and a sweep that greps only quoted strings misses it. Thirteen live
   violations hid that way in the portal.
+- **It reads `Literal` and `JSXText` AND NOTHING ELSE**, so a **template literal is
+  invisible to it.** Composing a sentence with backticks and `${}` takes that sentence out
+  of the dash, jargon, supplier and `px` checks in one edit, silently, with a green lint.
+  That is why `FREE_YEAR_OFFER` in `src/lib/domains/publicSearch.ts` is a plain quoted
+  string even though its `$25` is checked against a package value: the tests keep it in
+  step with the number, and the literal is what keeps it linted. If you ever need a
+  composed string that a visitor reads, teach the rule `TemplateLiteral` first, with the
+  must-fail control.
 - **A bare glyph is exempt** as the "no value here" placeholder (`value ?? '—'`, a lone
   `—` in a cell). The exemption is narrow on purpose, and it has now been the cause of
   two escapes: a glyph in a `{"—"}` container, and a dash written as plain JSX text with
   words beside it. Both are fixed and pinned. If you widen the exemption, add the
   must-fail control with it.
+
+### The free-year sentence is pinned to a package this repo does not install
+
+`src/lib/domains/publicSearch.ts` carries `FREE_YEAR_OFFER`, the one sentence vivreal.io
+tells a stranger about the free first year. Its `$25` is `DOMAIN_BUNDLE.maxCatalogPriceCents`
+from `@hillbombcreations/tier-quotas`, hand-copied because a second private GitHub Packages
+dependency in this app's `npm ci` is a known way to brick every customer site's build.
+
+Two checks, and neither can pass by doing nothing:
+
+- `publicSearch.test.ts` ties every clause of the sentence to a field in `FREE_YEAR_SOURCE`,
+  the recorded package reading. Hermetic. Editing the sentence or the record alone is red.
+- `freeYearPackage.test.ts` fetches the real package into an OS temp directory and asserts
+  it still says the same thing. **That one needs the registry**, unavoidably: this repo does
+  not depend on the package, so nothing local ever changes when the package moves and the
+  registry is the only thing that knows. It **fails** rather than skipping when it cannot
+  reach the registry, and it asserts `package.json` and `package-lock.json` are byte
+  identical after it runs.
+
+If either goes red, read the package and move the sentence, `FREE_YEAR_SOURCE` and the
+portal's copy together. Never just the number.
 
 **`Stripe` and `Square` are deliberately NOT in the supplier list**, because an owner
 connects those themselves. That rationale is about the OWNER, and it does not extend to
@@ -230,6 +263,21 @@ npm install
 ```
 
 npm 10/11 prune the `@emnapi/*` transitive entries from package-lock.json, which has repeatedly broken the `stable` fleet build — test any lockfile change with a clean install (delete node_modules, then `npm ci`) before merging.
+
+**`_lockcensus.cjs` at the repo root is what makes that visible**, and nothing above used
+to name it. Copy the lockfile before the bump, then compare entry by entry:
+
+```bash
+cp package-lock.json /tmp/lock-before.json
+npm install                       # or whatever moved it
+node _lockcensus.cjs /tmp/lock-before.json
+```
+
+It groups by `@emnapi/`, `@img/sharp`, `linux (any)` and optional deps, prints the
+renderer version either side, and **exits 1 if any Linux-critical group shrank**. Measured
+2026-09-21: `main` is 720 entries, four `@emnapi/`, and `npm ci` leaves the lockfile byte
+identical. Feeding the census a lockfile with the two `@emnapi/*` entries removed (the
+720 to 718 shape) makes it exit 1 and name both, so its silence is a real silence.
 
 For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 
