@@ -31,6 +31,12 @@ export interface EmailPopupProps {
    */
   config?: EmailPopupConfig | null;
   siteData: SiteData;
+  /**
+   * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Forwarded to
+   * `trackLeadConversion`, which is the only thing here that reads Vivreal's
+   * consent state.
+   */
+  vivrealOwnSite: boolean;
 }
 
 /**
@@ -45,7 +51,7 @@ export interface EmailPopupProps {
  * so an un-authored site behaves identically to before the layout mount-move
  * (home-only, 3000ms, 24h cap, default copy).
  */
-const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
+const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
   const cfg = config ?? {};
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -213,11 +219,12 @@ const EmailPopup = ({ config, siteData }: EmailPopupProps) => {
       image={cfg.image}
       onSubscribe={async (email) => {
         const ok = await subscribeUser(email, collectionId);
-        // C5 — the popup calls subscribeUser directly rather than through the
-        // renderer provider, so it needs its own conversion call. Same three
-        // gates inside trackLeadConversion; deduped per page load, so a visitor
-        // who converts here and in the footer counts once.
-        if (ok) trackLeadConversion({ method: 'popup' });
+        // C5: the popup calls subscribeUser directly rather than through the
+        // renderer provider, so it needs its own conversion call. Same gates
+        // inside trackLeadConversion, now including the site-id fleet gate
+        // rather than the hostname one it used to trust. Deduped per page load,
+        // so a visitor who converts here and in the footer counts once.
+        if (ok) trackLeadConversion({ vivrealOwnSite, method: 'popup' });
         // Permanent "never again" on success, regardless of frequency mode.
         if (ok) localStorage.setItem(SUBSCRIBE_KEY, "true");
         return ok;

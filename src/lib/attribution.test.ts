@@ -223,62 +223,90 @@ test('truncates referrer to 512 chars', () => {
 // entry point <AttributionCapture> calls; these cases assert it in BOTH
 // directions, including the suffix-confusion host.
 
-const OFF_APEX_HOSTS = [
+/** The resolved fleet gate, as the server layout computes it from SITE_ID. */
+const VIVREAL_SITE = true;
+const CUSTOMER_SITE = false;
+
+/**
+ * Populations, and the one that used to be missing.
+ *
+ * This block previously drove the gate with `dom.setHostname(...)` against an
+ * `OFF_APEX_HOSTS` list of `acme.com`, `www.acme.com`, `shop.acme.co.uk`,
+ * `vivreal.io.evil.com`, `notvivreal.io` and `localhost`. Not one of them is a
+ * subdomain of vivreal.io, and that is the shape a customer site with no
+ * purchased domain is served from, so the list asserted absence everywhere
+ * except the one place the cookie was actually being written.
+ *
+ * Both answers now run in the SAME loop over the SAME hosts, so the absence
+ * claim below is paired with a positive control by construction: if
+ * `runAttributionCapture` stopped writing entirely, the Vivreal rows would go
+ * red rather than the customer rows going quietly green.
+ */
+const HOSTS_UNDER_TEST = [
   'acme.com',
   'www.acme.com',
   'shop.acme.co.uk',
-  'vivreal.io.evil.com', // suffix confusion — must NOT match
-  'notvivreal.io', // no dot boundary — must NOT match
+  'vivreal.io.evil.com', // suffix confusion
+  'notvivreal.io', // no dot boundary
   'localhost',
+  'vivreal.io',
+  'preview.vivreal.io',
+  'VIVREAL.IO',
+  'windward-house.vivreal.io', // THE REGRESSION: a live customer site
+  'qa-test-2026-09-18.vivreal.io',
+  'help.vivreal.io',
 ];
 
-for (const host of OFF_APEX_HOSTS) {
-  test(`runAttributionCapture writes NOTHING on ${host}`, () => {
-    dom.setHostname(host);
+test('a customer site receives NO vr_attr cookie, on any host shape', () => {
+  for (const host of HOSTS_UNDER_TEST) {
+    dom.restore();
+    dom = installDom({ hostname: host, protocol: 'https:' });
     dom.setUrl('/?utm_source=linkedin&utm_campaign=alpha');
-    runAttributionCapture();
+
+    runAttributionCapture({ vivrealOwnSite: CUSTOMER_SITE });
 
     assert.equal(
       dom.cookie(COOKIE_NAME),
       null,
-      `${host} must never receive a vr_attr cookie from the fleet app`,
+      `${host} must never receive a vr_attr cookie when the site is a customer's`,
     );
     assert.equal(document.cookie, '', `${host} document.cookie must be untouched`);
-  });
-}
+  }
+});
 
-const APEX_HOSTS = ['vivreal.io', 'preview.vivreal.io', 'VIVREAL.IO', 'staging.vivreal.io'];
-
-for (const host of APEX_HOSTS) {
-  test(`runAttributionCapture writes on ${host}`, () => {
-    dom.setHostname(host);
+test("Vivreal's own sites DO capture, on the same hosts, in the same run", () => {
+  // The control for the test above. Same hosts, same query, opposite gate.
+  for (const host of HOSTS_UNDER_TEST) {
+    dom.restore();
+    dom = installDom({ hostname: host, protocol: 'https:' });
     dom.setUrl('/?utm_source=linkedin&utm_campaign=alpha');
-    runAttributionCapture();
+
+    runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
 
     const attr = getAttribution();
-    assert.notEqual(attr, null, `${host} is the apex and must capture`);
+    assert.notEqual(attr, null, `${host} must capture when the site is Vivreal's`);
     assert.equal(attr!.first.utm_campaign, 'alpha');
-  });
-}
+  }
+});
 
-test('runAttributionCapture honours consentDenied on the apex', () => {
+test('runAttributionCapture honours consentDenied on a Vivreal site', () => {
   dom.setUrl('/?utm_source=linkedin');
-  runAttributionCapture({ consentDenied: true });
+  runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE, consentDenied: true });
   assert.equal(dom.cookie(COOKIE_NAME), null);
 });
 
-test('runAttributionCapture honours GPC on the apex', () => {
+test('runAttributionCapture honours GPC on a Vivreal site', () => {
   dom.setGpc(true);
   dom.setUrl('/?utm_source=linkedin');
-  runAttributionCapture();
+  runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
   assert.equal(dom.cookie(COOKIE_NAME), null);
 });
 
-test('undecided consent still writes (Open Question 5 — first touch is not deferrable)', () => {
+test('undecided consent still writes (Open Question 5, first touch is not deferrable)', () => {
   // Pins today's deliberate semantic so a future change to it is a CONSCIOUS
   // one: no stored banner choice at all, and the cookie is still written.
   assert.equal(localStorage.getItem('cookie_consent_v1'), null);
   dom.setUrl('/?utm_source=linkedin&utm_campaign=undecided');
-  runAttributionCapture();
+  runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
   assert.equal(getAttribution()!.first.utm_campaign, 'undecided');
 });

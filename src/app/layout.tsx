@@ -35,6 +35,7 @@ import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
 import AttributionCapture from '@/components/AttributionCapture';
 import SiteConsent from '@/components/SiteConsent';
+import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 
 /**
@@ -132,6 +133,14 @@ import RouteProgress from "@/components/Navigation/RouteProgress";
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
     const siteData = await getSiteData();
+    // THE fleet gate for Vivreal's own instrumentation, resolved once here and
+    // passed down. It has to be resolved on the server: `SITE_ID` carries no
+    // NEXT_PUBLIC_ prefix, so it does not exist in the client bundle. Reading
+    // `process.env` costs this layout nothing and does not opt it out of static
+    // rendering (see lib/vivrealApex.ts); <SiteBeacon> below reads the same
+    // variable already. False on every customer site, and false whenever
+    // SITE_ID is unset or unrecognised, which is the safe direction.
+    const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
     // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
     // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
     const templateType = siteData.siteInfo?.templateType;
@@ -188,7 +197,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       : undefined
               }
           >
-              <Providers siteData={siteData}>
+              <Providers siteData={siteData} vivrealOwnSite={vivrealOwnSite}>
                   {/*
                     Route-transition feedback. Any page this site's content
                     keeps dynamic waits on a server render with nothing on
@@ -269,25 +278,44 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                     on-iff-subscribers-collection) — byte-identical to the prior
                     home-only mount. See EmailPopup wrapper for the resolution.
                   */}
-                  <EmailPopup config={siteData.emailPopup ?? {}} siteData={siteData} />
+                  <EmailPopup
+                      config={siteData.emailPopup ?? {}}
+                      siteData={siteData}
+                      vivrealOwnSite={vivrealOwnSite}
+                  />
                   {/* Vivreal first-party analytics beacon (cookieless). Fires only
                       on real deployed sites (SITE_ID set + != 'preview'); collection
                       is ON by default for every site (basic analytics is bundled). */}
                   <SiteBeacon siteId={process.env.SITE_ID ?? ''} />
-                  {/* vivreal.io campaign attribution (G12/C1). Renders null and
-                      is a NO-OP on every host that is not the vivreal.io apex —
-                      see lib/vivrealApex.ts. It exists here, in the fleet app,
-                      because after the CloudFront origin swap the Templates
-                      site IS vivreal.io, and a first touch that is not captured
-                      on the landing page is not recoverable later. */}
-                  <AttributionCapture />
-                  {/* vivreal.io cookie consent (G13/C2) — banner, restore-on-
-                      mount and the persistent withdrawal control. Same apex
-                      gate as <AttributionCapture>: on every customer site
-                      `state.gated` is false and this renders null. Mounted
-                      LAST so the withdrawal affordance sits below the page
-                      footer rather than floating over content. */}
-                  <SiteConsent additional={siteData.analytics?.additional} />
+                  {/* Vivreal campaign attribution (G12/C1) and Vivreal cookie
+                      consent (G13/C2). BOTH are gated on the SITE ID, resolved
+                      right here because `SITE_ID` is server only and a client
+                      component cannot read it.
+
+                      These two comments used to say the gate was the vivreal.io
+                      apex and that both were inert on every customer site. That
+                      was false, and this is the fix. The apex predicate matched
+                      every subdomain of vivreal.io, which is how a customer site
+                      with no purchased domain is served, so the banner rendered
+                      and `vr_attr` was written on customer sites. See
+                      lib/vivrealApex.ts for the whole story.
+
+                      Reading `process.env` here does NOT opt the layout out of
+                      static rendering; `headers()` would, and that is what the
+                      old objection was about. <SiteBeacon> above already reads
+                      the same variable.
+
+                      Attribution exists in the fleet app at all because after
+                      the CloudFront origin swap the Templates site IS
+                      vivreal.io, and a first touch not captured on the landing
+                      page is not recoverable later. Consent is mounted LAST so
+                      the withdrawal affordance sits below the page footer
+                      rather than floating over content. */}
+                  <AttributionCapture vivrealOwnSite={vivrealOwnSite} />
+                  <SiteConsent
+                      vivrealOwnSite={vivrealOwnSite}
+                      additional={siteData.analytics?.additional}
+                  />
               </Providers>
           </body>
       </html>

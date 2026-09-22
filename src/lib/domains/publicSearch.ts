@@ -49,11 +49,18 @@
  * the fleet, selling Vivreal addresses from a bakery's own domain. That is the
  * same failure class `lib/vivrealApex.ts` was written to prevent, one layer up.
  *
- * `SITE_ID` rather than the hostname, because the hostname is only knowable in
- * the browser: `onVivrealApex()` says so in its own docblock, and reading the
- * request host on the server would opt the route out of static rendering. This
- * value is injected per Amplify app at deploy time, so the gate is decided
- * before a request exists and costs the render nothing.
+ * `SITE_ID` rather than the hostname, and this module got there first. The
+ * hostname is only knowable in the browser, and reading the request host on the
+ * server would opt the route out of static rendering. This value is injected
+ * per Amplify app at deploy time, so the gate is decided before a request
+ * exists and costs the render nothing.
+ *
+ * `lib/vivrealApex.ts` now uses the same gate for the same reason, and it reads
+ * `VIVREAL_MARKETING_SITE_ID` from here rather than keeping a second copy. It
+ * used to gate on the hostname instead, which was a live defect: a customer
+ * site with no purchased domain is served from a subdomain of vivreal.io, so
+ * the host predicate matched customer sites and Vivreal's consent banner and
+ * attribution cookie ran on them.
  *
  * Verified 2026-09-08 against the live Amplify app `d1gukor54gwnrj` ("vivreal",
  * the app CloudFront E39DUKXYGXCX8Q sends vivreal.io to) and against the site

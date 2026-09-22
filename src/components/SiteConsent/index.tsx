@@ -21,9 +21,20 @@ import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorT
  * React-free so it can be unit-tested under `node --test`. If logic starts
  * accumulating here it becomes untestable in this repo — keep it out.
  *
- * Fleet posture: the first thing the mount effect does is resolve the host
- * gate. Off the vivreal.io apex `state.gated` is false, both branches below
- * render `null`, and NOTHING enters a customer site's DOM.
+ * FLEET POSTURE, CORRECTED. This block used to end "NOTHING enters a customer
+ * site's DOM", and it was wrong. The gate it described was the vivreal.io apex,
+ * and a customer site with no purchased domain is served from a subdomain of
+ * vivreal.io, which that predicate matched. So the banner below DID render on
+ * customer sites, with Vivreal's copy, a Vivreal cookie explanation, and a
+ * Privacy Policy link resolving to the customer's own `/privacy` page, which
+ * describes none of it. Confirmed in a browser on `windward-house.vivreal.io`
+ * on 2026-09-22.
+ *
+ * The gate is now the site id. `vivrealOwnSite` is resolved once in the server
+ * layout by `isVivrealOwnSite(process.env.SITE_ID)` and passed in, because a
+ * client component cannot read a server-only env var. It is false on every
+ * customer site regardless of host, so `state.gated` is false, both branches
+ * below render `null`, and nothing enters a customer site's DOM.
  *
  * SSR: initial state is inert, so the server renders nothing and the first
  * client paint matches it. The banner appears only after the mount effect
@@ -44,22 +55,29 @@ const INERT: ConsentState = {
 };
 
 export default function SiteConsent({
+  vivrealOwnSite,
   additional,
 }: {
   /**
+   * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Required, so
+   * a mount that forgets it does not compile, and a mount that passes false
+   * renders nothing.
+   */
+  vivrealOwnSite: boolean;
+  /**
    * `siteData.analytics.additional` verbatim. Resolved to injectable snippets
-   * HERE rather than on the server because the registry's host allowlist needs
-   * the browser's hostname, and because this component is the consent
-   * controller's only mount — one source of truth for "may these run", which is
-   * exactly what the live app's D3 defect lacked.
+   * HERE rather than on the server because this component is the consent
+   * controller's only mount, one source of truth for "may these run", which is
+   * exactly what the live app's D3 defect lacked. Resolving is pure and says
+   * nothing about whether a snippet may RUN; `vivrealOwnSite` decides that.
    */
   additional?: AdditionalVendorConfig[];
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
   // Fail-closed inside: an unknown provider or a non-matching id yields
-  // nothing. Resolving is pure — the HOST decision is this component's own apex
-  // gate below, which is what stops a resolved snippet ever being injected on a
-  // customer site.
+  // nothing. Resolving is pure. What stops a resolved snippet ever reaching a
+  // customer site is `vivrealOwnSite`, threaded into every controller call
+  // below, not anything this line does.
   const vendors: VendorScript[] = useMemo(() => resolveVendorScripts(additional), [additional]);
   // A visitor who dismisses with the X has not decided; hide the banner for
   // this page view without storing anything, so the next load asks again.
@@ -69,15 +87,22 @@ export default function SiteConsent({
     // Restore-on-mount. This is the D3 fix: a returning visitor who accepted
     // previously never sees the banner, so the ONLY path that can upgrade GA4
     // and inject the registry vendors for them is right here.
-    setState(runConsentMount(vendors));
-    // `vendors` is derived from server-rendered site config and is stable for
-    // the page's lifetime; re-running this effect would re-enter the grant path.
+    setState(runConsentMount(vivrealOwnSite, vendors));
+    // `vendors` and `vivrealOwnSite` are both derived from server-rendered
+    // props and are stable for the page's lifetime; re-running this effect
+    // would re-enter the grant path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const onAccept = useCallback(() => setState(grantConsent(vendors)), [vendors]);
-  const onReject = useCallback(() => setState(denyConsent()), []);
-  const onWithdraw = useCallback(() => setState(withdrawConsent()), []);
+  const onAccept = useCallback(
+    () => setState(grantConsent(vivrealOwnSite, vendors)),
+    [vivrealOwnSite, vendors],
+  );
+  const onReject = useCallback(() => setState(denyConsent(vivrealOwnSite)), [vivrealOwnSite]);
+  const onWithdraw = useCallback(
+    () => setState(withdrawConsent(vivrealOwnSite)),
+    [vivrealOwnSite],
+  );
 
   if (!state.gated) return null;
 

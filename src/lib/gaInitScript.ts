@@ -15,12 +15,17 @@
  *     consent default that lands after config does nothing, and "consent-gated
  *     GA4" becomes a claim the policy makes and the code does not honour.
  *
- * WHY A CONFIG FLAG AND NOT THE isVivrealApex() HOST GATE used by C1/C2/C9:
- * <SiteAnalytics> is a SERVER component rendered in <head>. Reading the request
- * host there (via `headers()`) would opt the entire site out of static
- * rendering — the trap documented in Vivreal_SSR_Landing/src/app/layout.tsx. A
- * config flag is server-safe and keeps the emitted bytes provably unchanged for
- * every site that does not set it.
+ * WHY A CONFIG FLAG AND NOT THE `isVivrealOwnSite()` FLEET GATE used by
+ * C1/C2/C9: this is per-site policy, not "is this Vivreal". A customer who sets
+ * `analytics.consentMode` wants GA4 default-denied on THEIR site, and the fleet
+ * gate would refuse them. The reason originally recorded here was that
+ * <SiteAnalytics> is a SERVER component in <head> and reading the request host
+ * via `headers()` would opt the entire site out of static rendering (the trap
+ * documented in Vivreal_SSR_Landing/src/app/layout.tsx). That remains true of
+ * the host, but the fleet gate reads `process.env.SITE_ID` rather than a host
+ * and would cost nothing, so it is no longer the reason. A config flag is
+ * server-safe and keeps the emitted bytes provably unchanged for every site
+ * that does not set it.
  *
  * WHY `analytics.consentMode` AND NOT A NEW `siteData.consent` OBJECT:
  * `analytics` is already in VR_Secure_API's PRESERVE_ON_REPLACE list. A new

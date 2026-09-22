@@ -22,9 +22,16 @@ const queryClient = new QueryClient();
 const Providers = ({
     children,
     siteData,
+    vivrealOwnSite,
 }: {
     children: ReactNode;
     siteData: SiteData;
+    /**
+     * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Forwarded
+     * to `trackLeadConversion` below, which is the only thing in here that
+     * reads Vivreal's consent state.
+     */
+    vivrealOwnSite: boolean;
 }) => {
 
     useEffect(() => {
@@ -108,11 +115,17 @@ const Providers = ({
             commerce={{ paymentsProvider: siteData.paymentsProvider }}
             onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) => {
                 const ok = await subscribeUser(email, subscribersCollectionId, fields);
-                // C5 — the one conversion event. Self-gates on GA4 being
-                // present AND consent granted AND the vivreal.io apex, so it is
-                // inert on every customer site. Only on SUCCESS: a failed
-                // capture is not a lead.
-                if (ok) trackLeadConversion({ method: _source || 'inline' });
+                // C5, the one conversion event. This comment used to say it
+                // self-gated on "the vivreal.io apex, so it is inert on every
+                // customer site". It was not inert: the apex gate matched every
+                // customer site served from a vivreal.io subdomain, and
+                // `window.gtag` there is the CUSTOMER's GA4 tag, so a visitor
+                // who accepted Vivreal's banner on a customer's site fired
+                // Vivreal's lead event into the customer's analytics. Now gated
+                // on the site id. Only on SUCCESS: a failed capture is not a
+                // lead.
+                if (ok)
+                    trackLeadConversion({ vivrealOwnSite, method: _source || 'inline' });
                 return ok;
             }}
             // The delivery coverage check. `DeliveryCheck` reads this off the

@@ -27,22 +27,33 @@
  * the consent controller (`lib/consent.ts`), which injects them on grant and on
  * restore and only then. GA4 can ship in <head> denied because it has a consent
  * API; Clarity has none, so NOT LOADING is the only gate that exists for it.
- * The controller is also apex-gated, so nothing in this registry can reach a
- * customer site today regardless of what a site doc carries.
+ * The controller's gate is what keeps this registry off customer sites, and
+ * that gate was WRONG until 2026-09-22. It matched the vivreal.io apex and
+ * every subdomain of it, and a customer with no purchased domain is served from
+ * exactly that shape, so the controller was live on customer sites and a
+ * resolved snippet WOULD have been injected there on consent. Nothing was
+ * injected in practice, but only because no product path writes
+ * `analytics.additional`: it is absent from the portal and from VR_CMS_API,
+ * VR_Secure_API and VR_Client_API, verified by search on 2026-09-22. The gate
+ * is now the SITE ID (`lib/vivrealApex.ts`), so this registry is out of reach
+ * on a customer site because of the gate rather than because of a field nobody
+ * has wired up yet.
  *
  * ADDING A VENDOR IS NOT A CONFIG CHANGE. It is one entry in REGISTRY below,
  * with a privacy-policy consequence (C6's disclosure treatment) and a GATE 3
  * cookie-enumeration consequence. That friction is the feature.
  *
- * ★ STANDING RULE FOR WHOEVER ADDS THE NEXT ONE. This registry deliberately
- * carries no per-vendor host allowlist, because the one vendor in it is
+ * STANDING RULE FOR WHOEVER ADDS THE NEXT ONE. This registry deliberately
+ * carries no per-vendor site allowlist, because the one vendor in it is
  * fleet-safe: Clarity is aggregate session replay and heatmaps, and a customer
  * who configures it is entitled to run it on their own site. A vendor that
  * performs PERSON-LEVEL IDENTIFICATION is a different class and must NOT be
- * enablable by config on a customer domain — if one is ever added, re-introduce
- * an apex-only gate IN CODE here (an earlier revision of this file carried one
- * for RB2B, dropped by owner decision on 2026-08-20), rather than relying on
- * the consent controller's gate alone.
+ * enablable by config on a customer site. If one is ever added, re-introduce a
+ * Vivreal-only gate IN CODE here with `isVivrealOwnSite` (an earlier revision
+ * of this file carried one for RB2B, dropped by owner decision on 2026-08-20),
+ * rather than relying on the consent controller's gate alone. The reason that
+ * belt-and-braces argument is stronger than it sounds: the controller's gate
+ * was silently wrong for months and its own tests could not see it.
  */
 
 import type { VendorScript } from './consent.ts';

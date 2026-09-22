@@ -5,11 +5,20 @@
  *
  * This is the file that answers the two acceptance questions directly:
  *
- *   (a) ON THE APEX — banner renders; decline ⇒ no vendor tags; accept ⇒ tags
- *       mount; reload ⇒ choice restored with no re-prompt and no interaction;
- *       withdraw ⇒ tags gone and the banner returns.
- *   (b) ON A NON-APEX HOST — none of it exists. No banner state, no vendor tag,
- *       no `vr_attr` cookie, no gtag call, nothing written to storage.
+ *   (a) ON ONE OF VIVREAL'S OWN SITES: banner renders; decline gives no vendor
+ *       tags; accept mounts them; reload restores the choice with no re-prompt
+ *       and no interaction; withdraw removes them and the banner returns.
+ *   (b) ON A CUSTOMER'S SITE: none of it exists. No banner state, no vendor
+ *       tag, no `vr_attr` cookie, no gtag call, nothing written to storage.
+ *
+ * (b) USED TO BE DRIVEN BY THE HOSTNAME, and it was wrong. Its host list was
+ * `acme.com`, `www.acme.com`, `shop.acme.co.uk` and `vivreal.io.evil.com`, none
+ * of which is a subdomain of vivreal.io, which is how a customer site with no
+ * purchased domain is served and the shape the old apex gate matched. So (b)
+ * asserted "none of it exists" over exactly the population where it did not
+ * exist, and never over the population where it did. The gate is now the site
+ * id and (b) drives it directly, with a customer vivreal.io subdomain in the
+ * host list so a regression to hostname thinking fails here.
  *
  * The GA4 half of the cluster (C3) is a server-rendered string with its own
  * byte-identity suite in gaInitScript.test.ts; here it is present only as the
@@ -59,11 +68,15 @@ afterEach(() => {
   dom.restore();
 });
 
-/** One page load: resolve the registry for this host, then mount the controller. */
-function loadPage() {
+/** The resolved fleet gate, as the server layout computes it from SITE_ID. */
+const VIVREAL_SITE = true;
+const CUSTOMER_SITE = false;
+
+/** One page load: resolve the registry, then mount the controller. */
+function loadPage(vivrealOwnSite: boolean = VIVREAL_SITE) {
   const vendors = resolveVendorScripts(SITE_ANALYTICS_ADDITIONAL);
-  const state = runConsentMount(vendors);
-  runAttributionCapture({ consentDenied: state.choice === 'rejected' });
+  const state = runConsentMount(vivrealOwnSite, vendors);
+  runAttributionCapture({ vivrealOwnSite, consentDenied: state.choice === 'rejected' });
   return { vendors, state };
 }
 
@@ -123,7 +136,7 @@ test('(a1) first visit: the banner renders and NOTHING third-party fires yet', (
 
 test('(a2) DECLINE ⇒ no vendor tags, no consent upgrade, and no re-prompt', () => {
   loadPage();
-  const state = denyConsent();
+  const state = denyConsent(VIVREAL_SITE);
 
   assert.equal(state.showBanner, false);
   assert.deepEqual(vendorIds(), [], 'a refusal must inject nothing');
@@ -139,7 +152,7 @@ test('(a2) DECLINE ⇒ no vendor tags, no consent upgrade, and no re-prompt', ()
 
 test('(a3) ACCEPT ⇒ both vendor tags mount and GA4 is upgraded', () => {
   const { vendors } = loadPage();
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
 
   assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
   assert.equal(grantedUpdates(), 1);
@@ -157,7 +170,7 @@ test('(a3) ACCEPT ⇒ both vendor tags mount and GA4 is upgraded', () => {
 
 test('★ (a4) RELOAD after accepting ⇒ choice restored, tags mount, NO re-prompt', () => {
   const { vendors } = loadPage();
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
 
   reload();
 
@@ -182,11 +195,11 @@ test('★ (a4) RELOAD after accepting ⇒ choice restored, tags mount, NO re-pro
 
 test('★ (a5) WITHDRAW ⇒ tags gone on the next load and the banner returns', () => {
   const { vendors } = loadPage();
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
   assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
 
   let reloaded = 0;
-  withdrawConsent(() => {
+  withdrawConsent(VIVREAL_SITE, () => {
     reloaded += 1;
   });
   assert.equal(reloaded, 1, 'the page reloads so withdrawal takes effect now');
@@ -212,23 +225,23 @@ test('(a6) GPC ⇒ banner shown, but no vendor and no vr_attr, even after Accept
   assert.equal(state.showBanner, true, 'the posture is uniform — everyone is asked');
   assert.equal(getAttribution(), null, 'GPC blocks the first-party cookie outright');
 
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
   assert.deepEqual(vendorIds(), [], 'GPC is a standing refusal for third parties');
 });
 
 test('(a7) the conversion event fires only inside a consented session', () => {
   const { vendors } = loadPage();
 
-  trackLeadConversion({ method: 'footer' });
+  trackLeadConversion({ vivrealOwnSite: VIVREAL_SITE, method: 'footer' });
   assert.equal(
     dom.gtagCalls().filter((c) => c[1] === 'generate_lead').length,
     0,
     'undecided ⇒ no conversion event',
   );
 
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
   resetLeadEventForTests();
-  trackLeadConversion({ method: 'footer' });
+  trackLeadConversion({ vivrealOwnSite: VIVREAL_SITE, method: 'footer' });
   assert.equal(
     dom.gtagCalls().filter((c) => c[1] === 'generate_lead').length,
     1,
@@ -252,7 +265,7 @@ test('★ (a8) a STALE rb2b entry left in config fails closed — accepted or no
     'the dropped provider does not resolve; the kept one still does',
   );
 
-  grantConsent(vendors);
+  grantConsent(VIVREAL_SITE, vendors);
   assert.deepEqual(vendorIds(), ['vr-vendor-clarity']);
   const everything = dom
     .scripts()
@@ -264,16 +277,30 @@ test('★ (a8) a STALE rb2b entry left in config fails closed — accepted or no
   }
 });
 
-// ══ (b) ON A NON-APEX HOST — none of it exists ═════════════════════════════
+// ══ (b) ON A CUSTOMER'S SITE: none of it exists ═══════════════════════════
 
-const CUSTOMER_HOSTS = ['acme.com', 'www.acme.com', 'shop.acme.co.uk', 'vivreal.io.evil.com'];
+/**
+ * Every host shape a customer site is served from, and Vivreal's own too. The
+ * hostname must not change a single answer below: it is varied precisely so
+ * that a future change which reintroduces a host read fails here. The first two
+ * rows are the regression that shipped.
+ */
+const CUSTOMER_HOSTS = [
+  'windward-house.vivreal.io', // THE REGRESSION: a live customer site
+  'qa-test-2026-09-18.vivreal.io',
+  'acme.com',
+  'www.acme.com',
+  'shop.acme.co.uk',
+  'vivreal.io.evil.com',
+  'vivreal.io', // even Vivreal's OWN host must not grant when the site is not ours
+];
 
 for (const host of CUSTOMER_HOSTS) {
-  test(`★ (b) ${host}: no banner, no vendor, no cookie, no gtag call, nothing stored`, () => {
+  test(`(b) ${host}: no banner, no vendor, no cookie, no gtag call, nothing stored`, () => {
     dom.setHostname(host);
     dom.setUrl('/?utm_source=gate3&utm_medium=cpc&utm_campaign=proof');
 
-    const { vendors, state } = loadPage();
+    const { vendors, state } = loadPage(CUSTOMER_SITE);
 
     assert.equal(state.gated, false, 'a customer site is not under Vivreal consent');
     assert.equal(state.showBanner, false, 'no banner may render');
@@ -285,25 +312,50 @@ for (const host of CUSTOMER_HOSTS) {
     assert.equal(dom.storage.size, 0, 'nothing may be written to customer storage');
 
     // Even the click paths are inert, in case a future refactor mounts them.
-    grantConsent(vendors);
-    trackLeadConversion({ method: 'inline' });
+    grantConsent(CUSTOMER_SITE, vendors);
+    trackLeadConversion({ vivrealOwnSite: CUSTOMER_SITE, method: 'inline' });
     assert.deepEqual(vendorIds(), []);
     assert.deepEqual(dom.gtagCalls(), []);
     assert.equal(dom.storage.size, 0);
   });
 }
 
-test('★ (b) a customer site that configures CLARITY still gets nothing injected', () => {
-  // The one legitimate off-apex case in the registry: clarity is allowed
+test('(b) the must-fail control: the same walk on a Vivreal site does everything', () => {
+  // Without this, the loop above would pass just as well against an
+  // instrumentation cluster that had been deleted. Deliberately run on a
+  // CUSTOMER-shaped hostname, so the only thing separating this case from the
+  // seven above is the site id.
+  dom.setHostname('windward-house.vivreal.io');
+  dom.setUrl('/?utm_source=gate3&utm_medium=cpc&utm_campaign=proof');
+
+  const { vendors, state } = loadPage(VIVREAL_SITE);
+
+  assert.equal(state.gated, true, 'a Vivreal site IS under Vivreal consent');
+  assert.equal(state.showBanner, true, 'and its visitor is asked');
+  assert.equal(getAttribution()!.first.utm_campaign, 'proof', 'and vr_attr is captured');
+
+  grantConsent(VIVREAL_SITE, vendors);
+  assert.deepEqual(vendorIds(), ['vr-vendor-clarity'], 'and the vendor injects on accept');
+  trackLeadConversion({ vivrealOwnSite: VIVREAL_SITE, method: 'inline' });
+  assert.equal(
+    dom.gtagCalls().filter((c) => c[1] === 'generate_lead').length,
+    1,
+    'and the conversion event fires',
+  );
+});
+
+test('(b) a customer site that configures CLARITY still gets nothing injected', () => {
+  // The one legitimate customer-site case in the registry: clarity is allowed
   // anywhere. It still cannot be injected, because the consent controller that
-  // injects it is apex-gated — which is the honest statement of Phase A's
+  // injects it is Vivreal-gated, which is the honest statement of Phase A's
   // scope: the registry is fleet-capable, the CONSENT SURFACE is not yet (C8).
-  dom.setHostname('acme.com');
+  // Run on a vivreal.io subdomain, which is where the old gate let it through.
+  dom.setHostname('windward-house.vivreal.io');
   const vendors = resolveVendorScripts([{ provider: 'clarity', id: 'fakeclarity0' }]);
-  assert.equal(vendors.length, 1, 'clarity resolves for a customer site…');
+  assert.equal(vendors.length, 1, 'clarity resolves for a customer site');
 
   dom.storage.set(COOKIE_CONSENT_KEY, 'accepted');
-  const state = runConsentMount(vendors);
+  const state = runConsentMount(CUSTOMER_SITE, vendors);
   assert.equal(state.gated, false);
-  assert.deepEqual(vendorIds(), [], '…but nothing injects it, because C2 is apex-only');
+  assert.deepEqual(vendorIds(), [], 'but nothing injects it, because C2 is Vivreal only');
 });

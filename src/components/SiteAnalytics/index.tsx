@@ -37,9 +37,13 @@ export interface SiteAnalyticsConfig {
    * banner click and the return-visit restore — belong to the client consent
    * controller (`lib/consent.ts`, C2). Neither half is correct alone.
    *
-   * A config flag rather than the isVivrealApex() host gate used elsewhere,
-   * because this is a server component in <head>: a `headers()` host read would
-   * opt the whole site out of static rendering. See lib/gaInitScript.ts.
+   * A config flag rather than the `isVivrealOwnSite()` fleet gate used by
+   * C1/C2/C9, because this flag is per-site policy rather than "is this
+   * Vivreal": a customer who turns consent mode on wants it on THEIR site. The
+   * original reason given here was that a server component in <head> cannot
+   * read the host without `headers()`, which would cost static rendering. That
+   * is still true of the HOST, but the fleet gate no longer reads one, so it is
+   * no longer the reason. See lib/gaInitScript.ts.
    */
   consentMode?: boolean;
   /**

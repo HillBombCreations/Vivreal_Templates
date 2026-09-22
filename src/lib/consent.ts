@@ -4,8 +4,8 @@
  * PORTED, not invented: `Vivreal_SSR_Landing/src/components/CookieConsent` +
  * the grant/restore paths in its `Providers` are the reference implementation
  * (defect D3 was fixed there first, deliberately, so this stays a port). What
- * is NEW here and owned by C2: the `isVivrealApex()` fleet gate, the withdrawal
- * control, and vendor dispatch.
+ * is NEW here and owned by C2: the fleet gate, the withdrawal control, and
+ * vendor dispatch.
  *
  * Four responsibilities, and they are not separable:
  *
@@ -24,14 +24,24 @@
  * stripping) cannot compile JSX, so all behaviour lives here and
  * <SiteConsent> is a rendering shell. See `__testing__/domHarness.ts`.
  *
- * FLEET POSTURE: `resolveConsentState()` returns `gated: false` off the
- * vivreal.io apex and every other entry point short-circuits on it, so this
- * module is behaviourally inert on every customer site.
+ * FLEET POSTURE, CORRECTED. This block used to claim the module was
+ * "behaviourally inert on every customer site" because the gate was the
+ * vivreal.io apex. It was not, and the claim was false for most of the fleet: a
+ * customer with no purchased domain is served from a SUBDOMAIN of vivreal.io,
+ * which the apex predicate matched. Vivreal's banner rendered on customer
+ * sites, offering Vivreal's copy and linking to `/privacy` on the customer's
+ * own domain, which is the customer's policy and does not mention these
+ * cookies. Measured in a browser on the deployed fleet, 2026-09-22.
+ *
+ * The gate is now the SITE ID, resolved once on the server and passed in as
+ * `vivrealOwnSite`. `resolveConsentState(false)` returns `gated: false` and
+ * every other entry point short-circuits on the same argument, so the module IS
+ * now inert on every customer site, including on a vivreal.io subdomain. The
+ * argument is required, so omitting it is a type error rather than a silent
+ * fail-open. See `lib/vivrealApex.ts`.
  *
  * Design: docs/projects/vivreal-io-relaunch/DESIGN-G12-G14-INSTRUMENTATION.md
  */
-
-import { onVivrealApex } from './vivrealApex.ts';
 
 /** Same key the landing app writes, so a visitor's choice survives the swap. */
 export const COOKIE_CONSENT_KEY = 'cookie_consent_v1';
@@ -62,13 +72,16 @@ export interface VendorScript {
 }
 
 export interface ConsentState {
-  /** Is this host under Vivreal's consent regime at all? False fleet-wide. */
+  /**
+   * Is this SITE under Vivreal's consent regime at all? True only for the site
+   * ids Vivreal owns, so false on every customer site whatever its host.
+   */
   gated: boolean;
   /** The stored choice, or null when the visitor has not decided. */
   choice: ConsentChoice | null;
   /** Global Privacy Control — a standing refusal. */
   gpc: boolean;
-  /** Show the banner? Only on the apex, and only while undecided. */
+  /** Show the banner? Only on a Vivreal site, and only while undecided. */
   showBanner: boolean;
   /** Show the persistent withdrawal affordance? Only once a choice exists. */
   showWithdraw: boolean;
@@ -133,8 +146,9 @@ export function isGpcEnabled(): boolean {
 }
 
 /**
- * The whole state machine, as one pure-ish read. Off the apex it returns the
- * inert state and NOTHING downstream renders or fires.
+ * The whole state machine, as one pure-ish read. On any site that is not
+ * Vivreal's own it returns the inert state and NOTHING downstream renders or
+ * fires.
  *
  * Deliberate: GPC does NOT suppress the banner. The design's uniform-posture
  * decision (Open Question 4, closed by 9) is that everyone sees it, and a GPC
@@ -144,8 +158,8 @@ export function isGpcEnabled(): boolean {
  * unconditional early return) and every registry VENDOR (`vendorsAllowed`
  * below), which are the person-level and third-party exposures.
  */
-export function resolveConsentState(): ConsentState {
-  if (!onVivrealApex()) return DENIED_STATE;
+export function resolveConsentState(vivrealOwnSite: boolean): ConsentState {
+  if (!vivrealOwnSite) return DENIED_STATE;
 
   const choice = readStoredConsentChoice();
   const gpc = isGpcEnabled();
@@ -217,32 +231,38 @@ export function applyConsentedState(vendors: readonly VendorScript[] = []): void
  * interaction, which is the entire point of C2-AC1 — this function must fail
  * against a click-only implementation.
  */
-export function runConsentMount(vendors: readonly VendorScript[] = []): ConsentState {
-  const state = resolveConsentState();
+export function runConsentMount(
+  vivrealOwnSite: boolean,
+  vendors: readonly VendorScript[] = [],
+): ConsentState {
+  const state = resolveConsentState(vivrealOwnSite);
   if (!state.gated) return state;
   if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors);
   return state;
 }
 
 /** Banner "Accept": store, apply, and measure the act of choosing. */
-export function grantConsent(vendors: readonly VendorScript[] = []): ConsentState {
-  if (!onVivrealApex()) return DENIED_STATE;
+export function grantConsent(
+  vivrealOwnSite: boolean,
+  vendors: readonly VendorScript[] = [],
+): ConsentState {
+  if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_ACCEPTED);
   applyConsentedState(vendors);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_accept', { event_category: 'Privacy' });
   }
-  return resolveConsentState();
+  return resolveConsentState(vivrealOwnSite);
 }
 
 /** Banner "Reject": store the refusal. Nothing is injected, nothing upgrades. */
-export function denyConsent(): ConsentState {
-  if (!onVivrealApex()) return DENIED_STATE;
+export function denyConsent(vivrealOwnSite: boolean): ConsentState {
+  if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_REJECTED);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_reject', { event_category: 'Privacy' });
   }
-  return resolveConsentState();
+  return resolveConsentState(vivrealOwnSite);
 }
 
 /**
@@ -257,8 +277,8 @@ export function denyConsent(): ConsentState {
  *
  * @param reload injected for testability; defaults to a real page reload.
  */
-export function withdrawConsent(reload?: () => void): ConsentState {
-  if (!onVivrealApex()) return DENIED_STATE;
+export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void): ConsentState {
+  if (!vivrealOwnSite) return DENIED_STATE;
   clearStoredConsentChoice();
   resetConsentApplied();
   if (typeof window !== 'undefined') {
@@ -268,5 +288,5 @@ export function withdrawConsent(reload?: () => void): ConsentState {
   const doReload =
     reload ?? (() => (typeof window !== 'undefined' ? window.location.reload() : undefined));
   doReload();
-  return resolveConsentState();
+  return resolveConsentState(vivrealOwnSite);
 }
