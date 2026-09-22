@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
 import { subscribeUser } from "@/lib/api/subscribe";
 import { mergeAttributionFields } from "@/lib/leadAttribution";
-
-function isValidEmail(email: unknown): email is string {
-  return typeof email === "string" && /\S+@\S+\.\S+/.test(email);
-}
+import { isValidEmail } from "@/lib/emailShape";
 
 /**
  * Sanitize optional extra subscriber attributes (e.g. the footer newsletter's
@@ -29,12 +26,21 @@ export async function POST(req: Request) {
   try {
     const { email, collectionId, fields } = await req.json();
 
+    // The earliest point at which we can refuse an address, and the only one
+    // this site controls. `isValidEmail` is the same rule VR_Client_API applies
+    // at the write boundary (src/shared/contactGuards.js EMAIL_SHAPE); see
+    // src/lib/emailShape.ts for why it is stated in both places.
     if (!isValidEmail(email)) {
       return NextResponse.json(
         { success: false, message: "Invalid email." },
         { status: 400 }
       );
     }
+
+    // Forward exactly what was validated. Upstream trims and lowercases too, so
+    // this changes no stored byte; it removes the gap where the value we
+    // checked and the value we sent could differ.
+    const address = email.trim();
 
     if (!collectionId) {
       return NextResponse.json(
@@ -58,7 +64,7 @@ export async function POST(req: Request) {
     const cookieHeader = req.headers.get("cookie");
     const attributedFields = mergeAttributionFields(sanitizeFields(fields), cookieHeader);
 
-    const ok = await subscribeUser(email, collectionId, attributedFields);
+    const ok = await subscribeUser(address, collectionId, attributedFields);
     if (!ok) {
       return NextResponse.json(
         { success: false, message: "Subscribe failed." },
