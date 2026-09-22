@@ -15,9 +15,48 @@ npm run dev          # Dev server (Turbopack)
 npm run dev:linked   # Dev against local ../vivreal-site-renderer (copies build via dev-sync.js)
 npm run build        # Production build (Turbopack)
 npm run lint         # ESLint (includes the custom copy rule, see Key Patterns)
-npm test             # Node test runner. THREE globs, not one:
+npm test             # `tsc --noEmit` FIRST, then the node test runner over THREE
+                     # globs, not one:
                      #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
+                     # Hermetic and offline capable. Nothing in it touches the network.
+npm run check:free-year             # NOT in `npm test`: reads the npm registry.
+                                    # Runs weekly in CI. See "The free-year sentence".
+node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
 ```
+
+### `npm test` runs `tsc --noEmit` first, and that is load-bearing
+
+`node --experimental-strip-types` ERASES type annotations and runs the
+JavaScript underneath. It never asks whether the annotations were true. So the
+test runner alone cannot see a type error, and for a while this repo's only gate
+could not either.
+
+**Why that mattered more here than in most repos.** `next.config.ts` sets
+neither `typescript.ignoreBuildErrors` nor `eslint.ignoreDuringBuilds`, so
+`next build` DOES typecheck. Amplify is the CI for this repo, and on `stable`
+that build is the **fleet** build. A type error could therefore reach `main`,
+be promoted, and fail the build for **every live customer site at once**, with
+the only gate the repo has reporting green the entire way.
+
+Measured 2026-09-21, four legs, because two would not have been enough:
+
+| Tree | `npm test` (tsc + runner) | runner alone |
+|---|---|---|
+| clean | rc 0, 1014 pass | rc 0, 1014 pass |
+| `const x: number = 'a string'` in `src/lib/domains/publicSearch.ts` | **rc 2**, `TS2322` naming file and line | **rc 0, 1014 pass** |
+
+The clean row is the control that the gate is not simply always failing, and
+that chaining `tsc &&` did not short-circuit the suite. The bottom-right cell is
+the original finding, and it is what makes the bottom-left cell mean "the
+typecheck caught it" rather than "something caught it". That module is imported
+by most of the domains suite, so it is not a file the runner skipped.
+
+There were **zero** pre-existing type errors when this was wired in, so nothing
+was suppressed and no bar was lowered.
+
+**Do not "fix" a red `npm test` by dropping the `tsc --noEmit &&`.** A type
+error it reports is one the fleet build would reject. `npm test` and
+`npm run lint` together are the local gate.
 
 ---
 
@@ -184,11 +223,52 @@ Two things about it are load-bearing:
 - **It reads `JSXText`, not just string literals.** Most copy on a page is the text
   between two tags, and a sweep that greps only quoted strings misses it. Thirteen live
   violations hid that way in the portal.
+- **It reads `Literal` and `JSXText` AND NOTHING ELSE**, so a **template literal is
+  invisible to it.** Composing a sentence with backticks and `${}` takes that sentence out
+  of the dash, jargon, supplier and `px` checks in one edit, silently, with a green lint.
+  That is why `FREE_YEAR_OFFER` in `src/lib/domains/publicSearch.ts` is a plain quoted
+  string even though its `$25` is checked against a package value: the tests keep it in
+  step with the number, and the literal is what keeps it linted. If you ever need a
+  composed string that a visitor reads, teach the rule `TemplateLiteral` first, with the
+  must-fail control.
 - **A bare glyph is exempt** as the "no value here" placeholder (`value ?? '—'`, a lone
   `—` in a cell). The exemption is narrow on purpose, and it has now been the cause of
   two escapes: a glyph in a `{"—"}` container, and a dash written as plain JSX text with
   words beside it. Both are fixed and pinned. If you widen the exemption, add the
   must-fail control with it.
+
+### The free-year sentence is pinned to a package this repo does not install
+
+`src/lib/domains/publicSearch.ts` carries `FREE_YEAR_OFFER`, the one sentence vivreal.io
+tells a stranger about the free first year. Its `$25` is `DOMAIN_BUNDLE.maxCatalogPriceCents`
+from `@hillbombcreations/tier-quotas`, hand-copied because a second private GitHub Packages
+dependency in this app's `npm ci` is a known way to brick every customer site's build.
+
+Two checks, and neither can pass by doing nothing:
+
+- `publicSearch.test.ts` ties every clause of the sentence to a field in `FREE_YEAR_SOURCE`,
+  the recorded package reading. Hermetic. Editing the sentence or the record alone is red.
+- `checks/freeYearPackage.test.ts` fetches the real package into an OS temp directory and
+  asserts it still says the same thing. **That one needs the registry**, unavoidably: this
+  repo does not depend on the package, so nothing local ever changes when the package moves
+  and the registry is the only thing that knows. It asserts `package.json` and
+  `package-lock.json` are byte identical after it runs.
+
+  **It is deliberately NOT in `npm test`**, and lives outside `src/` so the glob cannot pick
+  it up. It briefly was, and that was the wrong trade: taxing every developer on every run,
+  forever, to catch a copy literal drifting, and handing the suite a way to go red when the
+  wifi drops. A suite that fails for reasons unrelated to the code teaches people to distrust
+  it, and a distrusted suite is the same problem as an unrun one.
+
+  It runs **weekly** from `.github/workflows/free-year-package-check.yml`
+  (`npm run check:free-year` to run it by hand). It **fails rather than skips** when the
+  registry is unreachable, and that matters more in a cron than it did in `npm test`: nobody
+  watches a scheduled job, so a skip is invisible, and an invisible skip is how a gate dies
+  while still appearing to exist. If it goes red on AUTH rather than drift, add a
+  `PACKAGES_READ_TOKEN` secret. Never disable the schedule, never make it skip.
+
+If either goes red, read the package and move the sentence, `FREE_YEAR_SOURCE` and the
+portal's copy together. Never just the number.
 
 **`Stripe` and `Square` are deliberately NOT in the supplier list**, because an owner
 connects those themselves. That rationale is about the OWNER, and it does not extend to
@@ -230,6 +310,21 @@ npm install
 ```
 
 npm 10/11 prune the `@emnapi/*` transitive entries from package-lock.json, which has repeatedly broken the `stable` fleet build — test any lockfile change with a clean install (delete node_modules, then `npm ci`) before merging.
+
+**`_lockcensus.cjs` at the repo root is what makes that visible**, and nothing above used
+to name it. Copy the lockfile before the bump, then compare entry by entry:
+
+```bash
+cp package-lock.json /tmp/lock-before.json
+npm install                       # or whatever moved it
+node _lockcensus.cjs /tmp/lock-before.json
+```
+
+It groups by `@emnapi/`, `@img/sharp`, `linux (any)` and optional deps, prints the
+renderer version either side, and **exits 1 if any Linux-critical group shrank**. Measured
+2026-09-21: `main` is 720 entries, four `@emnapi/`, and `npm ci` leaves the lockfile byte
+identical. Feeding the census a lockfile with the two `@emnapi/*` entries removed (the
+720 to 718 shape) makes it exit 1 and name both, so its silence is a real silence.
 
 For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 

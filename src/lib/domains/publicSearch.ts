@@ -258,16 +258,29 @@ export function parseSuggestions(raw: unknown): Suggestion[] | null {
 /**
  * What to say when the service does not give an answer.
  *
- * TODAY THIS IS THE ONLY BRANCH THAT RUNS. `/public/availability` and
- * `/public/suggestions` have answered 503 to every request since Wave 4,
- * because `STRIPE_RESTRICTED_KEY` is the empty string on the live function, so
- * the price catalogue cannot be built. Until the key is created and the stack
- * redeployed, every search on this page ends here.
+ * THIS IS THE EXCEPTION BRANCH, which is what it was always for.
  *
- * That is why the wording matters more than it looks. "Not answering right now"
- * is true and says nothing about the address. Anything that reads as an answer,
- * "unavailable" most of all, would tell a stranger their name is taken when
- * nobody has checked.
+ * It used to say the opposite, in the present tense: that both public
+ * endpoints had answered 503 to every request since Wave 4 because
+ * `STRIPE_RESTRICTED_KEY` was the empty string on the live function, and that
+ * this was THE ONLY BRANCH THAT RUNS. That was true when it was written.
+ * `vivreal-domain-search` fixed it in `2d82702` ("carry the Stripe key into
+ * the stack, and refuse the deploy without it") and `57e35c2`, both merged
+ * before that repo's `origin/main`, and the docblock stayed behind. An
+ * engineer reading it would have concluded the whole page was dead.
+ *
+ * VERIFIED LIVE 2026-09-21, with the browser's own `Origin` header:
+ * `/public/availability` returns 200 with a real price object and
+ * `/public/suggestions` returns 200 with priced alternatives. Controls, so a
+ * 200 is not just a host that answers 200 to anything: a bogus path on the
+ * same host returns 404, `Access-Control-Allow-Origin` comes back as
+ * `https://vivreal.io` for that origin, and is absent for an unrelated one.
+ *
+ * The wording still matters more than it looks, because this branch is what a
+ * visitor sees on a bad day. "Not answering right now" is true and says
+ * nothing about the address. Anything that reads as an answer, "unavailable"
+ * most of all, would tell a stranger their name is taken when nobody has
+ * checked.
  */
 export function messageForFailure(status: number | null): string {
   if (status === 429) {
@@ -280,14 +293,91 @@ export function messageForFailure(status: number | null): string {
 }
 
 /**
+ * The package values the offer sentence below is made of.
+ *
+ * ── D14-20: THE SENTENCE USED TO BE PINNED TO NOTHING ────────────────────
+ *
+ * `FREE_YEAR_OFFER` is a hand-copied duplicate of a value that lives in
+ * `DOMAIN_BUNDLE` in `@hillbombcreations/tier-quotas`. The portal DERIVES its
+ * copy from the package (`Vivreal_Portal_Mobile/src/lib/domains/freeYear.ts`
+ * imports `DOMAIN_BUNDLE` and builds `FREE_YEAR_CAP` from
+ * `maxCatalogPriceCents`). This page could not, and still cannot: a second
+ * private GitHub Packages dependency in the fleet app's `npm ci` is a known
+ * way to brick every customer site's build, and this page needs one sentence,
+ * not a package. That reason is still good.
+ *
+ * What was NOT good is that nothing failed when the package moved. If the cap
+ * changed, vivreal.io would go on quoting the old number to strangers while
+ * the portal quoted the new one, silently and indefinitely.
+ *
+ * So the four fields the sentence is made of are recorded HERE, as data, with
+ * the version and date they were read from the real package:
+ *
+ *   - `eligibleTiers`           -> which plan the sentence may name
+ *   - `eligibleBillingPeriods`  -> the word "yearly"
+ *   - `maxCatalogPriceCents`    -> the "$25"
+ *   - `perGroupLimit`           -> "One per account."
+ *
+ * Two things check them, and neither can pass by doing nothing:
+ *
+ *   1. `publicSearch.test.ts` asserts the SENTENCE and these VALUES agree, so
+ *      editing either one alone is red. Hermetic, no network.
+ *   2. `checks/freeYearPackage.test.ts` reads the REAL package from the
+ *      registry into a throwaway directory, touching neither `package.json`
+ *      nor `package-lock.json`, and asserts it still says this. That is the
+ *      one that catches the package moving, and a network read is unavoidable
+ *      for that: Templates does not depend on the package, so the registry is
+ *      the only thing that knows. It is deliberately NOT in `npm test`, which
+ *      stays hermetic; it runs weekly from
+ *      `.github/workflows/free-year-package-check.yml`.
+ *
+ * IF EITHER GOES RED, read the package and change the sentence, this block and
+ * the portal's copy together. Do not change only the number.
+ */
+export interface FreeYearSource {
+  /** `@hillbombcreations/tier-quotas` version these values were read from. */
+  readonly packageVersion: string;
+  /** ISO date of that reading. */
+  readonly readOn: string;
+  readonly eligibleTiers: readonly string[];
+  readonly eligibleBillingPeriods: readonly string[];
+  readonly maxCatalogPriceCents: number;
+  readonly perGroupLimit: number;
+}
+
+export const FREE_YEAR_SOURCE: FreeYearSource = Object.freeze({
+  packageVersion: '5.2.0',
+  readOn: '2026-09-21',
+  eligibleTiers: Object.freeze(['pro']),
+  eligibleBillingPeriods: Object.freeze(['annual']),
+  maxCatalogPriceCents: 2500,
+  perGroupLimit: 1,
+});
+
+/**
+ * Cents to the money string the sentence uses.
+ *
+ * Whole dollars when the cap is whole, which it has always been. The fraction
+ * branch exists so a cap of 2550 renders as `$25.50` rather than `$25.5`, not
+ * because anyone expects one.
+ */
+export function formatCapUsd(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+/**
  * The offer, quoted rather than computed.
  *
+ * A PLAIN STRING LITERAL, DELIBERATELY, and not a template literal built from
+ * `FREE_YEAR_SOURCE`. `eslint-rules/owner-visible-copy.mjs` visits `Literal`
+ * and `JSXText` nodes and nothing else, so composing this sentence would take
+ * it out of the dash and jargon checks entirely. The tests above are what keep
+ * it in step with `FREE_YEAR_SOURCE`; the literal is what keeps it linted.
+ *
  * BYTE-FOR-BYTE THE PORTAL'S `FREE_YEAR_OFFER`
- * (`Vivreal_Portal_Mobile/src/lib/domains/freeYear.ts`), which is itself
- * generated from `DOMAIN_BUNDLE` in `@hillbombcreations/tier-quotas`. Copied as
- * a literal instead of imported on purpose: pulling a second private
- * GitHub Packages dependency into Templates is a known way to break the fleet's
- * `npm ci`, and this page needs one sentence, not a package.
+ * (`Vivreal_Portal_Mobile/src/lib/domains/freeYear.ts`), which derives the same
+ * sentence from `DOMAIN_BUNDLE`.
  *
  * NO PER-RESULT ELIGIBILITY IS SHOWN HERE, AND THAT IS THE POINT. Whether a
  * given customer's first year is free depends on their tier, their Stripe
@@ -300,8 +390,7 @@ export function messageForFailure(status: number | null): string {
  * Pro Plus folded into Pro, `DOMAIN_BUNDLE.eligibleTiers` reads `['pro']`, and
  * `normalizeTier` resolves a stored `proPlus` onto `pro`, so a group that was
  * on it keeps the offer. Naming Pro Plus here would point a stranger at a plan
- * they cannot buy. Read the package before editing this line; it is the only
- * thing that knows.
+ * they cannot buy.
  */
 export const FREE_YEAR_HEADING = 'The first year can be free';
 export const FREE_YEAR_OFFER =
