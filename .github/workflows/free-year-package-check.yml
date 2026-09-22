@@ -1,0 +1,91 @@
+name: Free-year sentence vs tier-quotas
+
+# D14-20. `FREE_YEAR_OFFER` in src/lib/domains/publicSearch.ts is the one
+# sentence vivreal.io tells a stranger about the free first year, and its "$25"
+# is `DOMAIN_BUNDLE.maxCatalogPriceCents` from `@hillbombcreations/tier-quotas`,
+# hand-copied. It is copied rather than imported because a second private
+# GitHub Packages dependency in this app's `npm ci` is a known way to brick
+# every customer site's build, and that reason is still good.
+#
+# WHY A SCHEDULE AND NOT `npm test`.
+#
+# Templates does not depend on the package, so `npm ci` never fetches it and no
+# local artefact changes when it moves. The registry is the only thing that
+# knows, which means this check cannot be hermetic. It briefly lived in
+# `npm test`, and that was the wrong trade: it taxes every developer on every
+# run, forever, to catch a copy literal drifting, and it gives the suite a way
+# to go red when the wifi drops. A suite that fails for reasons unrelated to
+# the code teaches people to distrust it, and a distrusted suite is the same
+# problem as an unrun one.
+#
+# Weekly is the cadence the risk deserves. The cap moves rarely, and a week of
+# a stale sentence on a marketing page is survivable. A week of a broken
+# `npm test` is not.
+
+on:
+  schedule:
+    # Mondays, 09:17 UTC. An odd minute on purpose: the fleet has already had
+    # two repos independently pick 06:10 and collide, so cron slots here are a
+    # cross-repo contract. If you move this, check the fleet ladder first.
+    - cron: '17 9 * * 1'
+  # So it can be run on demand, and so the first run after this merges does not
+  # have to wait until Monday.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # For GITHUB_TOKEN to read @hillbombcreations/tier-quotas from GitHub
+  # Packages. Whether that is sufficient depends on the package granting this
+  # repository access; see the fallback secret below.
+  packages: read
+
+concurrency:
+  group: free-year-package-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Deliberately NO `npm ci`. This check imports nothing from this repo's
+      # dependency tree: it reads one source file for FREE_YEAR_SOURCE and
+      # fetches tier-quotas into a temp directory of its own. Skipping the
+      # install keeps the job to a few seconds and, more importantly, keeps it
+      # from being able to touch package-lock.json at all.
+      - name: Free-year sentence still matches the package
+        run: npm run check:free-year
+        env:
+          # The repo's .npmrc scopes @hillbombcreations to npm.pkg.github.com
+          # and reads NODE_AUTH_TOKEN.
+          #
+          # IF THIS JOB GOES RED ON AUTH RATHER THAN ON DRIFT, the fix is to add
+          # a PACKAGES_READ_TOKEN repository secret with `read:packages`. It is
+          # NOT to delete the schedule or to make the check skip when it cannot
+          # reach the registry: nobody watches a cron, so a skip is invisible,
+          # and an invisible skip is how a gate dies while still appearing to
+          # exist. The check fails loudly on an unreachable registry on purpose.
+          NODE_AUTH_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: What to do when this fails
+        if: failure()
+        run: |
+          {
+            echo "## Free-year sentence check failed"
+            echo ""
+            echo "Either \`@hillbombcreations/tier-quotas\` moved, or the runner could not read it."
+            echo ""
+            echo "**If the package moved:** read \`DOMAIN_BUNDLE\`, then update"
+            echo "\`FREE_YEAR_SOURCE\`, \`FREE_YEAR_OFFER\` and the portal's"
+            echo "\`src/lib/domains/freeYear.ts\` copy together. Never just the number."
+            echo ""
+            echo "**If it is auth:** add a \`PACKAGES_READ_TOKEN\` secret with \`read:packages\`."
+            echo "Do not disable this job and do not make the check skip."
+          } >> "$GITHUB_STEP_SUMMARY"

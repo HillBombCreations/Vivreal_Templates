@@ -357,8 +357,13 @@ test('the free-year sentence is the portal\'s, byte for byte', () => {
 // The assertion above is a round trip: it pins a literal against a literal and
 // would stay green while the package it was copied from moved underneath it.
 // These tie every clause of the sentence to a field in FREE_YEAR_SOURCE, so
-// editing one alone is red. freeYearPackage.test.ts is the other half, and is
-// the one that reads the real package.
+// editing one alone is red. They are hermetic and run in `npm test`.
+//
+// checks/freeYearPackage.test.ts is the other half, the one that reads the real
+// package. It is NOT in `npm test` on purpose, because it needs the registry;
+// it runs weekly from .github/workflows/free-year-package-check.yml. So these
+// assertions are the only thing standing between an edit here and a wrong price
+// on a public page for up to a week.
 
 test('the cap formatter turns package cents into the money string the sentence uses', () => {
   assert.equal(formatCapUsd(2500), '$25');

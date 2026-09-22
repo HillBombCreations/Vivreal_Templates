@@ -322,12 +322,14 @@ export function messageForFailure(status: number | null): string {
  *
  *   1. `publicSearch.test.ts` asserts the SENTENCE and these VALUES agree, so
  *      editing either one alone is red. Hermetic, no network.
- *   2. `freeYearPackage.test.ts` reads the REAL package from the registry into
- *      a throwaway directory, touching neither `package.json` nor
- *      `package-lock.json`, and asserts it still says this. That is the one
- *      that catches the package moving, and a network read is unavoidable for
- *      that: Templates does not depend on the package, so the registry is the
- *      only thing that knows.
+ *   2. `checks/freeYearPackage.test.ts` reads the REAL package from the
+ *      registry into a throwaway directory, touching neither `package.json`
+ *      nor `package-lock.json`, and asserts it still says this. That is the
+ *      one that catches the package moving, and a network read is unavoidable
+ *      for that: Templates does not depend on the package, so the registry is
+ *      the only thing that knows. It is deliberately NOT in `npm test`, which
+ *      stays hermetic; it runs weekly from
+ *      `.github/workflows/free-year-package-check.yml`.
  *
  * IF EITHER GOES RED, read the package and change the sentence, this block and
  * the portal's copy together. Do not change only the number.

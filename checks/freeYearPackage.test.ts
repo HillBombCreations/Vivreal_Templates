@@ -6,7 +6,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`.
-import { FREE_YEAR_OFFER, FREE_YEAR_SOURCE, formatCapUsd } from './publicSearch.ts';
+import {
+  FREE_YEAR_OFFER,
+  FREE_YEAR_SOURCE,
+  formatCapUsd,
+} from '../src/lib/domains/publicSearch.ts';
 
 /**
  * D14-20: THE ONE CHECK THAT CATCHES THE PACKAGE MOVING.
@@ -21,22 +25,42 @@ import { FREE_YEAR_OFFER, FREE_YEAR_SOURCE, formatCapUsd } from './publicSearch.
  *
  * ── WHY THIS ONE NEEDS THE NETWORK, AND ITS SIBLING DOES NOT ─────────────
  *
- * `publicSearch.test.ts` pins the SENTENCE against `FREE_YEAR_SOURCE`, with no
- * network at all. That catches someone editing one and not the other. It
- * cannot catch the package moving, because nothing in this repo re-reads the
- * package: Templates does not depend on it, so `npm ci` never fetches it and
- * no local artefact ever changes. **The registry is the only thing that
- * knows.** A hermetic test of a value that lives somewhere else is a round
- * trip, and a round trip proves nothing.
+ * `src/lib/domains/publicSearch.test.ts` pins the SENTENCE against
+ * `FREE_YEAR_SOURCE`, with no network at all. That catches someone editing one
+ * and not the other, and it runs in `npm test`. It cannot catch the package
+ * moving, because nothing in this repo re-reads the package: Templates does
+ * not depend on it, so `npm ci` never fetches it and no local artefact ever
+ * changes. **The registry is the only thing that knows.** A hermetic test of a
+ * value that lives somewhere else is a round trip, and a round trip proves
+ * nothing.
  *
- * ── WHAT THIS COSTS, STATED PLAINLY ──────────────────────────────────────
+ * ── WHY IT LIVES HERE, AND NOT IN `npm test` ─────────────────────────────
  *
- * `npm test` now needs the same GitHub Packages credential `npm ci` already
- * needs, because `@hillbombcreations/site-renderer` is a private package from
- * the same registry. Anyone who can install this repo can run this test. On a
- * machine that cannot reach the registry this test FAILS rather than skipping,
- * deliberately: a check that quietly passes when it could not check is the
- * exact failure this finding is about.
+ * This file is deliberately OUTSIDE `src/`, so the `src/**\/*.test.ts` glob in
+ * the `test` script does not pick it up. `npm test` stays hermetic and works
+ * offline.
+ *
+ * It was briefly inside that glob. That was wrong: it taxes every developer on
+ * every run, forever, to catch a copy literal drifting, and it introduces a way
+ * for the suite to go red for reasons that have nothing to do with the code. A
+ * suite that fails when the wifi drops teaches people to distrust the suite,
+ * and a distrusted suite is the same problem as an unrun one.
+ *
+ * It runs WEEKLY instead, from `.github/workflows/free-year-package-check.yml`,
+ * which is the cadence the risk deserves: the cap moving is rare, and a week of
+ * a stale sentence on a marketing page is survivable where a week of a broken
+ * `npm test` is not.
+ *
+ * ── IT STILL FAILS RATHER THAN SKIPS, AND THAT NEEDED WORK ───────────────
+ *
+ * On a machine or runner that cannot reach the registry this FAILS. That
+ * matters more in a scheduled job than it did in `npm test`: nobody is watching
+ * a cron, so a skip is invisible, and an invisible skip is how a gate dies
+ * quietly while still appearing to exist. A red weekly job gets looked at. A
+ * green one that checked nothing does not.
+ *
+ * If it goes red on AUTH rather than on drift, the fix is a repository secret
+ * (see the workflow), never deleting the schedule.
  *
  * ── WHAT IT MUST NOT DO ──────────────────────────────────────────────────
  *
@@ -49,7 +73,7 @@ import { FREE_YEAR_OFFER, FREE_YEAR_SOURCE, formatCapUsd } from './publicSearch.
  */
 
 const PACKAGE = '@hillbombcreations/tier-quotas';
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const PROBE_DIR = path.join(os.tmpdir(), 'vivreal-templates-tier-quotas-probe');
 
 /** The shape this test reads. The package exports more; these are the four the sentence uses. */
@@ -80,11 +104,17 @@ function npm(args: string[], cwd: string): string {
 /**
  * The version the registry currently calls `latest`.
  *
- * Asked every run, on purpose. Caching the INSTALL and skipping this would
- * make the check blind to exactly the event it exists to catch: a new publish.
+ * `--prefer-online` IS THE WHOLE POINT OF THIS FUNCTION, and leaving it off
+ * made this check a gate-shaped object rather than a gate. Measured: against a
+ * dead registry with no auth token, a bare `npm view` returned `5.2.0` from
+ * npm's HTTP cache and exited 0. So the check would have reported "still
+ * matches" on entirely stale data, and would never have seen a new publish,
+ * which is the one event it exists to catch. `--prefer-online` forces
+ * revalidation: same command exits 1 when it genuinely cannot reach the
+ * registry, and still returns the right answer when it can.
  */
 function latestPublishedVersion(): string {
-  return npm(['view', `${PACKAGE}@latest`, 'version'], REPO_ROOT).trim();
+  return npm(['view', `${PACKAGE}@latest`, 'version', '--prefer-online'], REPO_ROOT).trim();
 }
 
 /** Install `latest` into the probe directory, reusing it when it is already current. */
@@ -104,7 +134,10 @@ function installedProbe(version: string): string {
     path.join(PROBE_DIR, 'package.json'),
     `${JSON.stringify({ name: 'vivreal-tier-quotas-probe', version: '0.0.0', private: true }, null, 2)}\n`,
   );
-  npm(['install', `${PACKAGE}@${version}`, '--no-audit', '--no-fund', '--silent'], PROBE_DIR);
+  npm(
+    ['install', `${PACKAGE}@${version}`, '--prefer-online', '--no-audit', '--no-fund', '--silent'],
+    PROBE_DIR,
+  );
   return manifest;
 }
 

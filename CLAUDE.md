@@ -15,41 +15,48 @@ npm run dev          # Dev server (Turbopack)
 npm run dev:linked   # Dev against local ../vivreal-site-renderer (copies build via dev-sync.js)
 npm run build        # Production build (Turbopack)
 npm run lint         # ESLint (includes the custom copy rule, see Key Patterns)
-npm test             # Node test runner. THREE globs, not one:
+npm test             # `tsc --noEmit` FIRST, then the node test runner over THREE
+                     # globs, not one:
                      #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
-                     # ONE spec reads the npm registry: src/lib/domains/freeYearPackage.test.ts
-                     # needs the same NODE_AUTH_TOKEN `npm ci` already needs. See
-                     # "The free-year sentence" below for why, and why it does not skip.
-npx tsc --noEmit     # THE TYPECHECK. `npm test` does NOT do this. Run it before you push.
+                     # Hermetic and offline capable. Nothing in it touches the network.
+npm run check:free-year             # NOT in `npm test`: reads the npm registry.
+                                    # Runs weekly in CI. See "The free-year sentence".
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
 ```
 
-### `npm test` STRIPS types. It does not CHECK them.
+### `npm test` runs `tsc --noEmit` first, and that is load-bearing
 
-`--experimental-strip-types` erases the annotations and runs the JavaScript
-underneath. It never asks whether the annotations were true. **A green suite here
-is a weaker statement than it looks, and it is worth knowing exactly how weak.**
+`node --experimental-strip-types` ERASES type annotations and runs the
+JavaScript underneath. It never asks whether the annotations were true. So the
+test runner alone cannot see a type error, and for a while this repo's only gate
+could not either.
 
-Measured 2026-09-21, both legs:
-
-| Tree | `npm test` | `npx tsc --noEmit` |
-|---|---|---|
-| clean | rc 0, 1015 pass | rc 0 |
-| with `const x: number = 'a string'` planted in `src/lib/domains/publicSearch.ts` | **rc 0, 1015 pass** | **rc 2**, `error TS2322` naming the file and line |
-
-That module is imported by most of the domains suite, so this is not a file the
-runner skipped. The control is the second column: the error was real, and one
-of the two tools saw it.
-
-**Where a type error DOES surface: the Amplify build.** `next.config.ts` sets
+**Why that mattered more here than in most repos.** `next.config.ts` sets
 neither `typescript.ignoreBuildErrors` nor `eslint.ignoreDuringBuilds`, so
-`next build` typechecks. Amplify is the CI for this repo, and on `stable` that
-build is the **fleet** build. So the failure mode of skipping `npx tsc --noEmit`
-is not a red PR, it is a red promote, after every customer site has started
-rebuilding.
+`next build` DOES typecheck. Amplify is the CI for this repo, and on `stable`
+that build is the **fleet** build. A type error could therefore reach `main`,
+be promoted, and fail the build for **every live customer site at once**, with
+the only gate the repo has reporting green the entire way.
 
-`npm test` + `npm run lint` + `npx tsc --noEmit` is the local gate. Two of the
-three is not.
+Measured 2026-09-21, four legs, because two would not have been enough:
+
+| Tree | `npm test` (tsc + runner) | runner alone |
+|---|---|---|
+| clean | rc 0, 1014 pass | rc 0, 1014 pass |
+| `const x: number = 'a string'` in `src/lib/domains/publicSearch.ts` | **rc 2**, `TS2322` naming file and line | **rc 0, 1014 pass** |
+
+The clean row is the control that the gate is not simply always failing, and
+that chaining `tsc &&` did not short-circuit the suite. The bottom-right cell is
+the original finding, and it is what makes the bottom-left cell mean "the
+typecheck caught it" rather than "something caught it". That module is imported
+by most of the domains suite, so it is not a file the runner skipped.
+
+There were **zero** pre-existing type errors when this was wired in, so nothing
+was suppressed and no bar was lowered.
+
+**Do not "fix" a red `npm test` by dropping the `tsc --noEmit &&`.** A type
+error it reports is one the fleet build would reject. `npm test` and
+`npm run lint` together are the local gate.
 
 ---
 
@@ -241,12 +248,24 @@ Two checks, and neither can pass by doing nothing:
 
 - `publicSearch.test.ts` ties every clause of the sentence to a field in `FREE_YEAR_SOURCE`,
   the recorded package reading. Hermetic. Editing the sentence or the record alone is red.
-- `freeYearPackage.test.ts` fetches the real package into an OS temp directory and asserts
-  it still says the same thing. **That one needs the registry**, unavoidably: this repo does
-  not depend on the package, so nothing local ever changes when the package moves and the
-  registry is the only thing that knows. It **fails** rather than skipping when it cannot
-  reach the registry, and it asserts `package.json` and `package-lock.json` are byte
-  identical after it runs.
+- `checks/freeYearPackage.test.ts` fetches the real package into an OS temp directory and
+  asserts it still says the same thing. **That one needs the registry**, unavoidably: this
+  repo does not depend on the package, so nothing local ever changes when the package moves
+  and the registry is the only thing that knows. It asserts `package.json` and
+  `package-lock.json` are byte identical after it runs.
+
+  **It is deliberately NOT in `npm test`**, and lives outside `src/` so the glob cannot pick
+  it up. It briefly was, and that was the wrong trade: taxing every developer on every run,
+  forever, to catch a copy literal drifting, and handing the suite a way to go red when the
+  wifi drops. A suite that fails for reasons unrelated to the code teaches people to distrust
+  it, and a distrusted suite is the same problem as an unrun one.
+
+  It runs **weekly** from `.github/workflows/free-year-package-check.yml`
+  (`npm run check:free-year` to run it by hand). It **fails rather than skips** when the
+  registry is unreachable, and that matters more in a cron than it did in `npm test`: nobody
+  watches a scheduled job, so a skip is invisible, and an invisible skip is how a gate dies
+  while still appearing to exist. If it goes red on AUTH rather than drift, add a
+  `PACKAGES_READ_TOKEN` secret. Never disable the schedule, never make it skip.
 
 If either goes red, read the package and move the sentence, `FREE_YEAR_SOURCE` and the
 portal's copy together. Never just the number.

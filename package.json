@@ -9,7 +9,8 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\" \"eslint-rules/*.test.mjs\""
+    "test": "tsc --noEmit && node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\" \"eslint-rules/*.test.mjs\"",
+    "check:free-year": "node --experimental-strip-types --test checks/freeYearPackage.test.ts"
   },
   "dependencies": {
     "@hillbombcreations/site-renderer": "^1.74.0",
