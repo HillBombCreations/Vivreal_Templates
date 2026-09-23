@@ -57,6 +57,7 @@ import {
 } from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import RichTextImages from "@/components/RichTextImages";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
 import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
 import { refuseUnknownItemExistence } from "@/lib/degradedPageRefusal";
@@ -309,6 +310,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // miss, so its flag has to survive into them.
   const reads: DetailItemReads = [];
 
+  // H177 - the inline rich-text image map for whichever arm ends up serving.
+  //
+  // Accumulated exactly like `reads` above, and for the same reason: the arms
+  // return early, and the products read runs first for any page carrying a
+  // storefront binding then falls THROUGH to the collection and menu arms. A
+  // map built inside one arm would be missing whatever an earlier arm read.
+  //
+  // Seeded with the SHELL's map so a detail page whose rich text lives in the
+  // page config (a standing intro above the item, say) resolves too.
+  const richTextImages: Record<string, string> = { ...(siteData.richTextImageUrls ?? {}) };
+
   /**
    * The one place this route answers "there is no item at this URL", and the
    * only place allowed to.
@@ -343,8 +355,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Show/event detail
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
-    const { show, degraded } = await getShowByIdRead(itemId, collectionId);
+    const { show, degraded, richTextImageUrls } = await getShowByIdRead(itemId, collectionId);
     reads.push({ source: "shows", degraded });
+    Object.assign(richTextImages, richTextImageUrls);
 
     // Change B (docs/bugs/templates-soft-404-and-301-status): this arm used
     // to render a hand-rolled "Not found" page here at a soft status 200 —
@@ -376,14 +389,19 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={showJsonLd} />
         <Navbar />
-        <DetailPageTemplate
-          slug={slug}
-          format="shows"
-          item={show as unknown as DetailItem}
-          siteData={siteData as unknown as RendererSiteData}
-          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
-        />
+        {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
+            carry no CMS rich text, so the client boundary stays as small as it
+            can be. See src/components/RichTextImages. */}
+        <RichTextImages map={richTextImages}>
+          <DetailPageTemplate
+            slug={slug}
+            format="shows"
+            item={show as unknown as DetailItem}
+            siteData={siteData as unknown as RendererSiteData}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+          />
+        </RichTextImages>
         <Footer />
       </>
     );
@@ -392,8 +410,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Team member detail
   if (pageConfig.format === "team") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.TEAMMEMBERS_ID || "");
-    const { members: teamMembers, degraded } = await getTeamMembersRead(collectionId);
+    const { members: teamMembers, degraded, richTextImageUrls } = await getTeamMembersRead(collectionId);
     reads.push({ source: "team", degraded });
+    Object.assign(richTextImages, richTextImageUrls);
     const member = teamMembers.find((m) => m.id === itemId);
 
     if (!member) return answerItemMissing(member);
@@ -450,15 +469,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={memberJsonLd} />
         <Navbar />
-        <DetailPageTemplate
-          slug={slug}
-          format="team"
-          item={member as unknown as DetailItem}
-          socialEmbeds={tiktokEmbeds}
-          siteData={siteData as unknown as RendererSiteData}
-          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
-        />
+        <RichTextImages map={richTextImages}>
+          <DetailPageTemplate
+            slug={slug}
+            format="team"
+            item={member as unknown as DetailItem}
+            socialEmbeds={tiktokEmbeds}
+            siteData={siteData as unknown as RendererSiteData}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+          />
+        </RichTextImages>
         <Footer />
       </>
     );
@@ -483,7 +504,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // a product miss falls THROUGH to the collection and menu arms below, so a
   // degraded products read has to still be accountable when one of those arms
   // reaches its own miss: the item may well have been in the list that failed.
-  if (productRead) reads.push({ source: "products", degraded: productRead.degraded });
+  if (productRead) {
+    reads.push({ source: "products", degraded: productRead.degraded });
+    Object.assign(richTextImages, productRead.richTextImageUrls);
+  }
   // A products page with no collection behind it has no other arm that could
   // serve this id, so a miss there is a 404. Storefront Phase 0.1 (D1): when
   // the page's detail route serves a collection, the miss falls through to the
@@ -608,14 +632,16 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={productJsonLd} />
         <Navbar />
-        <ProductDetailRenderer
-          item={templatesProductToRenderer(product, siteLogo)}
-          siteData={siteData}
-          slug={slug}
-          detailPage={rendererDetailPage}
-          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          storefrontConfig={resolveStorefrontSectionConfig(pageConfig)}
-        />
+        <RichTextImages map={richTextImages}>
+          <ProductDetailRenderer
+            item={templatesProductToRenderer(product, siteLogo)}
+            siteData={siteData}
+            slug={slug}
+            detailPage={rendererDetailPage}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            storefrontConfig={resolveStorefrontSectionConfig(pageConfig)}
+          />
+        </RichTextImages>
         {detailSupplemental.length > 0 && (
           <div className="content-grid py-8">
             {detailSupplemental.map((section, i) => (
@@ -674,6 +700,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     if (!lookup) return answerItemMissing(undefined);
     const { collectionId, unscopedItems, item } = lookup;
     reads.push({ source: "collection", degraded: lookup.degraded });
+    Object.assign(richTextImages, lookup.richTextImageUrls);
     const itemKeyField = scopedDetailPage?.itemKeyField;
 
     if (!item) {
@@ -771,6 +798,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         <>
           <JsonLd schema={itemJsonLd} />
           <Navbar />
+          <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
             item={{ ...collectionProduct, imageUrl: collectionProduct.imageUrl || siteLogo }}
             siteData={siteData}
@@ -785,6 +813,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
             productSource={effectiveItem.raw as Record<string, unknown> | undefined}
             collectionItems={unscopedItems}
           />
+          </RichTextImages>
           <Footer />
         </>
       );
@@ -794,15 +823,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={itemJsonLd} />
         <Navbar />
-        <DetailPageTemplate
-          slug={slug}
-          format={pageConfig.format}
-          item={effectiveItem as unknown as DetailItem}
-          siteData={siteData as unknown as RendererSiteData}
-          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          detailPage={scopedDetailPage as DetailPageConfig | undefined}
-          context={contextRaw}
-        />
+        <RichTextImages map={richTextImages}>
+          <DetailPageTemplate
+            slug={slug}
+            format={pageConfig.format}
+            item={effectiveItem as unknown as DetailItem}
+            siteData={siteData as unknown as RendererSiteData}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            detailPage={scopedDetailPage as DetailPageConfig | undefined}
+            context={contextRaw}
+          />
+        </RichTextImages>
         <Footer />
       </>
     );
@@ -843,17 +874,19 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // arm above via `resolveItem` so both arms agree on lookup semantics.
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
-      const { items, degraded } = await getCollectionItems(itemsCollectionId, {
+      const { items, degraded, richTextImageUrls } = await getCollectionItems(itemsCollectionId, {
         limit: 100,
       });
       reads.push({ source: "menu-items", degraded });
+      Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
       if (item) pool = items;
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items, degraded } = await getCollectionItems(cid, { limit: 100 });
+        const { items, degraded, richTextImageUrls } = await getCollectionItems(cid, { limit: 100 });
         reads.push({ source: "menu-sibling", degraded });
+        Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);
         if (hit) {
           item = hit;
@@ -904,15 +937,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={itemJsonLd} />
         <Navbar />
-        <DetailPageTemplate
-          slug={slug}
-          format={pageConfig.format}
-          item={item as unknown as DetailItem}
-          siteData={siteData as unknown as RendererSiteData}
-          cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-          detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
-          relatedItems={relatedItems}
-        />
+        <RichTextImages map={richTextImages}>
+          <DetailPageTemplate
+            slug={slug}
+            format={pageConfig.format}
+            item={item as unknown as DetailItem}
+            siteData={siteData as unknown as RendererSiteData}
+            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+            detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
+            relatedItems={relatedItems}
+          />
+        </RichTextImages>
         <Footer />
       </>
     );

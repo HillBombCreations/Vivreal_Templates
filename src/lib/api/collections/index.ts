@@ -9,6 +9,7 @@ import 'server-only';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '../client';
 import { collectionTags, integrationTags } from '../cacheTags';
 import { readOrDegrade } from '../degradedRead';
+import { readRichTextImageUrls } from '../richTextImageUrls';
 import { toContentItem } from './mapItem';
 import type { ContentItem } from '@/types/ContentItem';
 
@@ -21,6 +22,14 @@ const SITE_ID = process.env.SITE_ID || '';
 interface PaginatedResponse {
   items: Record<string, unknown>[];
   totalCount: number;
+  /**
+   * H177 - inline rich-text image keys to signed media URLs for the rich text
+   * carried by THESE items. Unconditional from VR_Client_API v2.10.16 (`{}`
+   * when the items carry no inline images), so no presence check is needed on
+   * a live response. Optional here because the legacy bare-array envelope
+   * below has no place to put it.
+   */
+  richTextImageUrls?: Record<string, string>;
 }
 
 interface FetchOpts {
@@ -50,10 +59,16 @@ interface FetchResult {
    * fail-open this exists to prevent.
    */
   degraded: boolean;
+  /**
+   * H177 - the inline rich-text image map for `items`, key to signed URL.
+   * Always an object. A caller merges it with the maps from every other read
+   * on the page and hands the result to the renderer's resolver.
+   */
+  richTextImageUrls: Record<string, string>;
 }
 
 /** A fresh, private empty envelope for one read's degraded sentinel. */
-const emptyPage = (): PaginatedResponse => ({ items: [], totalCount: 0 });
+const emptyPage = (): PaginatedResponse => ({ items: [], totalCount: 0, richTextImageUrls: {} });
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -67,13 +82,21 @@ const emptyPage = (): PaginatedResponse => ({ items: [], totalCount: 0 });
 function unwrap(raw: PaginatedResponse | Record<string, unknown>[]): {
   items: Record<string, unknown>[];
   totalCount: number;
+  richTextImageUrls: Record<string, string>;
 } {
   if (Array.isArray(raw)) {
-    return { items: raw, totalCount: raw.length };
+    // The legacy bare-array shape has nowhere to carry a map. An empty one is
+    // the correct answer: it resolves no keys, so inline images stay dropped
+    // exactly as they were before H177 rather than half-rendering.
+    return { items: raw, totalCount: raw.length, richTextImageUrls: {} };
   }
   return {
     items: raw?.items ?? [],
     totalCount: raw?.totalCount ?? 0,
+    // H177. This is the line whose ABSENCE was the whole live-site defect: the
+    // map arrived on every response and was discarded here, one layer below
+    // everything that could have used it.
+    richTextImageUrls: readRichTextImageUrls(raw),
   };
 }
 
@@ -121,11 +144,12 @@ export async function getCollectionItems(
       )
   );
 
-  const { items, totalCount } = unwrap(raw);
+  const { items, totalCount, richTextImageUrls } = unwrap(raw);
   return {
     items: items.map((item) => toContentItem(item, 'collection')),
     totalCount,
     degraded,
+    richTextImageUrls,
   };
 }
 
@@ -154,10 +178,11 @@ export async function getIntegrationItems(
       )
   );
 
-  const { items, totalCount } = unwrap(raw);
+  const { items, totalCount, richTextImageUrls } = unwrap(raw);
   return {
     items: items.map((item) => toContentItem(item, 'integration', type)),
     totalCount,
     degraded,
+    richTextImageUrls,
   };
 }

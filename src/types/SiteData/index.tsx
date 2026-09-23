@@ -734,6 +734,30 @@ export interface SiteData {
      * no-op, zero extra work beyond one length check.
      */
     redirects?: { from: string; to: string; status?: number }[];
+    /**
+     * H177 - inline rich-text image keys mapped to freshly signed media URLs,
+     * for the rich text carried by the SITE SHELL (page labels, block configs,
+     * home sections).
+     *
+     * VR_Client_API ships this on every content read from v2.10.16,
+     * UNCONDITIONALLY: `{}` means "nothing to resolve", never "this API is too
+     * old to ask". So read it without a presence check and never branch on it.
+     *
+     * It is NOT the whole map a page needs. Rich text also lives in collection
+     * and integration ITEMS, which arrive from different endpoints carrying
+     * their own maps; `buildPageContext` merges all of them. This field is only
+     * the shell's half.
+     *
+     * Why the renderer cannot do this on its own: a stored inline image is
+     * `<img data-media-key>` with NO src, because a signed CloudFront URL baked
+     * into stored HTML would 403 the moment its ~300s TTL lapsed. The renderer
+     * signs at render time through a resolver, and its sanitiser then keeps the
+     * tag only when the src host is the media CDN. With no resolver mounted the
+     * tag stays address-less and the sanitiser DROPS it. That is fail-closed
+     * and correct, and it is exactly why three help-centre screenshots rendered
+     * as nothing at all until this was threaded through.
+     */
+    richTextImageUrls?: Record<string, string>;
 }
 
 export type Pages = {

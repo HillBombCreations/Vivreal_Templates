@@ -3,6 +3,7 @@ import type { TeamData, CMSTeamData } from '@/types/Team';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { collectionTags } from '@/lib/api/cacheTags';
 import { readOrDegrade } from '@/lib/api/degradedRead';
+import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
@@ -11,6 +12,8 @@ const SITE_ID = process.env.SITE_ID || '';
 interface PaginatedResponse<T> {
   items: T[];
   totalCount: number;
+  /** H177 - inline rich-text image map for these items. See ../collections. */
+  richTextImageUrls?: Record<string, string>;
 }
 
 /**
@@ -28,11 +31,11 @@ interface PaginatedResponse<T> {
  */
 export async function getTeamMembersRead(
   collectionId?: string
-): Promise<{ members: TeamData[]; degraded: boolean }> {
+): Promise<{ members: TeamData[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   const id = collectionId || TEAMMEMBERS_ID;
   // No roster collection configured. An answer, not a silence: this page's
   // member URLs genuinely address nothing.
-  if (!id) return { members: [], degraded: false };
+  if (!id) return { members: [], degraded: false, richTextImageUrls: {} };
   const { value: res, degraded } = await readOrDegrade<PaginatedResponse<CMSTeamData>>(
     () => ({ items: [], totalCount: 0 }),
     (fallback) =>
@@ -59,7 +62,7 @@ export async function getTeamMembersRead(
     socialLinks: item.objectValue.socialLinks,
   }));
 
-  return { members, degraded };
+  return { members, degraded, richTextImageUrls: readRichTextImageUrls(res) };
 }
 
 /**

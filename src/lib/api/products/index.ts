@@ -5,6 +5,7 @@ import { BOT_VERDICT_HEADER } from "../../botVerdict";
 // has swallowed the error, so any caller that concludes something from
 // emptiness has to be told which one it got. See ../degradedRead.ts.
 import { readOrDegrade } from "../degradedRead";
+import { readRichTextImageUrls } from "../richTextImageUrls.ts";
 // Pure raw → Product mapping lives in its own module so it can be unit-tested
 // under plain Node (`node --test`) — this file is `server-only` and cannot be
 // loaded there. Same split as `../collections/mapItem.ts`.
@@ -40,11 +41,28 @@ function filterTags(collectionId: string): string[] {
 interface PaginatedResponse {
   items: Record<string, unknown>[];
   totalCount: number;
+  /** H177 - inline rich-text image map for these items. See ./collections. */
+  richTextImageUrls?: Record<string, string>;
 }
 
 function unwrapItems(raw: PaginatedResponse | Record<string, unknown>[]): Record<string, unknown>[] {
   if (Array.isArray(raw)) return raw;
   return (raw as PaginatedResponse)?.items ?? [];
+}
+
+/**
+ * H177 - the inline rich-text image map off a products read.
+ *
+ * Separate from `unwrapItems` rather than folded into it because that helper
+ * has six callers that want items and nothing else; widening its return type
+ * would churn all of them to thread a value only this path reads. A product
+ * description is rich text like any other, so a storefront page needs this map
+ * for the same reason a collection page does.
+ */
+function unwrapRichTextImageUrls(
+  raw: PaginatedResponse | Record<string, unknown>[],
+): Record<string, string> {
+  return readRichTextImageUrls(raw);
 }
 
 export interface ProductsOpts {
@@ -67,7 +85,7 @@ export interface ProductsOpts {
  */
 export async function getProductsRead(
   opts?: ProductsOpts,
-): Promise<{ products: Product[]; degraded: boolean }> {
+): Promise<{ products: Product[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
@@ -89,7 +107,11 @@ export async function getProductsRead(
         productTags(type)
       )
   );
-  return { products: unwrapItems(raw).map(transformProduct), degraded };
+  return {
+    products: unwrapItems(raw).map(transformProduct),
+    degraded,
+    richTextImageUrls: unwrapRichTextImageUrls(raw),
+  };
 }
 
 /**
@@ -119,7 +141,7 @@ export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
 export async function getProductByIdRead(
   productId: string,
   integrationType?: string,
-): Promise<{ product: Product | null; degraded: boolean }> {
+): Promise<{ product: Product | null; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   // Omitted integrationType falls back to stripe inside getProductsRead, the
   // legacy default for callers that don't know the page's payments provider.
   //
@@ -129,8 +151,12 @@ export async function getProductByIdRead(
   // no detail page, its card linked to a 404 with no error anywhere. It is now
   // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
   // required. See ./productsQuery.ts.
-  const { products, degraded } = await getProductsRead({ integrationType });
-  return { product: products.find((p) => p._id === productId) ?? null, degraded };
+  const { products, degraded, richTextImageUrls } = await getProductsRead({ integrationType });
+  return {
+    product: products.find((p) => p._id === productId) ?? null,
+    degraded,
+    richTextImageUrls,
+  };
 }
 
 /**
