@@ -23,6 +23,7 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // Those module files still exist (used elsewhere or pending Task 9 deletion) but are
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
+import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -726,6 +727,19 @@ async function ComposedFormatBody({
 
   return (
     <>
+      {/*
+        The order confirmation email, fired once per completed checkout.
+        Renders nothing; it reads `?session_id=` and posts it to
+        /api/checkout/confirm. See OrderConfirmationTrigger.tsx for why the
+        effect lives here rather than in the renderer's CheckoutResultTemplate
+        (shared with the Studio preview) or in this server render (ISR-cached,
+        so it is not tied to the buyer in front of it).
+
+        Gated on the FORMAT, not on the slug: a customer can name their success
+        page anything, and `checkout-success` is what createCheckoutSession's
+        success_url actually lands on.
+      */}
+      {format === "checkout-success" && <OrderConfirmationTrigger />}
       {composePage(
         components || scheduleView || suppressSrTitle
           ? {
