@@ -18,6 +18,7 @@ import {
 import { isRefusedOrigin, resolveSiteOriginResult } from '@/lib/og/ogImage';
 import { pageDetailCollectionId } from '@/lib/detail/detailCollection';
 import { bailOutOfCachingDegradedRender } from '@/lib/renderGate';
+import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { isPageTurnedOff } from '@/lib/pages/pageEnabled';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
@@ -87,6 +88,13 @@ interface SiteDetailsResponse {
   redirects?: SiteData['redirects'];
   tier?: string;
   paymentsProvider?: 'stripe' | 'square' | null;
+  /**
+   * H177 - the shell's inline rich-text image map, key to signed media URL.
+   * Present on every read from VR_Client_API v2.10.16 onward and always an
+   * object, so it needs no presence check. Optional HERE only because this
+   * interface also describes the shape an older cached payload could have had.
+   */
+  richTextImageUrls?: Record<string, string>;
 }
 
 export const getSiteData = async (): Promise<SiteData> => {
@@ -249,6 +257,16 @@ export const getSiteData = async (): Promise<SiteData> => {
     defaultOgImage: (raw.siteDetails.values as SiteData).defaultOgImage,
     tier: raw.tier,
     paymentsProvider: raw.paymentsProvider,
+    // H177 - the SHELL's inline rich-text image map. Read top-level only: unlike
+    // the strips above there is no `values` copy to fall back to, because
+    // VR_Client_API builds this map at read time by walking the payload it is
+    // about to return. A `values`-carried copy could only ever be a stale one.
+    //
+    // `?? {}` so every consumer merges an object rather than guarding for
+    // undefined. That also keeps the degraded path honest: FALLBACK_SITE_DATA
+    // carries no map, and an empty map resolves no keys, which is the same
+    // fail-closed drop the renderer already does.
+    richTextImageUrls: readRichTextImageUrls(raw),
   };
 };
 

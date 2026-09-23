@@ -3,6 +3,7 @@ import type { ShowData, CMSShowData } from '@/types/Shows';
 import { clientFetchCached, clientFetchSafe, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { collectionTags } from '@/lib/api/cacheTags';
 import { readOrDegrade } from '@/lib/api/degradedRead';
+import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
@@ -18,6 +19,8 @@ const SHOWS_DETAIL_LIMIT = 100;
 interface PaginatedResponse<T> {
   items: T[];
   totalCount: number;
+  /** H177 - inline rich-text image map for these items. See ../collections. */
+  richTextImageUrls?: Record<string, string>;
 }
 
 export interface ShowsResult {
@@ -70,11 +73,11 @@ function byEventDateDesc(shows: ShowData[]): ShowData[] {
  */
 export async function getShowsRead(
   collectionId?: string
-): Promise<{ shows: ShowData[]; degraded: boolean }> {
+): Promise<{ shows: ShowData[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   const id = collectionId || SHOWS_ID;
   // No shows collection configured at all. That is an answer, not a silence:
   // the page is misconfigured and its detail URLs genuinely address nothing.
-  if (!id) return { shows: [], degraded: false };
+  if (!id) return { shows: [], degraded: false, richTextImageUrls: {} };
 
   const { value: res, degraded } = await readOrDegrade<PaginatedResponse<CMSShowData>>(
     () => ({ items: [], totalCount: 0 }),
@@ -88,7 +91,11 @@ export async function getShowsRead(
       )
   );
 
-  return { shows: byEventDateDesc(res.items.map(mapShow)), degraded };
+  return {
+    shows: byEventDateDesc(res.items.map(mapShow)),
+    degraded,
+    richTextImageUrls: readRichTextImageUrls(res),
+  };
 }
 
 /**
@@ -138,9 +145,13 @@ export async function getShowsPaginated({
 export const getShowByIdRead = async (
   id: string,
   collectionId?: string
-): Promise<{ show: ShowData | null; degraded: boolean }> => {
-  const { shows, degraded } = await getShowsRead(collectionId);
-  return { show: shows.find((show) => show.id === id) || null, degraded };
+): Promise<{ show: ShowData | null; degraded: boolean; richTextImageUrls: Record<string, string> }> => {
+  const { shows, degraded, richTextImageUrls } = await getShowsRead(collectionId);
+  return {
+    show: shows.find((show) => show.id === id) || null,
+    degraded,
+    richTextImageUrls,
+  };
 };
 
 export const getShowById = async (id: string, collectionId?: string): Promise<ShowData | null> => {

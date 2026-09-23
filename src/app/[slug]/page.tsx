@@ -26,6 +26,7 @@ import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAd
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
+import RichTextImages from "@/components/RichTextImages";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
@@ -693,7 +694,7 @@ async function ComposedFormatBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty, emptinessUnknown } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown, richTextImageUrls } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -740,6 +741,8 @@ async function ComposedFormatBody({
         success_url actually lands on.
       */}
       {format === "checkout-success" && <OrderConfirmationTrigger />}
+      {/* H177: resolver around the composed body. See src/components/RichTextImages. */}
+      <RichTextImages map={richTextImageUrls}>
       {composePage(
         components || scheduleView || suppressSrTitle
           ? {
@@ -759,6 +762,7 @@ async function ComposedFormatBody({
             }
           : input,
       )}
+      </RichTextImages>
     </>
   );
 }

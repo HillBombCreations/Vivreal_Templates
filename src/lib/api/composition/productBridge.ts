@@ -28,13 +28,13 @@ export async function getProductsAsContentItems(opts: {
   filters?: Record<string, string>;
   search?: string;
   sort?: string;
-}): Promise<{ items: ContentItem[]; degraded: boolean }> {
+}): Promise<{ items: ContentItem[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   // `getProductsRead`, not `getProducts`: the only consumer of this bridge is
   // `buildPageContext`, whose emptiness verdict can end in a 404. An empty
   // catalogue and a catalogue that could not be read are the same array here,
   // so the flag has to travel with the items or the verdict is drawn from an
   // absence. See ../degradedRead.ts.
-  const { products, degraded } = await getProductsRead({
+  const { products, degraded, richTextImageUrls } = await getProductsRead({
     integrationType: opts.integrationType,
     filters: opts.filters,
     searchVal: opts.search,
@@ -58,5 +58,5 @@ export async function getProductsAsContentItems(opts: {
     };
   });
 
-  return { items, degraded };
+  return { items, degraded, richTextImageUrls };
 }

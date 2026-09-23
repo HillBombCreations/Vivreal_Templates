@@ -6,6 +6,7 @@ import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
+import RichTextImages from "@/components/RichTextImages";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -46,7 +47,11 @@ async function Resolved() {
   // both showcase (shows/partners/reviews bindings) and ecommerce (role-bucketed
   // collection + integration bindings); banner logo fallback + CTA-by-default are
   // owned by composePage's home branches.
-  const { input } = await buildPageContext({ siteData, page: homePageConfig, isHome: true });
+  const { input, richTextImageUrls } = await buildPageContext({
+    siteData,
+    page: homePageConfig,
+    isHome: true,
+  });
 
   // CC9: the email-subscribe popup moved to the shared layout (app/layout.tsx)
   // so it can target any route. The EmailPopup wrapper self-gates — absent
@@ -56,7 +61,10 @@ async function Resolved() {
   return (
     <>
       <Navbar page={homePageConfig as unknown as RendererPageConfig} />
-      {composePage(input)}
+      {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are
+          Templates chrome and carry no CMS rich text, so widening the boundary
+          would buy nothing and put a client component above the whole page. */}
+      <RichTextImages map={richTextImageUrls}>{composePage(input)}</RichTextImages>
       <Footer />
     </>
   );

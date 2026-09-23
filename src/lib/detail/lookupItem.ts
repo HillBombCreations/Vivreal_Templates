@@ -25,6 +25,13 @@ export interface DetailItemLookup {
    * a social card must never be the thing that 404s a shared link.
    */
   degraded: boolean;
+  /**
+   * H177 - the inline rich-text image map for the pool this item came from.
+   * The detail route merges it with the shell's and mounts the resolver, so a
+   * blog post or article body renders its inline images instead of dropping
+   * them. `{}` on any path that read nothing.
+   */
+  richTextImageUrls: Record<string, string>;
 }
 
 /**
@@ -57,7 +64,10 @@ export async function lookupDetailItem(
 
   // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
   // API 502s on larger limits, and the list view already caps at 100.
-  const { items: unscopedItems, degraded } = await getCollectionItems(collectionId, { limit: 100 });
+  const { items: unscopedItems, degraded, richTextImageUrls } = await getCollectionItems(
+    collectionId,
+    { limit: 100 },
+  );
 
   // `scope` restricts WHICH ITEMS ARE ADDRESSABLE here. Absent/malformed scope
   // ⇒ identity (applyScope's own contract), so an unscoped page is
@@ -69,5 +79,6 @@ export async function lookupDetailItem(
     unscopedItems,
     item: resolveItem(scopedItems, itemId, detailPage?.itemKeyField),
     degraded,
+    richTextImageUrls,
   };
 }

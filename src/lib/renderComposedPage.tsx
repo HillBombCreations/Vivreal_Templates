@@ -11,6 +11,7 @@ import {
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
+import RichTextImages from '@/components/RichTextImages';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
@@ -239,7 +240,7 @@ async function ComposedPageBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty, emptinessUnknown } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown, richTextImageUrls } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -300,13 +301,23 @@ async function ComposedPageBody({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ...(lookupQuery !== undefined ? ({ lookupQuery } as any) : {}),
   };
+  // H177: the inline rich-text image resolver.
+  //
+  // It is mounted HERE, inside the Suspense boundary, and not up in
+  // `renderComposedPage` beside Navbar/TitleBand. The map is a RESULT of
+  // `buildPageContext`, which is the await this component exists to hold; the
+  // shell above has not got it yet and could only get it by awaiting the same
+  // call, which would delete the streaming split for every generic page.
+  //
+  // Nothing in the synchronous shell needs it: Navbar, TitleBand and Footer are
+  // Templates chrome, not CMS rich text.
   return (
-    <>
+    <RichTextImages map={richTextImageUrls}>
       {composePage(
         Object.keys(extraOptions).length
           ? { ...input, options: { ...input.options!, ...extraOptions } }
           : input,
       )}
-    </>
+    </RichTextImages>
   );
 }

@@ -13,6 +13,7 @@ import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
 import { isPaymentsProvider } from '@/lib/payments';
 import { decidePageEmptiness } from './pageEmptiness';
+import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
@@ -34,6 +35,22 @@ export interface PageContextResult {
    * `../degradedRead.ts` and `./pageEmptiness.ts`.
    */
   emptinessUnknown: boolean;
+  /**
+   * H177 - every inline rich-text image key this page can render, mapped to a
+   * freshly signed media URL.
+   *
+   * MERGED from three sources, because one page's rich text comes from three
+   * endpoints: the site shell (`siteDetails`, via `siteData.richTextImageUrls`),
+   * each bound collection (`collectionObjects`), and each bound integration or
+   * storefront (`integrationObjects`). Mounting a provider with only one of
+   * them renders some images and silently drops the rest, which is a worse
+   * failure than dropping all of them because it looks like a content problem.
+   *
+   * Keys are storage paths and are globally unique, so a flat merge cannot
+   * collide meaningfully: two sources carrying the same key carry the same
+   * image, signed within the same read window.
+   */
+  richTextImageUrls: Record<string, string>;
 }
 
 interface BuildArgs {
@@ -82,8 +99,8 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const [collectionEntries, integrationEntries] = await Promise.all([
     Promise.all(
       collectionIds.map(async (id) => {
-        const { items, degraded } = await getCollectionItems(id, { limit: 100 });
-        return [id, items, degraded] as const;
+        const { items, degraded, richTextImageUrls } = await getCollectionItems(id, { limit: 100 });
+        return [id, items, degraded, richTextImageUrls] as const;
       }),
     ),
     Promise.all(
@@ -93,14 +110,14 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
         // filter/sort/search (controlled query) applies. Other integrations
         // use the plain fetch.
         if (isPaymentsProvider(type) || page.format === 'products') {
-          const { items, degraded } = await getProductsAsContentItems({
+          const { items, degraded, richTextImageUrls } = await getProductsAsContentItems({
             integrationType: type,
             ...productQuery,
           });
-          return [type, items, degraded] as const;
+          return [type, items, degraded, richTextImageUrls] as const;
         }
-        const { items, degraded } = await getIntegrationItems(type, { limit: 100 });
-        return [type, items, degraded] as const;
+        const { items, degraded, richTextImageUrls } = await getIntegrationItems(type, { limit: 100 });
+        return [type, items, degraded, richTextImageUrls] as const;
       }),
     ),
   ]);
@@ -144,6 +161,16 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const reads = [...collectionEntries, ...integrationEntries].map(
     ([, items, degraded]) => ({ count: items.length, degraded }),
   );
+  // H177 - merge the shell's map with every per-read map, shell FIRST so a
+  // per-page read wins on the (harmless) overlap. Built unconditionally: an
+  // all-empty merge is `{}`, which resolves nothing and leaves the renderer's
+  // existing fail-closed drop exactly as it was.
+  const richTextImageUrls = mergeRichTextImageUrls(
+    siteData.richTextImageUrls,
+    ...collectionEntries.map(([, , , urls]) => urls),
+    ...integrationEntries.map(([, , , urls]) => urls),
+  );
+
   const { isEmpty, emptinessUnknown } = decidePageEmptiness({
     isHome,
     format: page.format,
@@ -151,5 +178,5 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     reads,
   });
 
-  return { input, isEmpty, emptinessUnknown };
+  return { input, isEmpty, emptinessUnknown, richTextImageUrls };
 }

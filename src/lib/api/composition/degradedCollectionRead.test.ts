@@ -398,9 +398,13 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
     'the bridge must CALL the read that reports degradation, not merely mention it',
   );
   assert.ok(
-    code.includes('return { items, degraded };'),
+    code.includes('return { items, degraded, richTextImageUrls };'),
     'and it must actually return the flag to buildPageContext',
   );
+  // H177 widened this return by one field. The pin was updated rather than
+  // loosened: matching the WHOLE literal is what stops a future edit dropping
+  // `degraded` back out while leaving the word in a comment, which is the
+  // vacuity this test was rewritten to close in the first place.
 });
 
 test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()', () => {
