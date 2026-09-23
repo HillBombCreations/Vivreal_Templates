@@ -13,6 +13,7 @@
     "check:free-year": "node --experimental-strip-types --test checks/freeYearPackage.test.ts"
   },
   "dependencies": {
+    "@hillbombcreations/email-brand": "1.0.1",
     "@hillbombcreations/site-renderer": "^1.74.0",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@radix-ui/react-accordion": "^1.2.12",

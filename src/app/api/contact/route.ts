@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
+import { resolveTenantBrand, wrapInTenantLayout } from "@hillbombcreations/email-brand";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -105,47 +106,33 @@ function buildCustomFieldsBlock(
 }
 
 function buildBrandedEmail(body: ContactPayload): string {
-  const primary = body.branding?.primary || "#1a1a2e";
-  const surface = body.branding?.surface || "#f8f9fb";
-  const textPrimary = body.branding?.textPrimary || "#1a1a2e";
-  const logoUrl = body.branding?.logoUrl || "";
+  // The chrome (logo header, card, accent bar, footer) comes from
+  // @hillbombcreations/email-brand. It carries the SITE's colours and logo and
+  // nothing of Vivreal's, which is what makes this email look like it came from
+  // the business the visitor actually contacted. The words and the layout of
+  // the message itself stay here, because they are this route's job and
+  // nobody else's.
+  //
+  // resolveTenantBrand also validates: a stored `primary` that is not a hex
+  // colour used to flow straight into a `style=` attribute, and a stored logo
+  // URL straight into an `src=`. Both now fall back rather than render.
+  const brand = resolveTenantBrand({
+    name: body.siteName,
+    primary: body.branding?.primary,
+    surface: body.branding?.surface,
+    textPrimary: body.branding?.textPrimary,
+    logoUrl: body.branding?.logoUrl,
+  });
+  const { primary, textPrimary } = brand;
   const siteName = escapeHtml(body.siteName);
   const name = escapeHtml(body.name);
   const email = escapeHtml(body.customerEmail);
   const message = escapeHtml(body.message).replace(/\n/g, "<br>");
   const customFieldsBlock = buildCustomFieldsBlock(body.customFields, primary);
 
-  const logoBlock = logoUrl
-    ? `<img src="${logoUrl}" alt="${siteName}" width="140" height="auto" style="display:block;margin:0 auto;" />`
-    : `<span style="font-size:22px;font-weight:700;color:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;letter-spacing:-0.5px;">${siteName}</span>`;
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:${surface};font-family:'Helvetica Neue',Arial,sans-serif;-webkit-font-smoothing:antialiased;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${surface};padding:40px 20px;">
-    <tr>
-      <td align="center">
-        <table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;width:100%;">
-
-          <!-- Logo header -->
-          <tr>
-            <td align="center" style="padding:0 0 32px 0;">
-              ${logoBlock}
-            </td>
-          </tr>
-
-          <!-- Main card -->
-          <tr>
-            <td>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
-
-                <!-- Accent bar -->
-                <tr>
-                  <td style="height:4px;background:${primary};font-size:0;line-height:0;">&nbsp;</td>
-                </tr>
-
-                <!-- Badge -->
+  return wrapInTenantLayout({
+    brand,
+    bodyHtml: `<!-- Badge -->
                 <tr>
                   <td style="padding:32px 36px 0 36px;">
                     <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -217,32 +204,9 @@ function buildBrandedEmail(body: ContactPayload): string {
                   <td style="padding:28px 36px 0 36px;" align="center">
                     <a href="mailto:${email}?subject=Re: ${siteName} Contact Form" style="display:inline-block;background-color:${primary};color:#ffffff;font-size:14px;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;text-decoration:none;padding:12px 32px;border-radius:8px;line-height:1;">Reply to ${name.split(" ")[0]}</a>
                   </td>
-                </tr>
-
-                <!-- Bottom padding -->
-                <tr>
-                  <td style="padding:32px 0 0 0;font-size:0;line-height:0;">&nbsp;</td>
-                </tr>
-
-              </table>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding:24px 0 0 0;" align="center">
-              <p style="margin:0;font-size:12px;color:#9ca3af;font-family:'Helvetica Neue',Arial,sans-serif;line-height:1.5;">
-                This email was sent from the contact form on your<br>${siteName} website, powered by <a href="https://vivreal.io" style="color:${primary};text-decoration:none;">Vivreal</a>.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
+                </tr>`,
+    footerHtml: `This email was sent from the contact form on your<br>${siteName} website, powered by <a href="https://vivreal.io" style="color:${primary};text-decoration:none;">Vivreal</a>.`,
+  });
 }
 
 /**
