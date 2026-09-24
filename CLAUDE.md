@@ -342,36 +342,47 @@ A caret range does not protect you. Both repos declare a caret and both deploy w
 `npm ci`, which installs the LOCKFILE and ignores the range, so two repos can agree on
 `^1.74.x` and still install different builds for months.
 
-**Measured 2026-09-24 (`H3217`), read from both committed lockfiles, not from
-`node_modules`:**
+**Measured 2026-09-24 (`H3217`), read from the committed lockfiles, not from
+`node_modules`. The first reading of this found two versions. Measuring every consumer
+found FOUR repos and three distinct builds, plus one deliberate exact pin:**
 
-| repo | declares | LOCKS |
-|---|---|---|
-| `Vivreal_Templates` | `^1.74.2` | **1.74.2** |
-| `Vivreal_Portal_Mobile` | `^1.74.0` | **1.74.0** |
+| repo | declared | LOCKED | state |
+|---|---|---|---|
+| `Vivreal_Templates` | `^1.74.3` | **1.74.3** | this repo, moved 2026-09-24 |
+| `VR_Client_API` | `^1.74.3` | **1.74.3** | moved and DEPLOYED 2026-09-24, `v2.10.20` |
+| `Vivreal_Portal_Mobile` | `^1.74.0` | **1.74.0** | STILL BEHIND, the last one open |
+| `VR_Secure_API` | `1.74.0` exact | **1.74.0** | pinned deliberately, NOT drift |
 
-**1.74.2 wins, and the portal is the side that moves.** Templates is correct and needs
-no change. Reasons, in order:
+**1.74.3 wins, and the portal is still the side that moves.** This section used to rule
+that 1.74.2 won and that this repo needed no change. That ruling was right on the
+evidence it had and is superseded rather than wrong: 1.74.3 published afterwards with
+two further fixes, so the version every live site should render moved underneath it.
+The DIRECTION never changed, and the reasons for it are unchanged:
 
-1. 1.74.2 is what every live customer site renders with today. Moving this repo DOWN
+1. 1.74.3 is what every live customer site renders with today. Moving this repo DOWN
    would reintroduce a measured WCAG failure on real sites (`H1917`: a dark-chrome
    footer painting white ink on a near-white ground, 1.15:1 against a 4.5 floor).
 2. The preview must never lag the live site. An owner approving a layout in Studio is
    approving what visitors will see.
-3. 1.74.0 to 1.74.2 is four fixes and no API change, verified by diffing the two tags:
+3. 1.74.0 to 1.74.3 is SIX fixes and no API change, verified by diffing the tags:
    the footer ground (`H1917`), the capability tour coming to rest (`H1918`), a URL
    guard whose security constant had been made invisible to code search by a literal
-   NUL byte, and an agent crash on a block with no config. All three published entry
-   points are byte identical between the two tags (`src/index.ts` for `.`,
-   `src/agent/index.ts` for `./agent`, and `styles/` for `./styles/*`), and no exported
-   signature moved, so this is a patch-level pickup and not a migration.
+   NUL byte, an agent crash on a block with no config, and then the two that 1.74.3
+   adds, the centrepiece footer ink (`H2108`, latent, no fleet site authors that
+   variant) and the THIRD capability-tour stage loop, which is LIVE because
+   `demoMotion` is authored in production today. Measured on the published tarballs
+   for 1.74.2 and 1.74.3 rather than inferred: exactly two implementation files differ,
+   `dist/chrome/Footer.js` and `dist/layouts/CapabilityTourLayout.js`, and the
+   published entry points are BYTE IDENTICAL across them (`dist/index.js` for `.`,
+   `dist/agent/index.js` for `./agent`, `styles/` for `./styles/*`). No exported
+   signature moved, so this stays a patch-level pickup and not a migration.
 
 **What the portal needs, so nobody has to work it out again:**
 
 ```bash
 # in Vivreal_Portal_Mobile
-# 1. declare and resolve 1.74.2
-npm install @hillbombcreations/site-renderer@1.74.2
+# 1. declare and resolve 1.74.3
+npm install @hillbombcreations/site-renderer@1.74.3
 # 2. prove the lockfile did not lose Linux-critical optional deps (same trap as here)
 #    npm install on Windows prunes them; compare before and after
 # 3. the parity test then passes on its own, no edit to it
