@@ -330,6 +330,64 @@ identical. Feeding the census a lockfile with the two `@emnapi/*` entries remove
 
 For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 
+### The renderer version is a CROSS-REPO contract with the portal
+
+**A renderer bump here is not finished until `Vivreal_Portal_Mobile` resolves the same
+version.** This repo renders every live customer site. The portal renders the Studio
+preview. When the two resolve different builds, the preview stops being a preview: an
+owner is shown one rendering and their visitors get another, and nothing in either
+repo's own test suite notices, because each one is internally consistent.
+
+A caret range does not protect you. Both repos declare a caret and both deploy with
+`npm ci`, which installs the LOCKFILE and ignores the range, so two repos can agree on
+`^1.74.x` and still install different builds for months.
+
+**Measured 2026-09-24 (`H3217`), read from both committed lockfiles, not from
+`node_modules`:**
+
+| repo | declares | LOCKS |
+|---|---|---|
+| `Vivreal_Templates` | `^1.74.2` | **1.74.2** |
+| `Vivreal_Portal_Mobile` | `^1.74.0` | **1.74.0** |
+
+**1.74.2 wins, and the portal is the side that moves.** Templates is correct and needs
+no change. Reasons, in order:
+
+1. 1.74.2 is what every live customer site renders with today. Moving this repo DOWN
+   would reintroduce a measured WCAG failure on real sites (`H1917`: a dark-chrome
+   footer painting white ink on a near-white ground, 1.15:1 against a 4.5 floor).
+2. The preview must never lag the live site. An owner approving a layout in Studio is
+   approving what visitors will see.
+3. 1.74.0 to 1.74.2 is four fixes and no API change, verified by diffing the two tags:
+   the footer ground (`H1917`), the capability tour coming to rest (`H1918`), a URL
+   guard whose security constant had been made invisible to code search by a literal
+   NUL byte, and an agent crash on a block with no config. All three published entry
+   points are byte identical between the two tags (`src/index.ts` for `.`,
+   `src/agent/index.ts` for `./agent`, and `styles/` for `./styles/*`), and no exported
+   signature moved, so this is a patch-level pickup and not a migration.
+
+**What the portal needs, so nobody has to work it out again:**
+
+```bash
+# in Vivreal_Portal_Mobile
+# 1. declare and resolve 1.74.2
+npm install @hillbombcreations/site-renderer@1.74.2
+# 2. prove the lockfile did not lose Linux-critical optional deps (same trap as here)
+#    npm install on Windows prunes them; compare before and after
+# 3. the parity test then passes on its own, no edit to it
+npx vitest run tests/unit/lib/sites/rendererVersionParity.test.ts
+```
+
+`tests/unit/lib/sites/rendererVersionParity.test.ts` in the portal reads THIS repo's
+`package-lock.json` from a sibling checkout and compares resolved versions. It is
+currently the portal pre-commit hook's only failure, so portal commits are being made
+with `--no-verify`, which means that hook is gating nothing at all right now. Closing
+this drift is what turns it back into a gate.
+
+No mirror of that test lives here on purpose. It would be red for the same reason, so
+this repo's gate would start being bypassed too, and two bypassed gates are worse than
+one.
+
 ---
 
 ## Template Branch Model
