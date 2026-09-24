@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@hillbombcreations/email-brand": "1.0.1",
-    "@hillbombcreations/site-renderer": "^1.74.2",
+    "@hillbombcreations/site-renderer": "^1.74.3",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
