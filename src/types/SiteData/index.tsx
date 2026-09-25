@@ -114,7 +114,7 @@ export interface PageCollectionBinding {
     collectionId: string;
     name?: string;
     role?: 'primary' | 'secondary' | 'supplemental' | 'sidebar';
-    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'section' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews' | 'grid' | 'feed';
+    displayAs?: 'cards' | 'table' | 'carousel' | 'timeline' | 'gallery' | 'banner' | 'showcase' | 'feature-list' | 'form' | 'stats' | 'reviews' | 'grid' | 'feed';
     sectionType?: string;
     sectionConfig?: Record<string, unknown>;
     order?: number;
