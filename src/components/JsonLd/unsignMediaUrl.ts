@@ -3,14 +3,23 @@
  * is safe to embed in long-lived structured data (JSON-LD, Open Graph).
  *
  * Why this exists:
- *   The `getSignedUrl()` helper in `@/lib/api/media` produces signed
- *   CloudFront URLs that VR_Client_API signs with a 300-second TTL
- *   (`CLOUDFRONT_SIGNED_URL_TTL_SECONDS=300` in `VR_Client_API/sam-template.yaml:100`).
- *   Those URLs are correct for direct `<img>` rendering — the browser
- *   fetches immediately. But JSON-LD `image` fields are read by crawlers
- *   and AI agents potentially DAYS or WEEKS after page render, by which
- *   time the signature has expired and CloudFront returns 403. The
- *   structured data still references the URL; the image never resolves.
+ *   The `getSignedUrl()` helper in `@/lib/api/media` used to produce signed
+ *   CloudFront URLs directly, with a TTL this comment wrongly cited as 300
+ *   seconds (the real deployed `CLOUDFRONT_SIGNED_URL_TTL_SECONDS` was
+ *   86400 — see docs/projects/marketing-and-portal-refresh/p0a-diagnosis.md
+ *   in vivreal-hq for the fleet-wide broken-image defect that wrong number
+ *   fed). CORRECTED (P0C, 2026-09-28): VR_Client_API's buildMediaUrl.js no
+ *   longer signs at render time at all. It now hands this app a stable link
+ *   to its own `/media` route, which carries no `Expires`/`Signature`/
+ *   `Key-Pair-Id` to begin with and signs fresh on every request that
+ *   follows it. Against a URL built this way, the function below is
+ *   already a no-op: there is nothing to strip.
+ *
+ *   It stays rather than being deleted, for one transitional reason: any
+ *   media URL an already-cached ISR render baked in BEFORE that site's next
+ *   deploy can still be the old signed shape until it re-renders. Stripping
+ *   defensively means a stale entry's JSON-LD does not carry a visibly
+ *   expiring URL in the meantime.
  *
  * The fix:
  *   Strip the three CloudFront-signing query params (`Expires`,

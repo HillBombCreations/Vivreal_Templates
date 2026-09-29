@@ -580,8 +580,20 @@ test('next.config.ts pins expireTime, so nobody inherits Next\'s one-year defaul
   );
 });
 
-test('the revalidate literal stays under the 300s signed media-URL TTL', () => {
-  // VR_Client_API signs media URLs with CLOUDFRONT_SIGNED_URL_TTL_SECONDS=300.
-  // HTML cached longer than that can embed an already-expired link.
-  assert.ok(ISR_REVALIDATE_SECONDS <= 300, 'raising this needs the signed-URL TTL raised first');
+test('the revalidate literal is a deliberate 300, not an inherited media-TTL bound', () => {
+  // CORRECTED (P0C, 2026-09-28). This test used to assert
+  // `ISR_REVALIDATE_SECONDS <= 300` because "VR_Client_API signs media URLs
+  // with CLOUDFRONT_SIGNED_URL_TTL_SECONDS=300". That number was wrong (the
+  // deployed value is 86400) and the relationship no longer exists at all:
+  // buildMediaUrl.js (VR_Client_API) stopped embedding a signed, expiring
+  // media URL in rendered content — it embeds a stable link that VR_Client_API
+  // signs fresh per request instead. See docs/projects/
+  // marketing-and-portal-refresh/p0a-diagnosis.md (vivreal-hq) for the
+  // fleet-wide defect this removes.
+  //
+  // The assertion stays as a tripwire, not a media-TTL bound: raising
+  // ISR_REVALIDATE_SECONDS is a real decision about ISR cache staleness on
+  // its own terms, and this forces it to be made on purpose rather than by a
+  // stray edit.
+  assert.equal(ISR_REVALIDATE_SECONDS, 300, 'a change here is a deliberate ISR cadence decision, not a media-TTL one');
 });

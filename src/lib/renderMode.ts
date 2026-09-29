@@ -59,10 +59,23 @@ export const ISR_RENDER_MODE = 'isr';
  * Page cache TTL in seconds when ISR is on. Must equal the `revalidate`
  * literal exported by every gated route file; `renderMode.test.ts` pins that.
  *
- * 300 is a ceiling, not a preference: VR_Client_API signs media URLs with
- * `CLOUDFRONT_SIGNED_URL_TTL_SECONDS = 300`, so HTML cached longer than that
- * can embed a signed URL that has already expired. Raising this requires
- * raising that TTL first (plan Phase 5).
+ * CORRECTED (P0C, 2026-09-28). This comment used to say `300` was a ceiling
+ * because "VR_Client_API signs media URLs with
+ * `CLOUDFRONT_SIGNED_URL_TTL_SECONDS = 300`". That was wrong by 288x: the
+ * deployed value is 86400, and this file's own wrong number was the stated
+ * justification for the value below, which is the mistake
+ * `docs/projects/marketing-and-portal-refresh/p0a-diagnosis.md` (in
+ * vivreal-hq) traces as the fleet-wide broken-image defect.
+ *
+ * The relationship this comment used to describe no longer exists, on
+ * either number. `buildMediaUrl.js` (VR_Client_API) no longer embeds a
+ * signed, expiring media URL in the content this page renders at all — it
+ * embeds a stable link to VR_Client_API's own `/media` route, which signs
+ * fresh at REQUEST time instead of at render time. So `ISR_REVALIDATE_SECONDS`
+ * is no longer bounded by any media signature TTL: there is nothing left in
+ * the HTML that a signature TTL could make stale. `300` is kept as a
+ * reasonable ISR revalidation cadence on its own terms, not because of a
+ * media-TTL relationship that used to be miscalculated and is now removed.
  */
 export const ISR_REVALIDATE_SECONDS = 300;
 

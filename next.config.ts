@@ -71,6 +71,18 @@ const nextConfig: NextConfig = {
         hostname: '*.s3.us-east-1.amazonaws.com',
         pathname: '/**',
       },
+      // P0C structural fix (docs/projects/marketing-and-portal-refresh/
+      // plan.md, phase P0C, vivreal-hq). VR_Client_API's buildMediaUrl.js no
+      // longer hands this app a pre-signed media.vivreal.io URL; it hands a
+      // stable link to its own GET /media route, which signs fresh per
+      // request and redirects to the real signed media.vivreal.io object.
+      // next/image needs the intermediate host allowlisted too, or it 400s
+      // an image it has never seen before optimizing.
+      {
+        protocol: 'https',
+        hostname: 'client.vivreal.io',
+        pathname: '/media',
+      },
     ],
   },
   webpack: (config) => {
