@@ -118,6 +118,12 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       // storefront already honours server-side). null/absent ⇒ no arm, no
       // band, byte-identical header.
       search={siteData?.navigation?.search ?? null}
+      // Identity kits, taproom round: the net-new nav SWITCHER (a compact
+      // chooser that routes between peer destinations, a taproom's rooms, a
+      // chain's shops). A sibling of `layout`, not a member of its union, so
+      // it composes with every layout. null/absent ⇒ nothing renders, byte-
+      // identical header.
+      switcher={siteData?.navigation?.switcher ?? null}
       // saas-1 kit (vivreal.io relaunch) — the `layout:'mega'` vehicle's two
       // knobs. Same item-18 lockstep rule as the block above: a prop threaded
       // here but not in the Studio preview wrapper

@@ -3,6 +3,7 @@ import type {
   NavMenuItem,
   NavbarCta,
   NavbarHeaderStyle,
+  NavSwitcherConfig,
   FooterColumn,
   FooterLegal,
   FooterBrand,
@@ -490,6 +491,17 @@ export interface SiteData {
             armSide?: 'left' | 'right';
             bandHeight?: number;
         } | null;
+        /**
+         * Identity kits, taproom round: the net-new nav SWITCHER, a compact
+         * chooser that routes between PEER DESTINATIONS (a taproom's rooms, a
+         * chain's shops). A sibling of `layout`, not a member of its union
+         * (it composes with every layout rather than replacing one).
+         * `null`/absent ⇒ nothing renders, byte-identical. Mirrors the
+         * renderer's NavbarProps.switcher / NavSwitcherConfig directly
+         * (unlike `search` above, imported rather than hand-mirrored,
+         * matching how `secondaryCta` already imports `NavbarCta`).
+         */
+        switcher?: NavSwitcherConfig | null;
     } | null;
     /** Q3b — Studio-authored footer override (lazy; null/absent ⇒ auto-derive). */
     footer?: {

@@ -67,6 +67,21 @@ test('the Footer shell threads the brand-column span the Studio already offers',
   assert.match(source, /footer\?\.brandSpan/, 'read from siteData.footer.brandSpan');
 });
 
+test('the Navbar shell threads the nav switcher the Studio already offers', () => {
+  const source = read('./Navigation/Navbar.tsx');
+  assert.match(
+    source,
+    /switcher=\{/,
+    'registered and reachable in the Studio (portal commit 8a330337) but never threaded ' +
+      'here, so an owner who builds a switcher sees it in the Studio and the live site does not',
+  );
+  assert.match(
+    source,
+    /navigation\?\.switcher/,
+    'read from the same field the renderer documents and the Studio writes',
+  );
+});
+
 test('the Footer shell still passes legalName, which the preview was missing', () => {
   // Not a change on this side, pinned because the portal half of this round adds
   // the matching preview prop and the pair only makes sense together: live
