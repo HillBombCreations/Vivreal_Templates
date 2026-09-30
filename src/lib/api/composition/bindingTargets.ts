@@ -2,7 +2,7 @@
  * The PURE core of `collectBindingTargets` (./bindings.ts).
  *
  * Extracted to a sibling with no RUNTIME imports so it runs under
- * `node --test` — the same house lesson `./pageEmptiness.ts` records. Its
+ * `node --test`, the same house lesson `./pageEmptiness.ts` records. Its
  * caller `./bindings.ts` imports `server-only` and `@/lib/api/siteData`,
  * neither of which resolves outside Next (`server-only` is not even installed:
  * Next provides it), so the prefetch collector could not be executed by a test
@@ -34,7 +34,7 @@ export interface BindingTargets {
  * The legacy role buckets, exactly as `getPageBindingsByRole` returns them.
  *
  * Passed IN rather than computed here so this module keeps no runtime import,
- * and so the legacy branch keeps that function's exact behaviour — including
+ * and so the legacy branch keeps that function's exact behaviour, including
  * that a binding carrying an unrecognised `role` lands in no bucket and is
  * therefore not collected. Recomputing the union from `page.collections`
  * directly would silently start collecting those.
@@ -85,6 +85,82 @@ export function collectFromBlocks(
         if (t) integrationTypes.add(t);
       }
     }
+  }
+}
+
+/**
+ * How deep `collectHeroCollectionIds` will walk. The deepest reference the
+ * wire produces today is `hero.featureItem.collectionId` (depth 2); the cap is
+ * headroom, not a limit anything real is near.
+ *
+ * It exists because this walks UNVALIDATED CMS data on every generic page
+ * render, so "a weird hero cannot hang the response" has to be a property of
+ * the walker and not an assumption about the data. It also makes a cyclic
+ * object safe without paying for a visited-set on every render.
+ */
+const HERO_WALK_MAX_DEPTH = 6;
+
+/**
+ * Collect every collection id the page's HERO references.
+ *
+ * WHY THE HERO NEEDS ITS OWN ARM. `buildPageContext` fetches exactly the ids
+ * this module returns and exposes them as `data.getItems(id)`. Until
+ * kit-builds-2026-09 every hero variant took AUTHORED labels, so reading
+ * `bindings[]` was enough. The `'feature-item'` variant (salon + live-events
+ * kits) is the first hero whose lockup IS an item of a bound collection: the
+ * renderer's `resolveFeatureItem` reads `page.hero.featureItem.collectionId`
+ * and calls `getItems` on it. Uncollected, that returns `[]`, and an empty
+ * list resolves to `undefined`, which falls back to the plain title lockup:
+ * a 200 with a silently degraded hero and nothing red anywhere. It resolved
+ * at all only on a page that ALSO bound the same collection for another
+ * reason.
+ *
+ * WHY IT READS THE HERO AND NOT `featureItem` BY NAME. The hero is the one
+ * page-level struct where variants author collection references outside
+ * `bindings[]`, and the renderer is explicit that this is a beginning rather
+ * than a one-off: "All twenty previously shipped variants take AUTHORED
+ * labels; not one reads a collection, and that is the gap"
+ * (vivreal-site-renderer master d2430d5, `src/types/SiteData.ts`, read
+ * 2026-09-30). A collector keyed on the name `featureItem` would have to be
+ * re-landed for the next such variant, and until it was, that variant would
+ * ship this same silent empty hero. `collectionId` has exactly one meaning
+ * anywhere in a hero, so matching the key generalises without guessing.
+ *
+ * NOT GATED ON `hero.variant`, deliberately. Gating would re-introduce the
+ * per-variant coupling this arm exists to avoid, and it would have to be
+ * widened by hand in this repo every time the renderer adds a content-reading
+ * hero, including during the window where the renderer has shipped the
+ * variant and Templates has not caught up. The cost of not gating is one
+ * wasted collection fetch on a page that authors a hero `collectionId` for a
+ * variant that does not read one, which the blueprint schema calls out as
+ * schema-valid but rendering nothing. A wasted fetch on a misauthored page is
+ * the cheaper failure than a blank hero on a correct one.
+ *
+ * IDS ARE TRIMMED, and that is load-bearing rather than tidiness. The renderer
+ * reads the id through `heroText`, which trims
+ * (`src/composition/resolveHero.ts:262`, same ref and date), then looks up
+ * `getItems(trimmed)`. `buildPageContext` keys its map by whatever string this
+ * function returns. Collect `' col_shows '` verbatim and the prefetch happens
+ * under a key the renderer never asks for: the fetch cost is paid and the hero
+ * still renders empty.
+ */
+function collectHeroCollectionIds(node: unknown, into: Set<string>, depth = 0): void {
+  if (depth > HERO_WALK_MAX_DEPTH || node === null || typeof node !== 'object') return;
+
+  if (Array.isArray(node)) {
+    for (const entry of node) collectHeroCollectionIds(entry, into, depth + 1);
+    return;
+  }
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'collectionId') {
+      // Only a non-blank string is an id. A blank one would poison the
+      // prefetch with a `getCollectionItems('')` call and seed an empty-string
+      // key in the map.
+      if (typeof value === 'string' && value.trim()) into.add(value.trim());
+      continue;
+    }
+    collectHeroCollectionIds(value, into, depth + 1);
   }
 }
 
@@ -143,6 +219,22 @@ export function collectTargets(page: PageConfig, byRole: PageBindingsByRole | nu
     // can call getItems(page.collectionId).
     if (page.collectionId) collectionIds.add(page.collectionId);
   }
+
+  // OUTSIDE the branch, on purpose. `page.hero` is a page-level field and the
+  // renderer's hero resolver takes the PAGE, not the block config
+  // (`resolveHero(ctx.page, …)`, vivreal-site-renderer master d2430d5
+  // `src/composition/blocks.ts:1786`, read 2026-09-30), so a blocks-authored
+  // page and a legacy one carry the hero's collection reference in the same
+  // place. Putting this inside either branch would fix one and leave the other
+  // rendering the empty hero.
+  //
+  // `page.hero` is passed as `unknown`: the Templates `PageHero` mirror
+  // declares none of the kit-builds-2026-09 hero fields, and deliberately is
+  // not being widened to, because the renderer has not published them
+  // (`@hillbombcreations/site-renderer` 1.74.3 carries no `'feature-item'`),
+  // and mirroring an unpublished shape is how a mirror drifts. The walk does
+  // not need the type.
+  collectHeroCollectionIds(page.hero, collectionIds);
 
   return {
     collectionIds: [...collectionIds],
