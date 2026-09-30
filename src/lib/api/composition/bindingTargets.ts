@@ -53,7 +53,7 @@ export interface PageBindingsByRole {
  * This is O(n) over the total number of blocks + bindings — block arrays are
  * small (single digits per page) so no Map/Set optimisation beyond dedup needed.
  */
-export function collectFromBlocks(
+function collectFromBlocks(
   blocks: Block[],
   collectionIds: Set<string>,
   integrationTypes: Set<string>,

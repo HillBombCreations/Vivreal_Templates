@@ -226,10 +226,8 @@ test('REFUSE: the hero walk is depth-bounded, so a cyclic or absurd hero cannot 
 
   const { collectionIds } = collectTargets(page({ hero }), bucketsLike({}));
 
-  assert.deepEqual(collectIds(collectionIds), ['col_shows']);
+  assert.deepEqual(collectionIds, ['col_shows']);
 });
-
-const collectIds = (ids: string[]) => [...ids].sort();
 
 // ─── THE EXTRACTION CHANGED NOTHING ELSE ─────────────────────────────────────
 
