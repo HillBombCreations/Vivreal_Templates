@@ -624,6 +624,27 @@ export interface SiteData {
      */
     favicon?: string;
     /**
+     * Motion-signature preset (template-identity kits §6) — the kit's `--motion-*`
+     * token set, SSR-stamped onto `<html data-motion-preset>` by the root layout
+     * and re-stamped by Providers after hydration. A short id string
+     * (`'atelier'`, `'coastal-drift'`); VR_Secure_API validates it against the
+     * bundled renderer capability manifest.
+     *
+     * Stored FLAT AT THE TOP LEVEL of the site doc, like the other Studio "Site
+     * extras" chrome, and resolved by `resolveSiteChrome`
+     * (../lib/api/siteData/chrome.ts). It was previously reachable only via the
+     * `...siteDetails.values` spread and read through an inline
+     * `(siteData as { motionPreset?: string })` cast at both call sites, which
+     * is exactly why it had no explicit mapping and silently served the stale
+     * mirror. Declared here so the field has a real contract. The two inline
+     * casts (app/layout.tsx, components/Providers/index.tsx) are now redundant
+     * but still correct; they are left alone to keep this change small.
+     *
+     * Absent ⇒ no `data-motion-preset` attribute, so the renderer's default
+     * motion tokens apply (byte-identical to a site that never had one).
+     */
+    motionPreset?: string;
+    /**
      * Per-site font theming — the migrated site's captured primary typeface
      * (e.g. `'Geist'`), normalized by the migrator from the crawled font stack
      * (`capture.brand.fonts[0]`; see Vivreal_Site_Migrator's `normalizeFontFamily`).

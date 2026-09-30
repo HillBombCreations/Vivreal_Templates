@@ -1,0 +1,15 @@
+# Pin the renderer overlay guard to LF.
+#
+# WHY, measured 2026-09-30. checks/assert-no-renderer-overlay.mjs is a
+# byte-for-byte copy of vivreal-site-renderer/docs/consumer-guard/, and the
+# guard's own contract is that all three copies (renderer source, here, and
+# Vivreal_Portal_Mobile) stay identical, verified with git hash-object.
+#
+# core.autocrlf=true is true on this machine, so without this line a FRESH
+# CHECKOUT rewrites the file to CRLF and the byte-identical property breaks
+# silently: the content is unchanged, every diff is empty, and only a hash
+# comparison notices. That already happened once here, which is how an
+# earlier copy stayed on the pre-fix version while reading as current.
+#
+# Vivreal_Portal_Mobile pins the same file the same way.
+checks/assert-no-renderer-overlay.mjs text eol=lf

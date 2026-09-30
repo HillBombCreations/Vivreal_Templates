@@ -23,6 +23,7 @@ import { isDemoSite } from '@/lib/seo/demoSafety';
 import { isPageTurnedOff } from '@/lib/pages/pageEnabled';
 import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
+import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { refuseDegradedClaim } from './degraded';
@@ -79,6 +80,15 @@ interface SiteDetailsResponse {
   fulfillmentStrip?: SiteData['fulfillmentStrip'];
   utilityDock?: SiteData['utilityDock'];
   edgeDock?: SiteData['edgeDock'];
+  // The four chrome fields that had NO top-level declaration here and no
+  // mapping below, so they could only ever arrive through the
+  // `...siteDetails.values` spread — i.e. always from the stale mirror, even
+  // once the owner had edited them. VR_Client_API now emits all four from
+  // their top-level home alongside the rest of the family.
+  footerNewsletter?: SiteData['footerNewsletter'];
+  floatingCta?: SiteData['floatingCta'];
+  favicon?: SiteData['favicon'];
+  motionPreset?: SiteData['motionPreset'];
   // Phase 0 (two-axis-detail-route-design.md §5.1) — the WS3 301 redirect
   // map. Not currently forwarded top-level by VR_Client_API's getSiteDetails
   // (unlike navigation/footer/emailPopup); the migrator persists it only
@@ -216,30 +226,19 @@ export const getSiteData = async (): Promise<SiteData> => {
     // Q3b — Studio-authored navbar/footer chrome (null ⇒ renderer auto-derives).
     navigation: raw.navigation ?? null,
     footer: raw.footer ?? null,
-    // CC9 — Studio-authored email-capture popup config (null ⇒ legacy behavior).
-    emailPopup: raw.emailPopup ?? null,
-    // Announcement strip: top-level response field wins (emailPopup precedent);
-    // falls back to a values-carried config so neither storage location
-    // silently nulls it (the emailPopup values-only-emit gotcha).
-    announcement:
-      raw.announcement ?? (raw.siteDetails.values as SiteData).announcement ?? null,
-    // Utility strip: same dual-source read as announcement (top-level wins,
-    // values fallback — the emailPopup values-only-emit gotcha).
-    utilityStrip:
-      raw.utilityStrip ?? (raw.siteDetails.values as SiteData).utilityStrip ?? null,
-    // Fulfillment strip (Ansel kit, bakery template #3): same dual-source read.
-    fulfillmentStrip:
-      raw.fulfillmentStrip ?? (raw.siteDetails.values as SiteData).fulfillmentStrip ?? null,
-    // Coastal Estate kit — same dual-read as fulfillmentStrip/emailPopup
-    // (HANDOFF gotcha #2: top-level wins, `values` is the fallback). Omitting
-    // this mapping would silently null the dock even when the bundle emits it.
-    utilityDock:
-      raw.utilityDock ?? (raw.siteDetails.values as SiteData).utilityDock ?? null,
-    // Med-spa kit look #1 — the SAME dual-read for the same reason. This is
-    // the mapping whose omission is invisible: the loader writes the rail, the
-    // bundle emits it, the preview shows it, and the live site renders nothing.
-    edgeDock:
-      raw.edgeDock ?? (raw.siteDetails.values as SiteData).edgeDock ?? null,
+    // Studio "Site extras" chrome — ALL ten fields, each from its top-level
+    // home and nothing else. Spread AFTER `...originSource` so it overrides the
+    // `siteDetails.values` mirror those fields used to arrive from.
+    //
+    // This replaces five hand-written `raw.X ?? values.X ?? null` dual reads
+    // and four fields that had no mapping at all and so silently served the
+    // stale mirror. See ./chrome.ts for why the fallback is gone rather than
+    // extended to the other four: the mirror is a second source of truth that
+    // goes stale on the first Studio save, and every dual read kept it alive.
+    //
+    // Placement is load-bearing. Move this above the `...originSource` spread
+    // and the mirror wins again for all ten.
+    ...resolveSiteChrome(raw),
     // Phase 0 (two-axis-detail-route-design.md §5.1) — the WS3 301 redirect
     // map. Same dual-source read as the strips above (top-level wins, values
     // is the fallback); today only the values path is ever populated (the

@@ -56,7 +56,7 @@ function blockHasPaymentsBinding(block: BlockLike): boolean {
   }
   // Recurse into group children — a coordinated Products group carries its
   // payments binding on the GRID CHILD (config.children[].config.bindings),
-  // exactly like collectFromBlocks (composition/bindings.ts) already walks
+  // exactly like collectFromBlocks (composition/bindingTargets.ts) already walks
   // for prefetch. Scanning only top-level bindings misses it, which left the
   // cart unmounted on storefront-unit pages (first live Square E2E).
   return (config.children ?? []).some(blockHasPaymentsBinding);

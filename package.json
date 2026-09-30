@@ -6,15 +6,17 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "dev:linked": "node ../vivreal-site-renderer/scripts/dev-sync.js && next dev --turbopack",
+    "prebuild": "node checks/assert-no-renderer-overlay.mjs",
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
+    "pretest": "node checks/assert-no-renderer-overlay.mjs",
     "test": "tsc --noEmit && node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\" \"eslint-rules/*.test.mjs\"",
     "check:free-year": "node --experimental-strip-types --test checks/freeYearPackage.test.ts"
   },
   "dependencies": {
     "@hillbombcreations/email-brand": "1.1.0",
-    "@hillbombcreations/site-renderer": "^1.74.3",
+    "@hillbombcreations/site-renderer": "^1.75.0",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
