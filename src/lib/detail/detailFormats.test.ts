@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   RECIPES_FORMAT,
+  WHATS_ON_LAYOUT,
   detailJsonLdFormat,
   servesCollectionDetail,
 } from './detailFormats.ts';
@@ -61,4 +62,88 @@ test('Phase 0.4: a catalog page is served by the collection detail arm (D3)', ()
 
 test('a products page without a collection id is still not a collection page', () => {
   assert.equal(servesCollectionDetail({ format: 'products' }), false);
+});
+
+/* ── Live events, road B: a What's on page serves its show detail ───────────
+ *
+ * The owner's ruling: a What's on page keeps `WhatsOnLayout` and the "What's
+ * on" page type rather than being converted to `format:'products'` and served
+ * by the Chalkboard product page. An operator picking "What's on" for their
+ * shows is honest, and calling a comedy show a product leaks that modelling
+ * into the UI. So the detail arm has to claim the page, and it cannot do it by
+ * format: the preset persists `format:'standard'`.
+ */
+
+/** The block a `layout:whats-on` palette add persists. */
+const whatsOnBlock = { type: { kind: 'layout', dispatchId: WHATS_ON_LAYOUT } };
+
+test("a What's on page is served by the collection detail arm", () => {
+  // Without this every show URL is a 404 while `/og/[slug]/[itemId]` still
+  // renders a correct social card for it, a shared link that looks right and
+  // lands nowhere.
+  assert.equal(
+    servesCollectionDetail({ format: 'standard', blocks: [whatsOnBlock] }),
+    true,
+  );
+});
+
+test("the What's on clause reads the block, not the format", () => {
+  // The preset persists `format:'standard'`, so a format-only rule cannot see
+  // this page at all. Pinning both halves: the format alone is not enough,
+  // and the block alone is.
+  assert.equal(servesCollectionDetail({ format: 'standard' }), false);
+  assert.equal(servesCollectionDetail({ blocks: [whatsOnBlock] }), true);
+});
+
+test('a standard page with any OTHER layout block is still not served', () => {
+  // The safety argument for the whole clause. Around eighteen layouts emit a
+  // detail link when `detailEnabled`, and claiming `standard` wholesale would
+  // flip every one of those pages from 404 to a rendered detail page fleet-
+  // wide on the next promote. Only the named layout may widen the arm.
+  assert.equal(
+    servesCollectionDetail({
+      format: 'standard',
+      blocks: [
+        { type: { kind: 'layout', dispatchId: 'cards' } },
+        { type: { kind: 'layout', dispatchId: 'gallery' } },
+        { type: { kind: 'layout', dispatchId: 'calendar' } },
+      ],
+    }),
+    false,
+  );
+});
+
+test("a What's on block is found wherever it sits on the page", () => {
+  // The preset seeds `[section-header, whats-on]`, so the listing is never
+  // block 0. A first-block-only read would have shipped green against a
+  // hand-written fixture and 404'd on every real page.
+  assert.equal(
+    servesCollectionDetail({
+      format: 'standard',
+      blocks: [{ type: { kind: 'content', dispatchId: 'section-header' } }, whatsOnBlock],
+    }),
+    true,
+  );
+});
+
+test('a block with no type at all does not throw', () => {
+  // A Mongo round-trip strips empty sub-objects, so a block can arrive with no
+  // `type`, the same reason `pageDetailCollectionId` optional-chains its
+  // binding read.
+  assert.equal(
+    servesCollectionDetail({ format: 'standard', blocks: [{}, { type: null }, whatsOnBlock] }),
+    true,
+  );
+  assert.equal(servesCollectionDetail({ format: 'standard', blocks: [{}] }), false);
+  assert.equal(servesCollectionDetail({ format: 'standard', blocks: [] }), false);
+  assert.equal(servesCollectionDetail({ format: 'standard', blocks: null }), false);
+});
+
+test('the pages that were served before are served for the same reason as before', () => {
+  // The new clause is additive: it can only turn `false` into `true`, and only
+  // for a page carrying the named layout. Every pre-existing answer is pinned
+  // above; this pins that a blockless page is unaffected by the widening.
+  assert.equal(servesCollectionDetail({ format: 'collection-list', blocks: [] }), true);
+  assert.equal(servesCollectionDetail({ format: 'products', blocks: [] }), false);
+  assert.equal(servesCollectionDetail({ format: 'schedule', blocks: [] }), false);
 });
