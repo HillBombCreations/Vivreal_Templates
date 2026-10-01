@@ -126,6 +126,18 @@ export const dynamicParams = true;
 // `/api/shows` route handler, a relationship `lib/api/cacheTags.test.ts`
 // already pins.
 //
+// THAT ENUMERATION WAS INCOMPLETE WHEN IT WAS WRITTEN, and the conclusion
+// it reaches is still right. It listed the reads in the page BODY and
+// missed the two in `generateMetadata` below: `getShowById` and
+// `getTeamMembers`. Both are value-only wrappers over cached reads already
+// named here (`getShowById` reaches `getShowByIdRead` reaches
+// `getShowsRead`; `getTeamMembers` reaches `getTeamMembersRead`), so
+// "every read goes through `clientFetchCached`" holds for them too and
+// removing `fetchCache` is still correct. Corrected rather than left alone
+// because the next person extending this route will read the LIST instead
+// of re-deriving it, and a list missing two call sites is how an uncached
+// read gets added beside them.
+//
 // Leaving it would have mattered: Part A flips this very route to ISR
 // (`revalidate = 300` plus `enforceDynamicUnlessIsr()` below), and a stray
 // `force-no-store` on an ISR route is the leftover that makes a later "why

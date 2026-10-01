@@ -330,6 +330,47 @@ identical. Feeding the census a lockfile with the two `@emnapi/*` entries remove
 
 For local development against a renderer working copy, use `npm run dev:linked` — it copies the `../vivreal-site-renderer` build in via `dev-sync.js` (no symlinks, so Turbopack resolution stays intact). `transpilePackages` in next.config already includes the renderer.
 
+### 1.76.0 to 1.77.0 is NOT a lockfile chore, whatever the commit says
+
+`f3d4a79` on `feat/social-stage-1` is titled `chore(deps): adopt site-renderer
+1.77.0, surgically patched lockfile`, and three of the changes it pulls in are
+**fleet-visible and have nothing to do with social**. A pushed commit message
+cannot be amended, so the correction lives here, where the next person looking
+at a fleet-wide appearance change will actually look.
+
+Read from the renderer repo at `/c/repos/vivreal-site-renderer`, commit range
+`c9ea6cb..782d4f1` (`chore(release): 1.76.0` to `chore(release): 1.77.0`),
+2026-10-01:
+
+| change | commit | who sees it |
+|---|---|---|
+| `dropHiddenIntegrationSections` is new. An integration-bound section that resolves to **zero items** now renders no `<section>` and no `<h2>` at all, where it previously emitted an empty one with a heading reading, literally, `instagram`. | `11cd308` | **every live site** with an integration-bound section that can empty |
+| `PageTemplates/ShowsPage.tsx` dropped the `/logo.png` fallback for a missing poster; it now paints `MediaPlaceholder`. | `83bbe14` | **every show with no poster**, on every site |
+| `PageTemplates/TeamPage.tsx` dropped the same fallback for a missing photo; it now paints `PersonAvatar` (the member's initials). | `83bbe14` | **every team member with no photo**, on every site |
+
+The `/logo.png` change is a fix rather than a regression (`/logo.png` 404s on
+every site, so the fallback was painting a broken image), and the same commit
+touches four further call sites the message names. The point is not that any
+of it is wrong. The point is that a promote of this branch changes how pages
+look on sites that have no social band at all, and the commit message says it
+changes a lockfile.
+
+Two further things that commit's own message records and that are worth
+keeping in view: 1.77.0 was bumped and **held unpublished** at `782d4f1`, and
+the lockfile was patched as TEXT at both version sites with the 39
+platform-constrained entries censused by name either side. Do not re-derive
+either by running `npm install` here.
+
+**One open item, flagged rather than resolved.** This repo's
+`node_modules/@hillbombcreations/site-renderer/dist` contains
+`registry/socialEligibility.js`, whose source landed in renderer commit
+`9a6c095`, **after** the 1.77.0 release commit. Either 1.77.0 was published
+later with those commits included, or this `node_modules` is a dev overlay
+ahead of the locked tarball. Until that is settled, **do not import
+`isSocialEligible` / `socialEligibleDispatchIds` into this repo**: it would
+type-check and run locally and could fail the fleet `npm ci` build. Nothing
+here imports them today.
+
 ### The renderer version is a CROSS-REPO contract with the portal
 
 **A renderer bump here is not finished until `Vivreal_Portal_Mobile` resolves the same
