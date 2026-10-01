@@ -18,7 +18,6 @@ import { getPageBySlug } from "@/lib/pages";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { getShowById, getShowByIdRead } from "@/lib/api/shows";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
-import { getTikTokPosts, getTikTokOEmbed } from "@/lib/api/social";
 import { getProductByIdRead } from "@/lib/api/products";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
@@ -108,20 +107,29 @@ export const revalidate = 300;
 // returned HTTP 500 with the gate off. See that route's docblock.
 export const dynamicParams = true;
 
-// KEPT, deliberately, and now load-bearing in a way it was not before. It used
-// to be redundant: `dynamic = "force-dynamic"` already implies
-// `fetchCache = "force-no-store"`. With `force-dynamic` gone it is the only
-// thing still pinning `getTikTokOEmbed`'s `next: { revalidate: 3600 }` to
-// no-store, which is today's behaviour. Removing it would change that on every
-// site the moment this merges, gate or no gate.
+// `fetchCache = "force-no-store"` was REMOVED here by B1.1
+// (docs/projects/isr-and-social-pass/plan.md). This note is the record of that
+// decision, because the export leaving is otherwise invisible in the file.
 //
-// It does NOT block prerendering. `markCurrentScopeAsDynamic` fires when a
-// fetch actually runs uncached outside a cache scope (`patch-fetch.js`), not
-// from the export itself, and every VR_Client_API read on this route goes
-// through `unstable_cache`, where dynamic tracking is a no-op. The one raw
-// read left is `getTikTokPosts` on the TikTok arm, which correctly keeps that
-// arm dynamic.
-export const fetchCache = "force-no-store";
+// It was kept for exactly one stated reason: it was "the only thing still
+// pinning" the deleted TikTok embed helper's `next: { revalidate: 3600 }` to
+// no-store. B1.1 deleted that call, so the reason went with it, and an export
+// whose docblock describes a read that no longer exists reads as current to
+// the next person.
+//
+// Nothing else on this route needs it. Verified against this tree before
+// removing: every VR_Client_API read the route reaches goes through
+// `clientFetchCached` → `unstable_cache` — `getShowByIdRead` →`getShowsRead`,
+// `getTeamMembersRead`, `getProductByIdRead`, `getIntegrationItems`,
+// `getCollectionItems`, `getSiteData`. The one `clientFetchSafe` left in
+// `lib/api/shows` is `getShowsPaginated`, whose only caller is the
+// `/api/shows` route handler, a relationship `lib/api/cacheTags.test.ts`
+// already pins.
+//
+// Leaving it would have mattered: Part A flips this very route to ISR
+// (`revalidate = 300` plus `enforceDynamicUnlessIsr()` below), and a stray
+// `force-no-store` on an ISR route is the leftover that makes a later "why
+// does this page never cache" investigation expensive.
 
 /**
  * docs/bugs/templates-soft-404-and-301-status, Change A (Open Question 2
@@ -417,27 +425,25 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     if (!member) return answerItemMissing(member);
 
-    // Fetch TikTok posts and match by handle
-    const tiktokHandle = member.socialLinks?.tiktok;
-    let tiktokEmbeds: { caption: string; permalink: string; html: string | null }[] = [];
-
-    if (tiktokHandle) {
-      const allPosts = await getTikTokPosts();
-      const handle = tiktokHandle.replace(/^@/, "");
-      const memberPosts = allPosts.filter(
-        (p) => p.permalink && p.permalink.includes(handle)
-      );
-
-      tiktokEmbeds = await Promise.all(
-        memberPosts.slice(0, 6).map(async (post) => ({
-          caption: post.caption,
-          permalink: post.permalink!,
-          html: post.permalink
-            ? ((await getTikTokOEmbed(post.permalink))?.html ?? null)
-            : null,
-        }))
-      );
-    }
+    // B1.1 (docs/projects/isr-and-social-pass/plan.md): the per-member TikTok
+    // arm is DELETED, not narrowed. It read every published TikTok integration
+    // object through an untagged `clientFetchSafe`, filtered them by substring
+    // against the member's handle, and then called TikTok's public oEmbed
+    // endpoint ONCE PER POST from the server render. Two separate defects:
+    //
+    //   1. A third-party call at render time. No social platform is called while
+    //      a page renders, on any surface, for any platform (plan §6b.1).
+    //   2. An untagged read. `social/index.tsx` never carried a cache tag, and
+    //      `/api/revalidate`'s `tagsForEvent` only ever emits `integration:<type>`
+    //      and `site:<id>`, so NO webhook could ever have invalidated it. On an
+    //      ISR site that read freezes at the build artifact permanently.
+    //
+    // The renderer stopped consuming the result in 1.77.0: its `socialEmbeds`
+    // prop is inert and `DetailSocialEmbeds.tsx` is deleted, with
+    // `DetailPage/noSocialEmbeds.test.tsx` standing as the tripwire. So this
+    // branch had no consumer left to feed. A social band reads through
+    // `getIntegrationItems()`, which is already tagged — see `B1.6`'s tripwire
+    // at `src/lib/api/socialReadsAreTagged.test.ts`.
 
     // Strip CloudFront signing params before embedding in JSON-LD; signed
     // URLs expire after 300s but JSON-LD lives in crawler caches for days.
@@ -474,7 +480,6 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
             slug={slug}
             format="team"
             item={member as unknown as DetailItem}
-            socialEmbeds={tiktokEmbeds}
             siteData={siteData as unknown as RendererSiteData}
             cta={pageConfig.cta as RendererPageCtaConfig | undefined}
             detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
