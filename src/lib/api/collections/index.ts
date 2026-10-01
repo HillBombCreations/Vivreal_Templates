@@ -11,6 +11,7 @@ import { collectionTags, integrationTags } from '../cacheTags';
 import { readOrDegrade } from '../degradedRead';
 import { readRichTextImageUrls } from '../richTextImageUrls';
 import { toContentItem } from './mapItem';
+import { isSocialPostPlatform, toSocialPostItems } from './socialPost';
 import type { ContentItem } from '@/types/ContentItem';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -156,6 +157,17 @@ export async function getCollectionItems(
 /**
  * Fetch integration objects and return them as ContentItems.
  *
+ * This is the ONE tagged, cached read a social band uses. It was already both
+ * before this pass; `src/lib/api/socialReadsAreTagged.test.ts` (B1.6) is the
+ * tripwire that keeps any new social read off an untagged path.
+ *
+ * B1.5: for the four social platforms the items go through
+ * `toSocialPostItems` instead of the generic mapper, which drops any post with
+ * no usable picture or no outbound address. So for a social read `items` can
+ * be SHORTER than `totalCount`: `totalCount` is what the upstream window held,
+ * `items` is what is displayable. No caller paginates an integration read
+ * today, and a social band is a single window by construction.
+ *
  * @param type - Integration type (e.g. "stripe", "tiktok")
  * @param opts - Pagination, sort, search, and filter options
  */
@@ -180,7 +192,9 @@ export async function getIntegrationItems(
 
   const { items, totalCount, richTextImageUrls } = unwrap(raw);
   return {
-    items: items.map((item) => toContentItem(item, 'integration', type)),
+    items: isSocialPostPlatform(type)
+      ? toSocialPostItems(items, type)
+      : items.map((item) => toContentItem(item, 'integration', type)),
     totalCount,
     degraded,
     richTextImageUrls,
