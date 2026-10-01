@@ -57,6 +57,51 @@ function resolveImage(objectValue: Record<string, unknown>): {
 }
 
 /**
+ * The URL schemes an item-authored link may use, lower-cased with the colon.
+ *
+ * AN ALLOWLIST, because the thing being defended against is a scheme nobody
+ * listed. `javascript:` is the one that matters — React 19.1 renders a
+ * `javascript:` `href` with a development-only warning and no refusal, and an
+ * integration object's fields are owner-writable through the CMS, so an
+ * injected one is stored cross-site scripting aimed at a customer's own
+ * visitors. `data:` and `vbscript:` are the same shape.
+ *
+ * `http:` and `https:` are the real cases; `mailto:` and `tel:` are authored
+ * on contact cards today. A value with NO scheme is left alone: a relative
+ * path (`/about`, `#menu`) is how an internal link is authored here and
+ * refusing those would break every one of them.
+ */
+const SAFE_LINK_SCHEMES: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+/**
+ * An item-authored link, or an empty string when its scheme is not one a
+ * link may use.
+ *
+ * THE STRIP BEFORE THE TEST IS THE WHOLE GUARD. A browser discards ASCII
+ * control characters and whitespace while it reads a scheme, so a tab in the
+ * middle of the word, or a leading NUL, navigates exactly as the bare scheme
+ * does. Testing the string as written would read a different value than the
+ * browser does, which is a guard that reports safe and is not.
+ *
+ * It filters by CODE POINT rather than matching a character class, because a
+ * class spelling those code points has to be written as escapes, and an
+ * escape is the one thing that does not survive every editor and generator
+ * intact: a NUL written into this very file by the heredoc that first drafted
+ * it made the whole module invisible to `grep`.
+ *
+ * The ORIGINAL string is returned on success, not the stripped one: the strip
+ * exists to decide, never to rewrite a legitimate path.
+ */
+function safeLinkHref(value: string): string {
+  const candidate = Array.from(value)
+    .filter((ch) => ch.charCodeAt(0) > 0x20)
+    .join('');
+  const scheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.exec(candidate)?.[0].toLowerCase();
+  if (!scheme) return value;
+  return SAFE_LINK_SCHEMES.has(scheme) ? value : '';
+}
+
+/**
  * Map a raw API object to the unified ContentItem shape.
  */
 export function toContentItem(
@@ -78,7 +123,11 @@ export function toContentItem(
   // routes keep precedence in FeatureList/Cards; LinkCards always honored href),
   // so populating it does not reroute existing detail-enabled cards.
   const link = objectValue.link ?? objectValue.url;
-  const href = typeof link === 'string' && link.trim() ? link.trim() : undefined;
+  const trimmedLink = typeof link === 'string' ? link.trim() : '';
+  // Scheme-guarded. A refused link becomes `undefined`, which is the same
+  // value an item with no link at all produces, so every layout's existing
+  // "no href" branch already handles it and nothing renders a dead anchor.
+  const href = safeLinkHref(trimmedLink) || undefined;
 
   return {
     id: String(raw._id ?? ''),

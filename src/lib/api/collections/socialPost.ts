@@ -9,13 +9,55 @@
  * This module is the three resolutions, in one place, applied after
  * `toContentItem` has done the image work.
  *
- *   1. NO TITLE, EVER. A caption is not a title. Mapping one to the other
- *      produces exactly the text-led card an owner called "precisely what a
- *      broken website looks like". Title and description are both forced
- *      absent here so a future adapter that starts writing `objectValue.title`
- *      cannot leak one through. The caption travels in `raw.caption`.
- *   2. THE LINK IS THE POST'S OWN ADDRESS, and nothing else. Both social
- *      layouts prefer `raw.link` over `item.href`
+ *   1. THE CAPTION IS THE TITLE, AND THE DESCRIPTION STAYS ABSENT. Those two
+ *      halves pull in opposite directions on purpose, and the reason the
+ *      split is drawn here rather than at the mapper's convenience is that
+ *      `title` is what BOTH social layouts read for a tile's accessible name:
+ *      `SocialPanelLayout` puts it in `alt=` on an `<img>` that is the
+ *      anchor's only child, and `MediaMosaicLayout` puts it in `alt=` beside a
+ *      platform chip. Forced empty, `social-panel` emits up to six links per
+ *      band with NO accessible name at all (WCAG 2.4.4, 2.4.9, 4.1.2) and
+ *      `media-mosaic` emits eight that all announce "Instagram". It was also a
+ *      regression for a hand-authored row carrying `objectValue.title`, which
+ *      is what the Comedy Collective's TikTok rows are.
+ *
+ *      What the empty title was PROTECTING against is real and has not gone
+ *      away: a 300-character caption promoted into an `<h3>` is the text-led
+ *      card an owner called "precisely what a broken website looks like". A
+ *      mapper is still the wrong place to enforce it, because it cannot see
+ *      which layout the item is going to; the layout SET is the only thing
+ *      that can. So the caption travels as the name, and the exclusion is
+ *      owed by the renderer's `requiredItemFields` / `isSocialEligible`.
+ *
+ *      THAT EXCLUSION DOES NOT HOLD YET, AND IT IS STATED HERE RATHER THAN
+ *      ASSUMED. Measured against the installed 1.77.0 registry, 2026-10-01:
+ *      ten layouts satisfy `isSocialEligible`, and FIVE of them print the
+ *      title as visible text, not only into `alt=` — `captioned-media` into
+ *      an `<h3>` at `text-2xl lg:text-[2rem] font-bold`, plus `arch-tiles`,
+ *      `collage-strip`, `postcard-strip` and `photo-band-pager`. Every one of
+ *      the five declares `requiredItemFields: ['imageUrl']` and nothing else,
+ *      because each one's title print is GUARDED (`card.title && ...`) and the
+ *      generator only proposes fields it finds in UNGUARDED text positions.
+ *      The predicate's own docblock says it refuses a layout that prints the
+ *      title; for a guarded print it does not.
+ *
+ *      Carrying the caption is still right, and it is not a regression for
+ *      those five: no live site can reach them with a social band, because
+ *      bands and the picker that offers this set both ship on this branch.
+ *      The two layouts the plan actually ships, `social-panel` and
+ *      `media-mosaic`, read `title` into `alt=` ONLY, and with it empty they
+ *      emit links with no accessible name at all. Closing the remaining five
+ *      is a `vivreal-site-renderer` change (declare `title` on them, or teach
+ *      the extractor a guarded text position), and it is not a change this
+ *      repo can make.
+ *
+ *      `description` stays absent because neither social layout reads it, so
+ *      it could only ever become body copy.
+ *
+ *      The caption still travels in `raw.caption` as well. Removing that
+ *      would be a silent break for anything already reading it.
+ *   2. THE LINK IS THE POST'S OWN ADDRESS, over https, and nothing else.
+ *      Both social layouts prefer `raw.link` over `item.href`
  *      (`MediaMosaicLayout.tsx`, `SocialPanelLayout.tsx`), and the Facebook
  *      sync adapter writes `objectValue.link` as the link ATTACHED to the post
  *      — a shared article, not the post. Left alone, a Facebook tile would
@@ -93,6 +135,51 @@ function trimmed(value: unknown): string {
 }
 
 /**
+ * The post's own caption, under whichever key its adapter writes it.
+ *
+ * TWO KEYS, BECAUSE THE FOUR ADAPTERS USE TWO. Read from
+ * `VR_CMS_API/src/createAndUpdateIntegrations/services/sync/` on
+ * `feat/social-display-backend`, 2026-10-01: `instagram.js:105` writes
+ * `caption`, `facebook.js:92` and `linkedIn.js:43` write `postContent`, and
+ * `tiktok.js:122` writes BOTH with the same value. Reading `caption` alone
+ * leaves every Facebook and LinkedIn tile with no accessible name, which is
+ * the defect this function exists to close rather than half-close.
+ */
+function postCaption(objectValue: Record<string, unknown>): string {
+  return trimmed(objectValue.caption) || trimmed(objectValue.postContent);
+}
+
+/**
+ * The post's outbound address, or '' when it has none that may be rendered.
+ *
+ * WHERE IT LIVES. On `objectValue`, which is where all three syncing adapters
+ * write it (`instagram.js:112`, `facebook.js:98`, `tiktok.js:128`, same ref
+ * and date as above). The document ROOT is read as a fallback only, for a row
+ * a human authored by hand.
+ *
+ * WHY HTTPS AND NOTHING ELSE. This value is written to `href` and to
+ * `raw.link`, and both social layouts put `raw.link` straight into an
+ * anchor's `href`. React 19.1 renders a `javascript:` URL there with a
+ * development-only warning and no refusal, and an integration object is
+ * owner-writable through the CMS, so an injected one is stored cross-site
+ * scripting pointed at a customer's own visitors. Unlike an ordinary
+ * collection item there is no legitimate relative, `mailto:` or plain-`http:`
+ * case to preserve: a permalink on any of the four platforms is an absolute
+ * https address, so the guard can be the strictest one that still admits
+ * every real value.
+ *
+ * `startsWith` on the lower-cased string, with no prior stripping, is
+ * deliberate. `trimmed()` has already removed whitespace; an ASCII control
+ * character a browser would skip while reading the scheme survives it, and
+ * leaves the string failing this test. Refusing that row is the correct
+ * answer, so the strict form needs no companion strip.
+ */
+function postAddress(raw: Record<string, unknown>, objectValue: Record<string, unknown>): string {
+  const address = trimmed(objectValue.permalink) || trimmed(raw.permalink);
+  return address.toLowerCase().startsWith('https://') ? address : '';
+}
+
+/**
  * One raw integration object → one media-led `ContentItem`, or `null` when the
  * post must not reach a layout.
  *
@@ -111,17 +198,6 @@ export function toSocialPostItem(raw: Record<string, unknown>, type: string): Co
   const platformKey = type.trim().toLowerCase();
   const base = toContentItem(raw, 'integration', type);
 
-  // The picture is whatever `toContentItem`'s type-based scan resolved from a
-  // SIGNED media descriptor. It can never be `objectValue.mediaUrls`: that is
-  // a bare string holding the platform's own CDN link, and `getSignedUrl()`
-  // returns '' for anything that is not an object carrying `currentFile`. That
-  // is the property that stops a hotlink reaching a page, so it is asserted in
-  // `socialPost.test.ts` rather than left to read as an accident.
-  if (!base.imageUrl) return null;
-
-  const address = trimmed(raw.permalink);
-  if (!address) return null;
-
   // `url` is DELETED rather than kept or overwritten, and the reason is a
   // layout rather than tidiness. The renderer's `video` and `embed` layouts
   // declare exactly one required backing field, `url`, so an item carrying
@@ -132,13 +208,34 @@ export function toSocialPostItem(raw: Record<string, unknown>, type: string): Co
   // `raw.link` first and never reach `raw.url`, so nothing displayable is
   // lost. See `Vivreal_Portal_Mobile/src/components/Sites/Studio/LeftRail/
   // socialDisplayAs.ts`, which is where the consequence is asserted.
+  //
+  // Hoisted above the two drops because `permalink` lives on `objectValue`,
+  // so the address check needs this binding to exist first.
   const { url: _platformUrl, ...objectValue } = (raw.objectValue ?? {}) as Record<string, unknown>;
   void _platformUrl;
+
+  // The picture is whatever `toContentItem`'s type-based scan resolved from a
+  // SIGNED media descriptor. It can never be `objectValue.mediaUrls`: that is
+  // a bare string holding the platform's own CDN link, and `getSignedUrl()`
+  // returns '' for anything that is not an object carrying `currentFile`. That
+  // is the property that stops a hotlink reaching a page, so it is asserted in
+  // `socialPost.test.ts` rather than left to read as an accident.
+  if (!base.imageUrl) return null;
+
+  const address = postAddress(raw, objectValue);
+  if (!address) return null;
+
   const platform = trimmed(raw.platform) || platformKey;
 
   return {
     ...base,
-    title: '',
+    // The caption, which is the accessible name both social layouts give a
+    // tile. Falls back to whatever `toContentItem` resolved rather than to
+    // '': a hand-authored row carries `objectValue.title` and no caption, and
+    // blanking it is how eight hand-made TikTok tiles lost their names. See
+    // resolution 1 in this module's header for why a mapper no longer has to
+    // force this empty to keep a caption out of an `<h3>`.
+    title: postCaption(objectValue) || base.title,
     description: undefined,
     href: address,
     date: trimmed(raw.publishDate) || base.date,
