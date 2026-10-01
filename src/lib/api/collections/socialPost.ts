@@ -122,7 +122,18 @@ export function toSocialPostItem(raw: Record<string, unknown>, type: string): Co
   const address = trimmed(raw.permalink);
   if (!address) return null;
 
-  const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
+  // `url` is DELETED rather than kept or overwritten, and the reason is a
+  // layout rather than tidiness. The renderer's `video` and `embed` layouts
+  // declare exactly one required backing field, `url`, so an item carrying
+  // one reads to the Studio's layout predicate as a feed those two can draw,
+  // and what they draw is a player or an iframe. That is the single thing
+  // this pass forbids outright (plan §6b.1: an iframe embed is the same
+  // outbound call wearing a different hat). Both social layouts read
+  // `raw.link` first and never reach `raw.url`, so nothing displayable is
+  // lost. See `Vivreal_Portal_Mobile/src/components/Sites/Studio/LeftRail/
+  // socialDisplayAs.ts`, which is where the consequence is asserted.
+  const { url: _platformUrl, ...objectValue } = (raw.objectValue ?? {}) as Record<string, unknown>;
+  void _platformUrl;
   const platform = trimmed(raw.platform) || platformKey;
 
   return {
@@ -136,7 +147,6 @@ export function toSocialPostItem(raw: Record<string, unknown>, type: string): Co
       // Both layouts read `raw.link` FIRST. Overwritten, not defaulted — see
       // resolution 2 in this module's header.
       link: address,
-      url: address,
       channel: socialPlatformLabel(platformKey),
       platform,
       kind: postKind(platformKey, objectValue),

@@ -119,8 +119,25 @@ test('[B1.5-G] the link is the POST, never a link the post merely contained', ()
   );
   assert.ok(item);
   assert.equal(item.raw?.link, 'https://www.facebook.com/bakery/posts/pfbid0abc');
-  assert.equal(item.raw?.url, 'https://www.facebook.com/bakery/posts/pfbid0abc');
   assert.equal(item.href, 'https://www.facebook.com/bakery/posts/pfbid0abc');
+});
+
+test('[B1.5-G] no post item carries a `url`, because that is what an embed feeds on', () => {
+  // The renderer's `video` and `embed` layouts each declare exactly ONE
+  // required backing field, `url`. An item carrying one therefore reads to
+  // the Studio's layout predicate as a feed those two can draw, and what they
+  // draw is a player or an iframe — the one thing this pass forbids outright.
+  // So `url` is dropped from the post's raw rather than kept or overwritten,
+  // and an adapter that starts writing `objectValue.url` cannot reopen it.
+  const item = toSocialPostItem(
+    syncedPost({ objectValue: { url: 'https://www.tiktok.com/@bakery/video/7412' } }),
+    'instagram',
+  );
+  assert.ok(item);
+  assert.equal(item.raw?.url, undefined);
+  // The paired allow: the address is still there, on the key the two social
+  // layouts actually read.
+  assert.equal(item.raw?.link, 'https://www.instagram.com/p/C9xYzAbCdEf/');
 });
 
 test('[B1.5-G] clip or photo is marked, and TikTok is always a clip', () => {
