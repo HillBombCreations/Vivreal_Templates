@@ -45,12 +45,36 @@
  */
 import type { ContentItem } from '@/types/ContentItem';
 
-/** The four platforms whose integration objects are social posts (plan §6b.3). */
-const SOCIAL_POST_PROVIDERS: ReadonlySet<string> = new Set([
-  'instagram',
-  'tiktok',
-  'facebook',
-  'linkedin',
+/**
+ * The four platforms whose integration objects are social posts (plan §6b.3),
+ * keyed lower-case and mapped to THE SPELLING EACH ONE IS STORED UNDER.
+ *
+ * ── WHY THE VALUE IS NOT ALWAYS THE KEY ───────────────────────────────
+ *
+ * Three of the four are stored lower-case. LinkedIn is stored camelCase:
+ * `VR_CMS_API/src/shared/typeMapping.js:9` keys it `'linkedIn'` and
+ * `services/sync/linkedIn.js:41` writes `platform: 'linkedIn'` onto every
+ * document it syncs. The public read matches that field EXACTLY, with no
+ * normalisation at either end:
+ * `VR_Client_API/src/services/tenant/getIntegrationObjects.js:183` builds
+ * `{ groupID, platform: type }` straight from the query string, and that file
+ * contains no `toLowerCase` at all (both read on their checked-out refs,
+ * `feat/social-display-backend` and `main`, 2026-10-01).
+ *
+ * So the two directions need different spellings and this map is where they
+ * part company. Everything INSIDE this module compares lower-cased, because a
+ * binding carries whatever the author spelled and a case-sensitive comparison
+ * here would be a silent miss. But a lower-cased value that LEAVES for a query
+ * matches no document, forever, and nothing goes red anywhere: the band simply
+ * renders empty, which is indistinguishable from an owner who has not posted.
+ * `canonicalIntegrationType()` is the one crossing, and `getIntegrationItems()`
+ * in `../collections/index.ts` is the one caller that has to make it.
+ */
+const SOCIAL_POST_PROVIDERS: ReadonlyMap<string, string> = new Map([
+  ['instagram', 'instagram'],
+  ['tiktok', 'tiktok'],
+  ['facebook', 'facebook'],
+  ['linkedin', 'linkedIn'],
 ]);
 
 export interface SocialBandConfig {
@@ -178,7 +202,68 @@ export function socialBandItems(
   return out.sort(newestFirst);
 }
 
-/** Is this integration type one whose objects are social posts? */
+/**
+ * Is this integration type one whose objects are social posts?
+ *
+ * The ONE allowlist for that question on the live read path.
+ * `../composition/bindingTargets.ts` filters the per-platform ticks through
+ * this too, so the list that decides what gets FETCHED and the list that
+ * decides what gets SHOWN cannot drift: a ticked `stripe` used to be added to
+ * the prefetch set by that collector while this module refused it, which put a
+ * payments provider one `integrationTypes.find(isPaymentsProvider)` away from
+ * being resolved as a page's storefront.
+ */
 export function isSocialBandProvider(type: string): boolean {
   return SOCIAL_POST_PROVIDERS.has(lower(type));
+}
+
+/**
+ * The spelling an integration type is STORED under, for a value about to be
+ * put on a query string.
+ *
+ * Identity for everything this module does not know about, which is the whole
+ * non-social set (`stripe`, `square`, `shopify`, …). They are already stored
+ * lower-case, so passing them through unchanged is not a gap: this function
+ * canonicalises the one spelling that differs and refuses to invent the rest.
+ *
+ * See `SOCIAL_POST_PROVIDERS` above for why `linkedin` is the only entry whose
+ * value differs from its key, and why getting it wrong is silent.
+ */
+export function canonicalIntegrationType(type: string): string {
+  return SOCIAL_POST_PROVIDERS.get(lower(type)) ?? type;
+}
+
+/**
+ * Apply every social band on a page to the map of fetched integration items,
+ * in place.
+ *
+ * ── IT READS A SNAPSHOT AND WRITES THE LIVE MAP, AND THAT IS THE POINT ────
+ *
+ * The loop writes one provider's entry per iteration while the band it is
+ * building reads OTHER providers' entries, so reading the same map it writes
+ * makes the answer depend on the order the owner happened to drag the blocks
+ * in. Measured on the real modules: with one band bound to `tiktok` skipping
+ * `tt1`, and a second bound to `instagram` ticking both platforms and skipping
+ * nothing, authoring the TikTok band first rendered the Instagram band without
+ * `tt1`, and authoring it second rendered it with. Same data, two pages.
+ *
+ * A skip is per section (reason 2 in this module's header). A section that did
+ * not ask for it must not inherit it, which is only true while every band
+ * resolves against the items AS FETCHED.
+ *
+ * It lives here rather than inline in `buildPageContext` so a test can drive
+ * the LOOP. `socialBandItems` alone cannot see this: a test that hands it a
+ * frozen pool through a closure is testing the shape that is already correct.
+ */
+export function applySocialBands(
+  itemsByIntegration: Map<string, ContentItem[]>,
+  blocks: readonly BlockLike[] | undefined,
+): void {
+  const fetched = new Map(itemsByIntegration);
+  for (const [provider, band] of socialBandConfigs(blocks)) {
+    itemsByIntegration.set(
+      provider,
+      socialBandItems(band, (platform) => fetched.get(platform)),
+    );
+  }
 }

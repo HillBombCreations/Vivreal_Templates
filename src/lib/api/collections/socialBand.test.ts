@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { socialBandConfigs, socialBandItems, isSocialBandProvider } from './socialBand.ts';
+import {
+  applySocialBands,
+  canonicalIntegrationType,
+  isSocialBandProvider,
+  socialBandConfigs,
+  socialBandItems,
+} from './socialBand.ts';
 import type { ContentItem } from '@/types/ContentItem';
 
 /**
@@ -142,13 +148,39 @@ test('[B3.2-C] the stored post is BYTE IDENTICAL before and after a skip', () =>
   assert.equal(JSON.stringify(POOL), before, 'the skip mutated a stored post, so it is an edit');
 });
 
-test('[B3.2] a skip on one section does not hide the post on another', () => {
-  // Per section, which is reason 2 for storing it on the binding. The skip is
-  // read per band, so a second page reading the same platform is untouched.
+test('[B3.2] a skip on one PAGE does not hide the post on another page', () => {
+  // Renamed to what it proves. It was called "on another SECTION", which is a
+  // stronger claim than two separate `socialBandConfigs` calls can make: two
+  // calls are two PAGES, because a page is the unit this function is given.
+  // The same-page case is the test below, and it does not hold.
   const skipped = socialBandConfigs([band('instagram', { skippedPostIds: ['ig1'] })]);
   const other = socialBandConfigs([band('instagram')]);
   assert.deepEqual(socialBandItems(skipped.get('instagram')!, itemsFor).map((i) => i.id), ['ig2']);
   assert.deepEqual(socialBandItems(other.get('instagram')!, itemsFor).map((i) => i.id), ['ig1', 'ig2']);
+});
+
+test('[B3.2] KNOWN LIMIT: two bands on ONE page bound to one provider SHARE their skips', () => {
+  // Stated as a test rather than left in a docblock, because the docblock
+  // above `socialBandConfigs` says skips are unioned and the test next to it
+  // was named as though they were not. One of the two had to be wrong and a
+  // reader had no way to tell which.
+  //
+  // The cause is the renderer's by-provider getter: `getIntegrationItems(type)`
+  // takes a provider and nothing else, so one provider has exactly one entry
+  // and two bands wanting different contents have one place to put them.
+  // Unioning is the chosen degrade (it only ever shows LESS, never a post an
+  // owner hid), not an accident.
+  const cfgs = socialBandConfigs([
+    band('instagram', { skippedPostIds: ['ig1'] }),
+    band('instagram', { skippedPostIds: ['ig2'] }),
+  ]);
+  assert.deepEqual([...cfgs.get('instagram')!.skipped].sort(), ['ig1', 'ig2']);
+  assert.deepEqual(socialBandItems(cfgs.get('instagram')!, itemsFor).map((i) => i.id), []);
+
+  // The paired allow, which is what stops this reading as "skips leak
+  // everywhere": ONE band on the page hides only what it asked to hide.
+  const alone = socialBandConfigs([band('instagram', { skippedPostIds: ['ig1'] })]);
+  assert.deepEqual(socialBandItems(alone.get('instagram')!, itemsFor).map((i) => i.id), ['ig2']);
 });
 
 test('[B3.1] an undated post sorts LAST rather than wherever the sort put it', () => {
@@ -157,4 +189,117 @@ test('[B3.1] an undated post sorts LAST rather than wherever the sort put it', (
   const cfgs = socialBandConfigs([band('instagram')]);
   const items = socialBandItems(cfgs.get('instagram')!, (p) => pool[p]);
   assert.deepEqual(items.map((i) => i.id), ['ig1', 'ig2', 'ig3']);
+});
+
+/* ------------------------------------------------------------------ */
+/*  The LOOP, not the function                                         */
+/* ------------------------------------------------------------------ */
+
+test('[B3.1] a band reads the items AS FETCHED, whatever order the bands were authored in', () => {
+  // THE TEST THAT DRIVES THE LOOP. Everything above drives `socialBandItems`
+  // through a closure over a frozen pool, which is the one shape that cannot
+  // see this: the bug is not in resolving a band, it is in resolving the
+  // SECOND band against a map the FIRST one has already rewritten.
+  //
+  // The scenario is the smallest one that shows it. A TikTok band hides
+  // `tt1`. An Instagram band ticks both platforms and hides nothing. Reading
+  // the live map, the Instagram band inherits the TikTok band's skip whenever
+  // the TikTok band happens to be authored first: same data, same page, two
+  // different renders decided by the order the owner dragged the blocks in.
+  const pool = (): Map<string, ContentItem[]> =>
+    new Map([
+      ['instagram', [post('ig1', 'instagram', '2026-09-20T09:00:00Z')]],
+      [
+        'tiktok',
+        [
+          post('tt1', 'tiktok', '2026-09-15T09:00:00Z'),
+          post('tt2', 'tiktok', '2026-09-10T09:00:00Z'),
+        ],
+      ],
+    ]);
+
+  const tiktokBand = band('tiktok', { skippedPostIds: ['tt1'] });
+  const instagramBand = band('instagram', { platforms: ['instagram', 'tiktok'] });
+
+  for (const [label, blocks] of [
+    ['tiktok band authored FIRST', [tiktokBand, instagramBand]],
+    ['instagram band authored FIRST', [instagramBand, tiktokBand]],
+  ] as const) {
+    const items = pool();
+    applySocialBands(items, blocks);
+
+    assert.deepEqual(
+      items.get('instagram')!.map((i) => i.id),
+      ['ig1', 'tt1', 'tt2'],
+      `${label}: the Instagram band must not inherit the TikTok band's skip`,
+    );
+    // The paired assertion, and it is what stops the fix being "ignore the
+    // skips". The band that DID ask to hide `tt1` still hides it.
+    assert.deepEqual(
+      items.get('tiktok')!.map((i) => i.id),
+      ['tt2'],
+      `${label}: the TikTok band's own skip must still apply`,
+    );
+  }
+});
+
+test('[B3.1-C] applying the bands leaves a provider nobody bound alone', () => {
+  // The control for the loop. A page can bind a storefront alongside a social
+  // band, and `applySocialBands` writes into the SAME map those items live
+  // in, so "it only rewrites what it was asked to" has to be asserted rather
+  // than assumed.
+  const products = [post('sku1', 'stripe', '2026-09-01T09:00:00Z')];
+  const items = new Map<string, ContentItem[]>([
+    ['instagram', [...IG]],
+    ['stripe', products],
+  ]);
+  applySocialBands(items, [band('instagram', { skippedPostIds: ['ig1'] })]);
+
+  assert.equal(items.get('stripe'), products, 'the storefront entry was replaced');
+  assert.deepEqual(items.get('instagram')!.map((i) => i.id), ['ig2']);
+});
+
+/* ------------------------------------------------------------------ */
+/*  The wire crossing: lower-case inside, stored spelling outside      */
+/* ------------------------------------------------------------------ */
+
+test('[wire] a platform leaving for a query carries the spelling it is STORED under', () => {
+  // The hazard this pins: everything in this module compares lower-cased, and
+  // `platform` is stored camelCase for LinkedIn and matched EXACTLY upstream
+  // (`VR_CMS_API` sync/linkedIn.js writes `platform: 'linkedIn'`;
+  // `VR_Client_API` tenant/getIntegrationObjects.js builds
+  // `{ groupID, platform: type }` with no normalisation anywhere in the file).
+  // A lower-cased `linkedin` on the wire therefore matches nothing, forever,
+  // and nothing goes red: the owner's band just renders empty.
+  assert.equal(canonicalIntegrationType('linkedin'), 'linkedIn');
+  assert.equal(canonicalIntegrationType('LinkedIn'), 'linkedIn');
+  assert.equal(canonicalIntegrationType('  LINKEDIN  '), 'linkedIn');
+
+  // The control that keeps this from being "uppercase the I in everything":
+  // the other three ARE stored lower-case and must come back unchanged.
+  for (const platform of ['instagram', 'tiktok', 'facebook']) {
+    assert.equal(canonicalIntegrationType(platform), platform);
+    assert.equal(canonicalIntegrationType(platform.toUpperCase()), platform);
+  }
+
+  // And the control for the other direction: a type this module knows nothing
+  // about is passed through untouched rather than invented a spelling for.
+  for (const other of ['stripe', 'square', 'shopify', 'mailchimp', 'x']) {
+    assert.equal(canonicalIntegrationType(other), other);
+  }
+});
+
+test('[wire] the MAP stays lower-cased, because that is the key the renderer asks with', () => {
+  // The other half of the crossing, and the reason canonicalisation cannot
+  // simply be done everywhere. The renderer reads
+  // `getIntegrationItems((type ?? '').toLowerCase())`, so an entry stored
+  // under `linkedIn` would never be found. Lower-case in the map, stored
+  // spelling on the wire, and `canonicalIntegrationType` is the only crossing.
+  const items = new Map<string, ContentItem[]>([
+    ['linkedin', [post('li1', 'linkedin', '2026-09-20T09:00:00Z')]],
+  ]);
+  applySocialBands(items, [band('linkedIn')]);
+
+  assert.deepEqual([...items.keys()], ['linkedin'], 'the band must key its result lower-cased');
+  assert.deepEqual(items.get('linkedin')!.map((i) => i.id), ['li1']);
 });
