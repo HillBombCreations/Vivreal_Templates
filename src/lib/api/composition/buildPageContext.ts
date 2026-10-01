@@ -11,6 +11,7 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
+import { socialBandConfigs, socialBandItems } from '@/lib/api/collections/socialBand';
 import { isPaymentsProvider } from '@/lib/payments';
 import { decidePageEmptiness } from './pageEmptiness';
 import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
@@ -128,6 +129,26 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const itemsByIntegration = new Map<string, ContentItem[]>(
     integrationEntries.map(([type, items]) => [type, items]),
   );
+
+  // B3.1 / B3.2 - the combined band and the per post skip, applied HERE
+  // because this is the last place that can see both the page's bindings and
+  // the fetched items. The renderer asks for a band's items by PROVIDER and
+  // nothing else (`blocks.ts`: `ctx.data.getIntegrationItems(
+  // b.integrationProvider)`), so the only lever the consumer has is what sits
+  // under that key.
+  //
+  // This is what makes the control real rather than editor-deep: unticking a
+  // platform removes its posts from the PUBLISHED page, and skipping a post
+  // removes that post, because both happen before the renderer ever sees an
+  // item. Nothing is mutated: the stored post is untouched and the platform's
+  // own map entry is left exactly as fetched, so a second band bound to that
+  // platform still reads it whole.
+  for (const [provider, band] of socialBandConfigs(page.blocks as never)) {
+    itemsByIntegration.set(
+      provider,
+      socialBandItems(band, (platform) => itemsByIntegration.get(platform)),
+    );
+  }
 
   // 3. Sync getters over the prefetched maps. `getSignedUrl` omitted (see docblock).
   const data: PageDataContextValue = {

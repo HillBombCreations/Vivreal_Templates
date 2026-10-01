@@ -84,6 +84,20 @@ function collectFromBlocks(
         const t = binding.integrationProvider.toLowerCase();
         if (t) integrationTypes.add(t);
       }
+      // B3.1 - a combined social band shows several platforms through ONE
+      // binding, and the prefetch has to fetch all of them or the band renders
+      // only the provider it happens to be bound to. The ticks live on the
+      // binding's own sectionConfig; `socialBandConfigs` is what READS them,
+      // and this is only the fetch list, so an unticked or misspelled value
+      // costs a wasted fetch rather than a wrong band.
+      const ticked = (binding.sectionConfig as { platforms?: unknown } | undefined)?.platforms;
+      if (Array.isArray(ticked)) {
+        for (const platform of ticked) {
+          if (typeof platform !== 'string') continue;
+          const t = platform.trim().toLowerCase();
+          if (t) integrationTypes.add(t);
+        }
+      }
     }
   }
 }
