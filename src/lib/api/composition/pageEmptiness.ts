@@ -54,12 +54,48 @@ export const hasStaticContentBlock = (blocks: unknown): boolean =>
 
 /**
  * One collection or integration read, reduced to the two things the emptiness
- * verdict needs: how many items came back, and whether the read happened.
+ * verdict needs: how many rows came back, and whether the read happened.
  */
 export interface PageDataRead {
-  readonly count: number;
+  /**
+   * How many rows the READ returned, before anything that maps a row to a
+   * displayable item had a chance to drop one.
+   *
+   * It is named for that and not called `count`, because the obvious value to
+   * put here is `items.length` and `items.length` is wrong. The social post
+   * mapper drops any row with no re-hosted picture or no outbound address
+   * (`../collections/socialPost.ts`), so a feed that came back with six posts
+   * can map to zero items. Counted after the mapper, that read is
+   * indistinguishable from an integration that holds nothing, and on a page
+   * whose only body is that band the verdict below turns it into
+   * `notFound()` — a 404 on a live, published URL, which tells a crawler to
+   * drop it.
+   *
+   * A feed with nothing to show is an empty section. It is never a page that
+   * does not exist, and after this rename it cannot be made into one by
+   * passing the wrong number without noticing.
+   */
+  readonly sourceCount: number;
   /** See `../degradedRead.ts`. `[]` is the same value either way. */
   readonly degraded: boolean;
+}
+
+/**
+ * The ONE place a fetch result becomes an emptiness input.
+ *
+ * It exists so there is a single line to point a test at. `buildPageContext`
+ * imports `server-only`, so nothing can execute it under `node --test`, and
+ * before this the conversion was an inline `.map()` inside that unreachable
+ * module — the exact expression that has to be right was the one expression
+ * no test could reach.
+ *
+ * The parameter type names `sourceCount`, so a caller handing it a mapped
+ * `items.length` has to rename the field to do it.
+ */
+export function pageDataReads(
+  results: readonly { readonly sourceCount: number; readonly degraded: boolean }[],
+): PageDataRead[] {
+  return results.map(({ sourceCount, degraded }) => ({ sourceCount, degraded }));
 }
 
 /**
@@ -132,11 +168,11 @@ export function decidePageEmptiness(args: {
 
   if (!couldBeEmpty) return { isEmpty: false, emptinessUnknown: false };
 
-  // ITEMS IN HAND SETTLE IT, and they settle it before the degraded flag is
-  // consulted. `count > 0` is POSITIVE PROOF that a read succeeded: a degraded
-  // read always resolves to the empty sentinel (`../degradedRead.ts`), so
-  // `degraded` implies `count === 0` unconditionally and a non-zero count can
-  // never be a fallback artifact.
+  // ROWS IN HAND SETTLE IT, and they settle it before the degraded flag is
+  // consulted. `sourceCount > 0` is POSITIVE PROOF that a read succeeded: a
+  // degraded read always resolves to the empty sentinel
+  // (`../degradedRead.ts`), so `degraded` implies `sourceCount === 0`
+  // unconditionally and a non-zero count can never be a fallback artifact.
   //
   // Checking `degraded` first instead looks safer and is not. A generic page
   // routinely carries more than one binding: a collection block's primary plus
@@ -151,7 +187,7 @@ export function decidePageEmptiness(args: {
   // `count === 0` as evidence of emptiness, which is exactly what a failed read
   // produces. This reads `count > 0` as evidence of a successful read, which a
   // failed read cannot produce. One direction is sound and the other is not.
-  const everyReadEmpty = args.reads.every((read) => read.count === 0);
+  const everyReadEmpty = args.reads.every((read) => read.sourceCount === 0);
   if (!everyReadEmpty) return { isEmpty: false, emptinessUnknown: false };
 
   // Nothing came back from anything. Now, and only now, does it matter whether

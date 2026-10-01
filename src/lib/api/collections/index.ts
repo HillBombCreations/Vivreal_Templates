@@ -12,6 +12,7 @@ import { readOrDegrade } from '../degradedRead';
 import { readRichTextImageUrls } from '../richTextImageUrls';
 import { toContentItem } from './mapItem';
 import { isSocialPostPlatform, toSocialPostItems } from './socialPost';
+import { canonicalIntegrationType } from './socialBand';
 import type { ContentItem } from '@/types/ContentItem';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -44,6 +45,26 @@ interface FetchOpts {
 interface FetchResult {
   items: ContentItem[];
   totalCount: number;
+  /**
+   * How many rows this read returned, BEFORE the mapper that turns a row into
+   * a displayable item had a chance to drop one.
+   *
+   * Equal to `items.length` for every read whose mapper is one-to-one, which
+   * is all of them except a social one: `toSocialPostItems` drops any post
+   * with no re-hosted picture or no outbound address, so six rows can become
+   * zero items.
+   *
+   * It is NOT `totalCount`. `totalCount` is how many documents matched
+   * upstream, which on a paged read is larger than what came back; this is
+   * what this window actually returned, which is the only number that answers
+   * "did this read find anything".
+   *
+   * The one consumer is `../composition/pageEmptiness.ts`, whose verdict can
+   * end in `notFound()`. See `PageDataRead.sourceCount` there for why counting
+   * the mapped items instead turns an owner's picture-less feed into a 404 on
+   * a live URL.
+   */
+  sourceCount: number;
   /**
    * True when VR_Client_API could not be read and `items` is a placeholder
    * rather than an answer.
@@ -149,6 +170,7 @@ export async function getCollectionItems(
   return {
     items: items.map((item) => toContentItem(item, 'collection')),
     totalCount,
+    sourceCount: items.length,
     degraded,
     richTextImageUrls,
   };
@@ -168,15 +190,31 @@ export async function getCollectionItems(
  * `items` is what is displayable. No caller paginates an integration read
  * today, and a social band is a single window by construction.
  *
- * @param type - Integration type (e.g. "stripe", "tiktok")
+ * THE WIRE VALUE IS CANONICALISED AND THE ARGUMENT IS NOT. Callers reach this
+ * with a lower-cased type, because that is how a page's bindings carry it and
+ * how `itemsByIntegration` is keyed. `platform` is stored camelCase for
+ * LinkedIn and matched EXACTLY upstream, with no normalisation at either end,
+ * so `type=linkedin` on the query string matches no document, forever, and
+ * nothing goes red: the owner's band renders empty. `canonicalIntegrationType`
+ * is identity for every other provider. See `./socialBand.ts` for the two
+ * refs that were read to establish that.
+ *
+ * The cache tag is built from the SAME canonical value, so a read and the
+ * `integration:<type>` tag `/api/revalidate` computes from a webhook's stored
+ * type agree on one spelling. Two spellings would not fail either: the edit
+ * would simply stay invisible until the TTL expired, which is the drift
+ * `./cacheTags.ts` exists to make impossible.
+ *
+ * @param type - Integration type (e.g. "stripe", "tiktok"), in any casing
  * @param opts - Pagination, sort, search, and filter options
  */
 export async function getIntegrationItems(
   type: string,
   opts?: FetchOpts
 ): Promise<FetchResult> {
+  const storedType = canonicalIntegrationType(type);
   const params = buildParams(opts);
-  params.set('type', type);
+  params.set('type', storedType);
 
   const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
     emptyPage,
@@ -186,7 +224,7 @@ export async function getIntegrationItems(
         fallback,
         SITE_CACHE_TTL_SECONDS,
         undefined,
-        integrationTags(SITE_ID, type)
+        integrationTags(SITE_ID, storedType)
       )
   );
 
@@ -196,6 +234,7 @@ export async function getIntegrationItems(
       ? toSocialPostItems(items, type)
       : items.map((item) => toContentItem(item, 'integration', type)),
     totalCount,
+    sourceCount: items.length,
     degraded,
     richTextImageUrls,
   };

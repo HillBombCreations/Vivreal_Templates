@@ -11,9 +11,9 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
-import { socialBandConfigs, socialBandItems } from '@/lib/api/collections/socialBand';
+import { applySocialBands } from '@/lib/api/collections/socialBand';
 import { isPaymentsProvider } from '@/lib/payments';
-import { decidePageEmptiness } from './pageEmptiness';
+import { decidePageEmptiness, pageDataReads } from './pageEmptiness';
 import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 
 export interface PageContextResult {
@@ -92,16 +92,22 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
 
   // 2. Fetch everything in parallel — server-side, already-signed.
   //
-  // Every entry carries `degraded` alongside its items. That third slot is the
-  // whole fix: the fetch helpers swallow an upstream failure and hand back an
-  // empty envelope, so by the time these arrays exist a failed read and an
-  // empty collection are the same value and no amount of inspecting them can
-  // tell the two apart. Step 5 must not try; it reads the flag instead.
+  // Every entry carries `degraded` alongside its items. That flag is the whole
+  // fix: the fetch helpers swallow an upstream failure and hand back an empty
+  // envelope, so by the time these arrays exist a failed read and an empty
+  // collection are the same value and no amount of inspecting them can tell
+  // the two apart. Step 5 must not try; it reads the flag instead.
+  //
+  // Each entry is an OBJECT and not a tuple. It spreads the whole fetch
+  // result, and the field step 5 must not confuse with `items.length` is
+  // `sourceCount`: reading the wrong slot of a wide positional tuple is
+  // exactly how that confusion gets written by accident, and the two counts
+  // differ only on a social read, which is the read nobody is looking at.
   const [collectionEntries, integrationEntries] = await Promise.all([
     Promise.all(
       collectionIds.map(async (id) => {
-        const { items, degraded, richTextImageUrls } = await getCollectionItems(id, { limit: 100 });
-        return [id, items, degraded, richTextImageUrls] as const;
+        const read = await getCollectionItems(id, { limit: 100 });
+        return { key: id, ...read };
       }),
     ),
     Promise.all(
@@ -111,23 +117,23 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
         // filter/sort/search (controlled query) applies. Other integrations
         // use the plain fetch.
         if (isPaymentsProvider(type) || page.format === 'products') {
-          const { items, degraded, richTextImageUrls } = await getProductsAsContentItems({
+          const read = await getProductsAsContentItems({
             integrationType: type,
             ...productQuery,
           });
-          return [type, items, degraded, richTextImageUrls] as const;
+          return { key: type, ...read };
         }
-        const { items, degraded, richTextImageUrls } = await getIntegrationItems(type, { limit: 100 });
-        return [type, items, degraded, richTextImageUrls] as const;
+        const read = await getIntegrationItems(type, { limit: 100 });
+        return { key: type, ...read };
       }),
     ),
   ]);
 
   const itemsByCollection = new Map<string, ContentItem[]>(
-    collectionEntries.map(([id, items]) => [id, items]),
+    collectionEntries.map(({ key, items }) => [key, items]),
   );
   const itemsByIntegration = new Map<string, ContentItem[]>(
-    integrationEntries.map(([type, items]) => [type, items]),
+    integrationEntries.map(({ key, items }) => [key, items]),
   );
 
   // B3.1 / B3.2 - the combined band and the per post skip, applied HERE
@@ -140,15 +146,17 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   // This is what makes the control real rather than editor-deep: unticking a
   // platform removes its posts from the PUBLISHED page, and skipping a post
   // removes that post, because both happen before the renderer ever sees an
-  // item. Nothing is mutated: the stored post is untouched and the platform's
-  // own map entry is left exactly as fetched, so a second band bound to that
-  // platform still reads it whole.
-  for (const [provider, band] of socialBandConfigs(page.blocks as never)) {
-    itemsByIntegration.set(
-      provider,
-      socialBandItems(band, (platform) => itemsByIntegration.get(platform)),
-    );
-  }
+  // item. The STORED POST is untouched, which is the claim that decides this
+  // is a hide and not an edit.
+  //
+  // What is NOT claimed here any more: that the map entries survive. They do
+  // not, by design — each band replaces its own provider's entry, which is the
+  // only lever the renderer's by-provider getter leaves. The guarantee that
+  // matters is that every band resolves against the items AS FETCHED, and that
+  // one lives in `applySocialBands`, which snapshots before it writes. The
+  // sentence that used to sit here said the opposite and the loop it described
+  // did the opposite of that: authoring order changed the output.
+  applySocialBands(itemsByIntegration, page.blocks);
 
   // 3. Sync getters over the prefetched maps. `getSignedUrl` omitted (see docblock).
   const data: PageDataContextValue = {
@@ -179,17 +187,25 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   // rather than over the maps: the maps hold only items, and the flag that says
   // whether those items are an answer or a placeholder does not survive the
   // trip into them.
-  const reads = [...collectionEntries, ...integrationEntries].map(
-    ([, items, degraded]) => ({ count: items.length, degraded }),
-  );
+  //
+  // The count is the read's SOURCE count, never `items.length`. For a social
+  // read those two differ: the post mapper drops any row with no re-hosted
+  // picture or no outbound address, so a feed that came back with six posts
+  // can map to zero items. Counting the mapped items would make that read
+  // indistinguishable from an integration holding nothing, and on a page whose
+  // only body is the band that is a `notFound()` — a 404 on a URL that is live
+  // and published, which is a deindexing instruction to a crawler. A feed with
+  // nothing to show is an empty section (the renderer drops it outright:
+  // `dropHiddenIntegrationSections`), never a page that does not exist.
+  const reads = pageDataReads([...collectionEntries, ...integrationEntries]);
   // H177 - merge the shell's map with every per-read map, shell FIRST so a
   // per-page read wins on the (harmless) overlap. Built unconditionally: an
   // all-empty merge is `{}`, which resolves nothing and leaves the renderer's
   // existing fail-closed drop exactly as it was.
   const richTextImageUrls = mergeRichTextImageUrls(
     siteData.richTextImageUrls,
-    ...collectionEntries.map(([, , , urls]) => urls),
-    ...integrationEntries.map(([, , , urls]) => urls),
+    ...collectionEntries.map(({ richTextImageUrls: urls }) => urls),
+    ...integrationEntries.map(({ richTextImageUrls: urls }) => urls),
   );
 
   const { isEmpty, emptinessUnknown } = decidePageEmptiness({

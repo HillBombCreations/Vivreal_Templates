@@ -28,7 +28,20 @@ export async function getProductsAsContentItems(opts: {
   filters?: Record<string, string>;
   search?: string;
   sort?: string;
-}): Promise<{ items: ContentItem[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+}): Promise<{
+  items: ContentItem[];
+  degraded: boolean;
+  richTextImageUrls: Record<string, string>;
+  /**
+   * Rows read, before mapping. One-to-one here (the map below drops nothing),
+   * so it always equals `items.length` — but `buildPageContext` feeds every
+   * read into the same emptiness verdict, and that verdict reads
+   * `sourceCount`. Omitting it would make this the one read whose count had to
+   * be derived at the call site, which is the derivation `PageDataRead`
+   * exists to remove.
+   */
+  sourceCount: number;
+}> {
   // `getProductsRead`, not `getProducts`: the only consumer of this bridge is
   // `buildPageContext`, whose emptiness verdict can end in a 404. An empty
   // catalogue and a catalogue that could not be read are the same array here,
@@ -58,5 +71,5 @@ export async function getProductsAsContentItems(opts: {
     };
   });
 
-  return { items, degraded, richTextImageUrls };
+  return { items, degraded, richTextImageUrls, sourceCount: products.length };
 }

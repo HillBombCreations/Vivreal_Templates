@@ -149,6 +149,72 @@ test('REFUSE: the fixture id can only have arrived via the hero (the mutation co
   );
 });
 
+// ─── THE PER-PLATFORM TICKS GO THROUGH ONE ALLOWLIST ──────────────────
+
+/** A social band block, with whatever ticks the case under test needs. */
+const socialBand = (provider: string, sectionConfig?: Record<string, unknown>) => ({
+  id: 'band',
+  type: { kind: 'layout', dispatchId: 'media-mosaic' },
+  config: { bindings: [{ integrationProvider: provider, ...(sectionConfig ? { sectionConfig } : {}) }] },
+});
+
+test('ALLOW: a ticked social platform is prefetched, so a combined band is not half-empty', () => {
+  const { integrationTypes } = collectTargets(
+    page({ blocks: [socialBand('instagram', { platforms: ['instagram', 'TikTok'] })] }),
+    null,
+  );
+  assert.deepEqual(integrationTypes.sort(), ['instagram', 'tiktok']);
+});
+
+test('REFUSE: a tick on a NON-social type is not prefetched, and cannot become a storefront', () => {
+  // Two readers of the same key had two allowlists. This collector added any
+  // string; `socialBandConfigs` refuses everything outside the four social
+  // providers. The gap is not merely a wasted fetch: two consumers resolve a
+  // provider by SEARCHING this list rather than being handed one, and
+  // `[slug]/[itemId]/page.tsx` picks a page's storefront with
+  // `integrationTypes.find(isPaymentsProvider)`. A ticked `stripe` on a social
+  // band would have answered that search.
+  const { integrationTypes } = collectTargets(
+    page({
+      blocks: [socialBand('instagram', { platforms: ['instagram', 'stripe', 'square', 'x', 'shopify'] })],
+    }),
+    null,
+  );
+  assert.deepEqual(
+    integrationTypes,
+    ['instagram'],
+    'only the band provider and its social ticks may be collected',
+  );
+
+  // The paired allow, and the reason this is not "ticks are ignored": the
+  // bound provider is still collected from `integrationProvider`, and a
+  // genuine social tick beside the refused ones still gets through.
+  const mixed = collectTargets(
+    page({ blocks: [socialBand('tiktok', { platforms: ['tiktok', 'facebook', 'stripe'] })] }),
+    null,
+  );
+  assert.deepEqual(mixed.integrationTypes.sort(), ['facebook', 'tiktok']);
+});
+
+test('REFUSE: a non-social BINDING is untouched by the tick filter', () => {
+  // The control for the control. The filter is on `sectionConfig.platforms`
+  // only. A storefront binding collects exactly as it always did, or this
+  // change would have taken every products page down with it.
+  const { integrationTypes } = collectTargets(
+    page({
+      blocks: [
+        {
+          id: 'shop',
+          type: { kind: 'layout', dispatchId: 'products' },
+          config: { bindings: [{ integrationProvider: 'stripe' }] },
+        },
+      ],
+    }),
+    null,
+  );
+  assert.deepEqual(integrationTypes, ['stripe']);
+});
+
 // ─── THE MECHANISM REFUSES WHEN IT SHOULD ────────────────────────────────────
 
 test('REFUSE: a hero with no collection reference collects nothing, and never an empty id', () => {
@@ -309,7 +375,7 @@ test('SOURCE PIN: buildPageContext fetches the collected ids and keys the map by
     'every collected id must be fetched',
   );
   assert.ok(
-    /collectionEntries\.map\(\(\[id, items\]\) => \[id, items\]\)/.test(code),
+    /collectionEntries\.map\(\(\{ key, items \}\) => \[key, items\]\)/.test(code),
     'the fetched items must be keyed by the collected id, unmodified',
   );
   assert.ok(

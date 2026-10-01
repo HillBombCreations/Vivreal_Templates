@@ -11,10 +11,17 @@
  * `server-only`.
  *
  * Type-only imports are fine here: `--experimental-strip-types` erases them,
- * so neither specifier is resolved at runtime.
+ * so neither specifier is resolved at runtime. The one VALUE import it does
+ * take, `isSocialBandProvider`, is from a module with the same no-runtime-
+ * dependency property and is imported with its `.ts` extension for the same
+ * reason.
  */
 import type { Block } from '@hillbombcreations/site-renderer';
 import type { PageConfig } from '@/types/SiteData';
+// The ONE allowlist for "is this a social platform", shared with the module
+// that READS the same ticks. Dependency-free and `.ts`-extension imported for
+// the same reason this module is pure: `node --test` resolves no extensions.
+import { isSocialBandProvider } from '../collections/socialBand.ts';
 
 /**
  * The distinct data targets a page needs, flattened across every binding role.
@@ -87,15 +94,28 @@ function collectFromBlocks(
       // B3.1 - a combined social band shows several platforms through ONE
       // binding, and the prefetch has to fetch all of them or the band renders
       // only the provider it happens to be bound to. The ticks live on the
-      // binding's own sectionConfig; `socialBandConfigs` is what READS them,
-      // and this is only the fetch list, so an unticked or misspelled value
-      // costs a wasted fetch rather than a wrong band.
+      // binding's own sectionConfig.
+      //
+      // FILTERED THROUGH THE SAME ALLOWLIST `socialBandConfigs` READS WITH,
+      // and that is not tidiness. This collector used to add any string on
+      // that key, while the reader refused everything outside the four social
+      // providers, so a `platforms: ['stripe']` tick put `stripe` into
+      // `integrationTypes` with no band that would ever consume it. Two
+      // consumers downstream resolve a provider by SEARCHING that list rather
+      // than by being handed one: `[slug]/[itemId]/page.tsx` picks a page's
+      // storefront with `integrationTypes.find(isPaymentsProvider)`, and
+      // `buildPageContext` routes a payments type through the product bridge.
+      // So a tick on a key no layout registers today was one authored string
+      // away from deciding which payments provider a detail page reads. The
+      // collision is not reachable right now (`platforms` is not a configKey
+      // on any registered layout), which is exactly why it is worth closing
+      // while it costs one predicate.
       const ticked = (binding.sectionConfig as { platforms?: unknown } | undefined)?.platforms;
       if (Array.isArray(ticked)) {
         for (const platform of ticked) {
           if (typeof platform !== 'string') continue;
           const t = platform.trim().toLowerCase();
-          if (t) integrationTypes.add(t);
+          if (t && isSocialBandProvider(t)) integrationTypes.add(t);
         }
       }
     }

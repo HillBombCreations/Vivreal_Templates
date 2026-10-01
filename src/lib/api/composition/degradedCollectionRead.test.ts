@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 // Explicit .ts extensions: runs under `node --experimental-strip-types --test`
 // (see package.json "test"), which has no tsconfig `paths` resolution.
 import { readOrDegrade } from '../degradedRead.ts';
-import { decidePageEmptiness, type PageDataRead } from './pageEmptiness.ts';
+import { decidePageEmptiness, pageDataReads, type PageDataRead } from './pageEmptiness.ts';
 
 /**
  * A DEGRADED COLLECTION READ MUST NOT 404 A REAL PUBLISHED PAGE.
@@ -128,7 +128,7 @@ const COLLECTION_ONLY_PAGE = {
 };
 
 test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
-  const reads: PageDataRead[] = [{ count: 0, degraded: true }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: true }];
   const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
   assert.equal(
     verdict.isEmpty,
@@ -143,7 +143,7 @@ test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
 });
 
 test('a GENUINELY empty generic page still reports empty, so it still 404s', () => {
-  const reads: PageDataRead[] = [{ count: 0, degraded: false }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false }];
   const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
   assert.equal(verdict.isEmpty, true, 'the emptiness 404 exists for a reason and is kept');
   assert.equal(verdict.emptinessUnknown, false);
@@ -152,7 +152,7 @@ test('a GENUINELY empty generic page still reports empty, so it still 404s', () 
 test('a page with items is neither empty nor unknown', () => {
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
-    reads: [{ count: 3, degraded: false }],
+    reads: [{ sourceCount: 3, degraded: false }],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
 });
@@ -164,8 +164,8 @@ test('one degraded read poisons the verdict even when a sibling read succeeded e
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: [
-      { count: 0, degraded: true },
-      { count: 0, degraded: false },
+      { sourceCount: 0, degraded: true },
+      { sourceCount: 0, degraded: false },
     ],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
@@ -184,12 +184,12 @@ test('PARTIAL DEGRADE: items in hand still render, and are NOT refused', () => {
   // likely the more bindings a page carries.
   const combos: PageDataRead[][] = [
     [
-      { count: 12, degraded: false },
-      { count: 0, degraded: true },
+      { sourceCount: 12, degraded: false },
+      { sourceCount: 0, degraded: true },
     ],
     [
-      { count: 0, degraded: true },
-      { count: 5, degraded: false },
+      { sourceCount: 0, degraded: true },
+      { sourceCount: 5, degraded: false },
     ],
   ];
   for (const reads of combos) {
@@ -203,7 +203,7 @@ test('PARTIAL DEGRADE: items in hand still render, and are NOT refused', () => {
 
 test('PARITY SWEEP: whatever rendered before still renders, for every read combination', () => {
   // The refusal is only ever allowed to replace a 404, never a page. This
-  // replays the old verdict (`reads.every(count === 0)`, verbatim from
+  // replays the old verdict (`reads.every(sourceCount === 0)`, verbatim from
   // `git show HEAD~1:buildPageContext.ts`) across the whole combination space
   // and fails if anything that used to render now does not.
   const counts = [0, 3];
@@ -217,10 +217,10 @@ test('PARITY SWEEP: whatever rendered before still renders, for every read combi
           // produce and is not worth asserting about.
           if ((d1 && c1 > 0) || (d2 && c2 > 0)) continue;
           const reads: PageDataRead[] = [
-            { count: c1, degraded: d1 },
-            { count: c2, degraded: d2 },
+            { sourceCount: c1, degraded: d1 },
+            { sourceCount: c2, degraded: d2 },
           ];
-          const renderedBefore = !reads.every((r) => r.count === 0);
+          const renderedBefore = !reads.every((r) => r.sourceCount === 0);
           const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
           const rendersNow = !verdict.isEmpty && !verdict.emptinessUnknown;
           if (renderedBefore) {
@@ -239,12 +239,12 @@ test('PARITY SWEEP: whatever rendered before still renders, for every read combi
 test('INVARIANT: isEmpty and emptinessUnknown are never both true', () => {
   const combos: PageDataRead[][] = [
     [],
-    [{ count: 0, degraded: false }],
-    [{ count: 0, degraded: true }],
-    [{ count: 2, degraded: true }],
+    [{ sourceCount: 0, degraded: false }],
+    [{ sourceCount: 0, degraded: true }],
+    [{ sourceCount: 2, degraded: true }],
     [
-      { count: 0, degraded: true },
-      { count: 5, degraded: false },
+      { sourceCount: 0, degraded: true },
+      { sourceCount: 5, degraded: false },
     ],
   ];
   for (const reads of combos) {
@@ -278,11 +278,11 @@ test('WEDDINGS/TEA-TIME: an authored static page is neither empty nor unknown, d
       },
     ],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ count: 0, degraded: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ count: 0, degraded: true }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -294,11 +294,11 @@ test('a form page is neither empty nor unknown, degraded or not', () => {
     format: 'standard',
     blocks: [{ id: 'f', type: { kind: 'page-template', dispatchId: 'form' }, enabled: true }],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ count: 0, degraded: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ count: 0, degraded: true }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -316,7 +316,7 @@ test('PARITY: a page with no bindings at all is still empty', () => {
 });
 
 test('PARITY: home, static and the two checkout formats are never empty', () => {
-  const reads: PageDataRead[] = [{ count: 0, degraded: false }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false }];
   assert.equal(
     decidePageEmptiness({ isHome: true, format: 'list', blocks: [], reads }).isEmpty,
     false,
@@ -328,6 +328,127 @@ test('PARITY: home, static and the two checkout formats are never empty', () => 
       `${format} must never be reported empty`,
     );
   }
+});
+
+// ---------------------------------------------------------------------------
+// A SOCIAL READ MUST NOT BE ABLE TO 404 A PAGE
+// ---------------------------------------------------------------------------
+//
+// The second shape of the same defect, and it is NOT a failed read. The social
+// post mapper drops any row with no re-hosted picture or no outbound address
+// (`../collections/socialPost.ts`), so a feed that came back with six posts
+// can legitimately map to zero displayable items. Counted after the mapper,
+// that read is byte-identical to an integration holding nothing, and on a page
+// whose only body is the band the verdict above turns it into `notFound()`.
+//
+// A 404 on a live, published URL is a deindexing instruction. A feed with
+// nothing to show is an empty section: the renderer already drops an
+// integration-bound section with no items outright
+// (`dropHiddenIntegrationSections`), so the page renders as itself minus the
+// band. That is a degrade an owner can see and fix. The 404 is not.
+
+/**
+ * A social read as `getIntegrationItems` returns it when the mapper kept
+ * nothing: six rows in, zero items out.
+ *
+ * Bound to a `const` rather than written inline at the call site on purpose.
+ * As a fresh object literal TypeScript's excess-property check would reject
+ * the `items` field, and dropping `items` would make the fixture stop showing
+ * the very gap it exists to describe.
+ */
+const SOCIAL_READ_ALL_DROPPED = { items: [], sourceCount: 6, degraded: false };
+
+/** The same page's read when the integration genuinely holds nothing. */
+const SOCIAL_READ_NOTHING_UPSTREAM = { items: [], sourceCount: 0, degraded: false };
+
+test('a social band whose every post was dropped renders an empty section, NOT a 404', () => {
+  const verdict = decidePageEmptiness({
+    ...COLLECTION_ONLY_PAGE,
+    reads: pageDataReads([SOCIAL_READ_ALL_DROPPED]),
+  });
+  assert.equal(
+    verdict.isEmpty,
+    false,
+    'six rows came back; the mapper dropping all six is not a page that does not exist',
+  );
+  assert.equal(
+    verdict.emptinessUnknown,
+    false,
+    'the read SUCCEEDED, so the verdict is knowable and the caller must not refuse either',
+  );
+});
+
+test('CONTROL: a page that is genuinely empty for non-social reasons still 404s', () => {
+  // The half that makes the test above mean something. Without it, "a social
+  // band never 404s" is also satisfied by an emptiness verdict that has simply
+  // stopped working, and the A Bakeshop Weddings and Tea-Time 404s that
+  // `pageEmptiness.ts` exists to get RIGHT would go unnoticed.
+  const verdict = decidePageEmptiness({
+    ...COLLECTION_ONLY_PAGE,
+    reads: pageDataReads([SOCIAL_READ_NOTHING_UPSTREAM]),
+  });
+  assert.equal(verdict.isEmpty, true, 'nothing upstream and nothing authored is still an empty page');
+  assert.equal(verdict.emptinessUnknown, false);
+
+  // And the degraded case keeps behaving as it did: a read that FAILED is
+  // still unknowable rather than empty, whatever the source count says.
+  const degraded = decidePageEmptiness({
+    ...COLLECTION_ONLY_PAGE,
+    reads: pageDataReads([{ sourceCount: 0, degraded: true }]),
+  });
+  assert.equal(degraded.isEmpty, false);
+  assert.equal(degraded.emptinessUnknown, true);
+});
+
+test('CONTROL: the verdict reads the SOURCE count, so a mapped count cannot be substituted', () => {
+  // `pageDataReads` is the one conversion point, and its parameter names the
+  // field. Handing it the same read counted AFTER the mapper is what the
+  // defect was, and it produces the opposite verdict on identical data.
+  const asSourced = decidePageEmptiness({
+    ...COLLECTION_ONLY_PAGE,
+    reads: pageDataReads([SOCIAL_READ_ALL_DROPPED]),
+  });
+  const asMapped = decidePageEmptiness({
+    ...COLLECTION_ONLY_PAGE,
+    reads: pageDataReads([
+      { sourceCount: SOCIAL_READ_ALL_DROPPED.items.length, degraded: false },
+    ]),
+  });
+  assert.equal(asSourced.isEmpty, false);
+  assert.equal(asMapped.isEmpty, true, 'sanity: counting the mapped items IS the 404, as it was');
+});
+
+test('SOURCE PIN: buildPageContext counts the rows read, never the items mapped', () => {
+  const code = source('./buildPageContext.ts');
+  assert.ok(
+    code.includes('pageDataReads([...collectionEntries, ...integrationEntries])'),
+    'the emptiness input must come from the one conversion point in ./pageEmptiness.ts',
+  );
+  assert.ok(
+    !/count: items\.length/.test(code),
+    'counting the mapped items is the defect: a dropped social feed reads as an absent page',
+  );
+});
+
+test('SOURCE PIN: every fetcher reports a source count the mapper cannot have touched', () => {
+  const code = source('../collections/index.ts');
+  for (const fn of ['getCollectionItems', 'getIntegrationItems']) {
+    const start = code.indexOf('export async function ' + fn + '(');
+    assert.ok(start > 0, 'sanity: ' + fn + ' not found, this assertion read nothing');
+    const nextExport = code.indexOf('\nexport ', start + 1);
+    const body = code.slice(start, nextExport === -1 ? undefined : nextExport);
+    assert.ok(
+      body.includes('sourceCount: items.length'),
+      fn + ' must count the UNWRAPPED rows, which is the one count no mapper has seen',
+    );
+  }
+  // `items` inside those bodies is the raw array from `unwrap()`; the mapped
+  // array is built inline in the return. Asserted so the line above cannot be
+  // read as counting the mapped items under a different name.
+  assert.ok(
+    code.includes('const { items, totalCount, richTextImageUrls } = unwrap(raw);'),
+    'sanity: `items` must still be the raw, unmapped rows at the point it is counted',
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -398,13 +519,16 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
     'the bridge must CALL the read that reports degradation, not merely mention it',
   );
   assert.ok(
-    code.includes('return { items, degraded, richTextImageUrls };'),
+    code.includes('return { items, degraded, richTextImageUrls, sourceCount: products.length };'),
     'and it must actually return the flag to buildPageContext',
   );
-  // H177 widened this return by one field. The pin was updated rather than
-  // loosened: matching the WHOLE literal is what stops a future edit dropping
-  // `degraded` back out while leaving the word in a comment, which is the
-  // vacuity this test was rewritten to close in the first place.
+  // H177 widened this return by one field and the social pass widened it by a
+  // second. The pin was updated rather than loosened: matching the WHOLE
+  // literal is what stops a future edit dropping `degraded` back out while
+  // leaving the word in a comment, which is the vacuity this test was
+  // rewritten to close in the first place. `sourceCount` is pinned to
+  // `products.length` and not to `items.length` for the same reason it exists
+  // at all — see `pageEmptiness.ts`.
 });
 
 test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()', () => {
