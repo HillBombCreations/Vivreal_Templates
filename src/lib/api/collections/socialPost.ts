@@ -29,27 +29,34 @@
  *      that can. So the caption travels as the name, and the exclusion is
  *      owed by the renderer's `requiredItemFields` / `isSocialEligible`.
  *
- *      THAT EXCLUSION DOES NOT HOLD YET, AND IT IS STATED HERE RATHER THAN
- *      ASSUMED. Measured against the installed 1.77.0 registry, 2026-10-01:
- *      ten layouts satisfy `isSocialEligible`, and FIVE of them print the
- *      title as visible text, not only into `alt=` — `captioned-media` into
- *      an `<h3>` at `text-2xl lg:text-[2rem] font-bold`, plus `arch-tiles`,
- *      `collage-strip`, `postcard-strip` and `photo-band-pager`. Every one of
- *      the five declares `requiredItemFields: ['imageUrl']` and nothing else,
- *      because each one's title print is GUARDED (`card.title && ...`) and the
- *      generator only proposes fields it finds in UNGUARDED text positions.
- *      The predicate's own docblock says it refuses a layout that prints the
- *      title; for a guarded print it does not.
+ *      THAT EXCLUSION NOW HOLDS, AS OF RENDERER 1.78.0, AND IT IS STATED
+ *      HERE RATHER THAN ASSUMED. Derived 2026-10-01 by running the
+ *      published `isSocialEligible` over the published `COMPONENT_REGISTRY`,
+ *      both read out of the 1.78.0 tarball rather than from renderer source:
+ *      FIVE layouts are social eligible, `media-mosaic`, `photo-cluster`,
+ *      `slideshow`, `social-panel` and `spotlight-panel`.
  *
- *      Carrying the caption is still right, and it is not a regression for
- *      those five: no live site can reach them with a social band, because
- *      bands and the picker that offers this set both ship on this branch.
- *      The two layouts the plan actually ships, `social-panel` and
- *      `media-mosaic`, read `title` into `alt=` ONLY, and with it empty they
- *      emit links with no accessible name at all. Closing the remaining five
- *      is a `vivreal-site-renderer` change (declare `title` on them, or teach
- *      the extractor a guarded text position), and it is not a change this
- *      repo can make.
+ *      It returned TEN under 1.77.0, and the five that left are exactly the
+ *      five this comment used to record as the open gap: `captioned-media`,
+ *      which prints the title in an `<h3>` at `text-2xl lg:text-[2rem]
+ *      font-bold`, plus `arch-tiles`, `collage-strip`, `postcard-strip` and
+ *      `photo-band-pager`. Each one now declares `requiredItemFields:
+ *      ['imageUrl', 'title']` where it declared `['imageUrl']` alone, and
+ *      those five array literals are the ENTIRE behavioural diff of 1.78.0.
+ *      No component implementation moved and no `.d.ts` changed, so the
+ *      bump cannot alter how any existing page renders.
+ *
+ *      Declaring `title` is how a layout SAYS it prints the caption as
+ *      visible text: `SOCIAL_POST_ITEM_FIELDS` is `['date', 'href',
+ *      'imageUrl']` with `title` deliberately absent, so the subset clause
+ *      refuses any layout that names it. Reading the title into `alt=`
+ *      only, which is what `social-panel` and `media-mosaic` do, still
+ *      passes, so the two layouts this pass ships keep the accessible name
+ *      the caption gives them.
+ *
+ *      Nothing here imports the predicate and nothing needs to: the picker
+ *      that offers the set is the portal's. This comment is the record, so
+ *      it names the version it was measured against and how.
  *
  *      `description` stays absent because neither social layout reads it, so
  *      it could only ever become body copy.

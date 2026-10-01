@@ -361,15 +361,61 @@ the lockfile was patched as TEXT at both version sites with the 39
 platform-constrained entries censused by name either side. Do not re-derive
 either by running `npm install` here.
 
-**One open item, flagged rather than resolved.** This repo's
-`node_modules/@hillbombcreations/site-renderer/dist` contains
-`registry/socialEligibility.js`, whose source landed in renderer commit
-`9a6c095`, **after** the 1.77.0 release commit. Either 1.77.0 was published
-later with those commits included, or this `node_modules` is a dev overlay
-ahead of the locked tarball. Until that is settled, **do not import
-`isSocialEligible` / `socialEligibleDispatchIds` into this repo**: it would
-type-check and run locally and could fail the fleet `npm ci` build. Nothing
-here imports them today.
+**That open item is now SETTLED, and the caution it carried is withdrawn.**
+It read: this repo's `node_modules` carries `registry/socialEligibility.js`,
+whose source landed in renderer commit `9a6c095`, AFTER the 1.77.0 release
+commit, so either 1.77.0 was published with those commits included or this
+`node_modules` is a dev overlay ahead of the locked tarball. Measured against
+the published tarballs, 2026-10-01, it is the FIRST. `npm pack
+@hillbombcreations/site-renderer@1.77.0` DOES contain
+`dist/registry/socialEligibility.js`, and `diff -rq` of that tarball's `dist`
+against this repo's installed `dist` is byte identical, so this `node_modules`
+was never an overlay. 1.78.0 publishes the module too.
+
+**`isSocialEligible` / `socialEligibleDispatchIds` are therefore safe to
+import**, and an import would survive the fleet `npm ci`. Nothing here imports
+them today and nothing needs to: the picker that offers the set is the
+portal's.
+
+### 1.77.0 to 1.78.0 IS a lockfile chore, and that is measured, not assumed
+
+The section above exists because a bump titled "lockfile" moved what live
+pages look like. This one is the opposite case, recorded so nobody has to
+re-derive it. Diffing `dist/` between the two published tarballs, 2026-10-01,
+exactly three files move:
+
+| file | change |
+|---|---|
+| `dist/registry/registry.js` | five layouts gain `'title'` in `requiredItemFields` |
+| `dist/registry/socialEligibility.js` | COMMENT only, an unpinned measured count corrected and pinned |
+| `dist/registry/socialEligibility.d.ts.map` | follows that comment |
+
+**Zero `.d.ts` files differ** and no component implementation moves, so this
+bump cannot change how a single existing page renders on any live site. It is
+also why running `tsc --noEmit` against a `node_modules` still holding 1.77.0
+is type-equivalent to running it against 1.78.0.
+
+What it DOES move is which layouts may display an owner's social posts.
+Running the published `isSocialEligible` over the published
+`COMPONENT_REGISTRY`, out of each tarball rather than from renderer source:
+
+- **1.77.0, TEN:** `arch-tiles`, `captioned-media`, `collage-strip`,
+  `media-mosaic`, `photo-band-pager`, `photo-cluster`, `postcard-strip`,
+  `slideshow`, `social-panel`, `spotlight-panel`
+- **1.78.0, FIVE:** `media-mosaic`, `photo-cluster`, `slideshow`,
+  `social-panel`, `spotlight-panel`
+
+The five that leave are exactly the five that print the title as VISIBLE text.
+`SOCIAL_POST_ITEM_FIELDS` is `['date', 'href', 'imageUrl']` with `title`
+deliberately absent, so declaring `title` is how a layout says it would print a
+caption as a heading. That closes the gap
+`src/lib/api/collections/socialPost.ts` had recorded as open, and that module's
+header moved with the bump.
+
+**No test in this repo pinned the old set or a count of ten**, checked by
+`git grep` with a positive control proving the same query returns hits. The ten
+lived only in that prose, because nothing here imports the predicate. A
+consumer that DOES import it (the portal picker) is where the red tests are.
 
 ### The renderer version is a CROSS-REPO contract with the portal
 
@@ -382,6 +428,16 @@ repo's own test suite notices, because each one is internally consistent.
 A caret range does not protect you. Both repos declare a caret and both deploy with
 `npm ci`, which installs the LOCKFILE and ignores the range, so two repos can agree on
 `^1.74.x` and still install different builds for months.
+
+> **The table below is a SUPERSEDED 2026-09-24 snapshot. Do not read it as the
+> current state.** This repo moved to 1.77.0 and then to **1.78.0** on
+> `feat/social-stage-1`, so every version in it is stale. The section's RULE still
+> stands and is why the table is kept: the consumers must converge, the preview must
+> never lag the live site, and a caret range does not make either happen. The
+> NUMBERS must be re-read live from each consumer's committed lockfile before they
+> are quoted, never from here and never from memory. Only this repo's row was
+> re-measured on 2026-10-01; the other three were not, and sibling repos were being
+> bumped at the same time, so any reading of them taken that day races those edits.
 
 **Measured 2026-09-24 (`H3217`), read from the committed lockfiles, not from
 `node_modules`. The first reading of this found two versions. Measuring every consumer
