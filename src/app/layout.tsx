@@ -268,6 +268,12 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                              unless it is threaded here too. */
                           fields={siteData.floatingCta.fields}
                           submitLabel={siteData.floatingCta.submitLabel}
+                          /* Renderer 1.81.0: with an authored EdgeDock the
+                             button hides at lg, where the rail shows, so the
+                             two never compete for the same corner. Without
+                             this prop the renderer cannot know a rail exists
+                             and both render on desktop. */
+                          edgeDockConfig={siteData.edgeDock}
                       />
                   )}
                   {/*
