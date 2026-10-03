@@ -1170,7 +1170,8 @@ export async function generateMetadata({ params }: Props) {
   }
 
   if (pageConfig.format === "team") {
-    const teamMembers = await getTeamMembers();
+    const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.TEAMMEMBERS_ID || "");
+    const teamMembers = await getTeamMembers(collectionId);
     const member = teamMembers.find((m) => m.id === itemId);
     const name = member?.name;
     const title =

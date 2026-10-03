@@ -143,3 +143,37 @@ test('the page switch did not replace the detail-page switch: both guards stand'
   // per-item pages back on for every page that had them off.
   assert.match(source, /if \(pageConfig\.detailPage\?\.enabled === false\) return notFound\(\);/);
 });
+
+// ── generateMetadata's team arm must scope the roster, like every sibling arm ──
+//
+// The defect: `getTeamMembers()` with no argument falls back to the bare
+// `TEAMMEMBERS_ID` env var inside `getTeamMembersRead`, which is unset on any
+// site whose team page resolves its collection through a Studio block binding
+// instead (the modern path — see `getPageCollectionId`'s own doc comment).
+// That makes the roster read return zero members on every such site, so
+// `teamMembers.find(...)` misses for every real member id, and every team
+// member's <title>, og:title and twitter:title collapse to the
+// "Team Member | <site>" fallback regardless of which member the URL names.
+// The render body's own team arm (`getTeamMembersRead(collectionId)`, above in
+// this same file) and this function's own `shows` arm just above resolve a
+// collectionId through `getPageCollectionId()` first; this arm must do the
+// same.
+test("generateMetadata's team arm scopes the roster via getPageCollectionId, like the render body and the shows arm", () => {
+  assert.match(
+    source,
+    /if \(pageConfig\.format === "team"\) \{\s*const collectionId = getPageCollectionId\(siteData, pageConfig\.name, process\.env\.TEAMMEMBERS_ID \|\| ""\);\s*const teamMembers = await getTeamMembers\(collectionId\);/,
+    'the team metadata arm must resolve a collectionId and pass it to getTeamMembers, not call it bare',
+  );
+});
+
+test('control: a genuinely nameless team member still gets the sensible title fallback', () => {
+  // Pairs with the test above, which fixes WHICH roster is read. It must not
+  // touch the fallback text itself: a member whose name really is blank
+  // (distinct from "wrong roster, so never found at all") still needs a
+  // sensible <title> rather than an empty one.
+  assert.match(
+    source,
+    /const name = member\?\.name;\s*const title =\s*seo\?\.metaTitle \|\| \(name \? `\$\{name\} \| \$\{siteName\}` : `Team Member \| \$\{siteName\}`\);/,
+    'the name-present/name-absent title fallback must still be in place',
+  );
+});
