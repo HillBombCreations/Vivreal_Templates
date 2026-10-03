@@ -90,3 +90,17 @@ test('the Footer shell still passes legalName, which the preview was missing', (
   const source = read('./Footer/index.tsx');
   assert.match(source, /legalName=\{businessName\}/);
 });
+
+test('the site-wide FloatingCta is told about an authored EdgeDock', () => {
+  const source = read('../app/layout.tsx');
+  // Renderer 1.81.0 hides the floating button at `lg` when an EdgeDock has
+  // content, because the rail shows there and both competed for the same
+  // corner. The renderer can only do that if the mount passes the rail's
+  // config. Without this prop the fix is inert: Juniper Row authors both and
+  // showed both at 1440 after the 1.81.0 promote.
+  assert.match(
+    source,
+    /edgeDockConfig=\{siteData\.edgeDock\}/,
+    'the siteData.floatingCta mount must pass edgeDockConfig={siteData.edgeDock}',
+  );
+});
