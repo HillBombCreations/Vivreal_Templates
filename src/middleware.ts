@@ -15,8 +15,18 @@ import {
   buildPreviewEnableUrl,
   isWellFormedPreviewToken,
 } from '@/lib/api/previewToken'
+import { noteRequestAndMaybeResetDispatcher } from '@/lib/dispatcherReset'
 
 export async function middleware(request: NextRequest) {
+  // idle-dead-socket-research-2026-10-04.md, item 4. FIRST statement, ahead
+  // of every return below: this file has no exported `matcher`, so Next runs
+  // it on every request, which is what makes this the one place guaranteed
+  // to run before any client.vivreal.io fetch in the invocation — both this
+  // module's own `getEdgeSiteMap()` below and the Node-runtime page render
+  // that follows it share the SAME global connection pool (see
+  // `../lib/dispatcherReset.ts` for why), so one reset here reaches both.
+  noteRequestAndMaybeResetDispatcher()
+
   // ISR migration Phase 1 -- upgrade the portal's `?vivreal_preview=<token>`
   // URL into a Next draft-mode session instead of injecting it as a request
   // header.
