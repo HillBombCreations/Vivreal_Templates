@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
+import { resolveContactRecipient, resolveSiteContact } from "@/lib/contactRecipient";
 import { resolveTenantBrand, wrapInTenantLayout } from "@hillbombcreations/email-brand";
 
 export const runtime = "edge";
@@ -7,6 +8,15 @@ export const dynamic = "force-dynamic";
 
 interface ContactPayload {
   name: string;
+  /**
+   * NEVER READ. `buildBrandedEmail()` does not use this field; it exists on
+   * the type only because `enriched` (built below) spreads `body` and then
+   * overwrites this key with the server-resolved `to`. The actual recipient
+   * comes exclusively from `resolveContactRecipient()` (`@/lib/contactRecipient`)
+   * — see the F1 comment at its call site. A caller-supplied value here is
+   * always overwritten before the request upstream is built and is never
+   * consulted for where the email goes.
+   */
   contactEmail: string;
   customerEmail: string;
   message: string;
@@ -209,58 +219,6 @@ function buildBrandedEmail(body: ContactPayload): string {
   });
 }
 
-/**
- * Resolve the site's contact recipient + name + branding from VR_Client_API.
- *
- * The renderer's contact form (ConfigurableForm) posts only
- * `{ name, email, message, customerEmail }` — it never sends the recipient,
- * site name, or branding. So we read them server-side from this site's
- * siteDetails (same source `getSiteData()` uses), keyed by the SITE_ID env.
- * Returns null on any failure so the caller can fall back to body values.
- */
-async function resolveSiteContact(): Promise<{
-  email: string;
-  siteName: string;
-  branding: ContactPayload["branding"];
-} | null> {
-  const apiKey = process.env.API_KEY;
-  const siteId = process.env.SITE_ID;
-  const clientApiUrl =
-    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
-  if (!siteId) return null;
-
-  try {
-    const res = await fetch(
-      `${clientApiUrl}/tenant/siteDetails?siteId=${encodeURIComponent(siteId)}`,
-      { headers: { Authorization: apiKey ?? "" }, cache: "no-store" }
-    );
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    // VR_Client_API returns the { success, data } envelope (or the raw object).
-    const data = (json?.data ?? json) as {
-      name?: string;
-      businessInfo?: { name?: string; contactInfo?: { email?: string } };
-      siteDetails?: { values?: Record<string, unknown> };
-    };
-    const values = (data?.siteDetails?.values ?? {}) as Record<string, unknown>;
-    const logo = values.logo as { currentFile?: { source?: string } } | undefined;
-
-    return {
-      email: data?.businessInfo?.contactInfo?.email ?? "",
-      siteName: data?.businessInfo?.name ?? data?.name ?? "",
-      branding: {
-        primary: values.primary as string | undefined,
-        surface: values["surface-alt"] as string | undefined,
-        textPrimary: values["text-primary"] as string | undefined,
-        logoUrl: logo?.currentFile?.source,
-      },
-    };
-  } catch {
-    return null;
-  }
-}
-
 export async function POST(request: NextRequest) {
   let body: ContactPayload;
   try {
@@ -278,22 +236,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Body values (legacy ContactSection sends them) win; otherwise resolve from
-  // siteData — the renderer's form omits recipient / siteName / branding. Only
-  // hit the (heavy, API/CDN-metered) siteDetails endpoint when the recipient
-  // wasn't supplied, so the legacy path costs no extra upstream call.
-  const site = body.contactEmail?.trim() ? null : await resolveSiteContact();
+  // F1 (security hotfix, docs/projects/form-test-send/design.md): the
+  // recipient is resolved ONLY from this site's own stored contact info,
+  // server-side, on every request. `body.contactEmail` used to win outright
+  // when present, which let anyone POST a stranger's address here and have
+  // this site's own email account mail them, branded as the business.
+  // resolveContactRecipient() never reads `body` for `to` — see its header —
+  // so that is no longer possible regardless of what the request carries.
+  // siteName/branding are cosmetic (legacy ContactSection compatibility),
+  // not security-relevant, and still prefer the body when present.
+  const site = await resolveSiteContact();
+  const { to, siteName, branding } = resolveContactRecipient(body, site);
 
-  const to = (body.contactEmail?.trim() || site?.email || "").trim();
-  if (!to) {
-    return NextResponse.json(
-      { error: "No contact email configured" },
-      { status: 500 }
-    );
-  }
-
-  const siteName = body.siteName?.trim() || site?.siteName || "Vivreal Site";
-  const branding = body.branding ?? site?.branding;
+  // F2: a submission is never dropped for lack of a configured recipient.
+  // Forward it regardless — VR_Client_API already stores every contact
+  // submission independently of whether the email leg runs
+  // (captureContactMessage) and treats "stored but not emailed" as success.
+  // `contactEmail` is OMITTED (not sent as "") below when `to` is empty, so
+  // VR_Client_API can tell "no recipient configured" apart from a malformed
+  // one. The visitor sees the same success response either way.
   // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
   // from the `vr_attr` cookie on this same-origin POST. customFields already
   // flows both into the branded lead email (buildCustomFieldsBlock) and into
@@ -327,7 +288,11 @@ export async function POST(request: NextRequest) {
         name,
         message,
         siteName,
-        contactEmail: to,
+        // F2: omitted (never "") when no recipient is configured, so
+        // `JSON.stringify` drops the key entirely rather than sending an
+        // empty string VR_Client_API's validator would reject the same way
+        // it rejects a missing one.
+        ...(to ? { contactEmail: to } : {}),
         customerEmail,
         customHtml: buildBrandedEmail(enriched),
         // Task 14 item 1 (dashboard-insights-phase-3-capture/plan.md, E-a) —
