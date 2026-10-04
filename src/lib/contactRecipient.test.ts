@@ -169,3 +169,57 @@ test("a site with no contactInfo.email configured resolves email to empty, not u
   const result = await resolveSiteContact();
   assert.equal(result?.email, "");
 });
+
+// ---------------------------------------------------------------------------
+// onFailure — 2026-10-04 idle-dead-socket fix. A lookup that still fails after
+// `fetchWithReconnect`'s retries must not vanish silently: the owner never
+// gets the lead email, and nothing records that this happened.
+// ---------------------------------------------------------------------------
+
+test("onFailure reports 'network' when every retry attempt rejects", async () => {
+  stubFetch(new TypeError("fetch failed"));
+  const reports: Array<[string, unknown]> = [];
+  const result = await resolveSiteContact({
+    onFailure: (reason, detail) => reports.push([reason, detail]),
+  });
+  assert.equal(result, null);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0][0], "network");
+});
+
+test("onFailure reports 'http-error' with the status on a non-2xx", async () => {
+  stubFetch({ status: 503, json: { success: false } });
+  const reports: Array<[string, unknown]> = [];
+  const result = await resolveSiteContact({
+    onFailure: (reason, detail) => reports.push([reason, detail]),
+  });
+  assert.equal(result, null);
+  assert.deepEqual(reports, [["http-error", 503]]);
+});
+
+test("onFailure is never called when SITE_ID is simply unset — a build condition, not a lost lead", async () => {
+  delete process.env.SITE_ID;
+  stubFetch({ json: siteDetailsEnvelope("owner@bakery.com") });
+  const reports: unknown[] = [];
+  const result = await resolveSiteContact({ onFailure: (...args) => reports.push(args) });
+  assert.equal(result, null);
+  assert.equal(reports.length, 0);
+});
+
+test("a lookup that fails once and then recovers on a fresh connection resolves the recipient and reports no failure", async () => {
+  let attempts = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () => {
+    attempts += 1;
+    if (attempts === 1) throw new TypeError("fetch failed", { cause: Object.assign(new Error("ECONNRESET"), { code: "ECONNRESET" }) });
+    return new Response(JSON.stringify(siteDetailsEnvelope("owner@bakery.com")), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+  const reports: unknown[] = [];
+  const result = await resolveSiteContact({ onFailure: (...args) => reports.push(args) });
+  assert.equal(attempts, 2);
+  assert.equal(result?.email, "owner@bakery.com");
+  assert.equal(reports.length, 0, "a recovered retry is not a failure worth alerting on");
+});

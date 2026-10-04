@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
 import { resolveContactRecipient, resolveSiteContact } from "@/lib/contactRecipient";
+import {
+  CONTACT_RECIPIENT_FAILURE_MESSAGE,
+  buildContactRecipientFailureCapture,
+} from "@/lib/api/errorCapture";
 import { resolveTenantBrand, wrapInTenantLayout } from "@hillbombcreations/email-brand";
 
 export const runtime = "edge";
@@ -245,7 +250,20 @@ export async function POST(request: NextRequest) {
   // so that is no longer possible regardless of what the request carries.
   // siteName/branding are cosmetic (legacy ContactSection compatibility),
   // not security-relevant, and still prefer the body when present.
-  const site = await resolveSiteContact();
+  // 2026-10-04 idle-dead-socket fix: `resolveSiteContact` now retries a
+  // dead-connection failure on a fresh socket (`fetchWithReconnect`), but a
+  // lookup that still fails must not vanish — it means this submission is
+  // about to be stored without emailing the owner (F2, below). Alert here
+  // rather than inside `contactRecipient.ts`, which stays Sentry-free on
+  // purpose (see its header) so it is loadable by the plain-node test runner.
+  const site = await resolveSiteContact({
+    onFailure: (reason) => {
+      Sentry.captureMessage(
+        CONTACT_RECIPIENT_FAILURE_MESSAGE,
+        buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
+      );
+    },
+  });
   const { to, siteName, branding } = resolveContactRecipient(body, site);
 
   // F2: a submission is never dropped for lack of a configured recipient.

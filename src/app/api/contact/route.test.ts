@@ -47,7 +47,11 @@ test("the site contact lookup is unconditional, never gated on the body", () => 
   // supply its own contactEmail, so a caller supplying ANY value skipped the
   // server-side lookup entirely.
   assert.doesNotMatch(code, /body\.contactEmail/, "the body's contactEmail must never be read");
-  assert.match(code, /const site = await resolveSiteContact\(\);/);
+  // 2026-10-04: resolveSiteContact() now takes an `onFailure` alerting hook
+  // (idle-dead-socket fix), so the call spans several lines, but it is still
+  // the unconditional `const site = await resolveSiteContact(` start this
+  // control is really about — never `body.contactEmail ? null : ...`.
+  assert.match(code, /const site = await resolveSiteContact\(\{/);
 });
 
 test("control: the replaced code really did gate the lookup on body.contactEmail", () => {

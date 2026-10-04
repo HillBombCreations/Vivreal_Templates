@@ -11,8 +11,14 @@
  *
  * Auth header sent to VR_Client_API must be the RAW API_KEY (no "Bearer" prefix);
  * VR_Client_Auth does exact-match lookup against `groups.apiKey`.
+ *
+ * Routed through `fetchWithReconnect` since 2026-10-04 (idle-dead-socket
+ * research): one of four GETs that bypassed the shared reconnect helper, so a
+ * dead pooled socket on the first request after idle failed outright instead
+ * of retrying on a fresh connection.
  */
 import { NextResponse } from 'next/server';
+import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from '@/lib/api/fetchWithReconnect';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -31,7 +37,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   try {
-    const upstream = await fetch(
+    const upstream = await fetchWithReconnect(
       `${clientApiUrl}/sites/${encodeURIComponent(siteId)}/.well-known/mcp.json`,
       {
         method: 'GET',
@@ -40,7 +46,8 @@ export async function GET(): Promise<NextResponse> {
           Accept: 'application/json',
         },
         cache: 'no-store',
-      }
+      },
+      { label: 'mcpJsonProxy', backoffMs: DEFAULT_BACKOFF_MS },
     );
 
     const body = await upstream.text();

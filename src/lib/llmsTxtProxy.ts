@@ -20,7 +20,15 @@
  * that DO import `next/server` cannot be loaded by this runner at all (see
  * leadAttribution.ts's header for the same tradeoff), so the generation logic
  * lives here and the routes stay thin call sites.
+ *
+ * Routed through `fetchWithReconnect` since 2026-10-04 (idle-dead-socket
+ * research): this was one of four GETs to client.vivreal.io that bypassed
+ * the shared reconnect helper, so a dead pooled socket on the first request
+ * after idle failed outright instead of retrying on a fresh connection.
+ * `fetchWithReconnect.ts` is itself edge-safe, so this stays free of any
+ * Node-only import.
  */
+import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from './api/fetchWithReconnect.ts';
 
 export interface LlmsTxtResponseInit {
   status: number;
@@ -43,7 +51,7 @@ export async function fetchLlmsTxt(): Promise<LlmsTxtResponseInit> {
   }
 
   try {
-    const upstream = await fetch(
+    const upstream = await fetchWithReconnect(
       `${clientApiUrl}/sites/${encodeURIComponent(siteId)}/.well-known/llms.txt`,
       {
         method: 'GET',
@@ -52,7 +60,8 @@ export async function fetchLlmsTxt(): Promise<LlmsTxtResponseInit> {
           Accept: 'text/markdown, text/plain',
         },
         cache: 'no-store',
-      }
+      },
+      { label: 'llmsTxtProxy', backoffMs: DEFAULT_BACKOFF_MS },
     );
 
     const body = await upstream.text();
