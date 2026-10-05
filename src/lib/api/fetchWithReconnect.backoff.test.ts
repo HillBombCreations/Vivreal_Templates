@@ -334,6 +334,110 @@ test('SHORT-CIRCUIT expiry: after SHORT_CIRCUIT_WINDOW_MS the normal backoff app
   }
 });
 
+test('SHORT-CIRCUIT arming requires `transient`: an abort on the FINAL attempt must not arm it (review-templates-184.md item 3)', async (t) => {
+  // The arming guard is `replayable && transient && attempt >= retries`
+  // (fetchWithReconnect.ts). review-templates-184.md's mutation table found
+  // dropping `transient` from it left every existing short-circuit test
+  // green, because each one aborts on attempt 1 (index 0 or 1), where
+  // `attempt >= retries` is ALREADY false regardless of `transient` — the
+  // mutated and real guard agree there for the wrong reason. Only an abort
+  // that reaches the FINAL attempt (the one where `attempt >= retries` is
+  // independently true, same as an ordinary exhausted retry chain) can tell
+  // them apart. Two ordinary transient failures retry normally here, then the
+  // caller's own signal aborts mid-wait before the THIRD (final, NETWORK_
+  // RETRIES = 2) attempt — exactly what `edgeSiteMap.ts`'s cold/warm budget
+  // firing late in a retry chain looks like.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 });
+  try {
+    const controller = new AbortController();
+    let calls = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async (_url: string, init?: RequestInit) => {
+      calls += 1;
+      if (init?.signal?.aborted) {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }
+      throw deadSocket();
+    };
+
+    const chain = fetchWithReconnect('https://client.vivreal.io/x', { signal: controller.signal }, {
+      backoffMs: [150, 500],
+    });
+    chain.catch(() => {});
+
+    // Attempt 1 (index 0): transient, schedules the 150ms wait.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(calls, 1, 'control: the first attempt must fire before any tick');
+
+    // Let the 150ms wait elapse — attempt 2 (index 1) fires, also transient,
+    // and schedules the 500ms wait that precedes the FINAL attempt (index 2).
+    for (let i = 0; i < 5 && calls < 2; i += 1) {
+      t.mock.timers.tick(100);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    assert.equal(calls, 2, 'control: the second attempt must have fired before the abort');
+    // `calls` increments the instant the stub is invoked, but the surrounding
+    // `catch` block needs a few more microtask turns to reach its own
+    // `await awaitAwake(500, signal)` and attach the abort listener there —
+    // flush those before aborting, or the abort fires too early to be seen.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Abort mid-wait, before the 500ms elapses. The FINAL attempt (index 2,
+    // where `attempt >= retries` is independently true) now sees an aborted
+    // signal and throws AbortError immediately, without waiting out the rest
+    // of the schedule.
+    controller.abort();
+    for (let i = 0; i < 10 && calls < 3; i += 1) {
+      await Promise.resolve();
+    }
+    assert.equal(calls, 3, 'the final attempt must fire immediately once the abort cancels the wait');
+    await assert.rejects(chain, (err: unknown) => err instanceof DOMException && err.name === 'AbortError');
+
+    // The real guard requires `transient` as well as `attempt >= retries`.
+    // The failure that ended this chain is an abort (`transient` is false —
+    // see `isTransientNetworkError`), so even though `attempt(2) >= retries(2)`
+    // is independently true, the short-circuit must NOT be armed. Proven the
+    // same way the sibling test above proves it: an unrelated, ordinary GET
+    // must still pay the FULL backoff schedule.
+    let plainCalls = 0;
+    const callOffsets: number[] = [];
+    const start = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async () => {
+      plainCalls += 1;
+      callOffsets.push(Date.now() - start);
+      if (plainCalls === 1) throw deadSocket();
+      return new Response('ok', { status: 200 });
+    };
+    const plain = fetchWithReconnect('https://client.vivreal.io/x', undefined, {
+      backoffMs: [150, 500],
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let i = 0; i < 10 && plainCalls < 2; i += 1) {
+      t.mock.timers.tick(100);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    assert.equal(plainCalls, 2, 'the retry must still run');
+    assert.ok(
+      callOffsets[1] >= 100,
+      `the retry landed at ${callOffsets[1]}ms — the FINAL-attempt abort above must not have armed the short-circuit`,
+    );
+    const res = await plain;
+    assert.equal(res.status, 200);
+  } finally {
+    globalThis.fetch = realFetch;
+    t.mock.timers.reset();
+  }
+});
+
 test('SHORT-CIRCUIT does NOT arm on a POST failure or on the caller\'s own abort (review-templates-183.md pass 2, concern 4)', async (t) => {
   // The arming guard today is `replayable && transient && attempt >= retries`
   // (fetchWithReconnect.ts). Replacing it with `if (true)` — arming on ANY
