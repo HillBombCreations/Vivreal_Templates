@@ -241,6 +241,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // review-templates-184.md P2-1: `resolveContactRecipient()` runs
+  // `body.siteName?.trim()`, which throws a TypeError on a non-string value
+  // (optional chaining only guards null/undefined, not the wrong type).
+  // Reject it here, before the lookup and before anything can be flushed,
+  // so a hostile or malformed body gets an honest 400 instead of surfacing
+  // as a 502 "upstream failure" that never happened. `branding` is checked
+  // the same way: it only ever feeds template strings below, so a non-object
+  // value cannot throw, but letting it past validation here is the same kind
+  // of silent acceptance this check exists to close off.
+  if (body.siteName !== undefined && typeof body.siteName !== "string") {
+    return NextResponse.json({ error: "Invalid siteName" }, { status: 400 });
+  }
+  if (
+    body.branding !== undefined &&
+    (typeof body.branding !== "object" || body.branding === null || Array.isArray(body.branding))
+  ) {
+    return NextResponse.json({ error: "Invalid branding" }, { status: 400 });
+  }
+
   // F1 (security hotfix, docs/projects/form-test-send/design.md): the
   // recipient is resolved ONLY from this site's own stored contact info,
   // server-side, on every request. `body.contactEmail` used to win outright
@@ -257,56 +276,67 @@ export async function POST(request: NextRequest) {
   // rather than inside `contactRecipient.ts`, which stays Sentry-free on
   // purpose (see its header) so it is loadable by the plain-node test runner.
   let recipientLookupFailed = false;
-  const site = await resolveSiteContact({
-    onFailure: (reason) => {
-      recipientLookupFailed = true;
-      Sentry.captureMessage(
-        CONTACT_RECIPIENT_FAILURE_MESSAGE,
-        buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
-      );
-    },
-  });
-  // review-templates-183.md concern 4: this route is `runtime = "edge"`, and
-  // nothing else flushes a queued Sentry envelope before the response —
-  // Amplify can freeze the container the instant it is sent. Flushing here,
-  // on the failure branch ONLY, is what turns "enqueued" into "sent" before
-  // that freeze has a chance to land. Costs nothing on the happy path, which
-  // is every request where the lookup succeeds.
-  if (recipientLookupFailed) {
-    await Sentry.flush(1500);
-  }
-  const { to, siteName, branding } = resolveContactRecipient(body, site);
-
-  // F2: a submission is never dropped for lack of a configured recipient.
-  // Forward it regardless — VR_Client_API already stores every contact
-  // submission independently of whether the email leg runs
-  // (captureContactMessage) and treats "stored but not emailed" as success.
-  // `contactEmail` is OMITTED (not sent as "") below when `to` is empty, so
-  // VR_Client_API can tell "no recipient configured" apart from a malformed
-  // one. The visitor sees the same success response either way.
-  // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
-  // from the `vr_attr` cookie on this same-origin POST. customFields already
-  // flows both into the branded lead email (buildCustomFieldsBlock) and into
-  // the stored contact document, so one merge attributes /contact and /migrate
-  // at once. Never clobbers a submitted field of the same name (a contact form
-  // can legitimately carry its own `source` question), and returns the original
-  // reference when no cookie is present — byte-identical to today's payload for
-  // every fleet site, where `vr_attr` does not exist.
-  //
-  // Receiving validator verified before shipping: VR_Client_API's
-  // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
-  // .max(40)`, so these string keys are accepted with headroom to spare.
-  const customFields = mergeAttributionCustomFields(
-    body.customFields,
-    request.headers.get("cookie"),
-  );
-  const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
-
-  const apiKey = process.env.API_KEY;
-  const clientApiUrl =
-    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+  // review-templates-183.md concern 4 (and concern 6): this route is
+  // `runtime = "edge"`, and nothing else flushes a queued Sentry envelope
+  // before the response — Amplify can freeze the container the instant it is
+  // sent. Declared here (not yet started) so the `finally` below always has
+  // something to await, no matter how early the request fails.
+  // review-templates-184.md item 1: between the old flush-start point and
+  // the old `try`, a throw skipped the await entirely. Everything that can
+  // still throw for this request now lives inside the `try` below, and the
+  // `finally` awaits the flush on every exit from it: success, a non-2xx
+  // upstream reply, or the catch block. The one throw that reached here
+  // before, `resolveContactRecipient()`'s `body.siteName?.trim()` on a
+  // non-string `siteName`, no longer can: P2-1 rejects that body above with
+  // a 400 before this point, so the `try` no longer has a known way in.
+  let flushPromise: Promise<unknown> = Promise.resolve();
 
   try {
+    const site = await resolveSiteContact({
+      onFailure: (reason) => {
+        recipientLookupFailed = true;
+        Sentry.captureMessage(
+          CONTACT_RECIPIENT_FAILURE_MESSAGE,
+          buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
+        );
+      },
+    });
+    // Started here, on the failure branch ONLY, so it costs nothing on the
+    // happy path. Deliberately NOT awaited yet: it runs CONCURRENTLY with
+    // the upstream POST below, so the visitor pays roughly the slower of the
+    // two instead of their sum.
+    flushPromise = recipientLookupFailed ? Sentry.flush(1500) : Promise.resolve();
+    const { to, siteName, branding } = resolveContactRecipient(body, site);
+
+    // F2: a submission is never dropped for lack of a configured recipient.
+    // Forward it regardless — VR_Client_API already stores every contact
+    // submission independently of whether the email leg runs
+    // (captureContactMessage) and treats "stored but not emailed" as success.
+    // `contactEmail` is OMITTED (not sent as "") below when `to` is empty, so
+    // VR_Client_API can tell "no recipient configured" apart from a malformed
+    // one. The visitor sees the same success response either way.
+    // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
+    // from the `vr_attr` cookie on this same-origin POST. customFields already
+    // flows both into the branded lead email (buildCustomFieldsBlock) and into
+    // the stored contact document, so one merge attributes /contact and /migrate
+    // at once. Never clobbers a submitted field of the same name (a contact form
+    // can legitimately carry its own `source` question), and returns the original
+    // reference when no cookie is present — byte-identical to today's payload for
+    // every fleet site, where `vr_attr` does not exist.
+    //
+    // Receiving validator verified before shipping: VR_Client_API's
+    // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
+    // .max(40)`, so these string keys are accepted with headroom to spare.
+    const customFields = mergeAttributionCustomFields(
+      body.customFields,
+      request.headers.get("cookie"),
+    );
+    const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
+
+    const apiKey = process.env.API_KEY;
+    const clientApiUrl =
+      process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+
     const res = await fetch(`${clientApiUrl}/tenant/sendContactEmail`, {
       method: "POST",
       headers: {
@@ -350,9 +380,22 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
+    // P2-1: `next.config.ts`'s `withSentryConfig` only auto-captures a
+    // rejected route handler; returning here instead of rethrowing means
+    // nothing records this failure unless it is captured explicitly.
+    Sentry.captureException(err);
+    // Re-point `flushPromise` at a fresh flush rather than trust the one
+    // already in flight: `recipientLookupFailed` can still be false here
+    // (the site lookup succeeded and the UPSTREAM post is what threw), in
+    // which case `flushPromise` is still the inert `Promise.resolve()`
+    // declared above, and awaiting that would not send this event before
+    // Amplify can freeze the container.
+    flushPromise = Sentry.flush(1500);
     return NextResponse.json(
       { error: "Failed to send message" },
       { status: 502 }
     );
+  } finally {
+    await flushPromise;
   }
 }

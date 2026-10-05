@@ -42,16 +42,25 @@ export const TTL_MS = 300_000;
 // freezes the process between requests, and a wall-clock 800 ms armed by a
 // background refresh fired on thaw before the fetch could resume: 33 of 40
 // aborts on three live sites (2026-09-16) were logged 1 to 194 ms into the
-// next invocation. The bound still holds for a cold-cache request, which is
-// awake the whole time it waits.
+// next invocation.
+//
+// This bound is for a WARM lookup only (`cache !== null`, the background SWR
+// refresh): the site already has a map to fall back on, nothing blocks on
+// this call, and a connection to client.vivreal.io has already been made at
+// least once by this instance. See `fetchSiteMap`'s COLD branch below for why
+// the first-ever lookup gets a different, larger budget.
 const FETCH_TIMEOUT_MS = 800;
 
 // `fetchWithReconnect`'s awake-time backoff, scaled down from its own
-// `DEFAULT_BACKOFF_MS` to fit INSIDE this module's own FETCH_TIMEOUT_MS
-// budget alongside the fetch attempts themselves: 80 + 250 = 330ms of
-// waiting, leaving headroom for three attempts (each typically well under a
-// second) under the same 800ms awake-time abort above. The abort itself
-// still cancels the wait early via the shared `signal` if it fires first.
+// `DEFAULT_BACKOFF_MS` to fit INSIDE this module's own abort budget
+// alongside the fetch attempts themselves: 80 + 250 = 330ms of waiting,
+// leaving headroom for three attempts (each typically well under a second)
+// under the 800ms (warm) or 1500ms (cold, see `fetchSiteMap`) awake-time
+// abort below. In practice a retry rarely gets the chance to run at all: the
+// measured failures on this call site abort on `attempt: 1`, before
+// `fetchWithReconnect`'s own retry logic is reached (see `fetchSiteMap`). The
+// abort itself still cancels the wait early via the shared `signal` if it
+// fires first.
 const EDGE_BACKOFF_MS = [80, 250];
 
 // Negative-cache window (review pass 1 hardening note): on SUSTAINED
@@ -84,10 +93,24 @@ const NEGATIVE_CACHE_MS = 30_000;
 // exists to tolerate, and no visitor is blocked on it.
 //
 // 1500 sits above FETCH_TIMEOUT_MS (800 awake ms, which also covers
-// fetchWithReconnect's retries) so the ordinary abort still wins on a healthy
-// instance, and far below Amplify's 28s origin timeout. Exceeding it costs one
-// request its authored-redirect resolution and nothing else; see the
-// `if (!siteMap)` fall-through in middleware.ts.
+// fetchWithReconnect's retries), but that comparison only decides anything on
+// a WARM instance (`cache !== null`, a background refresh): there,
+// FETCH_TIMEOUT_MS is the only timer racing the fetch, and it is what aborts.
+// On the COLD branch (`cache === null`) this same value also arms
+// `fetchSiteMap`'s own awake-time abort (see `isColdLookup` below), so BOTH
+// timers racing that fetch carry 1500 there, and it is the WALL-CLOCK
+// deadline in `awaitWithDeadline` below that actually wins (review-templates-
+// 184.md item 4: measured, the awake timer's 100ms tick granularity drifts
+// past 1500 wall ms before its own 15th tick lands, so the wall deadline
+// fires first every time). The awake abort is effectively redundant on the
+// cold branch today; it stays because a background refresh still needs its
+// own 800ms version of the same timer. Either way, 1500 stays far below
+// Amplify's 28s origin timeout. Exceeding it costs one request its
+// authored-redirect resolution AND the billing-freeze gate: `isSiteFrozen()`
+// reads `frozenState`, which only a completed fetch writes, so a cold
+// failure leaves it at whatever it was before and a frozen site can serve
+// its real page for that one request too (review-templates-184.md Q2). See
+// the `if (!siteMap)` fall-through in middleware.ts.
 export const COLD_FETCH_DEADLINE_MS = 1_500;
 
 /**
@@ -369,7 +392,48 @@ async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | 
     return null;
   }
 
-  const timeout = startAwakeTimeout(FETCH_TIMEOUT_MS, () => controller.abort());
+  // COLD vs WARM budget (review-templates-183.md, item 4). Measured
+  // 2026-10-04, Logs Insights over `/aws/amplify/d3j2nl4ojlmhy7` (vivreal-help)
+  // and `/aws/amplify/d37nvwe48pi1dx` (The Comedy Collective): every
+  // "[edgeSiteMap] fetch failed, failing open: AbortError" line logs
+  // `attempt: 1` -- `fetchWithReconnect`'s own retry/backoff never ran,
+  // because the abort fires before the first `fetch()` call settles on its
+  // own, which makes `init.signal.aborted` already true by the time the catch
+  // block asks `isTransientNetworkError` whether to retry. So the single
+  // FIRST attempt -- DNS, TLS and the siteDetails round trip -- is what is too
+  // slow here, not a failing retry chain.
+  //
+  // This is not only a Lambda cold start. One log stream
+  // (`stable/2026/10/05/305c07f3bcdc4b7588604286c5aafb52`, vivreal-help) shows
+  // the SAME container failing twice: request `b4990f6b...` is the
+  // container's first invocation ever (`Init Duration: 2074.18 ms` on its
+  // REPORT line, elapsedMs 810), and request `e29500eb...`, four minutes
+  // later after a ~237 s idle gap with NO Init Duration (an ordinary warm
+  // re-invoke), failed the identical way (elapsedMs 838). Both left `cache`
+  // null, so both paid for a brand-new connection: the trigger is the absence
+  // of a live connection to client.vivreal.io, which a genuinely fresh
+  // container never has and an idled-out one loses for the same reason this
+  // file's dead-socket handling already assumes
+  // (idle-dead-socket-research-2026-10-04.md).
+  //
+  // Fix: give ONLY the cold branch (`cache === null`, the same condition
+  // `getEdgeSiteMap()` uses to decide whether a caller blocks at all) the same
+  // budget as `COLD_FETCH_DEADLINE_MS`, the WALL-CLOCK ceiling
+  // `awaitWithDeadline` already applies to that same call. Reusing that value,
+  // rather than inventing a third number, means the worst case a visitor can
+  // already be made to wait on this branch is unchanged: a connection that
+  // lands between 800 ms and 1500 ms now succeeds and populates `cache`,
+  // instead of being killed for nothing and leaving every later call on this
+  // instance -- cold or warm -- to pay for the same connection setup again
+  // with nothing to show for it (no redirect map, no frozen-account check) in
+  // the meantime. A background refresh (`cache !== null`) is unaffected:
+  // nothing blocks on it, and it already has a stale map to fall back on, so
+  // it keeps the cheaper 800 ms budget.
+  const isColdLookup = cache === null;
+  const timeout = startAwakeTimeout(
+    isColdLookup ? COLD_FETCH_DEADLINE_MS : FETCH_TIMEOUT_MS,
+    () => controller.abort(),
+  );
   try {
     // A pooled socket that died while the process was frozen fails fast;
     // `fetchWithReconnect` tries a fresh connection inside the same budget.
@@ -414,8 +478,8 @@ async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | 
     return { slugs, redirects };
   } catch (err) {
     // Deliberate fail-open: a network error that survived the reconnect
-    // retries, the 800ms awake-time abort, or a malformed body must never
-    // throw out of middleware — a throw there
+    // retries, the awake-time abort (800ms warm / 1500ms cold), or a
+    // malformed body must never throw out of middleware — a throw there
     // takes the whole request down on EVERY route. Log and fall back.
     console.error('[edgeSiteMap] fetch failed, failing open:', err);
     return null;
