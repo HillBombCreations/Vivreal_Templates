@@ -47,7 +47,11 @@ test("the site contact lookup is unconditional, never gated on the body", () => 
   // supply its own contactEmail, so a caller supplying ANY value skipped the
   // server-side lookup entirely.
   assert.doesNotMatch(code, /body\.contactEmail/, "the body's contactEmail must never be read");
-  assert.match(code, /const site = await resolveSiteContact\(\);/);
+  // 2026-10-04: resolveSiteContact() now takes an `onFailure` alerting hook
+  // (idle-dead-socket fix), so the call spans several lines, but it is still
+  // the unconditional `const site = await resolveSiteContact(` start this
+  // control is really about — never `body.contactEmail ? null : ...`.
+  assert.match(code, /const site = await resolveSiteContact\(\{/);
 });
 
 test("control: the replaced code really did gate the lookup on body.contactEmail", () => {
@@ -110,4 +114,40 @@ test("an empty recipient omits contactEmail from the upstream fetch body rather 
 test("customerEmail (the visitor's address) is forwarded verbatim and never promoted to a recipient", () => {
   assert.match(code, /customerEmail,/, "the visitor's address must still be forwarded");
   assert.doesNotMatch(code, /contactEmail:\s*customerEmail/, "the visitor's address must never become the recipient");
+});
+
+// ---------------------------------------------------------------------------
+// review-templates-183.md concern 4 — the contact alert must actually be
+// FLUSHED before this edge route's response, not merely enqueued, since
+// nothing else flushes Sentry here and Amplify can freeze the container the
+// instant the response is sent.
+// ---------------------------------------------------------------------------
+
+test("a failed recipient lookup flushes Sentry before the route can respond", () => {
+  assert.match(code, /recipientLookupFailed = true;/, "onFailure must record that the lookup failed");
+  assert.match(
+    code,
+    /if \(recipientLookupFailed\) \{\s*await Sentry\.flush\(1500\);\s*\}/,
+    "the flush must be gated on the failure, not run unconditionally",
+  );
+});
+
+test("the flush sits after the lookup and before the recipient is resolved, not inside onFailure itself", () => {
+  // onFailure fires synchronously from inside resolveSiteContact() and is
+  // never awaited there (see contactRecipient.ts) — a flush placed INSIDE it
+  // would race the response rather than guard it. It must appear after the
+  // resolveSiteContact(...) call closes.
+  const resolveCallEnd = code.indexOf("resolveContactRecipient(body, site)");
+  const flushIndex = code.indexOf("await Sentry.flush(1500)");
+  assert.ok(flushIndex > -1, "control: the flush call must exist");
+  assert.ok(flushIndex < resolveCallEnd, "the flush must land before the recipient is resolved for the email body");
+});
+
+test("control: an unconditional flush (the defect this guards against) would cost every happy-path request", () => {
+  // Not a claim about the current file — a literal, unconditional
+  // `await Sentry.flush(1500);` would match this pattern too, which is
+  // exactly why the gating test above checks for the `if` wrapper, not just
+  // the call's presence.
+  const UNCONDITIONAL = "await Sentry.flush(1500);";
+  assert.match(UNCONDITIONAL, /await Sentry\.flush\(1500\);/);
 });

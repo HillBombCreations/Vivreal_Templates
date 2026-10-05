@@ -14,8 +14,14 @@
  * segment is therefore NOT `force-dynamic` (that would disable the data cache).
  *
  * Auth header is the raw API_KEY (no "Bearer" prefix).
+ *
+ * Routed through `fetchWithReconnect` since 2026-10-04 (idle-dead-socket
+ * research): one of four GETs that bypassed the shared reconnect helper, so a
+ * dead pooled socket on the first request after idle failed outright instead
+ * of retrying on a fresh connection.
  */
 import { NextResponse } from 'next/server';
+import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from '@/lib/api/fetchWithReconnect';
 
 export const runtime = 'edge';
 export const revalidate = 3600;
@@ -49,7 +55,7 @@ export async function GET(): Promise<NextResponse> {
   }
 
   try {
-    const upstream = await fetch(
+    const upstream = await fetchWithReconnect(
       `${clientApiUrl}/sites/${encodeURIComponent(siteId)}/feeds/schedule.ics`,
       {
         method: 'GET',
@@ -58,7 +64,8 @@ export async function GET(): Promise<NextResponse> {
           Accept: 'text/calendar',
         },
         next: { revalidate: 3600 },
-      }
+      },
+      { label: 'scheduleIcsProxy', backoffMs: DEFAULT_BACKOFF_MS },
     );
 
     const body = await upstream.text();

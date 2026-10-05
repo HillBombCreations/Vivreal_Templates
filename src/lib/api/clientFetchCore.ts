@@ -20,7 +20,7 @@
  * `client.ts` remains the only place that reads `API_KEY`.
  */
 import { PREVIEW_FORWARD_HEADER } from './previewToken.ts';
-import { describeNetworkError, fetchWithReconnect } from './fetchWithReconnect.ts';
+import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from './fetchWithReconnect.ts';
 
 /** Where to send the request, and what to authenticate it with. */
 export interface ClientApiConfig {
@@ -182,6 +182,8 @@ export async function doClientFetch<T>(
   // A GET whose pooled socket died while Amplify had the process frozen fails
   // before reaching VR_Client_API; retry it on a fresh connection instead of
   // serving degraded data (see `./fetchWithReconnect.ts` for the measurements).
+  // This is also the path a background ISR regeneration runs on, so the
+  // awake-time backoff mostly lands off the visitor's own request.
   const res = await fetchWithReconnect(
     url,
     {
@@ -189,10 +191,7 @@ export async function doClientFetch<T>(
       headers: buildClientFetchHeaders(config.apiKey, previewToken, init?.headers),
       cache: 'no-store',
     },
-    {
-      onRetry: (err, retry) =>
-        console.warn(`[clientFetch] connection failed on ${url} (${describeNetworkError(err)}), retry ${retry}`),
-    },
+    { label: 'clientFetch', backoffMs: DEFAULT_BACKOFF_MS },
   );
 
   if (!res.ok) {

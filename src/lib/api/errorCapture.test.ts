@@ -13,9 +13,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CONTACT_RECIPIENT_FAILURE_FINGERPRINT,
   FETCH_FAILURE_FINGERPRINT,
   ORIGIN_REFUSAL_FINGERPRINT,
   SITE_DETAILS_FALLBACK_FINGERPRINT,
+  buildContactRecipientFailureCapture,
   buildFetchFailureCapture,
   buildDegradedRefusalCapture,
   buildOriginRefusalCapture,
@@ -56,6 +58,21 @@ test('fetch-failure fingerprints are identical across sites — a fleet-wide ups
     FETCH_FAILURE_FINGERPRINT,
     '/tenant/siteDetails',
   ]);
+});
+
+test('contact-recipient failure fingerprints are identical across sites and reasons — one Issue, filterable by tag', () => {
+  const network = buildContactRecipientFailureCapture({ siteId: 'aaaa', reason: 'network' });
+  const httpError = buildContactRecipientFailureCapture({ siteId: 'bbbb', reason: 'http-error' });
+
+  assert.deepEqual(network.fingerprint, [CONTACT_RECIPIENT_FAILURE_FINGERPRINT]);
+  assert.deepEqual(network.fingerprint, httpError.fingerprint);
+  assert.equal(network.tags.reason, 'network');
+  assert.equal(httpError.tags.reason, 'http-error');
+});
+
+test('contact-recipient failure capture falls back to the unknown-site tag when no siteId is available', () => {
+  const capture = buildContactRecipientFailureCapture({ siteId: undefined, reason: 'network' });
+  assert.equal(capture.tags.siteId, 'unknown');
 });
 
 test('the tenant is still filterable — siteId lands in tags, never in the fingerprint', () => {

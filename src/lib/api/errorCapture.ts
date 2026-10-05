@@ -252,6 +252,47 @@ export const DEGRADED_DETAIL_REFUSAL_FINGERPRINT = 'templates.degradedRead.refus
  * two near-copies, because the SHAPE (level, tags, no tenant in the
  * fingerprint) is the part that has to stay identical between them.
  */
+/**
+ * Fingerprint root for "the contact-form recipient lookup failed and the
+ * submission was stored without emailing the owner" (F2 is correct, by
+ * design — see `./contactRecipient.ts` — but if nobody is watching this Issue
+ * a run of failures during a post-thaw window is a run of leads the owner
+ * never hears about until they happen to check the portal).
+ *
+ * No tenant component, for the same reason as `buildSiteDetailsFallbackCapture`:
+ * a fleet-wide pattern must collapse into one Issue an alert rule can
+ * threshold on, not one per site.
+ */
+export const CONTACT_RECIPIENT_FAILURE_FINGERPRINT = 'templates.contactRecipient.lookupFailed';
+
+/** Message body for the capture (there is no error object for the http-error
+ * case, and the network case's error is attached separately via `extra`). */
+export const CONTACT_RECIPIENT_FAILURE_MESSAGE =
+  'contact-form recipient lookup failed, submission stored but not emailed';
+
+/**
+ * Capture context for a contact-recipient lookup failure. `reason` is tagged
+ * (`network` vs `http-error`) so a responder can tell "VR_Client_API itself
+ * answered with an error" apart from "the connection never completed" without
+ * opening the event.
+ */
+export function buildContactRecipientFailureCapture({
+  siteId,
+  reason,
+}: {
+  siteId: string | undefined;
+  reason: 'network' | 'http-error';
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [CONTACT_RECIPIENT_FAILURE_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      reason,
+    },
+  };
+}
+
 export function buildDegradedRefusalCapture({
   siteId,
   format,

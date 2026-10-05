@@ -181,6 +181,25 @@ export async function optOutOfPrerenderUnlessIsr(
  *     `s-maxage=300`. Residual: CloudFront's default error-caching minimum TTL
  *     means the 500 can sit at a POP for ~10s. Against 9m46s, that is the trade.
  *
+ *     CONFIRMED REACHABLE BY A REVALIDATE PURGE, NOT ONLY AN OUTAGE
+ *     (idle-dead-socket-research-2026-10-04.md, open question 6). The
+ *     `/api/revalidate` webhook's `HARD_INVALIDATION` (`./cacheInvalidation.ts`)
+ *     is `{ expire: 0 }`, which `areTagsExpired()` treats as DROPPED, not
+ *     merely stale (`cacheInvalidation.test.ts` proves this against Next's own
+ *     manifest). A tag drop removes the "previous good entry" for every page
+ *     that read it, same as an outage does — so a content-edit webhook landing
+ *     immediately before this page's next regeneration, combined with THAT
+ *     regeneration's data fetch failing, reaches this exact branch with no
+ *     outage involved. Not fixed here: it is a property of `HARD_INVALIDATION`
+ *     itself, a separate, already-reviewed tradeoff (a customer must never see
+ *     stale bytes even once after their own edit) that predates and is out of
+ *     scope for the idle-socket fix. What the idle-socket fix DOES do is
+ *     remove the single most common trigger for "that regeneration's data
+ *     fetch failing" in the first place (`./api/fetchWithReconnect.ts`'s
+ *     awake-time backoff), so the compound case — a purge racing a
+ *     regeneration failure — drops with it, without redesigning either side
+ *     on its own.
+ *
  * An app ROUTE (`robots.txt`, `icon`, `apple-icon`, `sitemap.xml`) has no E132
  * branch (`build/templates/app-route.js`), so it simply renders uncached.
  *

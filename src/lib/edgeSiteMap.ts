@@ -21,7 +21,7 @@
  * request that triggered it).
  */
 import type { SiteRedirect } from '@/lib/redirects';
-import { describeNetworkError, fetchWithReconnect } from './api/fetchWithReconnect.ts';
+import { fetchWithReconnect } from './api/fetchWithReconnect.ts';
 import { startAwakeTimeout } from './awakeTimeout.ts';
 
 const CLIENT_API_URL = process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
@@ -45,6 +45,14 @@ export const TTL_MS = 300_000;
 // next invocation. The bound still holds for a cold-cache request, which is
 // awake the whole time it waits.
 const FETCH_TIMEOUT_MS = 800;
+
+// `fetchWithReconnect`'s awake-time backoff, scaled down from its own
+// `DEFAULT_BACKOFF_MS` to fit INSIDE this module's own FETCH_TIMEOUT_MS
+// budget alongside the fetch attempts themselves: 80 + 250 = 330ms of
+// waiting, leaving headroom for three attempts (each typically well under a
+// second) under the same 800ms awake-time abort above. The abort itself
+// still cancels the wait early via the shared `signal` if it fires first.
+const EDGE_BACKOFF_MS = [80, 250];
 
 // Negative-cache window (review pass 1 hardening note): on SUSTAINED
 // upstream failure `cache` never populates, so without this every document
@@ -372,10 +380,7 @@ async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | 
         signal: controller.signal,
         cache: 'no-store',
       },
-      {
-        onRetry: (err, retry) =>
-          console.warn(`[edgeSiteMap] connection failed (${describeNetworkError(err)}), retry ${retry}`),
-      },
+      { label: 'edgeSiteMap', backoffMs: EDGE_BACKOFF_MS },
     );
     if (!res.ok) {
       // Deliberate fail-open (matches clientFetchSafe's posture,
