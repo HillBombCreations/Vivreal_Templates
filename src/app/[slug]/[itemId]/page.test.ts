@@ -177,3 +177,48 @@ test('control: a genuinely nameless team member still gets the sensible title fa
     'the name-present/name-absent title fallback must still be in place',
   );
 });
+
+// ── generateMetadata's generic collection item arm must actually fetch and
+//    use the ITEM, not just the page ──────────────────────────────────────
+//
+// The defect (2026-10-04) this gate widening fixes: 14 pages across the
+// fleet (Help's collection-list articles, bakery/catalog shops, what's-on
+// pages) author no `detailPage` at all, so the OLD gate
+// (`hasDetailRouteConfig || isRecipe`, neither true for them) never fetched
+// the item, and metadata fell to the page-level fallback while the SAME
+// item's JSON-LD a few lines below (the render path, which always fetches
+// the item for this format) carried the real title and excerpt.
+//
+// NOT vivreal.io's blog: that page already authors a `detailPage` (an
+// `itemCollectionId`/`itemKeyField`/`seo.titlePattern`), so the old gate was
+// already true there and the item was already fetched. The blog's bug was
+// precedence in `detailItemMetaText` (the page's `seo.metaTitle` outranked
+// the item/pattern), unaffected by this gate. See that file's docblock.
+test('the metadata item-fetch gate asks the same predicate the render path already uses', () => {
+  assert.match(
+    source,
+    /if \(servesCollectionDetail\(pageConfig\) \|\| hasDetailRouteConfig \|\| isRecipe\) \{/,
+    'generateMetadata must fetch the item for every format servesCollectionDetail claims, not just recipes/scoped-detail pages',
+  );
+});
+
+test('title/description/card-title are resolved through the shared, tested resolver', () => {
+  assert.match(source, /const \{ title, description, cardTitle \} = detailItemMetaText\(\{/);
+  assert.match(
+    source,
+    /import \{ detailItemMetaText \} from "@\/lib\/seo\/detailItemMetaText"/,
+  );
+  // The pre-fix form, recipes-only: every other format's title/card discarded
+  // the item in hand. Must be gone, not just supplemented.
+  assert.doesNotMatch(source, /isRecipe && itemTitle \? itemTitle : pageConfig\.name/);
+  assert.doesNotMatch(source, /const title = seo\?\.metaTitle \|\| patternTitle \|\| `\$\{derivedTitleBase\}/);
+});
+
+test('the per-item OG card is the item\'s own for every format reaching this arm, not recipes only', () => {
+  assert.doesNotMatch(source, /const cardImageUrl = isRecipe\s*\?\s*buildOgItemImageUrl/);
+  assert.match(
+    source,
+    /const cardImageUrl = buildOgItemImageUrl\(origin, slug, itemId\);/,
+    'every format reaching this arm gets its own card, matching the render path\'s per-item og route',
+  );
+});
