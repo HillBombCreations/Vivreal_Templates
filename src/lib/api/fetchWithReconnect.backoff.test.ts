@@ -16,9 +16,9 @@ import { AWAKE_MAX_CREDIT_MS } from '../awakeTimeout.ts';
  * calls internally between retries) is driven deterministically.
  *
  * The SHORT-CIRCUIT tests near the end cover review-templates-183.md concern
- * 3: a process-level short-circuit that skips the backoff wait for a short
- * window after any call exhausts its retries, so a render with many serial
- * reads during a real outage pays the backoff once, not once per read.
+ * 3: a per-module-instance short-circuit that skips the backoff wait for a
+ * short window after any call exhausts its retries, so a render with many
+ * serial reads during a real outage pays the backoff once, not once per read.
  */
 
 function deadSocket(code = 'UND_ERR_SOCKET'): TypeError {
@@ -27,7 +27,7 @@ function deadSocket(code = 'UND_ERR_SOCKET'): TypeError {
 
 const realFetch = globalThis.fetch;
 
-// The short-circuit is process-level (module) state by design — see its own
+// The short-circuit is per-module-instance state by design — see its own
 // header in `fetchWithReconnect.ts`. Reset it around every test in this file
 // so one test's exhausted retry chain cannot silently skip another test's
 // backoff wait, which would read as the wrong test failing.
@@ -327,6 +327,105 @@ test('SHORT-CIRCUIT expiry: after SHORT_CIRCUIT_WINDOW_MS the normal backoff app
       `the retry landed at ${callOffsets[1]}ms — the normal backoff must apply again once the window has expired`,
     );
     const res = await second;
+    assert.equal(res.status, 200);
+  } finally {
+    globalThis.fetch = realFetch;
+    t.mock.timers.reset();
+  }
+});
+
+test('SHORT-CIRCUIT does NOT arm on a POST failure or on the caller\'s own abort (review-templates-183.md pass 2, concern 4)', async (t) => {
+  // The arming guard today is `replayable && transient && attempt >= retries`
+  // (fetchWithReconnect.ts). Replacing it with `if (true)` — arming on ANY
+  // exhausted call, including a non-replayable POST or the caller's own
+  // abort — left all 6 backoff tests above green, because none of them makes
+  // a POST or an abort immediately precede a plain failing GET. This test
+  // does both, then proves a THIRD, ordinary GET still pays the full
+  // schedule: if the guard ever arms on the wrong failure, this is the call
+  // that goes red.
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_000_000 });
+  try {
+    // 1) A POST that fails every attempt. `replayable` is false for a POST,
+    // so the real guard's own condition is false regardless of outcome —
+    // this must never arm the short-circuit.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async () => {
+      throw deadSocket();
+    };
+    await assert.rejects(
+      fetchWithReconnect(
+        'https://client.vivreal.io/x',
+        { method: 'POST', body: '{}' },
+        { backoffMs: [150, 500] },
+      ),
+    );
+
+    // 2) A GET whose OWN signal aborts mid-chain — exactly `edgeSiteMap.ts`'s
+    // 800ms (now cold/warm) deadline firing while a retry is waiting. The
+    // first attempt fails transiently (so a retry gets scheduled), the
+    // caller's own abort fires during that wait, and the resumed attempt
+    // immediately rejects because `fetch()` sees an already-aborted signal
+    // (WHATWG behaviour, mirrored by the stub below). An abort is the
+    // caller's decision, never a transient network fault, so this must not
+    // arm the short-circuit either.
+    const controller = new AbortController();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async (_url: string, init?: RequestInit) => {
+      if (init?.signal?.aborted) {
+        throw new DOMException('This operation was aborted', 'AbortError');
+      }
+      throw deadSocket();
+    };
+    const aborting = fetchWithReconnect(
+      'https://client.vivreal.io/x',
+      { signal: controller.signal },
+      { backoffMs: [150, 500] },
+    );
+    aborting.catch(() => {});
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort(); // mid-wait, before the 150ms backoff elapses
+    await Promise.resolve();
+    await Promise.resolve();
+    await assert.rejects(aborting);
+
+    // 3) A plain failing GET, uninvolved in either case above, must still pay
+    // the FULL backoff schedule. A loosened guard would have armed the
+    // short-circuit in step 1 or step 2, and this call would wrongly land its
+    // retry at awake-offset 0.
+    let calls = 0;
+    const callOffsets: number[] = [];
+    const start = Date.now();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async () => {
+      calls += 1;
+      callOffsets.push(Date.now() - start);
+      if (calls === 1) throw deadSocket();
+      return new Response('ok', { status: 200 });
+    };
+    const third = fetchWithReconnect('https://client.vivreal.io/x', undefined, {
+      backoffMs: [150, 500],
+    });
+    // Flush the first (synchronous) attempt's rejection BEFORE any tick, same
+    // as the REFUSE test above: if the guard were ever loosened and this call
+    // were wrongly short-circuited, the retry would already have happened by
+    // here, with NO clock movement at all, so callOffsets[1] would read 0 —
+    // ticking first would hide that by crediting it with time it never
+    // actually waited.
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    for (let i = 0; i < 10 && calls < 2; i += 1) {
+      t.mock.timers.tick(100);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    assert.equal(calls, 2, 'the retry must still run');
+    assert.ok(
+      callOffsets[1] >= 100,
+      `the retry landed at ${callOffsets[1]}ms — neither the POST failure nor the caller's abort above may have armed the short-circuit`,
+    );
+    const res = await third;
     assert.equal(res.status, 200);
   } finally {
     globalThis.fetch = realFetch;

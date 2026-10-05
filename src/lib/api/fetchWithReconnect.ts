@@ -66,7 +66,7 @@
  * attempt (first try, or a retry that lands) logs nothing, to keep this quiet
  * on a healthy fleet.
  *
- * PROCESS-LEVEL SHORT-CIRCUIT (review-templates-183.md, concern 3)
+ * PER-MODULE-INSTANCE SHORT-CIRCUIT (review-templates-183.md, concern 3)
  * ------------------------------------------------------------------
  * The backoff above is deliberately slow per call so a single post-thaw blip
  * can wait itself out. That is the wrong shape once the upstream is actually
@@ -97,21 +97,41 @@ export const NETWORK_RETRIES = 2;
 export const DEFAULT_BACKOFF_MS: readonly number[] = [150, 500];
 
 /**
- * How long, after ANY call in this process exhausts its retries on a genuine
- * transient network error, every OTHER call skips the backoff wait between
- * attempts (review-templates-183.md, concern 3). The retries themselves
- * still run — a recovery inside the window is not lost — only the wait that
- * assumes the post-thaw window is still live is skipped, which is what
- * bounds the worst case: a render with many serial reads during a real
- * outage pays the backoff at most once, not once per read.
+ * How long, after ANY call in this MODULE INSTANCE exhausts its retries on a
+ * genuine transient network error, every OTHER call sharing that same
+ * instance skips the backoff wait between attempts (review-templates-183.md,
+ * concern 3). The retries themselves still run — a recovery inside the
+ * window is not lost — only the wait that assumes the post-thaw window is
+ * still live is skipped, which is what bounds the worst case: a render with
+ * many serial reads during a real outage pays the backoff at most once, not
+ * once per read.
+ *
+ * Per module instance, NOT per process (review-templates-183.md pass 2,
+ * concern 2 — this is the same realm-vs-process wording that produced B1 in
+ * pass 1, fixed here before it causes a second one). Next bundles this file
+ * separately into the middleware sandbox, each edge route's own sandbox
+ * (`/api/contact` among them) and the Node-runtime render, and each bundle
+ * gets its OWN copy of `lastExhaustedAt` — there is no cross-realm Agent
+ * trick available to this module state the way there was for undici's
+ * dispatcher. That is fail-safe: less short-circuiting only ever means
+ * falling back to the full backoff, never skipping a wait that should have
+ * run. The case this exists for — serial reads in one render through
+ * `clientFetchCore` — is entirely within one instance, so it is unaffected.
  *
  * Wall-clock time, not awake time. Unlike the backoff schedule itself, there
- * is nothing to survive a freeze for here: an Amplify freeze only ever
- * happens BETWEEN invocations, never between two calls inside the same one,
- * and a freeze between invocations is exactly the kind of gap that should
- * EXPIRE this (the freeze was time for the upstream to recover, so the next
- * invocation deserves a full backoff chance again, not a short-circuited
- * one).
+ * is nothing to survive a freeze for here in the common case: an Amplify
+ * freeze usually happens BETWEEN invocations, which is exactly the kind of
+ * gap that should EXPIRE this (the freeze was time for the upstream to
+ * recover, so the next invocation deserves a full backoff chance again, not a
+ * short-circuited one). That is not a universal guarantee, though — a
+ * background ISR regeneration that outlives the response it was triggered by
+ * can itself be frozen mid-flight, between two calls inside what is still
+ * logically one invocation (pass 1, B2) — but the consequence is the same
+ * fail-safe direction either way: the window either expires across the
+ * freeze (short-circuit lost, full backoff resumes) or it does not (window
+ * still armed, nothing worse than today's short-circuited wait). Nothing
+ * here depends on the freeze NEVER happening mid-invocation, only on expiry
+ * being harmless when it does.
  */
 export const SHORT_CIRCUIT_WINDOW_MS = 3_000;
 
@@ -250,7 +270,8 @@ export async function fetchWithReconnect(
       if (!canRetry) {
         // A genuine transient failure that ran out of retries (not: not
         // replayable, not: the caller's own abort) arms the short-circuit for
-        // every OTHER call in this process — see `SHORT_CIRCUIT_WINDOW_MS`.
+        // every OTHER call sharing this module instance — see
+        // `SHORT_CIRCUIT_WINDOW_MS` for what "instance" means here.
         if (replayable && transient && attempt >= retries) {
           lastExhaustedAt = Date.now();
         }
