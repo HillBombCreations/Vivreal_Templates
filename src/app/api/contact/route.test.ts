@@ -543,7 +543,8 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
     "review-templates-184.md P3-3: a null siteName or null branding reads as absent, not a 400",
     async () => {
       __sentryStubControl.reset();
-      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      let sendContactEmailBody: Record<string, unknown> | undefined;
+      globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = String(input);
         if (url.includes("/tenant/siteDetails")) {
           return new Response(
@@ -552,6 +553,7 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
           );
         }
         if (url.includes("/tenant/sendContactEmail")) {
+          sendContactEmailBody = JSON.parse(String(init?.body));
           return new Response(JSON.stringify({ success: true }), { status: 200 });
         }
         throw new Error(`unexpected fetch: ${url}`);
@@ -561,6 +563,11 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
         fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: null }),
       );
       assert.equal(nullSiteNameRes.status, 200, "a null siteName must be treated as absent, not rejected");
+      assert.equal(
+        sendContactEmailBody?.siteName,
+        "Test Site",
+        "a null siteName must resolve to the site's stored name upstream, not leak as null",
+      );
 
       const nullBrandingRes = await POST(
         fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", branding: null }),

@@ -252,10 +252,11 @@ export async function POST(request: NextRequest) {
   // of silent acceptance this check exists to close off.
   // review-templates-184.md P3-3: `null` reads as absent here, the same way
   // `resolveContactRecipient()` already treats it (`body.siteName?.trim()`,
-  // `body.branding ?? site?.branding`, both nullish-safe). `!= null` rejects
-  // only `undefined` and `null`, not `0`/`""`/other falsy-but-typed values,
-  // so a `!== undefined` check would have 400'd a legitimate `null` that no
-  // real sender posts today but that downstream code already tolerates.
+  // `body.branding ?? site?.branding`, both nullish-safe). `!= null` lets
+  // only `undefined` and `null` skip the type check; `0`, `""`, `false` and
+  // every other value is still type-checked, so a `null` reads as absent
+  // instead of a 400 that no real sender posts today but that downstream
+  // code already tolerates.
   if (body.siteName != null && typeof body.siteName !== "string") {
     return NextResponse.json({ error: "Invalid siteName" }, { status: 400 });
   }
