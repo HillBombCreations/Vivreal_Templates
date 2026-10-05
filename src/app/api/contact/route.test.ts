@@ -13,11 +13,19 @@ register(new URL("./testSupport/routeLoader.mjs", import.meta.url).href);
 
 /**
  * route.ts imports `next/server`, which the plain-Node test runner cannot
- * load, so this pins the structural decisions in the module itself, exactly
- * as `checkout/confirm/route.test.ts` and `delivery-quote/route.test.ts` do.
- * The behaviour worth pinning — what `resolveContactRecipient` actually
- * resolves to under an ALLOW/REFUSE/no-email body — lives in
- * `src/lib/contactRecipient.test.ts`, which CAN be loaded and called.
+ * load unmodified, so the tests in the first half of this file pin
+ * structural decisions against the module's own comment-stripped source
+ * text, exactly as `checkout/confirm/route.test.ts` and
+ * `delivery-quote/route.test.ts` do. The behaviour worth pinning — what
+ * `resolveContactRecipient` actually resolves to under an ALLOW/REFUSE/no-
+ * email body — lives in `src/lib/contactRecipient.test.ts`, which CAN be
+ * loaded and called directly.
+ *
+ * review-templates-184.md item 2 changed that for the flush block only: the
+ * "flush behaviour" tests further down register `testSupport/routeLoader.mjs`,
+ * which stubs `next/server` and `@sentry/nextjs` so `route.ts` loads for
+ * real and its actual `POST()` runs under mocked timing. Everything above
+ * that point in this file still tests source text, not behaviour.
  *
  * Every ABSENCE assertion below runs against comment-stripped source. A grep
  * for a removed pattern otherwise matches the comment explaining the
@@ -165,6 +173,7 @@ interface SentryStubModule {
   __sentryStubControl: {
     readonly flushCalls: ReadonlyArray<{ timeout: number; at: number }>;
     readonly captureCalls: ReadonlyArray<{ message: string; context: unknown; at: number }>;
+    readonly exceptionCalls: ReadonlyArray<{ err: unknown; at: number }>;
     resolveFlush(value?: boolean): void;
     reset(): void;
   };
@@ -187,11 +196,17 @@ function deferredResponse() {
   };
 }
 
-/** Flush a bounded number of microtask turns — enough for the async chain
- * between a mocked `fetch` resolving and the next `await` in `route.ts`
- * actually running, without a real timer. */
-async function flush(turns = 15) {
-  for (let i = 0; i < turns; i += 1) await Promise.resolve();
+/** Drain the real microtask queue (review-templates-184.md P2-3). Node runs
+ * EVERY queued microtask, including ones a running microtask queues in
+ * turn, before firing any macrotask, so one `setImmediate` tick is a
+ * complete drain regardless of how many `.then()` hops the awaited chain
+ * contains. The previous version counted a fixed number of manual
+ * `Promise.resolve()` turns, which passes every `settled === false`
+ * assertion below without testing anything once the real chain grows past
+ * the count, since a settled-but-uninspected promise reads the same as an
+ * unsettled one. */
+async function flush() {
+  await new Promise<void>((resolve) => setImmediate(resolve));
 }
 
 test("flush behaviour (review-templates-184.md item 2)", async (t) => {
@@ -257,6 +272,41 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
     assert.deepEqual(res.body, { success: true });
   });
 
+  await t.test(
+    "review-templates-184.md P2-2: a successful site lookup never starts a flush (M4 guard)",
+    async () => {
+      __sentryStubControl.reset();
+      const upstream = deferredResponse();
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.includes("/tenant/siteDetails")) {
+          return new Response(
+            JSON.stringify({ businessInfo: { name: "Test Site", contactInfo: { email: "owner@example.com" } } }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tenant/sendContactEmail")) return upstream.promise;
+        throw new Error(`unexpected fetch: ${url}`);
+      };
+
+      const responsePromise = POST(
+        fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: "Test Site" }),
+      );
+
+      await flush();
+      assert.equal(
+        __sentryStubControl.flushCalls.length,
+        0,
+        "a successful lookup must never start a flush, there is nothing to alert about",
+      );
+
+      upstream.settle(200, { success: true });
+      const res = await responsePromise;
+      assert.equal(res.status, 200);
+      assert.equal(__sentryStubControl.flushCalls.length, 0, "the happy path must stay flush-free end to end");
+    },
+  );
+
   await t.test("a non-2xx upstream reply still waits for the flush before responding", async () => {
     __sentryStubControl.reset();
     const upstream = deferredResponse();
@@ -309,37 +359,60 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
     __sentryStubControl.resolveFlush(true);
     const res = await responsePromise;
     assert.equal(res.status, 502);
+    assert.equal(
+      __sentryStubControl.exceptionCalls.length,
+      1,
+      "P2-1: a swallowed throw must still be captured, or it is lost with no auto-instrumentation to catch it either",
+    );
   });
 
   await t.test(
-    "review-templates-184.md item 1: a throw BEFORE the upstream fetch (hostile siteName) still waits for the flush",
+    "review-templates-184.md P2-1: a non-string siteName is rejected with 400 before any upstream call",
     async () => {
       __sentryStubControl.reset();
+      let fetchCalls = 0;
       globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
-        const url = String(input);
-        if (url.includes("/tenant/siteDetails")) return new Response("{}", { status: 500 });
-        throw new Error(`unexpected fetch: ${url}`);
+        fetchCalls += 1;
+        throw new Error(`unexpected fetch: ${String(input)}`);
       };
 
-      // `resolveContactRecipient` runs `body.siteName?.trim()` — a non-string
-      // `siteName` throws a TypeError here, BEFORE the upstream fetch is ever
-      // called. This is the exact regression item 1 fixed: the flush must
-      // still be awaited on this path, not just on a `return`.
-      const responsePromise = POST(
+      // Previously `resolveContactRecipient`'s `body.siteName?.trim()` threw
+      // a TypeError on this exact body, which the old catch turned into a
+      // 502 claiming an upstream failure that never happened. It is now
+      // rejected up front, so neither `/tenant/siteDetails` nor
+      // `/tenant/sendContactEmail` is ever reached.
+      const res = await POST(
         fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: 5 }),
       );
-      let settled = false;
-      responsePromise.then(() => {
-        settled = true;
-      });
 
-      await flush();
-      assert.equal(__sentryStubControl.flushCalls.length, 1, "the flush must have started despite the later throw");
-      assert.equal(settled, false, "the response must not settle while the flush from the failed lookup is pending");
-
-      __sentryStubControl.resolveFlush(true);
-      const res = await responsePromise;
-      assert.equal(res.status, 502, "a throw before the fetch must still answer 502, not hang or crash");
+      assert.equal(res.status, 400, "a malformed siteName must answer 400, not a false 502");
+      assert.equal(
+        fetchCalls,
+        0,
+        "validation must happen before resolveSiteContact's own fetch, not after a failed lookup",
+      );
+      assert.equal(__sentryStubControl.flushCalls.length, 0, "nothing was captured, so nothing should be flushed");
     },
   );
+
+  await t.test("a non-object branding is rejected with 400 the same way", async () => {
+    __sentryStubControl.reset();
+    let fetchCalls = 0;
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      fetchCalls += 1;
+      throw new Error(`unexpected fetch: ${String(input)}`);
+    };
+
+    const res = await POST(
+      fakeRequest({
+        name: "Ada",
+        customerEmail: "ada@example.com",
+        message: "hi",
+        branding: "not-an-object",
+      }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.equal(fetchCalls, 0);
+  });
 });

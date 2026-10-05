@@ -106,8 +106,11 @@ const NEGATIVE_CACHE_MS = 30_000;
 // cold branch today; it stays because a background refresh still needs its
 // own 800ms version of the same timer. Either way, 1500 stays far below
 // Amplify's 28s origin timeout. Exceeding it costs one request its
-// authored-redirect resolution and nothing else; see the `if (!siteMap)`
-// fall-through in middleware.ts.
+// authored-redirect resolution AND the billing-freeze gate: `isSiteFrozen()`
+// reads `frozenState`, which only a completed fetch writes, so a cold
+// failure leaves it at whatever it was before and a frozen site can serve
+// its real page for that one request too (review-templates-184.md Q2). See
+// the `if (!siteMap)` fall-through in middleware.ts.
 export const COLD_FETCH_DEADLINE_MS = 1_500;
 
 /**

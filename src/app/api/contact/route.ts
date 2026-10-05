@@ -241,6 +241,25 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // review-templates-184.md P2-1: `resolveContactRecipient()` runs
+  // `body.siteName?.trim()`, which throws a TypeError on a non-string value
+  // (optional chaining only guards null/undefined, not the wrong type).
+  // Reject it here, before the lookup and before anything can be flushed,
+  // so a hostile or malformed body gets an honest 400 instead of surfacing
+  // as a 502 "upstream failure" that never happened. `branding` is checked
+  // the same way: it only ever feeds template strings below, so a non-object
+  // value cannot throw, but letting it past validation here is the same kind
+  // of silent acceptance this check exists to close off.
+  if (body.siteName !== undefined && typeof body.siteName !== "string") {
+    return NextResponse.json({ error: "Invalid siteName" }, { status: 400 });
+  }
+  if (
+    body.branding !== undefined &&
+    (typeof body.branding !== "object" || body.branding === null || Array.isArray(body.branding))
+  ) {
+    return NextResponse.json({ error: "Invalid branding" }, { status: 400 });
+  }
+
   // F1 (security hotfix, docs/projects/form-test-send/design.md): the
   // recipient is resolved ONLY from this site's own stored contact info,
   // server-side, on every request. `body.contactEmail` used to win outright
@@ -262,13 +281,14 @@ export async function POST(request: NextRequest) {
   // before the response — Amplify can freeze the container the instant it is
   // sent. Declared here (not yet started) so the `finally` below always has
   // something to await, no matter how early the request fails.
-  // review-templates-184.md item 1: `resolveContactRecipient()` runs on
-  // untrusted JSON (`body.siteName?.trim()` throws on a non-string
-  // `siteName`) between the old flush-start point and the old `try`, so a
-  // hostile body used to skip the await entirely. Everything that can throw
-  // for this request, including that call, now lives inside the `try` below,
-  // and the `finally` awaits the flush on every exit from it: success, a
-  // non-2xx upstream reply, the catch block, or a throw before the fetch.
+  // review-templates-184.md item 1: between the old flush-start point and
+  // the old `try`, a throw skipped the await entirely. Everything that can
+  // still throw for this request now lives inside the `try` below, and the
+  // `finally` awaits the flush on every exit from it: success, a non-2xx
+  // upstream reply, or the catch block. The one throw that reached here
+  // before, `resolveContactRecipient()`'s `body.siteName?.trim()` on a
+  // non-string `siteName`, no longer can: P2-1 rejects that body above with
+  // a 400 before this point, so the `try` no longer has a known way in.
   let flushPromise: Promise<unknown> = Promise.resolve();
 
   try {
@@ -360,6 +380,17 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
+    // P2-1: `next.config.ts`'s `withSentryConfig` only auto-captures a
+    // rejected route handler; returning here instead of rethrowing means
+    // nothing records this failure unless it is captured explicitly.
+    Sentry.captureException(err);
+    // Re-point `flushPromise` at a fresh flush rather than trust the one
+    // already in flight: `recipientLookupFailed` can still be false here
+    // (the site lookup succeeded and the UPSTREAM post is what threw), in
+    // which case `flushPromise` is still the inert `Promise.resolve()`
+    // declared above, and awaiting that would not send this event before
+    // Amplify can freeze the container.
+    flushPromise = Sentry.flush(1500);
     return NextResponse.json(
       { error: "Failed to send message" },
       { status: 502 }

@@ -7,10 +7,19 @@
 // either side needing to know the other exists.
 let flushCalls = [];
 let captureCalls = [];
+let exceptionCalls = [];
 let pendingFlush = null;
 
 export function captureMessage(message, context) {
   captureCalls.push({ message, context, at: Date.now() });
+}
+
+// P2-1 (review-templates-184.md pass 2): route.ts calls this from its catch
+// block so a response-swallowed throw is still recorded, the same way
+// Sentry's own route-handler instrumentation would have recorded it had the
+// throw been allowed to reach Next instead.
+export function captureException(err) {
+  exceptionCalls.push({ err, at: Date.now() });
 }
 
 export function flush(timeout) {
@@ -33,6 +42,9 @@ export const __sentryStubControl = {
   get captureCalls() {
     return captureCalls;
   },
+  get exceptionCalls() {
+    return exceptionCalls;
+  },
   /** Settle the (one, shared) pending `flush()` call, or pre-seed the
    * result if `flush()` has not been called yet. */
   resolveFlush(value = true) {
@@ -45,6 +57,7 @@ export const __sentryStubControl = {
   reset() {
     flushCalls = [];
     captureCalls = [];
+    exceptionCalls = [];
     pendingFlush = null;
   },
 };
