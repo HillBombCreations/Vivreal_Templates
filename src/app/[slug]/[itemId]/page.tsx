@@ -1254,15 +1254,22 @@ export async function generateMetadata({ params }: Props) {
   // of those stay as a safety net for a page this predicate doesn't claim
   // (e.g. `detailPage.scope`/`context` authored with no `itemCollectionId`).
   //
-  // THIS WAS THE BUG. Every one of vivreal.io's blog posts is
-  // `format: 'collection-list'` with no `detailPage` authored at all, so
-  // `hasDetailRouteConfig` was false and `isRecipe` was false, and every
-  // post's metadata fell straight through to the page-level fallback at the
-  // bottom of this function — the generic `<title>Blog | Vivreal</title>`
-  // search engines and link previews saw, while the SAME item's JSON-LD two
-  // sections below (the render path, which calls `lookupDetailItem`
-  // unconditionally for this format) carried the real title and excerpt. The
-  // data was one fetch away; only this gate was missing it.
+  // This widening is a real fix for 14 OTHER pages (Help's collection-list
+  // articles, the bakery/catalog shops, the what's-on pages), none of which
+  // author a `detailPage` at all, so `hasDetailRouteConfig` and `isRecipe`
+  // were both false for every one of them and metadata never fetched the
+  // item — the generic page-level `<title>`/description every such post
+  // rendered, while the SAME item's JSON-LD two sections below (the render
+  // path, which calls `lookupDetailItem` unconditionally for this format)
+  // carried the real title and excerpt.
+  //
+  // It is NOT what fixed vivreal.io's `/blog`: that page already authors a
+  // `detailPage.itemCollectionId`/`itemKeyField`/`seo.titlePattern`, so
+  // `hasDetailRouteConfig` was already true and the item was already being
+  // fetched here. The blog's bug was precedence inside `detailItemMetaText`
+  // (the page's own `seo.metaTitle` outranked the item/pattern) — see that
+  // file's docblock. Widening this gate does nothing for vivreal.io; it
+  // fixes the 14 other pages.
   if (servesCollectionDetail(pageConfig) || hasDetailRouteConfig || isRecipe) {
     const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
     if (lookup) {

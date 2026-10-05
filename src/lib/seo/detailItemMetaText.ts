@@ -5,16 +5,20 @@
  * for a provider-sourced product, used by `[slug]/[itemId]/page.tsx`'s
  * `generateMetadata` for every OTHER format that fetches its item.
  *
- * THE BUG THIS FIXES (2026-10-04): every post on vivreal.io's `/blog` is
- * `format: 'collection-list'` with no `detailPage` authored, so the gate that
- * decided whether to fetch the item at all (`hasDetailRouteConfig || isRecipe`
- * in the route) was false for every one of them, and metadata fell straight
- * to the page-level fallback — the generic `<title>Blog | Vivreal</title>`
- * every post rendered, while the SAME item's JSON-LD a few lines below it (the
- * render path, which fetches the item unconditionally for this format) always
- * carried the real title and excerpt. The route now fetches the item for
- * every format `servesCollectionDetail` claims; this function is what it does
- * with the item once it has one.
+ * THE BUG THIS FIXES (2026-10-04): vivreal.io's `/blog` is `format: 'list'`
+ * WITH a `detailPage` authored (`itemCollectionId`, `itemKeyField`, and a
+ * `seo.titlePattern` of `{item.title}`), so the old gate (`hasDetailRouteConfig
+ * || isRecipe`) was already true and the item was already fetched. The bug was
+ * ordering: the old chain put the PAGE's own `seo.metaTitle`/`metaDescription`
+ * ahead of the item/pattern, so the listing page's generic
+ * `<title>Blog | Vivreal</title>` always outranked the post's own
+ * `{item.title}` pattern, even though the SAME item's JSON-LD a few lines
+ * below (the render path, which fetches the item unconditionally for this
+ * format) always carried the real title and excerpt. This function reverses
+ * that precedence. The gate widening below (`servesCollectionDetail`) is a
+ * separate, real fix for 14 OTHER pages (Help, bakery/catalog shops,
+ * what's-on) whose pages genuinely authored no `detailPage` at all — it does
+ * nothing for vivreal.io, where the gate was never the problem.
  *
  * ITEM DATA WINS. A page-level value (`pageMetaTitle`, `pageMetaDescription`,
  * `pageSubtitle`, `pageName`) is a fallback for when the item has none, never

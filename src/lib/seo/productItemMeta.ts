@@ -6,6 +6,11 @@
  * authored `detailPage.seo` pattern is, and it wins.
  *
  * Pure, no imports beyond a sibling, so it runs under plain `node --test`.
+ *
+ * Counterpart: `./detailItemMetaText.ts`, the same shape for every OTHER
+ * collection-detail format, which DOES fall back to the page's `seo.metaTitle`/
+ * `metaDescription` (authored for a blog/catalog page is legitimately reused
+ * when an item has none of its own, unlike a shop's title).
  */
 
 import { plainMeta } from './plainMeta.ts';
