@@ -266,15 +266,17 @@ export async function POST(request: NextRequest) {
       );
     },
   });
-  // review-templates-183.md concern 4: this route is `runtime = "edge"`, and
-  // nothing else flushes a queued Sentry envelope before the response —
-  // Amplify can freeze the container the instant it is sent. Flushing here,
-  // on the failure branch ONLY, is what turns "enqueued" into "sent" before
-  // that freeze has a chance to land. Costs nothing on the happy path, which
-  // is every request where the lookup succeeds.
-  if (recipientLookupFailed) {
-    await Sentry.flush(1500);
-  }
+  // review-templates-183.md concern 4 (and concern 6): this route is
+  // `runtime = "edge"`, and nothing else flushes a queued Sentry envelope
+  // before the response — Amplify can freeze the container the instant it is
+  // sent. Started here, on the failure branch ONLY, so it costs nothing on
+  // the happy path. Deliberately NOT awaited yet: it runs CONCURRENTLY with
+  // the upstream POST below, so the visitor pays roughly the slower of the
+  // two instead of their sum. `await flushPromise` appears explicitly in
+  // every response path further down — success, a non-2xx upstream reply,
+  // and the catch block — so the envelope is always sent before this
+  // function can return, regardless of how the POST turns out.
+  const flushPromise = recipientLookupFailed ? Sentry.flush(1500) : Promise.resolve();
   const { to, siteName, branding } = resolveContactRecipient(body, site);
 
   // F2: a submission is never dropped for lack of a configured recipient.
@@ -339,6 +341,7 @@ export async function POST(request: NextRequest) {
       }),
     });
 
+    await flushPromise;
     const data = await res.json();
 
     if (!res.ok) {
@@ -350,6 +353,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
+    await flushPromise;
     return NextResponse.json(
       { error: "Failed to send message" },
       { status: 502 }

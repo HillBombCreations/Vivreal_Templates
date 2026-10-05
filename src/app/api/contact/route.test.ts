@@ -123,31 +123,60 @@ test("customerEmail (the visitor's address) is forwarded verbatim and never prom
 // instant the response is sent.
 // ---------------------------------------------------------------------------
 
-test("a failed recipient lookup flushes Sentry before the route can respond", () => {
+test("a failed recipient lookup starts a gated Sentry flush, not an unconditional one", () => {
   assert.match(code, /recipientLookupFailed = true;/, "onFailure must record that the lookup failed");
   assert.match(
     code,
-    /if \(recipientLookupFailed\) \{\s*await Sentry\.flush\(1500\);\s*\}/,
-    "the flush must be gated on the failure, not run unconditionally",
+    /const flushPromise = recipientLookupFailed \? Sentry\.flush\(1500\) : Promise\.resolve\(\);/,
+    "the flush must be gated on the failure, not started unconditionally",
   );
 });
 
-test("the flush sits after the lookup and before the recipient is resolved, not inside onFailure itself", () => {
+test("the flush starts after the lookup and before the recipient is resolved, not inside onFailure itself", () => {
   // onFailure fires synchronously from inside resolveSiteContact() and is
-  // never awaited there (see contactRecipient.ts) — a flush placed INSIDE it
-  // would race the response rather than guard it. It must appear after the
-  // resolveSiteContact(...) call closes.
+  // never awaited there (see contactRecipient.ts) — a flush started INSIDE
+  // it would race the response rather than guard it. It must appear after
+  // the resolveSiteContact(...) call closes.
   const resolveCallEnd = code.indexOf("resolveContactRecipient(body, site)");
-  const flushIndex = code.indexOf("await Sentry.flush(1500)");
-  assert.ok(flushIndex > -1, "control: the flush call must exist");
-  assert.ok(flushIndex < resolveCallEnd, "the flush must land before the recipient is resolved for the email body");
+  const flushIndex = code.indexOf("const flushPromise =");
+  assert.ok(flushIndex > -1, "control: the flush assignment must exist");
+  assert.ok(flushIndex < resolveCallEnd, "the flush must start before the recipient is resolved for the email body");
 });
 
-test("control: an unconditional flush (the defect this guards against) would cost every happy-path request", () => {
-  // Not a claim about the current file — a literal, unconditional
-  // `await Sentry.flush(1500);` would match this pattern too, which is
-  // exactly why the gating test above checks for the `if` wrapper, not just
-  // the call's presence.
-  const UNCONDITIONAL = "await Sentry.flush(1500);";
-  assert.match(UNCONDITIONAL, /await Sentry\.flush\(1500\);/);
+test("review-templates-183.md concern 6: the flush runs ALONGSIDE the upstream POST, never serially before it", () => {
+  // The defect this guards against: starting (or awaiting) the flush BEFORE
+  // the upstream `fetch(...)` call, which pays the full flush cost on top of
+  // the POST's own latency instead of letting the two overlap. Proven by
+  // position: the un-awaited `flushPromise` assignment must precede the
+  // `fetch(` call (so they START together), and every explicit
+  // `await flushPromise` must appear AFTER that same call, never before it.
+  const flushAssignIndex = code.indexOf("const flushPromise =");
+  const fetchCallIndex = code.indexOf("await fetch(`${clientApiUrl}/tenant/sendContactEmail`");
+  assert.ok(flushAssignIndex > -1 && fetchCallIndex > -1, "control: both must exist");
+  assert.ok(
+    flushAssignIndex < fetchCallIndex,
+    "flushPromise must be created before the POST starts, so the two run concurrently",
+  );
+  // The regression this guards against: a blocking `await Sentry.flush(1500);`
+  // statement ahead of `flushPromise`'s own assignment, which serialises the
+  // full flush cost before the POST even starts — `flushPromise` itself would
+  // still exist afterward (as an unconditional no-op), so the two assertions
+  // above alone cannot catch it.
+  assert.doesNotMatch(
+    code,
+    /await Sentry\.flush\(1500\);/,
+    "the flush must never be awaited directly — only indirectly, via `await flushPromise` after the POST has started",
+  );
+
+  const awaitFlushMatches = [...code.matchAll(/await flushPromise;/g)];
+  assert.ok(
+    awaitFlushMatches.length >= 2,
+    "the flush must be explicitly awaited in both the success path and the catch block",
+  );
+  for (const match of awaitFlushMatches) {
+    assert.ok(
+      (match.index ?? -1) > fetchCallIndex,
+      "await flushPromise must only ever run after the POST has started, never before it",
+    );
+  }
 });
