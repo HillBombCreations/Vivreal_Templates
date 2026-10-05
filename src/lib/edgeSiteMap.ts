@@ -93,10 +93,21 @@ const NEGATIVE_CACHE_MS = 30_000;
 // exists to tolerate, and no visitor is blocked on it.
 //
 // 1500 sits above FETCH_TIMEOUT_MS (800 awake ms, which also covers
-// fetchWithReconnect's retries) so the ordinary abort still wins on a healthy
-// instance, and far below Amplify's 28s origin timeout. Exceeding it costs one
-// request its authored-redirect resolution and nothing else; see the
-// `if (!siteMap)` fall-through in middleware.ts.
+// fetchWithReconnect's retries), but that comparison only decides anything on
+// a WARM instance (`cache !== null`, a background refresh): there,
+// FETCH_TIMEOUT_MS is the only timer racing the fetch, and it is what aborts.
+// On the COLD branch (`cache === null`) this same value also arms
+// `fetchSiteMap`'s own awake-time abort (see `isColdLookup` below), so BOTH
+// timers racing that fetch carry 1500 there, and it is the WALL-CLOCK
+// deadline in `awaitWithDeadline` below that actually wins (review-templates-
+// 184.md item 4: measured, the awake timer's 100ms tick granularity drifts
+// past 1500 wall ms before its own 15th tick lands, so the wall deadline
+// fires first every time). The awake abort is effectively redundant on the
+// cold branch today; it stays because a background refresh still needs its
+// own 800ms version of the same timer. Either way, 1500 stays far below
+// Amplify's 28s origin timeout. Exceeding it costs one request its
+// authored-redirect resolution and nothing else; see the `if (!siteMap)`
+// fall-through in middleware.ts.
 export const COLD_FETCH_DEADLINE_MS = 1_500;
 
 /**
