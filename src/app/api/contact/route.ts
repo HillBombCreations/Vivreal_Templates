@@ -250,12 +250,18 @@ export async function POST(request: NextRequest) {
   // the same way: it only ever feeds template strings below, so a non-object
   // value cannot throw, but letting it past validation here is the same kind
   // of silent acceptance this check exists to close off.
-  if (body.siteName !== undefined && typeof body.siteName !== "string") {
+  // review-templates-184.md P3-3: `null` reads as absent here, the same way
+  // `resolveContactRecipient()` already treats it (`body.siteName?.trim()`,
+  // `body.branding ?? site?.branding`, both nullish-safe). `!= null` rejects
+  // only `undefined` and `null`, not `0`/`""`/other falsy-but-typed values,
+  // so a `!== undefined` check would have 400'd a legitimate `null` that no
+  // real sender posts today but that downstream code already tolerates.
+  if (body.siteName != null && typeof body.siteName !== "string") {
     return NextResponse.json({ error: "Invalid siteName" }, { status: 400 });
   }
   if (
-    body.branding !== undefined &&
-    (typeof body.branding !== "object" || body.branding === null || Array.isArray(body.branding))
+    body.branding != null &&
+    (typeof body.branding !== "object" || Array.isArray(body.branding))
   ) {
     return NextResponse.json({ error: "Invalid branding" }, { status: 400 });
   }

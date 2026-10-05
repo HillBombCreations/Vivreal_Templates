@@ -415,4 +415,157 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
     assert.equal(res.status, 400);
     assert.equal(fetchCalls, 0);
   });
+
+  await t.test(
+    "review-templates-184.md P3-1: a throw AFTER a successful site lookup still re-points and awaits a fresh flush",
+    async () => {
+      __sentryStubControl.reset();
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.includes("/tenant/siteDetails")) {
+          // Site lookup SUCCEEDS this time, so `recipientLookupFailed` stays
+          // false and `flushPromise` is never started on the failure branch
+          // (P2-2's guard). Only the upstream `sendContactEmail` throws.
+          return new Response(
+            JSON.stringify({ businessInfo: { name: "Test Site", contactInfo: { email: "owner@example.com" } } }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tenant/sendContactEmail")) throw new TypeError("fetch failed");
+        throw new Error(`unexpected fetch: ${url}`);
+      };
+
+      const responsePromise = POST(
+        fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: "Test Site" }),
+      );
+      let settled = false;
+      responsePromise.then(() => {
+        settled = true;
+      });
+
+      await flush();
+      assert.equal(
+        __sentryStubControl.flushCalls.length,
+        1,
+        "the catch must start a fresh flush even though the site lookup succeeded and nothing had flushed yet",
+      );
+      assert.equal(
+        settled,
+        false,
+        "the response must not settle before the re-pointed flush resolves",
+      );
+
+      __sentryStubControl.resolveFlush(true);
+      const res = await responsePromise;
+      assert.equal(res.status, 502);
+      assert.equal(
+        __sentryStubControl.exceptionCalls.length,
+        1,
+        "the throw must still be captured even though the site lookup never failed",
+      );
+    },
+  );
+
+  await t.test(
+    "review-templates-184.md P3-2: every real body shape the fleet actually sends gets 200",
+    async () => {
+      __sentryStubControl.reset();
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.includes("/tenant/siteDetails")) {
+          return new Response(
+            JSON.stringify({ businessInfo: { name: "Test Site", contactInfo: { email: "owner@example.com" } } }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tenant/sendContactEmail")) {
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      };
+
+      // renderer 1.83.0's `buildSubmitPayload` (contact mode), read from
+      // `node_modules/@hillbombcreations/site-renderer/dist/components/ConfigurableForm.js`:
+      // no `siteName`, no `branding` at the top level at all.
+      const rendererContactPayload = {
+        name: "Ada",
+        email: "ada@example.com",
+        message: "hi",
+        customerEmail: "ada@example.com",
+        company_website: "",
+      };
+      // Templates `FormLayout.tsx`'s own submit body.
+      const formLayoutPayload = { name: "Ada", customerEmail: "ada@example.com", message: "hi" };
+      // Templates `ContactSection/index.tsx`'s submit body on a fully configured site.
+      const contactSectionPopulated = {
+        name: "Ada",
+        customerEmail: "ada@example.com",
+        message: "hi",
+        siteName: "Test Site",
+        contactEmail: "owner@example.com",
+        branding: {
+          primary: "#111111",
+          surface: "#ffffff",
+          textPrimary: "#000000",
+          logoUrl: "https://example.com/logo.png",
+        },
+      };
+      // Same component, on a site with no business name or branding configured
+      // yet: `siteName` is always a string ("" here), `branding` is always an
+      // object literal whose all-undefined values JSON.stringify collapses to
+      // `{}` over the wire.
+      const contactSectionEmptySite = {
+        name: "Ada",
+        customerEmail: "ada@example.com",
+        message: "hi",
+        siteName: "",
+        contactEmail: "",
+        branding: {},
+      };
+
+      const shapes = [
+        ["renderer 1.83.0 contact payload", rendererContactPayload],
+        ["FormLayout payload", formLayoutPayload],
+        ["ContactSection, populated site", contactSectionPopulated],
+        ["ContactSection, empty site", contactSectionEmptySite],
+      ] as const;
+
+      for (const [label, payload] of shapes) {
+        // Round-trip through JSON, same as what `request.json()` hands
+        // route.ts for a real POST body.
+        const res = await POST(fakeRequest(JSON.parse(JSON.stringify(payload))));
+        assert.equal(res.status, 200, `${label} must get 200, not a validation 400`);
+      }
+    },
+  );
+
+  await t.test(
+    "review-templates-184.md P3-3: a null siteName or null branding reads as absent, not a 400",
+    async () => {
+      __sentryStubControl.reset();
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.includes("/tenant/siteDetails")) {
+          return new Response(
+            JSON.stringify({ businessInfo: { name: "Test Site", contactInfo: { email: "owner@example.com" } } }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/tenant/sendContactEmail")) {
+          return new Response(JSON.stringify({ success: true }), { status: 200 });
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      };
+
+      const nullSiteNameRes = await POST(
+        fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: null }),
+      );
+      assert.equal(nullSiteNameRes.status, 200, "a null siteName must be treated as absent, not rejected");
+
+      const nullBrandingRes = await POST(
+        fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", branding: null }),
+      );
+      assert.equal(nullBrandingRes.status, 200, "a null branding must be treated as absent, not rejected");
+    },
+  );
 });
