@@ -67,6 +67,7 @@ import {
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
+import { detailItemMetaText } from "@/lib/seo/detailItemMetaText";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -1245,12 +1246,24 @@ export async function generateMetadata({ params }: Props) {
     seoPatterns
   );
 
-  // `recipes` joins the per-item fetch UNCONDITIONALLY, config or not. The
-  // whole point of a recipe page is that its link gets pasted into a caption,
-  // and without the item in hand every recipe on the site shares one card and
-  // one title. Every other format keeps the existing gate exactly, so no page
-  // on the fleet gains a fetch it did not have.
-  if (hasDetailRouteConfig || isRecipe) {
+  // Fetch the item whenever this page's detail route actually resolves one out
+  // of a CMS collection — `servesCollectionDetail` is the exact predicate the
+  // RENDER path (the collection arm above) already uses to decide that, so
+  // this is metadata asking the same question the page body answers. Widens,
+  // never narrows, the previous `hasDetailRouteConfig || isRecipe` gate: both
+  // of those stay as a safety net for a page this predicate doesn't claim
+  // (e.g. `detailPage.scope`/`context` authored with no `itemCollectionId`).
+  //
+  // THIS WAS THE BUG. Every one of vivreal.io's blog posts is
+  // `format: 'collection-list'` with no `detailPage` authored at all, so
+  // `hasDetailRouteConfig` was false and `isRecipe` was false, and every
+  // post's metadata fell straight through to the page-level fallback at the
+  // bottom of this function — the generic `<title>Blog | Vivreal</title>`
+  // search engines and link previews saw, while the SAME item's JSON-LD two
+  // sections below (the render path, which calls `lookupDetailItem`
+  // unconditionally for this format) carried the real title and excerpt. The
+  // data was one fetch away; only this gate was missing it.
+  if (servesCollectionDetail(pageConfig) || hasDetailRouteConfig || isRecipe) {
     const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
     if (lookup) {
       const item = lookup.item;
@@ -1270,11 +1283,6 @@ export async function generateMetadata({ params }: Props) {
           typeof effectiveItem.title === "string" && effectiveItem.title.trim()
             ? effectiveItem.title.trim()
             : undefined;
-        // Only recipes derive the default title from the ITEM. Widening this to
-        // every format would rewrite the <title> of every scoped-detail page in
-        // the fleet on the next promote-stable, which is a real SEO change and
-        // not this feature's to make.
-        const derivedTitleBase = isRecipe && itemTitle ? itemTitle : pageConfig.name;
         // Walk 4 C15. `summary` is declared `longText`, the rich-text widget,
         // so it legitimately holds HTML, and `readRecipeFields`'s `toText` is
         // trim-only. Sliced raw, the FIRST 160 characters of a recipe intro are
@@ -1285,30 +1293,29 @@ export async function generateMetadata({ params }: Props) {
           ? plainMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary, 160)
           : undefined;
 
-        const title = seo?.metaTitle || patternTitle || `${derivedTitleBase} | ${siteName}`;
-        const description =
-          seo?.metaDescription ||
-          patternDescription ||
-          recipeSummary ||
-          pageConfig.labels?.subtitle ||
-          `${derivedTitleBase} | ${siteName}`;
+        // The title/description/card-title resolution, ITEM DATA WINS, a
+        // page-level value is a fallback for when the item has none, never an
+        // override of one it does. See `detailItemMetaText`'s doc comment for
+        // the defect this ordering fixes and why it is item-first.
+        const { title, description, cardTitle } = detailItemMetaText({
+          itemTitle,
+          itemDescription: effectiveItem.description,
+          recipeSummary,
+          siteName,
+          patternTitle,
+          patternDescription,
+          pageMetaTitle: seo?.metaTitle,
+          pageMetaDescription: seo?.metaDescription,
+          pageSubtitle: pageConfig.labels?.subtitle,
+          pageName: pageConfig.name,
+        });
 
-        // The card, and only for recipes in this phase. Two things change:
-        //
-        //  - the IMAGE points at `/og/<slug>/<itemId>` instead of the page's
-        //    card, so two recipes cannot share one picture;
-        //  - `og:title` is the RECIPE's title even when the author set a
-        //    page-level SEO title. A page-level title is authored for the page;
-        //    letting it win here is what put one name on every recipe card. The
-        //    document <title> still honours it, matching every other format.
-        //
-        // Other formats keep the page-level card. Flipping the whole fleet's
-        // social images in the same change that introduces the route would be a
-        // fleet-wide visual change nobody asked for and nothing here verifies.
-        const cardImageUrl = isRecipe
-          ? buildOgItemImageUrl(origin, slug, itemId)
-          : ogImageUrl;
-        const cardTitle = isRecipe && itemTitle ? itemTitle : title;
+        // The card is the item's own for every format, not recipes only:
+        // `/og/<slug>/<itemId>` (`route.tsx`'s own doc comment) already proxies
+        // the item's photo when it has one and falls back to a branded card
+        // naming the item when it doesn't, so there is no per-format branch
+        // left to keep here.
+        const cardImageUrl = buildOgItemImageUrl(origin, slug, itemId);
 
         // §15.2 — 'self' is the default the moment `scope` is authored (cells
         // are distinct by construction); otherwise absent ⇒ no canonical tag,
