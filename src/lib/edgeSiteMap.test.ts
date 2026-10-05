@@ -656,9 +656,11 @@ test('getEdgeSiteMap: a freeze in the middle of a BACKGROUND refresh does not ab
   }
 });
 
-test('getEdgeSiteMap: a fetch that is genuinely slow while awake is still aborted at 800 ms', async (t) => {
-  // The bound the timeout exists for: a cold-cache request must not block on a
-  // hung upstream. Awake time still counts in full.
+test('getEdgeSiteMap: a COLD fetch that is genuinely slow while awake is still aborted, now at COLD_FETCH_DEADLINE_MS not 800 ms (review-templates-183.md item 4)', async (t) => {
+  // The bound a COLD (cache === null) lookup gets is COLD_FETCH_DEADLINE_MS,
+  // not the warm FETCH_TIMEOUT_MS -- see `fetchSiteMap`'s own header. A cold
+  // lookup must still not block forever on a hung upstream; it just gets
+  // more time before it gives up. Awake time still counts in full.
   __resetEdgeSiteMapCacheForTests();
   const originalFetch = globalThis.fetch;
   const originalError = console.error;
@@ -674,13 +676,90 @@ test('getEdgeSiteMap: a fetch that is genuinely slow while awake is still aborte
   try {
     const pending = getEdgeSiteMap();
     await new Promise((resolve) => setImmediate(resolve));
-    for (let i = 0; i < 9; i += 1) t.mock.timers.tick(100);
+    for (let i = 0; i < COLD_FETCH_DEADLINE_MS / 100 + 1; i += 1) t.mock.timers.tick(100);
     const map = await pending;
-    assert.equal(map, null, 'awake for 900 ms with no answer fails open');
+    assert.equal(map, null, `awake for over ${COLD_FETCH_DEADLINE_MS} ms with no answer still fails open`);
   } finally {
     t.mock.timers.reset();
     globalThis.fetch = originalFetch;
     console.error = originalError;
+  }
+});
+
+test('getEdgeSiteMap: a COLD lookup landing between 800 ms and 1500 ms now succeeds instead of being aborted for nothing (review-templates-183.md item 4)', async (t) => {
+  // The defect this guards against, measured 2026-10-04 (Logs Insights,
+  // /aws/amplify/d3j2nl4ojlmhy7 and /aws/amplify/d37nvwe48pi1dx): every
+  // observed edgeSiteMap failure aborted on `attempt: 1` at 800-840ms of
+  // awake time -- the FIRST connection attempt itself, not a failing retry
+  // chain. One log stream showed the SAME container failing this way twice,
+  // once as a genuine cold start and once 4 minutes later on a warm
+  // re-invoke after an idle gap, because the first failure never populated
+  // `cache`. A connection that would have landed at, say, 900ms was being
+  // killed by the old 800ms bound for nothing. Here it must succeed.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  const gate: { release?: () => void } = {};
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
+    new Promise<Response>((resolve, reject) => {
+      init?.signal?.addEventListener('abort', () =>
+        reject(new DOMException('This operation was aborted', 'AbortError')),
+      );
+      gate.release = () => resolve(new Response(okBody, { status: 200 }));
+    });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+  try {
+    const pending = getEdgeSiteMap();
+    await new Promise((resolve) => setImmediate(resolve));
+    // 900ms of awake time: past the OLD 800ms cold bound, still inside the
+    // NEW COLD_FETCH_DEADLINE_MS (1500ms) one.
+    for (let i = 0; i < 9; i += 1) t.mock.timers.tick(100);
+    assert.ok(gate.release, 'the connection is still being awaited, not already aborted');
+    gate.release();
+    const map = await pending;
+    assert.ok(map, 'a connection landing at 900ms must now succeed');
+    assert.ok(map!.slugs.has('shop'));
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('getEdgeSiteMap: a WARM background refresh keeps the 800 ms budget -- only a COLD lookup gets more (review-templates-183.md item 4)', async (t) => {
+  // Regression guard: the larger budget must be scoped to `cache === null`
+  // (the branch a visitor can be blocked on), never applied to an ordinary
+  // stale-while-revalidate background refresh, which already has a map to
+  // fall back on and blocks no one.
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = async () => new Response(okBody, { status: 200 });
+    assert.ok(await getEdgeSiteMap(), 'cache warmed');
+
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'], now: 1_800_000_000_000 });
+    __setCacheFetchedAtForTests(Date.now() - TTL_MS - 1);
+
+    let aborted = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+    (globalThis as any).fetch = (_url: string, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted = true;
+          reject(new DOMException('This operation was aborted', 'AbortError'));
+        });
+      });
+
+    const stale = await getEdgeSiteMap();
+    assert.ok(stale, 'a stale cache answers immediately and arms the background refresh');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    for (let i = 0; i < 9; i += 1) t.mock.timers.tick(100); // 900ms: past the WARM 800ms budget
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(aborted, true, 'a WARM refresh must still abort at 800ms, not get the cold 1500ms budget');
+  } finally {
+    t.mock.timers.reset();
+    globalThis.fetch = originalFetch;
   }
 });
 
