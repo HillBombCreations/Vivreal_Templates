@@ -1,20 +1,15 @@
-// Test fixture for fetchWithReconnect.socket.test.ts — forked as a CHILD
-// PROCESS so the parent (test) process can block its OWN event loop with
-// `Atomics.wait` (modelling an Amplify freeze) while this server keeps
-// running and independently RSTs its open sockets, exactly as research
-// section 2d's "Model A" reproduction does. If this ran in the SAME process
-// as the blocked test, the server could not act while blocked either, and
-// the RSTs could never be queued unseen the way a real freeze queues them.
+// Test fixture for fetchWithReconnect.socket.test.ts — a real HTTP server run
+// in a forked CHILD PROCESS so the test (the parent) exercises real sockets
+// rather than a `fetch` stub. review-templates-183.md concern 1 removed this
+// file's Model A ("pending error", `Atomics.wait` plus a scheduled socket
+// reset) coverage: it could not be made to fail on the pre-fix code, and
+// pinned a platform-dependent race outcome. The fork is kept anyway — it is
+// the established, already-verified pattern for isolating this server from
+// the test process, and changing it is out of scope for a should-fix.
 //
 // IPC protocol (parent -> child), one JSON-shaped message at a time:
 //   { cmd: 'start' }                -> replies { ok: true, port }
 //   { cmd: 'connectionCount' }      -> replies { ok: true, count }
-//   { cmd: 'resetSocketsAfter', ms } -> MODEL A ("pending error"): schedules
-//                                       resetAndDestroy() on every
-//                                       currently-open socket after `ms`,
-//                                       replies { ok: true } immediately
-//                                       (the parent does not wait for the
-//                                       reset itself, only schedules it)
 //   { cmd: 'armStaleOnWrite' }      -> MODEL B ("dead until written"): every
 //                                       currently-open socket is flagged; the
 //                                       first byte it receives after this call
@@ -28,8 +23,7 @@ import http from 'node:http';
 import type { Socket } from 'node:net';
 
 interface ChildCommand {
-  cmd: 'start' | 'connectionCount' | 'resetSocketsAfter' | 'armStaleOnWrite' | 'exit';
-  ms?: number;
+  cmd: 'start' | 'connectionCount' | 'armStaleOnWrite' | 'exit';
 }
 
 const sockets = new Set<Socket>();
@@ -65,15 +59,6 @@ process.on('message', (msg: ChildCommand) => {
   }
   if (msg.cmd === 'connectionCount') {
     process.send?.({ ok: true, count: connectionCount });
-    return;
-  }
-  if (msg.cmd === 'resetSocketsAfter') {
-    setTimeout(() => {
-      for (const socket of sockets) {
-        socket.resetAndDestroy();
-      }
-    }, msg.ms ?? 0);
-    process.send?.({ ok: true });
     return;
   }
   if (msg.cmd === 'armStaleOnWrite') {

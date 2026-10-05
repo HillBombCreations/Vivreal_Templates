@@ -59,22 +59,26 @@
  * once, as a small structured line: attempt number, elapsed ms since this call
  * started (awake time by construction — nothing can freeze mid-request, only
  * between requests), the network error code, and `bytesWritten`/`bytesRead`
- * when undici attached them (it does for `UND_ERR_SOCKET`). `../dispatcherReset.ts`
- * contributes how long ago (if ever) this process last force-reset the pool,
- * so a recovered attempt can be read against "did we just force a fresh
- * connection" instead of guessed at. Never the query string: every call site
- * here puts a tenant identifier (`siteId`, `collectionId`) there, never a
- * secret, but logging it anyway would mint one log line per tenant and make a
- * fleet-wide pattern unreadable. A successful attempt (first try, or a retry
- * that lands) logs nothing, to keep this quiet on a healthy fleet.
+ * when undici attached them (it does for `UND_ERR_SOCKET`). Never the query
+ * string: every call site here puts a tenant identifier (`siteId`,
+ * `collectionId`) there, never a secret, but logging it anyway would mint one
+ * log line per tenant and make a fleet-wide pattern unreadable. A successful
+ * attempt (first try, or a retry that lands) logs nothing, to keep this quiet
+ * on a healthy fleet.
  *
- * Edge-safe: ambient `fetch`/`AbortSignal`/`console` plus `../awakeTimeout.ts`
- * and `../dispatcherReset.ts`, both themselves edge-safe (see their headers).
- * No Node-only import. `src/lib/edgeSiteMap.ts` imports this, and so does
- * `./clientFetchCore.ts`.
+ * PROCESS-LEVEL SHORT-CIRCUIT (review-templates-183.md, concern 3)
+ * ------------------------------------------------------------------
+ * The backoff above is deliberately slow per call so a single post-thaw blip
+ * can wait itself out. That is the wrong shape once the upstream is actually
+ * down: a render with N serial reads would pay the full backoff N times
+ * (measured: a 14-read render goes from about 0.5s to about 10s during a real
+ * outage). See `SHORT_CIRCUIT_WINDOW_MS` below for the fix.
+ *
+ * Edge-safe: ambient `fetch`/`AbortSignal`/`console` plus `../awakeTimeout.ts`,
+ * itself edge-safe (see its header). No Node-only import.
+ * `src/lib/edgeSiteMap.ts` imports this, and so does `./clientFetchCore.ts`.
  */
 import { startAwakeTimeout } from '../awakeTimeout.ts';
-import { getDispatcherResetInfo } from '../dispatcherReset.ts';
 
 /** Extra attempts after the first, for connection-level failures only. */
 export const NETWORK_RETRIES = 2;
@@ -91,6 +95,37 @@ export const NETWORK_RETRIES = 2;
  * — keeps today's zero-delay behaviour unchanged.
  */
 export const DEFAULT_BACKOFF_MS: readonly number[] = [150, 500];
+
+/**
+ * How long, after ANY call in this process exhausts its retries on a genuine
+ * transient network error, every OTHER call skips the backoff wait between
+ * attempts (review-templates-183.md, concern 3). The retries themselves
+ * still run — a recovery inside the window is not lost — only the wait that
+ * assumes the post-thaw window is still live is skipped, which is what
+ * bounds the worst case: a render with many serial reads during a real
+ * outage pays the backoff at most once, not once per read.
+ *
+ * Wall-clock time, not awake time. Unlike the backoff schedule itself, there
+ * is nothing to survive a freeze for here: an Amplify freeze only ever
+ * happens BETWEEN invocations, never between two calls inside the same one,
+ * and a freeze between invocations is exactly the kind of gap that should
+ * EXPIRE this (the freeze was time for the upstream to recover, so the next
+ * invocation deserves a full backoff chance again, not a short-circuited
+ * one).
+ */
+export const SHORT_CIRCUIT_WINDOW_MS = 3_000;
+
+let lastExhaustedAt: number | null = null;
+
+function isShortCircuited(now: number): boolean {
+  return lastExhaustedAt !== null && now - lastExhaustedAt < SHORT_CIRCUIT_WINDOW_MS;
+}
+
+/** Test-only: module state otherwise persists for the life of the process,
+ * exactly like the production container it is modeling. */
+export function __resetShortCircuitForTests(): void {
+  lastExhaustedAt = null;
+}
 
 export interface ReconnectOptions {
   /** Extra attempts after the first. Defaults to `NETWORK_RETRIES`. */
@@ -159,7 +194,7 @@ function logAttempt(
     bytesRead?: number;
   },
 ): void {
-  const line = JSON.stringify({ ...fields, ...getDispatcherResetInfo() });
+  const line = JSON.stringify(fields);
   if (fields.outcome === 'failed') {
     console.error(`[${label}] ${line}`);
   } else {
@@ -202,8 +237,8 @@ export async function fetchWithReconnect(
     try {
       return await fetch(input, init);
     } catch (err) {
-      const canRetry =
-        replayable && attempt < retries && isTransientNetworkError(err, init?.signal);
+      const transient = isTransientNetworkError(err, init?.signal);
+      const canRetry = replayable && attempt < retries && transient;
       logAttempt(label, {
         attempt: attempt + 1,
         outcome: canRetry ? 'retrying' : 'failed',
@@ -213,10 +248,18 @@ export async function fetchWithReconnect(
         ...socketByteCounters(err),
       });
       if (!canRetry) {
+        // A genuine transient failure that ran out of retries (not: not
+        // replayable, not: the caller's own abort) arms the short-circuit for
+        // every OTHER call in this process — see `SHORT_CIRCUIT_WINDOW_MS`.
+        if (replayable && transient && attempt >= retries) {
+          lastExhaustedAt = Date.now();
+        }
         throw err;
       }
       options.onRetry?.(err, attempt + 1);
-      const wait = backoffMs[Math.min(attempt, backoffMs.length - 1)] ?? 0;
+      const wait = isShortCircuited(Date.now())
+        ? 0
+        : (backoffMs[Math.min(attempt, backoffMs.length - 1)] ?? 0);
       await awaitAwake(wait, init?.signal);
     }
   }

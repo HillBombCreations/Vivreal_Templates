@@ -256,14 +256,25 @@ export async function POST(request: NextRequest) {
   // about to be stored without emailing the owner (F2, below). Alert here
   // rather than inside `contactRecipient.ts`, which stays Sentry-free on
   // purpose (see its header) so it is loadable by the plain-node test runner.
+  let recipientLookupFailed = false;
   const site = await resolveSiteContact({
     onFailure: (reason) => {
+      recipientLookupFailed = true;
       Sentry.captureMessage(
         CONTACT_RECIPIENT_FAILURE_MESSAGE,
         buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
       );
     },
   });
+  // review-templates-183.md concern 4: this route is `runtime = "edge"`, and
+  // nothing else flushes a queued Sentry envelope before the response —
+  // Amplify can freeze the container the instant it is sent. Flushing here,
+  // on the failure branch ONLY, is what turns "enqueued" into "sent" before
+  // that freeze has a chance to land. Costs nothing on the happy path, which
+  // is every request where the lookup succeeds.
+  if (recipientLookupFailed) {
+    await Sentry.flush(1500);
+  }
   const { to, siteName, branding } = resolveContactRecipient(body, site);
 
   // F2: a submission is never dropped for lack of a configured recipient.
