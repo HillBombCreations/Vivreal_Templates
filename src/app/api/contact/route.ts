@@ -257,58 +257,66 @@ export async function POST(request: NextRequest) {
   // rather than inside `contactRecipient.ts`, which stays Sentry-free on
   // purpose (see its header) so it is loadable by the plain-node test runner.
   let recipientLookupFailed = false;
-  const site = await resolveSiteContact({
-    onFailure: (reason) => {
-      recipientLookupFailed = true;
-      Sentry.captureMessage(
-        CONTACT_RECIPIENT_FAILURE_MESSAGE,
-        buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
-      );
-    },
-  });
   // review-templates-183.md concern 4 (and concern 6): this route is
   // `runtime = "edge"`, and nothing else flushes a queued Sentry envelope
   // before the response — Amplify can freeze the container the instant it is
-  // sent. Started here, on the failure branch ONLY, so it costs nothing on
-  // the happy path. Deliberately NOT awaited yet: it runs CONCURRENTLY with
-  // the upstream POST below, so the visitor pays roughly the slower of the
-  // two instead of their sum. `await flushPromise` appears explicitly in
-  // every response path further down — success, a non-2xx upstream reply,
-  // and the catch block — so the envelope is always sent before this
-  // function can return, regardless of how the POST turns out.
-  const flushPromise = recipientLookupFailed ? Sentry.flush(1500) : Promise.resolve();
-  const { to, siteName, branding } = resolveContactRecipient(body, site);
-
-  // F2: a submission is never dropped for lack of a configured recipient.
-  // Forward it regardless — VR_Client_API already stores every contact
-  // submission independently of whether the email leg runs
-  // (captureContactMessage) and treats "stored but not emailed" as success.
-  // `contactEmail` is OMITTED (not sent as "") below when `to` is empty, so
-  // VR_Client_API can tell "no recipient configured" apart from a malformed
-  // one. The visitor sees the same success response either way.
-  // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
-  // from the `vr_attr` cookie on this same-origin POST. customFields already
-  // flows both into the branded lead email (buildCustomFieldsBlock) and into
-  // the stored contact document, so one merge attributes /contact and /migrate
-  // at once. Never clobbers a submitted field of the same name (a contact form
-  // can legitimately carry its own `source` question), and returns the original
-  // reference when no cookie is present — byte-identical to today's payload for
-  // every fleet site, where `vr_attr` does not exist.
-  //
-  // Receiving validator verified before shipping: VR_Client_API's
-  // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
-  // .max(40)`, so these string keys are accepted with headroom to spare.
-  const customFields = mergeAttributionCustomFields(
-    body.customFields,
-    request.headers.get("cookie"),
-  );
-  const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
-
-  const apiKey = process.env.API_KEY;
-  const clientApiUrl =
-    process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+  // sent. Declared here (not yet started) so the `finally` below always has
+  // something to await, no matter how early the request fails.
+  // review-templates-184.md item 1: `resolveContactRecipient()` runs on
+  // untrusted JSON (`body.siteName?.trim()` throws on a non-string
+  // `siteName`) between the old flush-start point and the old `try`, so a
+  // hostile body used to skip the await entirely. Everything that can throw
+  // for this request, including that call, now lives inside the `try` below,
+  // and the `finally` awaits the flush on every exit from it: success, a
+  // non-2xx upstream reply, the catch block, or a throw before the fetch.
+  let flushPromise: Promise<unknown> = Promise.resolve();
 
   try {
+    const site = await resolveSiteContact({
+      onFailure: (reason) => {
+        recipientLookupFailed = true;
+        Sentry.captureMessage(
+          CONTACT_RECIPIENT_FAILURE_MESSAGE,
+          buildContactRecipientFailureCapture({ siteId: process.env.SITE_ID, reason }),
+        );
+      },
+    });
+    // Started here, on the failure branch ONLY, so it costs nothing on the
+    // happy path. Deliberately NOT awaited yet: it runs CONCURRENTLY with
+    // the upstream POST below, so the visitor pays roughly the slower of the
+    // two instead of their sum.
+    flushPromise = recipientLookupFailed ? Sentry.flush(1500) : Promise.resolve();
+    const { to, siteName, branding } = resolveContactRecipient(body, site);
+
+    // F2: a submission is never dropped for lack of a configured recipient.
+    // Forward it regardless — VR_Client_API already stores every contact
+    // submission independently of whether the email leg runs
+    // (captureContactMessage) and treats "stored but not emailed" as success.
+    // `contactEmail` is OMITTED (not sent as "") below when `to` is empty, so
+    // VR_Client_API can tell "no recipient configured" apart from a malformed
+    // one. The visitor sees the same success response either way.
+    // C4 — fold the visitor's FIRST touch into customFields, read SERVER-SIDE
+    // from the `vr_attr` cookie on this same-origin POST. customFields already
+    // flows both into the branded lead email (buildCustomFieldsBlock) and into
+    // the stored contact document, so one merge attributes /contact and /migrate
+    // at once. Never clobbers a submitted field of the same name (a contact form
+    // can legitimately carry its own `source` question), and returns the original
+    // reference when no cookie is present — byte-identical to today's payload for
+    // every fleet site, where `vr_attr` does not exist.
+    //
+    // Receiving validator verified before shipping: VR_Client_API's
+    // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
+    // .max(40)`, so these string keys are accepted with headroom to spare.
+    const customFields = mergeAttributionCustomFields(
+      body.customFields,
+      request.headers.get("cookie"),
+    );
+    const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
+
+    const apiKey = process.env.API_KEY;
+    const clientApiUrl =
+      process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
+
     const res = await fetch(`${clientApiUrl}/tenant/sendContactEmail`, {
       method: "POST",
       headers: {
@@ -341,7 +349,6 @@ export async function POST(request: NextRequest) {
       }),
     });
 
-    await flushPromise;
     const data = await res.json();
 
     if (!res.ok) {
@@ -353,10 +360,11 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    await flushPromise;
     return NextResponse.json(
       { error: "Failed to send message" },
       { status: 502 }
     );
+  } finally {
+    await flushPromise;
   }
 }

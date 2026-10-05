@@ -1,7 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { register } from "node:module";
+import type { NextRequest } from "next/server";
 import { stripComments } from "../../../lib/source/stripComments.ts";
+
+// Scoped to THIS file's process only (`node --test` runs each test file in
+// its own child process by default — see `testSupport/routeLoader.mjs`'s
+// header for how that was confirmed). Registered before the first dynamic
+// `import("./route.ts")` below, which is what lets it intercept that import.
+register(new URL("./testSupport/routeLoader.mjs", import.meta.url).href);
 
 /**
  * route.ts imports `next/server`, which the plain-Node test runner cannot
@@ -117,66 +125,221 @@ test("customerEmail (the visitor's address) is forwarded verbatim and never prom
 });
 
 // ---------------------------------------------------------------------------
-// review-templates-183.md concern 4 — the contact alert must actually be
-// FLUSHED before this edge route's response, not merely enqueued, since
-// nothing else flushes Sentry here and Amplify can freeze the container the
-// instant the response is sent.
+// review-templates-183.md concern 4 / review-templates-184.md item 2 — the
+// contact alert must actually be FLUSHED before this edge route's response,
+// not merely enqueued, since nothing else flushes Sentry here and Amplify
+// can freeze the container the instant the response is sent.
+//
+// The source-text version of these checks (removed here) pinned SPELLING —
+// "a `const flushPromise = ...` assignment precedes `fetch(`, and an
+// `await flushPromise;` appears after it" — not the actual ordering at
+// runtime. review-templates-184.md's mutation table found two mutations that
+// kept every one of those substrings in place while changing what actually
+// happens: serialising the flush before the POST (still matches "assignment
+// precedes fetch", since the un-awaited assignment is untouched), and moving
+// the success-path await below an unreachable `return` (still matches
+// "an `await flushPromise;` exists somewhere after `fetch(`"). Both passed.
+// The tests below call the real route with real timing instead, via
+// `routeLoader.mjs` (see its header for why `route.ts` is loadable here at
+// all — it is normally blocked by its `next/server` import).
 // ---------------------------------------------------------------------------
 
-test("a failed recipient lookup starts a gated Sentry flush, not an unconditional one", () => {
-  assert.match(code, /recipientLookupFailed = true;/, "onFailure must record that the lookup failed");
-  assert.match(
-    code,
-    /const flushPromise = recipientLookupFailed \? Sentry\.flush\(1500\) : Promise\.resolve\(\);/,
-    "the flush must be gated on the failure, not started unconditionally",
-  );
-});
+/** `route.ts` only ever calls `.json()` and `.headers.get(...)` on its
+ * `request` parameter; every other `NextRequest` member is unused here. The
+ * cast (not a full implementation) mirrors `routeLoader.mjs`'s "next/server"
+ * stub — this object exists to satisfy the REAL compiled type `POST` is
+ * declared against, not to implement the interface. */
+function fakeRequest(body: unknown): NextRequest {
+  return {
+    json: async () => body,
+    headers: { get: () => null },
+  } as unknown as NextRequest;
+}
 
-test("the flush starts after the lookup and before the recipient is resolved, not inside onFailure itself", () => {
-  // onFailure fires synchronously from inside resolveSiteContact() and is
-  // never awaited there (see contactRecipient.ts) — a flush started INSIDE
-  // it would race the response rather than guard it. It must appear after
-  // the resolveSiteContact(...) call closes.
-  const resolveCallEnd = code.indexOf("resolveContactRecipient(body, site)");
-  const flushIndex = code.indexOf("const flushPromise =");
-  assert.ok(flushIndex > -1, "control: the flush assignment must exist");
-  assert.ok(flushIndex < resolveCallEnd, "the flush must start before the recipient is resolved for the email body");
-});
+/** Control surface `testSupport/sentryStub.mjs` exports alongside its fake
+ * `captureMessage`/`flush`. `@sentry/nextjs`'s own types have no such export
+ * — the loader substitutes the whole module at runtime (see its header), so
+ * this interface, not the real SDK's types, describes what import actually
+ * returns under test. */
+interface SentryStubModule {
+  __sentryStubControl: {
+    readonly flushCalls: ReadonlyArray<{ timeout: number; at: number }>;
+    readonly captureCalls: ReadonlyArray<{ message: string; context: unknown; at: number }>;
+    resolveFlush(value?: boolean): void;
+    reset(): void;
+  };
+}
 
-test("review-templates-183.md concern 6: the flush runs ALONGSIDE the upstream POST, never serially before it", () => {
-  // The defect this guards against: starting (or awaiting) the flush BEFORE
-  // the upstream `fetch(...)` call, which pays the full flush cost on top of
-  // the POST's own latency instead of letting the two overlap. Proven by
-  // position: the un-awaited `flushPromise` assignment must precede the
-  // `fetch(` call (so they START together), and every explicit
-  // `await flushPromise` must appear AFTER that same call, never before it.
-  const flushAssignIndex = code.indexOf("const flushPromise =");
-  const fetchCallIndex = code.indexOf("await fetch(`${clientApiUrl}/tenant/sendContactEmail`");
-  assert.ok(flushAssignIndex > -1 && fetchCallIndex > -1, "control: both must exist");
-  assert.ok(
-    flushAssignIndex < fetchCallIndex,
-    "flushPromise must be created before the POST starts, so the two run concurrently",
-  );
-  // The regression this guards against: a blocking `await Sentry.flush(1500);`
-  // statement ahead of `flushPromise`'s own assignment, which serialises the
-  // full flush cost before the POST even starts — `flushPromise` itself would
-  // still exist afterward (as an unconditional no-op), so the two assertions
-  // above alone cannot catch it.
-  assert.doesNotMatch(
-    code,
-    /await Sentry\.flush\(1500\);/,
-    "the flush must never be awaited directly — only indirectly, via `await flushPromise` after the POST has started",
-  );
+const realFetch = globalThis.fetch;
+const realSiteId = process.env.SITE_ID;
 
-  const awaitFlushMatches = [...code.matchAll(/await flushPromise;/g)];
-  assert.ok(
-    awaitFlushMatches.length >= 2,
-    "the flush must be explicitly awaited in both the success path and the catch block",
-  );
-  for (const match of awaitFlushMatches) {
-    assert.ok(
-      (match.index ?? -1) > fetchCallIndex,
-      "await flushPromise must only ever run after the POST has started, never before it",
+/** A `Response` the test settles on its own schedule, so it can assert what
+ * has (and has not) happened while the upstream POST is still in flight. */
+function deferredResponse() {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((res) => {
+    resolve = res;
+  });
+  return {
+    promise,
+    settle: (status: number, data: unknown) =>
+      resolve(new Response(JSON.stringify(data), { status, headers: { "content-type": "application/json" } })),
+  };
+}
+
+/** Flush a bounded number of microtask turns — enough for the async chain
+ * between a mocked `fetch` resolving and the next `await` in `route.ts`
+ * actually running, without a real timer. */
+async function flush(turns = 15) {
+  for (let i = 0; i < turns; i += 1) await Promise.resolve();
+}
+
+test("flush behaviour (review-templates-184.md item 2)", async (t) => {
+  process.env.SITE_ID = "behaviour-test-site";
+  const { POST } = await import("./route.ts");
+  // The real `@sentry/nextjs` types have no `__sentryStubControl` — see
+  // `SentryStubModule`'s own comment for why this cast, not the SDK's own
+  // types, is correct here.
+  const { __sentryStubControl } = (await import("@sentry/nextjs")) as unknown as SentryStubModule;
+
+  t.afterEach(() => {
+    globalThis.fetch = realFetch;
+    __sentryStubControl.reset();
+  });
+  t.after(() => {
+    if (realSiteId === undefined) delete process.env.SITE_ID;
+    else process.env.SITE_ID = realSiteId;
+  });
+
+  await t.test("the flush runs CONCURRENTLY with the upstream POST, and the success path waits for it", async () => {
+    __sentryStubControl.reset();
+    const upstream = deferredResponse();
+    let upstreamCalls = 0;
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/tenant/siteDetails")) {
+        // Non-ok, not a thrown TypeError, so fetchWithReconnect does not
+        // retry (only a connection-level failure is retried) — this is the
+        // FAST path to recipientLookupFailed = true.
+        return new Response("{}", { status: 500 });
+      }
+      if (url.includes("/tenant/sendContactEmail")) {
+        upstreamCalls += 1;
+        return upstream.promise;
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+
+    const responsePromise = POST(
+      fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: "Test Site" }),
     );
-  }
+    let settled = false;
+    responsePromise.then(() => {
+      settled = true;
+    });
+
+    await flush();
+    assert.equal(upstreamCalls, 1, "the upstream POST must have started");
+    assert.equal(__sentryStubControl.flushCalls.length, 1, "the flush must have started ALONGSIDE it, not after it");
+    assert.equal(settled, false, "the response must not settle while the upstream POST is still pending");
+
+    upstream.settle(200, { success: true });
+    await flush();
+    assert.equal(
+      settled,
+      false,
+      "the response must not settle on a resolved upstream POST alone — the flush is still pending",
+    );
+
+    __sentryStubControl.resolveFlush(true);
+    const res = await responsePromise;
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { success: true });
+  });
+
+  await t.test("a non-2xx upstream reply still waits for the flush before responding", async () => {
+    __sentryStubControl.reset();
+    const upstream = deferredResponse();
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/tenant/siteDetails")) return new Response("{}", { status: 500 });
+      if (url.includes("/tenant/sendContactEmail")) return upstream.promise;
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+
+    const responsePromise = POST(
+      fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: "Test Site" }),
+    );
+    let settled = false;
+    responsePromise.then(() => {
+      settled = true;
+    });
+
+    await flush();
+    upstream.settle(502, { error: "upstream exploded" });
+    await flush();
+    assert.equal(settled, false, "a non-2xx reply must still wait for the flush");
+
+    __sentryStubControl.resolveFlush(true);
+    const res = await responsePromise;
+    assert.equal(res.status, 502);
+    assert.deepEqual(res.body, { error: "upstream exploded" });
+  });
+
+  await t.test("a rejected upstream fetch (the catch block) still waits for the flush", async () => {
+    __sentryStubControl.reset();
+    globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/tenant/siteDetails")) return new Response("{}", { status: 500 });
+      if (url.includes("/tenant/sendContactEmail")) throw new TypeError("fetch failed");
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+
+    const responsePromise = POST(
+      fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: "Test Site" }),
+    );
+    let settled = false;
+    responsePromise.then(() => {
+      settled = true;
+    });
+
+    await flush();
+    assert.equal(settled, false, "the catch block must still wait for the flush");
+
+    __sentryStubControl.resolveFlush(true);
+    const res = await responsePromise;
+    assert.equal(res.status, 502);
+  });
+
+  await t.test(
+    "review-templates-184.md item 1: a throw BEFORE the upstream fetch (hostile siteName) still waits for the flush",
+    async () => {
+      __sentryStubControl.reset();
+      globalThis.fetch = async (input: RequestInfo | URL): Promise<Response> => {
+        const url = String(input);
+        if (url.includes("/tenant/siteDetails")) return new Response("{}", { status: 500 });
+        throw new Error(`unexpected fetch: ${url}`);
+      };
+
+      // `resolveContactRecipient` runs `body.siteName?.trim()` — a non-string
+      // `siteName` throws a TypeError here, BEFORE the upstream fetch is ever
+      // called. This is the exact regression item 1 fixed: the flush must
+      // still be awaited on this path, not just on a `return`.
+      const responsePromise = POST(
+        fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: 5 }),
+      );
+      let settled = false;
+      responsePromise.then(() => {
+        settled = true;
+      });
+
+      await flush();
+      assert.equal(__sentryStubControl.flushCalls.length, 1, "the flush must have started despite the later throw");
+      assert.equal(settled, false, "the response must not settle while the flush from the failed lookup is pending");
+
+      __sentryStubControl.resolveFlush(true);
+      const res = await responsePromise;
+      assert.equal(res.status, 502, "a throw before the fetch must still answer 502, not hang or crash");
+    },
+  );
 });
