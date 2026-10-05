@@ -196,9 +196,9 @@ export async function optOutOfPrerenderUnlessIsr(
  *     scope for the idle-socket fix. What the idle-socket fix DOES do is
  *     remove the single most common trigger for "that regeneration's data
  *     fetch failing" in the first place (`./api/fetchWithReconnect.ts`'s
- *     awake-time backoff and `./dispatcherReset.ts`), so the compound case —
- *     a purge racing a regeneration failure — drops with it, without
- *     redesigning either side on its own.
+ *     awake-time backoff), so the compound case — a purge racing a
+ *     regeneration failure — drops with it, without redesigning either side
+ *     on its own.
  *
  * An app ROUTE (`robots.txt`, `icon`, `apple-icon`, `sitemap.xml`) has no E132
  * branch (`build/templates/app-route.js`), so it simply renders uncached.
