@@ -80,8 +80,11 @@ test("control: the draft really did send all four of those", () => {
 });
 
 test("the session id is shape-checked before it reaches an upstream URL", () => {
-  assert.match(code, /\^cs_\[A-Za-z0-9_\]/, "must pin the Stripe id charset");
-  assert.match(code, /SESSION_ID\.test\(sessionId\)/, "and must actually apply it");
+  // The charset itself (Stripe `cs_` and Square order ids) is behaviour-tested
+  // in src/lib/orderConfirmationId.test.ts; this pins that the route applies it.
+  assert.match(code, /import \{ isOrderConfirmationId \} from "[^"]*lib\/orderConfirmationId"/, "must use the shared id check");
+  assert.match(code, /if \(!isOrderConfirmationId\(sessionId\)\)/, "and must actually apply it before the fetch");
+  assert.ok(code.indexOf("isOrderConfirmationId(sessionId)") < code.indexOf("fetch("), "checked BEFORE the upstream call");
 });
 
 test("a preview build cannot post a nonsense site id at the live API", () => {

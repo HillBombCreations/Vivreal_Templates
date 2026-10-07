@@ -53,9 +53,10 @@ export default function OrderConfirmationTrigger() {
     // then kept forever because React never re-runs it on the client.
     const sessionId = new URLSearchParams(window.location.search).get("session_id");
 
-    // Square sends the buyer back to this same page with no identifier on it,
-    // and somebody can simply open the page. Both are normal; neither is an
-    // order to confirm.
+    // Stripe returns with `cs_...`; Square now returns with its order id
+    // (VR_Client_API points the payment link's redirect at it). Somebody can
+    // also simply open the page with no id, which is normal and is not an
+    // order to confirm. The route checks the id's shape.
     if (!sessionId || attempted.has(sessionId)) return;
     attempted.add(sessionId);
 

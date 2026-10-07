@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isOrderConfirmationId } from "../../../../lib/orderConfirmationId";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -26,7 +27,10 @@ export const dynamic = "force-dynamic";
  *
  * It forwards a session id and nothing else. VR_Client_API resolves the
  * group's own Stripe key, retrieves the session, checks it was actually paid,
- * and reads the cart, the amount and the buyer's address off it. It also
+ * and reads the cart, the amount and the buyer's address off it. For a Square
+ * store the id is the Square order id the payment link now returns with, and
+ * VR_Client_API reads that order from the merchant's own Square account the
+ * same way (lib/orderConfirmationId.ts). It also
  * resolves the shop's name, owner inbox and palette from the site document.
  *
  * That split is the point. Everything that decides WHO GETS MAILED and WHAT
@@ -43,9 +47,6 @@ export const dynamic = "force-dynamic";
  * response carries `sent` for observability and nothing the page renders.
  */
 
-/** Stripe session ids are `cs_` plus word characters. Refuse anything else. */
-const SESSION_ID = /^cs_[A-Za-z0-9_]{1,240}$/;
-
 export async function POST(request: NextRequest) {
   let body: unknown;
   try {
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
 
   const { sessionId } = body as Record<string, unknown>;
 
-  if (typeof sessionId !== "string" || !SESSION_ID.test(sessionId)) {
+  if (!isOrderConfirmationId(sessionId)) {
     return NextResponse.json({ sent: false, reason: "bad-session" }, { status: 400 });
   }
 
