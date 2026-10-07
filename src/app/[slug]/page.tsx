@@ -805,9 +805,10 @@ export async function generateMetadata({
     return { title: `Not Found | ${siteName}` };
   }
 
-  // QA-G1-2: a composed page with nothing to show renders `notFound()` after
-  // the 200 shell, so without this it kept its own title and stayed indexable
-  // under a "Page not found" body. Same verdict, same query, same cache.
+  // QA-G1-2: a composed page with nothing to show answers 404 in the render
+  // (`renderComposedPage`); its head says Not Found and noindex to match. Same
+  // verdict, same query, same cache entries, and no read at all for a page whose
+  // config already holds authored content.
   if (
     pageConfig &&
     (await composedPageIsEmpty({

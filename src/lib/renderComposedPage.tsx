@@ -11,6 +11,8 @@ import {
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
+import type { PageContextResult } from '@/lib/api/composition/buildPageContext';
+import { pageCouldBeEmpty } from '@/lib/api/composition/pageEmptiness';
 import RichTextImages from '@/components/RichTextImages';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -41,7 +43,7 @@ export async function composedPageIsEmpty(args: {
   composedPage: PageConfig;
   productQuery?: ProductQuery;
 }): Promise<boolean> {
-  if (!GENERIC_FORMATS.has(args.composedPage.format)) return false;
+  if (!mustDecideEmptinessBeforeStreaming(args.composedPage)) return false;
   const { isEmpty } = await buildPageContext({
     siteData: args.siteData,
     page: args.composedPage,
@@ -49,6 +51,25 @@ export async function composedPageIsEmpty(args: {
     productQuery: args.productQuery,
   });
   return isEmpty;
+}
+
+/**
+ * QA-G1-2: true when this page's body could be empty, so its data must be read
+ * BEFORE the Suspense boundary for a 404 to carry a real status. Generic formats
+ * only (the formats the 404 has always been scoped to), and only pages whose
+ * config holds no authored content (`pageCouldBeEmpty`, the same structural
+ * test the verdict itself applies). Synchronous: config only, no read.
+ */
+function mustDecideEmptinessBeforeStreaming(composedPage: PageConfig): boolean {
+  return (
+    GENERIC_FORMATS.has(composedPage.format) &&
+    pageCouldBeEmpty({
+      isHome: false,
+      format: composedPage.format,
+      blocks: (composedPage as { blocks?: unknown }).blocks,
+      hero: (composedPage as { hero?: unknown }).hero,
+    })
+  );
 }
 
 /**
@@ -108,7 +129,7 @@ export function skeletonPropsFor(composedPage: PageConfig) {
  * sees the real navbar + real page title + a structure-matched shimmer
  * immediately, and the content pops in without layout shift.
  */
-export function renderComposedPage({
+export async function renderComposedPage({
   siteData,
   composedPage,
   components,
@@ -139,6 +160,37 @@ export function renderComposedPage({
    */
   lookupQuery?: string;
 }) {
+  // QA-G1-2: a REAL 404 for an empty generic page. The emptiness verdict needs
+  // the page's collection reads, and a status can only be set before the first
+  // byte flushes, which is the instant the Suspense boundary below suspends. So
+  // a page that COULD be empty has its data read here, above the boundary, and
+  // the resolved context is handed to the body, which then renders it without
+  // reading again: one read per request, as before.
+  //
+  // Only pages that could be empty pay for it. A page with authored copy (a
+  // written hero, static prose, a form) is never empty whatever its lists hold,
+  // so it skips this read and streams exactly as before. The pages that wait are
+  // the ones whose whole body is collection items, which show nothing useful
+  // until those reads land anyway.
+  //
+  // Ordering is the old body guard's, unchanged: a failed read REFUSES (a 5xx,
+  // now a real one too, "come back later") before an empty read can 404, because
+  // a failed read and an empty collection are the same `[]`. Under ISR the 404 is
+  // cached like any render of this route: `revalidate = 300` is the backstop and
+  // the portal's save webhook (`/api/revalidate`) drops the `collection:<id>` and
+  // `site:<id>` tags these reads carry, so the page appears once it has content.
+  let context: PageContextResult | undefined;
+  if (mustDecideEmptinessBeforeStreaming(composedPage)) {
+    context = await buildPageContext({
+      siteData,
+      page: composedPage,
+      isHome: false,
+      productQuery,
+    });
+    if (context.emptinessUnknown) refuseUnknownEmptiness(composedPage.format);
+    if (context.isEmpty) notFound();
+  }
+
   // SP-6 Task 5 Concern-3: transitional title band (B-wrapper fallback).
   //
   // The GATE and the MARKUP both come from the renderer now (>= 1.66.0,
@@ -188,29 +240,12 @@ export function renderComposedPage({
         />
       )}
       {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-          this is a page-authored Suspense boundary, not the deleted implicit
-          loading.tsx wrap — but it has the same failure mode. Streaming
-          begins the instant this boundary suspends, which flushes a 200
-          shell before ComposedPageBody runs. Unlike home's HYPOTHETICAL
-          hazard (app/page.tsx has no notFound() today), ComposedPageBody's
-          isEmpty guard DOES call notFound(), which is a real, shipping
-          soft-200, not a latent one.
-
-          AMENDED. This note used to end "any future fix to that guard must
-          run in the un-suspended parent (above this boundary), not inside
-          ComposedPageBody", and the degraded-read guard is inside
-          ComposedPageBody, so leaving that sentence standing would have left
-          this file carrying two directives that disagree.
-
-          The rule it was reaching for is narrower than it was written:
-          anything that needs to set a STATUS must run in the un-suspended
-          parent, because from here the status is already committed. The
-          degraded guard does not set a status and could not; it replaces a
-          body that says "page not found" with one that says "try again",
-          which is the half that can be fixed from here. Hoisting it would
-          mean awaiting buildPageContext above this boundary and deleting the
-          streaming split for every generic page. Reasoning in full at the
-          guard itself. */}
+          streaming begins the instant this boundary suspends, which flushes a
+          200 shell before ComposedPageBody runs. Anything that must set a
+          STATUS therefore runs above this boundary, and since QA-G1-2 the
+          emptiness guard does (top of renderComposedPage), so an empty page
+          answers a real 404 and a failed read a real 5xx. Nothing inside
+          ComposedPageBody may call notFound(). */}
       <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
         <ComposedPageBody
           siteData={siteData}
@@ -219,6 +254,7 @@ export function renderComposedPage({
           productQuery={productQuery}
           lookupQuery={lookupQuery}
           suppressSrTitle={showTransitionalTitleBand}
+          context={context}
         />
       </Suspense>
       <Footer />
@@ -230,16 +266,10 @@ export function renderComposedPage({
  * The slow half — collection fetches (buildPageContext) + composePage. Runs
  * behind the Suspense boundary above so the shell + skeleton flush first.
  *
- * notFound() note: the isEmpty guard fires mid-stream (after the shell
- * flushed). Next.js handles a notFound() thrown during streaming by emitting a
- * client-side correction to the not-found boundary — the user still lands on
- * the 404 UI. Crawler-visible status for this edge (an EMPTY generic page) is
- * an accepted tradeoff for streaming the 99% case.
- *
- * That accepted tradeoff was only ever priced for a GENUINELY empty page, which
- * is rare and whose 404 is correct. It was never priced for a page with real
- * content whose collection read failed, and until `emptinessUnknown` existed
- * that page took the same branch. See the guard below.
+ * When `renderComposedPage` already read the page's data to decide emptiness
+ * (QA-G1-2), that `context` is passed in and rendered as is, so the read
+ * happens once. The emptiness guard lives above the boundary, not here: from
+ * here a 404 could only swap the body under an already-committed 200.
  */
 async function ComposedPageBody({
   siteData,
@@ -248,6 +278,7 @@ async function ComposedPageBody({
   productQuery,
   lookupQuery,
   suppressSrTitle,
+  context,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -261,50 +292,22 @@ async function ComposedPageBody({
    * fallback h1 on top (the band is chrome outside its section calculus).
    */
   suppressSrTitle?: boolean;
+  /** The context `renderComposedPage` already read, when it had to (QA-G1-2). */
+  context?: PageContextResult;
 }) {
-  const { input, isEmpty, emptinessUnknown, richTextImageUrls } = await buildPageContext({
-    siteData,
-    page: composedPage,
-    isHome: false,
-    productQuery,
-  });
+  const { input, richTextImageUrls } =
+    context ??
+    (await buildPageContext({
+      siteData,
+      page: composedPage,
+      isHome: false,
+      productQuery,
+    }));
 
-  // SP-6 Task 5 isEmpty guard — only fires for generic formats.
-  // Mirrors the guard in [slug]/page.tsx so the two stay in sync.
-  //
-  // The refusal is ordered FIRST, and the ordering is the fix. `isEmpty` used
-  // to be true whenever the collection read came back empty, and a read that
-  // FAILED comes back empty too (the fetch helpers swallow the error and return
-  // the caller's fallback). So a transient VR_Client_API wobble answered
-  // `notFound()` on real, published pages: a removal signal to every crawler,
-  // manufactured out of an absence of data. Same shape as the degraded
-  // site-data path (`@/lib/api/siteData/degraded`), but one layer down and on
-  // otherwise HEALTHY `siteData`, so the `assertUpstreamHealthy` guard the
-  // routes run above this boundary never sees it.
-  //
-  // Scoped to GENERIC_FORMATS on purpose, the same set the 404 was scoped to.
-  // Every other format renders whatever came back and asserts nothing about the
-  // page existing, so a refusal there would be a new behaviour change with its
-  // own blast radius rather than a fix for this one.
-  //
-  // WHAT THIS CANNOT DO, AND WHY IT IS STILL WORTH DOING. Per the GUARD NOTE on
-  // the boundary above, this component runs after the 200 shell has flushed, so
-  // neither branch here can set an HTTP status: the 404 was already a soft 404
-  // and the refusal is a soft 5xx. What DOES change is the body, and for a
-  // crawler the body is the signal that gets read. Google classifies a soft 404
-  // by content, and `not-found.tsx` renders literally "404 / Oops! Page not
-  // found", which is the canonical trigger. `error.tsx` renders "We're having
-  // trouble loading this page. Please try again in a moment", which is true and
-  // not a removal signal, and it captures to Sentry from the client on top of
-  // the server-side capture at the swallow.
-  //
-  // Setting a real status would mean resolving buildPageContext ABOVE the
-  // Suspense boundary, which deletes the streaming split for every generic page
-  // to buy a correct status on a rare edge. Recorded, not taken.
-  if (GENERIC_FORMATS.has(composedPage.format)) {
-    if (emptinessUnknown) refuseUnknownEmptiness(composedPage.format);
-    if (isEmpty) return notFound();
-  }
+  // No emptiness guard here. Since QA-G1-2 it runs above the Suspense boundary
+  // in `renderComposedPage`, where a 404 is a real status. A page that skipped
+  // the early read is one `pageCouldBeEmpty` rules out, so `decidePageEmptiness`
+  // can only answer not-empty, not-unknown for it: a guard here would be dead.
 
   // Mirror ComposedFormatBody ([slug]/page.tsx): inject the live component
   // overrides into CompositionOptions when provided; bare composePage otherwise.

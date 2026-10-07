@@ -184,6 +184,31 @@ export interface EmptinessVerdict {
 const NEVER_EMPTY_FORMATS = new Set(['static', 'checkout-success', 'checkout-cancel']);
 
 /**
+ * The structural half of the verdict, from the page config alone: no read.
+ *
+ * QA-G1-2: `renderComposedPage` calls this BEFORE its Suspense boundary to decide
+ * which pages must have their data read before the shell flushes. Only a page
+ * this returns true for can ever be judged empty, so only those pages give up
+ * the streaming split to earn a real 404 status; every page with authored copy
+ * keeps streaming exactly as before. `decidePageEmptiness` below reads the same
+ * function, so the two cannot disagree about which pages could be empty.
+ */
+export function pageCouldBeEmpty(args: {
+  isHome: boolean;
+  format?: string;
+  blocks?: unknown;
+  hero?: unknown;
+}): boolean {
+  return (
+    !args.isHome &&
+    !NEVER_EMPTY_FORMATS.has(args.format ?? '') &&
+    !hasFormBlock(args.blocks) &&
+    !hasStaticContentBlock(args.blocks) &&
+    !hasAuthoredHeroOrSectionBlock(args.blocks, args.hero)
+  );
+}
+
+/**
  * Decide whether a composed page has a body, and whether we are entitled to say
  * so.
  *
@@ -219,14 +244,7 @@ export function decidePageEmptiness(args: {
   hero?: unknown;
   reads: readonly PageDataRead[];
 }): EmptinessVerdict {
-  const couldBeEmpty =
-    !args.isHome &&
-    !NEVER_EMPTY_FORMATS.has(args.format ?? '') &&
-    !hasFormBlock(args.blocks) &&
-    !hasStaticContentBlock(args.blocks) &&
-    !hasAuthoredHeroOrSectionBlock(args.blocks, args.hero);
-
-  if (!couldBeEmpty) return { isEmpty: false, emptinessUnknown: false };
+  if (!pageCouldBeEmpty(args)) return { isEmpty: false, emptinessUnknown: false };
 
   // ROWS IN HAND SETTLE IT, and they settle it before the degraded flag is
   // consulted. `sourceCount > 0` is POSITIVE PROOF that a read succeeded: a

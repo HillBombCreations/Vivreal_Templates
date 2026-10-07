@@ -9,6 +9,7 @@ import {
   hasAuthoredHeroOrSectionBlock,
   hasFormBlock,
   hasStaticContentBlock,
+  pageCouldBeEmpty,
 } from './pageEmptiness.ts';
 
 test('hasStaticContentBlock: labels-bearing static block counts as content', () => {
@@ -141,4 +142,50 @@ test('ST3: a failed read on a page whose only content is the list still refuses 
     reads: [{ sourceCount: 0, degraded: true }],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
+});
+
+// ── QA-G1-2: which pages read their data BEFORE the shell flushes ────────────
+//
+// `renderComposedPage` awaits the page's reads above its Suspense boundary only
+// when `pageCouldBeEmpty` is true, so only those pages can answer a real 404.
+// ALLOW and REFUSE in both directions: a page this says "could be empty" for
+// gives up streaming, and a page it says "cannot" for can never 404.
+
+test('QA-G1-2 ALLOW: a page whose whole body is a bound list could be empty, so it decides before streaming', () => {
+  assert.equal(
+    pageCouldBeEmpty({ isHome: false, format: 'standard', blocks: [emptyLongform], hero: { title: 'Hello' } }),
+    true,
+  );
+  assert.equal(pageCouldBeEmpty({ isHome: false, format: 'standard', blocks: [] }), true, 'a page with no blocks at all');
+  assert.equal(pageCouldBeEmpty({ isHome: false, format: 'list' }), true, 'blocks absent');
+});
+
+test('QA-G1-2 REFUSE: a page with a written hero and an empty list cannot be empty, so it keeps streaming and answers 200', () => {
+  const page = { isHome: false, format: 'standard', blocks: [heroBlock, emptyLongform], hero: { title: 'Hello' } };
+  assert.equal(pageCouldBeEmpty(page), false);
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: noRowsBack }), { isEmpty: false, emptinessUnknown: false });
+});
+
+test('QA-G1-2 REFUSE: the home page never could be empty, whatever it holds', () => {
+  assert.equal(pageCouldBeEmpty({ isHome: true, format: 'standard', blocks: [emptyLongform] }), false);
+  assert.equal(pageCouldBeEmpty({ isHome: true, format: 'home', blocks: [] }), false);
+  assert.deepEqual(
+    decidePageEmptiness({ isHome: true, format: 'standard', blocks: [emptyLongform], reads: noRowsBack }),
+    { isEmpty: false, emptinessUnknown: false },
+  );
+});
+
+test('QA-G1-2: the verdict never calls empty a page the structural test ruled out (the body guard is dead by construction)', () => {
+  const shapes = [
+    { isHome: false, format: 'static', blocks: [emptyLongform] },
+    { isHome: false, format: 'standard', blocks: [heroBlock, emptyLongform], hero: { title: 'Hi' } },
+    { isHome: false, format: 'standard', blocks: [{ type: { kind: 'static', dispatchId: 'about' }, config: { labels: { body: 'x' } } }] },
+    { isHome: false, format: 'standard', blocks: [{ type: { kind: 'home-section', dispatchId: 'form' } }] },
+  ];
+  for (const shape of shapes) {
+    assert.equal(pageCouldBeEmpty(shape), false);
+    for (const reads of [noRowsBack, [{ sourceCount: 0, degraded: true }], []]) {
+      assert.deepEqual(decidePageEmptiness({ ...shape, reads }), { isEmpty: false, emptinessUnknown: false });
+    }
+  }
 });

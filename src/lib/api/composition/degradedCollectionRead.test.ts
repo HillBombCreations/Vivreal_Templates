@@ -531,28 +531,44 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
   // at all — see `pageEmptiness.ts`.
 });
 
-test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()', () => {
+test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound(), ABOVE the Suspense boundary', () => {
   // `src/lib/renderComposedPage.tsx` is where standard/list/grid actually land:
   // `[slug]/page.tsx` returns early into it for every generic format.
-  // Sliced to the function body, the same discipline the [slug] pin below uses.
-  // Over whole-file text one comment mentioning either call makes this pass or
-  // fail for no reason, and this file's comments are dense.
+  //
+  // QA-G1-2 moved the guard out of ComposedPageBody and into the un-suspended
+  // parent, so a 404 is a real status and a refusal a real 5xx. Sliced to the
+  // parent's body up to its <Suspense>, the same discipline the [slug] pin below
+  // uses: over whole-file text one comment mentioning either call makes this
+  // pass or fail for no reason, and this file's comments are dense.
   const whole = source('../../renderComposedPage.tsx');
-  const bodyAt = whole.indexOf('async function ComposedPageBody');
-  assert.ok(bodyAt > 0, 'sanity: this test read nothing');
-  const code = whole.slice(bodyAt);
+  const parentAt = whole.indexOf('export async function renderComposedPage(');
+  const boundaryAt = whole.indexOf('<Suspense', parentAt);
+  assert.ok(parentAt > 0 && boundaryAt > parentAt, 'sanity: this test read nothing');
+  const code = whole.slice(parentAt, boundaryAt);
   const refusalAt = code.indexOf('refuseUnknownEmptiness(');
-  const notFoundAt = code.indexOf('return notFound()');
+  const notFoundAt = code.indexOf('notFound()');
   assert.ok(refusalAt > 0, 'the guard must refuse a degraded read rather than 404 it');
-  assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');
+  assert.ok(notFoundAt > 0, 'the genuine-empty 404 must run above the boundary, or its status is already 200');
   assert.ok(
     refusalAt < notFoundAt,
     'refuse first, or an unknowable verdict falls through to the 404 this fix exists to prevent',
   );
   assert.ok(
-    code.includes('GENERIC_FORMATS.has(composedPage.format)'),
+    code.includes('if (mustDecideEmptinessBeforeStreaming(composedPage))'),
+    'the early read stays scoped to pages that could be empty',
+  );
+  assert.ok(
+    whole.includes('GENERIC_FORMATS.has(composedPage.format) &&'),
     'the refusal stays scoped to the same formats the 404 was scoped to',
   );
+
+  // And nothing below the boundary can call notFound() any more: from there it
+  // would only swap the body under an already-committed 200.
+  const bodyAt = whole.indexOf('async function ComposedPageBody');
+  assert.ok(bodyAt > boundaryAt, 'sanity: the body was found');
+  const body = whole.slice(bodyAt);
+  assert.ok(!body.includes('notFound()'), 'ComposedPageBody must not 404 after the shell flushed');
+  assert.ok(body.includes('context ??'), 'the body renders the context the parent already read');
 });
 
 test('SOURCE PIN: both guards refuse through the SAME helper, so they cannot drift', () => {
