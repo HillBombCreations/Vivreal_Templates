@@ -212,6 +212,7 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     isHome,
     format: page.format,
     blocks: (page as { blocks?: unknown }).blocks,
+    hero: (page as { hero?: unknown }).hero,
     reads,
   });
 

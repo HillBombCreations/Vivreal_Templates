@@ -51,6 +51,63 @@ export const hasStaticContentBlock = (blocks: unknown): boolean =>
     );
   });
 
+/** The universal hero's block ids; its copy lives on `page.hero`, not the block. */
+const HERO_DISPATCH_IDS = new Set(['hero', 'hero-showcase', 'hero-ecommerce']);
+
+const hasText = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+
+/** A stored photo or video: a page media descriptor carrying a key or a signed source. */
+const hasMedia = (v: unknown): boolean => {
+  if (!v || typeof v !== 'object') return false;
+  const media = v as { key?: unknown; currentFile?: { source?: unknown } };
+  return hasText(media.key) || hasText(media.currentFile?.source);
+};
+
+/** The owner wrote something into the page hero: words, a side photo, or background media. */
+const heroIsAuthored = (hero: unknown): boolean => {
+  if (!hero || typeof hero !== 'object') return false;
+  const h = hero as {
+    eyebrow?: unknown;
+    title?: unknown;
+    subtitle?: unknown;
+    heroImage?: unknown;
+    background?: { image?: unknown; video?: unknown; slides?: unknown };
+  };
+  if (hasText(h.eyebrow) || hasText(h.title) || hasText(h.subtitle) || hasMedia(h.heroImage)) return true;
+  const bg = h.background;
+  return !!bg && typeof bg === 'object' && (hasMedia(bg.image) || hasMedia(bg.video) || (Array.isArray(bg.slides) && bg.slides.length > 0));
+};
+
+/**
+ * ST3 (fix-plan 2026-10-07): an enabled HERO block, or a config-authored
+ * home-section block (a Split hero, a gallery of photos), is content with zero
+ * collection items BY DESIGN, exactly like the static blocks above. Without
+ * this, a page made from Blank with a Split hero titled "Hello" and a Long-form
+ * list that holds nothing live yet was judged empty and answered 404.
+ *
+ * Only AUTHORED copy counts: the hero's own words or media on `page.hero`, or
+ * a home-section block's labels. A bare hero block with nothing written (the
+ * renderer would paint only the site name) is still no content, and a bound
+ * list (`layout`, `page-template`) with nothing live is still no content.
+ */
+export const hasAuthoredHeroOrSectionBlock = (blocks: unknown, hero: unknown): boolean =>
+  Array.isArray(blocks) &&
+  blocks.some((b) => {
+    const block = b as {
+      enabled?: boolean;
+      type?: { kind?: string; dispatchId?: string };
+      config?: { labels?: Record<string, unknown> };
+    };
+    if (block?.enabled === false || block?.type?.kind !== 'home-section') return false;
+    if (HERO_DISPATCH_IDS.has(block.type.dispatchId ?? '')) return heroIsAuthored(hero);
+    const labels = block.config?.labels;
+    return (
+      !!labels &&
+      Object.values(labels).some(
+        (v) => hasText(v) || (Array.isArray(v) ? v.length > 0 : !!v && typeof v === 'object'),
+      )
+    );
+  });
 
 /**
  * One collection or integration read, reduced to the two things the emptiness
@@ -158,13 +215,16 @@ export function decidePageEmptiness(args: {
   isHome: boolean;
   format?: string;
   blocks?: unknown;
+  /** `page.hero`: where an enabled hero block's copy lives (ST3). */
+  hero?: unknown;
   reads: readonly PageDataRead[];
 }): EmptinessVerdict {
   const couldBeEmpty =
     !args.isHome &&
     !NEVER_EMPTY_FORMATS.has(args.format ?? '') &&
     !hasFormBlock(args.blocks) &&
-    !hasStaticContentBlock(args.blocks);
+    !hasStaticContentBlock(args.blocks) &&
+    !hasAuthoredHeroOrSectionBlock(args.blocks, args.hero);
 
   if (!couldBeEmpty) return { isEmpty: false, emptinessUnknown: false };
 
