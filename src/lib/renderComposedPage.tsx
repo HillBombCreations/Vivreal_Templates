@@ -12,7 +12,7 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import type { PageContextResult } from '@/lib/api/composition/buildPageContext';
-import { pageCouldBeEmpty } from '@/lib/api/composition/pageEmptiness';
+import { emptinessIsDecidable } from '@/lib/api/composition/pageEmptiness';
 import RichTextImages from '@/components/RichTextImages';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -28,22 +28,26 @@ import type { ProductQuery } from '@/lib/composition/productQuery';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ComposeComponents = any;
 
-// Formats that trigger isEmpty → notFound(). Mirrors [slug]/page.tsx SP-6 Task 5.
-const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
-
 /**
  * QA-G1-2: the SAME emptiness verdict the render below acts on, for
  * `generateMetadata`, so a page that renders as not found is also titled and
- * indexed as not found. Every read goes through `clientFetchCached`, so the
- * render's own call is served from the same cache entries, not a second read.
- * Only `isEmpty`: an unknown verdict (a failed read) is never called empty.
+ * indexed as not found. Every read goes through `clientFetchCached`, so on a
+ * healthy request the render's own call is served from the same cache entries.
+ * A FAILED read is never cached (`unstable_cache` stores no throw), so on an
+ * outage these pages read twice per request, accepted in the review of #188.
+ * Measured with `next start`: the second read logs AFTER the refusal, and a
+ * React `cache` slot shared by metadata and render left it at two, so it was
+ * not kept.
+ * Only `isEmpty`: an unknown verdict (a failed read) is never called empty, and
+ * a page searched or filtered by the shopper is never empty
+ * (`emptinessIsDecidable`).
  */
 export async function composedPageIsEmpty(args: {
   siteData: SiteData;
   composedPage: PageConfig;
   productQuery?: ProductQuery;
 }): Promise<boolean> {
-  if (!mustDecideEmptinessBeforeStreaming(args.composedPage)) return false;
+  if (!emptinessIsDecidable(args.composedPage, args.productQuery)) return false;
   const { isEmpty } = await buildPageContext({
     siteData: args.siteData,
     page: args.composedPage,
@@ -51,25 +55,6 @@ export async function composedPageIsEmpty(args: {
     productQuery: args.productQuery,
   });
   return isEmpty;
-}
-
-/**
- * QA-G1-2: true when this page's body could be empty, so its data must be read
- * BEFORE the Suspense boundary for a 404 to carry a real status. Generic formats
- * only (the formats the 404 has always been scoped to), and only pages whose
- * config holds no authored content (`pageCouldBeEmpty`, the same structural
- * test the verdict itself applies). Synchronous: config only, no read.
- */
-function mustDecideEmptinessBeforeStreaming(composedPage: PageConfig): boolean {
-  return (
-    GENERIC_FORMATS.has(composedPage.format) &&
-    pageCouldBeEmpty({
-      isHome: false,
-      format: composedPage.format,
-      blocks: (composedPage as { blocks?: unknown }).blocks,
-      hero: (composedPage as { hero?: unknown }).hero,
-    })
-  );
 }
 
 /**
@@ -175,12 +160,17 @@ export async function renderComposedPage({
   //
   // Ordering is the old body guard's, unchanged: a failed read REFUSES (a 5xx,
   // now a real one too, "come back later") before an empty read can 404, because
-  // a failed read and an empty collection are the same `[]`. Under ISR the 404 is
-  // cached like any render of this route: `revalidate = 300` is the backstop and
-  // the portal's save webhook (`/api/revalidate`) drops the `collection:<id>` and
-  // `site:<id>` tags these reads carry, so the page appears once it has content.
+  // a failed read and an empty collection are the same `[]`. The 404 is never
+  // page-cached: every caller awaits `searchParams` before reaching here, so the
+  // route is dynamic even under ISR (`no-store`). It lasts only as long as the
+  // collection's data-cache entry (`SITE_CACHE_TTL_SECONDS`), and the portal's
+  // save webhook (`/api/revalidate`) drops the `collection:<id>` tag these reads
+  // carry, so the next request answers 200 once the page has content.
+  //
+  // A shopper's search or filter skips all of this (`emptinessIsDecidable`): the
+  // products read counts matches, so zero is "no matches", never "no page".
   let context: PageContextResult | undefined;
-  if (mustDecideEmptinessBeforeStreaming(composedPage)) {
+  if (emptinessIsDecidable(composedPage, productQuery)) {
     context = await buildPageContext({
       siteData,
       page: composedPage,
@@ -306,8 +296,9 @@ async function ComposedPageBody({
 
   // No emptiness guard here. Since QA-G1-2 it runs above the Suspense boundary
   // in `renderComposedPage`, where a 404 is a real status. A page that skipped
-  // the early read is one `pageCouldBeEmpty` rules out, so `decidePageEmptiness`
-  // can only answer not-empty, not-unknown for it: a guard here would be dead.
+  // the early read is either one `pageCouldBeEmpty` rules out (so
+  // `decidePageEmptiness` can only answer not-empty for it) or one the shopper
+  // searched or filtered, whose zero rows mean "no matches" and must render.
 
   // Mirror ComposedFormatBody ([slug]/page.tsx): inject the live component
   // overrides into CompositionOptions when provided; bare composePage otherwise.

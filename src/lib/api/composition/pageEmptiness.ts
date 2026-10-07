@@ -208,6 +208,67 @@ export function pageCouldBeEmpty(args: {
   );
 }
 
+/** The formats the empty-page 404 has always been scoped to. */
+const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
+
+/**
+ * QA-G1-2: true when this page's body could be empty, so its data must be read
+ * BEFORE the Suspense boundary for a 404 to carry a real status. Generic formats
+ * only, and only pages whose config holds no authored content
+ * (`pageCouldBeEmpty`, the same structural test the verdict itself applies).
+ * Config only, no read, and no request input: `generateMetadata` calls it
+ * before touching `searchParams`, so a page this rules out (a stored privacy
+ * or terms page) never reads the URL query and stays prerenderable under ISR.
+ */
+export function pageMustDecideEmptiness(page: {
+  format?: string;
+  blocks?: unknown;
+  hero?: unknown;
+}): boolean {
+  return (
+    GENERIC_FORMATS.has(page.format ?? '') &&
+    pageCouldBeEmpty({ isHome: false, format: page.format, blocks: page.blocks, hero: page.hero })
+  );
+}
+
+/** The storefront query, as `parseProductQuery` returns it (structurally, no import). */
+interface ShopperQuery {
+  readonly filters?: Readonly<Record<string, string>>;
+  readonly search?: string;
+  readonly sort?: string;
+}
+
+/**
+ * True when the shopper's storefront query narrows the products read: a search
+ * term or any `f_` facet filter. Sort only reorders, so it does not count.
+ *
+ * Mirrors what `buildProductsQuery` actually sends upstream (`search` only when
+ * non-empty, a filter only when its value is non-empty, which
+ * `parseProductQuery` already guarantees).
+ */
+export function shopperQueryNarrows(query?: ShopperQuery): boolean {
+  if (!query) return false;
+  if (query.search) return true;
+  return !!query.filters && Object.keys(query.filters).length > 0;
+}
+
+/**
+ * Whether the empty-page 404 may be decided for this request at all.
+ *
+ * Review of #188, blocker 2: the products read is filtered on the server, so
+ * its `sourceCount` counts the MATCHES, not the catalogue. A storefront-only
+ * page searched for `zzz` reads zero rows, and judged on that it answered 404:
+ * the shopper lost the page, the toolbar, and the way back. A page with a
+ * narrowing query is therefore never empty. It renders, and the storefront
+ * shows its own no-matches state under a 200.
+ */
+export function emptinessIsDecidable(
+  page: { format?: string; blocks?: unknown; hero?: unknown },
+  query?: ShopperQuery,
+): boolean {
+  return pageMustDecideEmptiness(page) && !shopperQueryNarrows(query);
+}
+
 /**
  * Decide whether a composed page has a body, and whether we are entitled to say
  * so.

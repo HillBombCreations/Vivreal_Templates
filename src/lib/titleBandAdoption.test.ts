@@ -188,9 +188,11 @@ test('the imported module is the real thing (guards every assertion below)', () 
   // which is a different concern from the band and stays here. It is still the
   // same three formats, and the band is only right if the two agree, so the set
   // is read out of the source and compared rather than restated.
-  const source = read(SOURCES.renderComposedPage);
+  // It moved from renderComposedPage.tsx into pageEmptiness.ts with the
+  // emptiness predicates that read it (review of #188).
+  const source = read('../lib/api/composition/pageEmptiness.ts');
   const declared = /const GENERIC_FORMATS = new Set\(\[([^\]]*)\]\)/.exec(source);
-  assert.ok(declared, "renderComposedPage's GENERIC_FORMATS declaration moved; this test read nothing");
+  assert.ok(declared, "pageEmptiness's GENERIC_FORMATS declaration moved; this test read nothing");
   const templatesFormats = [...declared[1].matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
   assert.equal(templatesFormats.length, 3, `parsed ${templatesFormats.length} formats, expected 3`);
   assert.deepEqual(

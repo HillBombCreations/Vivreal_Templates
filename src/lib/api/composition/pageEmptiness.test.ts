@@ -6,10 +6,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   decidePageEmptiness,
+  emptinessIsDecidable,
   hasAuthoredHeroOrSectionBlock,
   hasFormBlock,
   hasStaticContentBlock,
   pageCouldBeEmpty,
+  pageMustDecideEmptiness,
+  shopperQueryNarrows,
 } from './pageEmptiness.ts';
 
 test('hasStaticContentBlock: labels-bearing static block counts as content', () => {
@@ -188,4 +191,54 @@ test('QA-G1-2: the verdict never calls empty a page the structural test ruled ou
       assert.deepEqual(decidePageEmptiness({ ...shape, reads }), { isEmpty: false, emptinessUnknown: false });
     }
   }
+});
+
+// ── review of #188, blocker 2: a shopper's search is never a missing page ────
+//
+// The products read is filtered on the server, so its sourceCount counts the
+// MATCHES. Judged on that, a storefront-only grid searched for "zzz" read zero
+// rows and answered 404. `emptinessIsDecidable` is the single gate both
+// `renderComposedPage` (the 404) and `composedPageIsEmpty` (the Not Found title)
+// pass through, so a false here is a 200 with the storefront's no-matches state.
+
+const storefrontGrid = {
+  id: 'shop',
+  type: { kind: 'layout', dispatchId: 'products-grid' },
+  enabled: true,
+  config: { bindings: [{ collectionId: 'prod-col', integrationId: 'stripe-1' }] },
+};
+const storefrontOnlyPage = { format: 'grid', blocks: [storefrontGrid] };
+
+test('#188 REFUSE: a storefront-only grid searched with no matches is never judged empty (200, not 404)', () => {
+  assert.equal(pageMustDecideEmptiness(storefrontOnlyPage), true, 'precondition: the page alone could be empty');
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {}, search: 'zzz' }), false);
+});
+
+test('#188 REFUSE: a storefront-only grid filtered with no matches is never judged empty (200, not 404)', () => {
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: { color: 'chartreuse' } }), false);
+  assert.equal(
+    emptinessIsDecidable({ format: 'standard', blocks: [storefrontGrid] }, { filters: { size: 'xl' }, search: 'zzz' }),
+    false,
+    'the same on a standard page',
+  );
+});
+
+test('#188 ALLOW: the same page truly empty, with no query, still decides and so still 404s', () => {
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, undefined), true);
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {} }), true, 'what parseProductQuery returns for no params');
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {}, search: '' }), true, 'an empty ?search= sends nothing upstream');
+  assert.equal(emptinessIsDecidable({ format: 'list', blocks: [emptyLongform] }, { filters: {} }), true);
+});
+
+test('#188 ALLOW: sort only reorders, so a sorted empty page is still empty', () => {
+  assert.equal(shopperQueryNarrows({ filters: {}, sort: 'price-asc' }), false);
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {}, sort: 'price-asc' }), true);
+});
+
+test('#188: a page that can never be empty is ruled out by config alone, before any query is read', () => {
+  // generateMetadata asks pageMustDecideEmptiness BEFORE awaiting searchParams;
+  // false here is what keeps a stored privacy page prerenderable under ISR.
+  assert.equal(pageMustDecideEmptiness({ format: 'static', blocks: [] }), false);
+  assert.equal(pageMustDecideEmptiness({ format: 'catalog', blocks: [storefrontGrid] }), false, 'not a generic format');
+  assert.equal(pageMustDecideEmptiness({ format: 'standard', blocks: [heroBlock, emptyLongform], hero: { title: 'Hi' } }), false);
 });

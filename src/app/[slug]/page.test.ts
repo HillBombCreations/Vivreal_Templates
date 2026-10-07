@@ -151,3 +151,18 @@ test('generateMetadata answers Not Found, noindex, for a composed page that rend
   );
   assert.match(source, /import \{ renderComposedPage, composedPageIsEmpty \} from "@\/lib\/renderComposedPage"/);
 });
+
+// Review of #188, concern 1: reading `searchParams` bails the route to dynamic,
+// so generateMetadata may read it ONLY after the config-only check says the page
+// could be empty. A stored static page (privacy, terms) must never reach it, or
+// an ISR site stops prerendering it. The predicate is tested for real in
+// pageEmptiness.test.ts; this pins the ordering in the route.
+test('generateMetadata reads searchParams only behind the config-only emptiness check', () => {
+  const meta = source.slice(source.indexOf('export async function generateMetadata'));
+  const gate = meta.indexOf('pageMustDecideEmptiness(pageConfig) &&');
+  const read = meta.indexOf('await searchParams');
+  assert.ok(gate > 0, 'the config-only check is in generateMetadata');
+  assert.ok(read > gate, 'searchParams is awaited after (inside) the check');
+  assert.equal(meta.match(/await searchParams/g)?.length, 1, 'and nowhere else in metadata');
+  assert.match(source, /import \{ pageMustDecideEmptiness \} from "@\/lib\/api\/composition\/pageEmptiness"/);
+});

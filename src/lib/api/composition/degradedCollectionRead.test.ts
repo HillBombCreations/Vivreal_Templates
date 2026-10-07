@@ -554,11 +554,11 @@ test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()
     'refuse first, or an unknowable verdict falls through to the 404 this fix exists to prevent',
   );
   assert.ok(
-    code.includes('if (mustDecideEmptinessBeforeStreaming(composedPage))'),
-    'the early read stays scoped to pages that could be empty',
+    code.includes('if (emptinessIsDecidable(composedPage, productQuery))'),
+    'the early read stays scoped to pages that could be empty, and skips a shopper-narrowed query',
   );
   assert.ok(
-    whole.includes('GENERIC_FORMATS.has(composedPage.format) &&'),
+    source('./pageEmptiness.ts').includes("GENERIC_FORMATS.has(page.format ?? '') &&"),
     'the refusal stays scoped to the same formats the 404 was scoped to',
   );
 

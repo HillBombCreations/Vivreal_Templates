@@ -28,6 +28,7 @@ import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPag
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -809,8 +810,13 @@ export async function generateMetadata({
   // (`renderComposedPage`); its head says Not Found and noindex to match. Same
   // verdict, same query, same cache entries, and no read at all for a page whose
   // config already holds authored content.
+  //
+  // `searchParams` is awaited ONLY behind the config-only check. Reading it
+  // bails the route to dynamic, and a stored static page (privacy, terms) never
+  // reads it in the render either, so on an ISR site it must stay prerendered.
   if (
     pageConfig &&
+    pageMustDecideEmptiness(pageConfig) &&
     (await composedPageIsEmpty({
       siteData,
       composedPage: pageConfig,
