@@ -13,7 +13,8 @@
  * `AbortController` and the `setTimeout`/`clearTimeout` pair (all ambient Web
  * APIs, and all four are provided by the Next middleware sandbox:
  * next/dist/server/web/sandbox/context.js wires `setTimeout`/`clearTimeout` to
- * its TimeoutsManager). Plus the pure `@/lib/redirects` helper.
+ * its TimeoutsManager). Plus the pure `@/lib/redirects` helper and the pure
+ * `./pages/builtInPages.ts` slug list.
  * No `server-only`,
  * no `next/headers`, no `next/cache`, no `@/lib/api/client` — those either
  * don't exist at the edge or assume a per-request scope this module's
@@ -23,6 +24,7 @@
 import type { SiteRedirect } from '@/lib/redirects';
 import { fetchWithReconnect } from './api/fetchWithReconnect.ts';
 import { startAwakeTimeout } from './awakeTimeout.ts';
+import { CHECKOUT_RESULT_SLUGS } from './pages/builtInPages.ts';
 
 const CLIENT_API_URL = process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 // API_KEY/SITE_ID are read INSIDE fetchSiteMap (call-time), not hoisted to a
@@ -158,9 +160,11 @@ const FROZEN_SIGNAL_TTL_MS = 90_000;
 
 const PREVIEW_QUERY_PARAM = 'vivreal_preview';
 
-/** Static slugs that always render regardless of pageConfigs (mirrors the
- * STATIC_SLUGS map at src/app/[slug]/page.tsx:164-168). */
-const ALWAYS_LIVE_SLUGS = new Set(['privacy', 'terms']);
+/** Slugs that always render regardless of pageConfigs: privacy/terms (mirrors
+ * the STATIC_SLUGS map in src/app/[slug]/page.tsx) and the two checkout result
+ * pages, which the route synthesizes on every site (`resolvePageForSlug`). An
+ * authored redirect must not send a paying buyer away from the confirmation. */
+const ALWAYS_LIVE_SLUGS = new Set(['privacy', 'terms', ...CHECKOUT_RESULT_SLUGS]);
 
 export interface EdgeSiteMap {
   slugs: Set<string>;

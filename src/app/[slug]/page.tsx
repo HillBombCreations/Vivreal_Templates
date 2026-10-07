@@ -12,7 +12,7 @@ import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
-import { getPageBySlug } from "@/lib/pages";
+import { resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -260,7 +260,7 @@ export default async function DynamicPage({
   const siteData = await getSiteData();
   // A degraded read must never 404 a page that exists. `getSiteData()` hands
   // back `FALLBACK_SITE_DATA` when VR_Client_API cannot be read, and its
-  // `pageConfigs: []` makes `getPageBySlug` miss EVERY real slug on the site,
+  // `pageConfigs: []` makes `resolvePageForSlug` miss EVERY real slug on the site,
   // so without this line a transient upstream wobble answers 404 on every page
   // except /privacy and /terms. A 404 tells a crawler the URL is gone and to
   // drop it; a 5xx tells it to come back. See `assertUpstreamHealthy`.
@@ -270,7 +270,13 @@ export default async function DynamicPage({
   // degraded read too, which would otherwise turn every authored 301 into a
   // 404 for the duration.
   assertUpstreamHealthy(siteData);
-  const pageConfig = getPageBySlug(siteData, slug);
+  // The stored page for this slug, or, for the two checkout result slugs
+  // VR_Client_API hardcodes as Stripe's success/cancel URLs, a built-in bare
+  // page when the site stores none. That is what lets a site that became a
+  // store after its first build land the buyer on a confirmation (and fire
+  // OrderConfirmationTrigger below) instead of a 404. A stored page always
+  // wins. See src/lib/pages/builtInPages.ts.
+  const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
 
   // The owner turned this page OFF. Until this line, `enabled` was a
   // navigation flag and nothing else: the renderer dropped the page from the
@@ -778,7 +784,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
-  const pageConfig = getPageBySlug(siteData, slug);
+  const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
   if (!pageConfig && !STATIC_PAGE_TITLES[slug]) {

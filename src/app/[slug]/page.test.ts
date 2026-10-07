@@ -106,3 +106,34 @@ test('the 404 for an off page is titled as one, not as the retired page', () => 
     'generateMetadata answers Not Found for an off page',
   );
 });
+
+// ── the checkout result pages are built in on every site ────────────────────
+//
+// The resolver's behaviour (stored page wins, built-in only for the two exact
+// checkout slugs, everything else undefined) is tested for real in
+// src/lib/pages/builtInPages.test.ts. These pin that BOTH lookups in this file
+// go through it: the render (so the page serves and the confirmation fires)
+// and generateMetadata (so a served page is not titled "Not Found").
+
+test('both the render and the metadata resolve pages through the built-in-aware resolver', () => {
+  const lookups = source.match(/resolvePageForSlug\(siteData\.pageConfigs, slug\)/g) ?? [];
+  assert.equal(lookups.length, 2, 'DynamicPage and generateMetadata');
+  assert.match(
+    source,
+    /import \{ resolvePageForSlug \} from "@\/lib\/pages\/builtInPages"/,
+  );
+  assert.doesNotMatch(
+    source,
+    /getPageBySlug\(/,
+    'a bare stored-only lookup would 404 /checkoutsuccess on a site that became a store later',
+  );
+});
+
+test('the built-in pages are resolved BEFORE the off guard reads the result', () => {
+  // A stored page is returned as stored, so an owner's off switch still 404s
+  // it; the guard has to see the resolver's answer to keep that true.
+  const resolve = source.indexOf('const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);');
+  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  assert.ok(resolve > 0 && guard > 0);
+  assert.ok(resolve < guard);
+});
