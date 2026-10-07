@@ -30,6 +30,28 @@ type ComposeComponents = any;
 const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
 
 /**
+ * QA-G1-2: the SAME emptiness verdict the render below acts on, for
+ * `generateMetadata`, so a page that renders as not found is also titled and
+ * indexed as not found. Every read goes through `clientFetchCached`, so the
+ * render's own call is served from the same cache entries, not a second read.
+ * Only `isEmpty`: an unknown verdict (a failed read) is never called empty.
+ */
+export async function composedPageIsEmpty(args: {
+  siteData: SiteData;
+  composedPage: PageConfig;
+  productQuery?: ProductQuery;
+}): Promise<boolean> {
+  if (!GENERIC_FORMATS.has(args.composedPage.format)) return false;
+  const { isEmpty } = await buildPageContext({
+    siteData: args.siteData,
+    page: args.composedPage,
+    isHome: false,
+    productQuery: args.productQuery,
+  });
+  return isEmpty;
+}
+
+/**
  * Derive the structure hints ComposedPageSkeleton needs from the SAME page
  * config that drives the real render — format, labels, the primary binding's
  * displayAs, whether a filter (second collection) binding exists, and the

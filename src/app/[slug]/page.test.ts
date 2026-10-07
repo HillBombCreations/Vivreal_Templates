@@ -22,7 +22,7 @@ test('generateMetadata composes its robots policy through the shared builder', (
   assert.match(source, /buildPageRobotsMetadata\(/, 'the route must reach the tested composer');
   assert.match(
     source,
-    /import \{ buildPageRobotsMetadata \} from "@\/lib\/seo\/pageIndexing"/,
+    /import \{ buildPageRobotsMetadata(, \w+)* \} from "@\/lib\/seo\/pageIndexing"/,
     'imported from the module that owns the non-indexable page-type list',
   );
 });
@@ -136,4 +136,18 @@ test('the built-in pages are resolved BEFORE the off guard reads the result', ()
   const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
   assert.ok(resolve > 0 && guard > 0);
   assert.ok(resolve < guard);
+});
+
+// ── QA-G1-2: metadata says what the body says for an empty composed page ────
+//
+// The verdict is the render's own (`decidePageEmptiness`, tested for real in
+// pageEmptiness.test.ts) and the metadata shape is tested in
+// pageIndexing.test.ts. This pins only that generateMetadata reaches both.
+test('generateMetadata answers Not Found, noindex, for a composed page that renders as not found', () => {
+  assert.match(
+    source,
+    /await composedPageIsEmpty\(\{[\s\S]{0,200}?\}\)\)[\s\S]{0,40}?return buildEmptyPageMetadata\(siteName\)/,
+    'the empty verdict must decide the metadata',
+  );
+  assert.match(source, /import \{ renderComposedPage, composedPageIsEmpty \} from "@\/lib\/renderComposedPage"/);
 });

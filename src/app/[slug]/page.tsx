@@ -11,7 +11,7 @@ import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
-import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
+import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
 import { resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
@@ -24,7 +24,7 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
-import { renderComposedPage } from "@/lib/renderComposedPage";
+import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -778,7 +778,13 @@ const STATIC_PAGE_TITLES: Record<string, string> = {
   terms: "Terms of Service",
 };
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // Same gate as the page, for the same reason: a gate-off build must not make
   // a `siteDetails` read that `force-dynamic` used to skip.
   await enforceDynamicUnlessIsr();
@@ -797,6 +803,20 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // function already gives for a slug with no page at all.
   if (isPageTurnedOff(pageConfig)) {
     return { title: `Not Found | ${siteName}` };
+  }
+
+  // QA-G1-2: a composed page with nothing to show renders `notFound()` after
+  // the 200 shell, so without this it kept its own title and stayed indexable
+  // under a "Page not found" body. Same verdict, same query, same cache.
+  if (
+    pageConfig &&
+    (await composedPageIsEmpty({
+      siteData,
+      composedPage: pageConfig,
+      productQuery: parseProductQuery((await searchParams) ?? {}),
+    }))
+  ) {
+    return buildEmptyPageMetadata(siteName);
   }
 
   // Studio-authored SEO overrides take precedence over the label/name-derived

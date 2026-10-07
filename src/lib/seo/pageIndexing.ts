@@ -191,6 +191,18 @@ const FOLLOW_WHEN_BLOCKED: Record<PageIndexingBlock, boolean> = {
  * caller cannot compute the author half differently from the way the sitemap
  * does. A boolean parameter is an invitation to a second reader of the field.
  */
+/**
+ * QA-G1-2 (fix-plan 2026-10-07): metadata for a composed page that renders as
+ * not found. The render's `notFound()` fires after the 200 shell has flushed
+ * (see `renderComposedPage.tsx`), so the page used to keep its own title and
+ * stay indexable while its body said "Page not found". This says the same
+ * thing the body does and tells a crawler not to keep it. The HTTP status is
+ * still 200; a true 404 needs the data read above the Suspense boundary.
+ */
+export function buildEmptyPageMetadata(siteName: string): Pick<Metadata, 'title' | 'robots'> {
+  return { title: `Not Found | ${siteName}`, robots: { index: false, follow: false } };
+}
+
 export function buildPageRobotsMetadata(
   page: IndexablePage | undefined | null,
 ): Pick<Metadata, 'robots'> {
