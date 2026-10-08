@@ -9,7 +9,15 @@
  * A code is shown as applied only when this answers more than zero; otherwise
  * the shopper reads COUPON_NO_EFFECT_COPY and no code rides into checkout.
  */
-export const COUPON_NO_EFFECT_COPY = "This code does not apply to these items.";
+/**
+ * TB-7 (re-walk B): the case the walk hit is a sale price that already takes
+ * off more than the code would (VR_Client_API applies the larger of the two,
+ * `pickLargerDiscount`), and "does not apply" read as a bad code. The preview
+ * carries no reason for a zero, so the line names the likely cause as a
+ * possibility rather than claiming it.
+ */
+export const COUPON_NO_EFFECT_COPY =
+  "This code would not lower your total. A sale price on these items may already save you more.";
 
 /**
  * The preview discount in DOLLARS, clamped to [0, subtotal].

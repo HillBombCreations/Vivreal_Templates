@@ -24,6 +24,9 @@ test("never more than the bag", () => {
 });
 
 test("the no-effect line is plain owner-visible copy with no dashes", () => {
-  assert.equal(COUPON_NO_EFFECT_COPY, "This code does not apply to these items.");
+  assert.equal(
+    COUPON_NO_EFFECT_COPY,
+    "This code would not lower your total. A sale price on these items may already save you more.",
+  );
   assert.doesNotMatch(COUPON_NO_EFFECT_COPY, /[–—]/);
 });

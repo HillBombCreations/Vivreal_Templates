@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide-react";
@@ -15,6 +15,7 @@ import {
 import { cartSubtotal, cartUnitPrice, cartLineTotal } from "@/lib/cartPrice";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
+import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -44,7 +45,7 @@ function couponErrorCopy(reason: string | undefined): string {
 }
 
 export default function CartDialog({ open, onClose }: CartDialogProps) {
-  const { cart, setCart, setOpenCartMenu } = useCartContext();
+  const { cart, setCart, setOpenCartMenu, cartHydrated, promoCode, setPromoCode } = useCartContext();
   const siteData = useSiteData();
 
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
@@ -90,17 +91,59 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const hasDiscount = appliedCode != null && discount > 0;
   const total = Math.max(0, subtotal - (hasDiscount ? discount : 0));
 
+  // TB-6: a string, so the effects below fire on a real change to the lines
+  // and not on a new array with the same contents.
+  const linesKey = useMemo(() => cartLinesKey(cartLineItems), [cartLineItems]);
+  const linesKeyRef = useRef(linesKey);
+  useEffect(() => {
+    linesKeyRef.current = linesKey;
+  }, [linesKey]);
+
   // A coupon's discount depends on the exact cart. Any cart change invalidates a
   // previously-applied code — clear it rather than show a stale discount (R2).
+  // The stored code goes with it (TB-6). Hydration is not a change here: the
+  // stored code was saved with these same lines, so its key matches.
   useEffect(() => {
     if (appliedCode) {
       setAppliedCode(null);
       setDiscount(0);
       setCodeError(null);
     }
-    // Intentionally keyed on the cart line items only.
+    if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
+    // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cartLineItems]);
+  }, [linesKey]);
+
+  // TB-6: once per page load, after the stored cart is read, re-check a code
+  // that was applied before the reload. See lib/promoCodeRestore.ts.
+  const restoreStarted = useRef(false);
+  useEffect(() => {
+    if (!cartHydrated || restoreStarted.current) return;
+    restoreStarted.current = true;
+    if (!promoCode) return;
+    const startedKey = linesKey;
+    void revalidateStoredPromoCode({
+      stored: promoCode,
+      lines: cartLineItems,
+      subtotal,
+      validate: validateCoupon,
+    }).then((restored) => {
+      // The bag changed while this was in flight; the effect above has already
+      // dropped the code, so a late answer must not bring it back.
+      if (linesKeyRef.current !== startedKey) return;
+      if (restored.kind === "kept") {
+        setAppliedCode(restored.code);
+        setDiscount(restored.discount);
+      } else if (restored.kind === "dropped") {
+        setPromoCode(null);
+        setCodeError(PROMO_CODE_DROPPED_COPY);
+      } else if (restored.kind === "discard") {
+        setPromoCode(null);
+      }
+    });
+    // Runs once, when hydration completes; the values it reads are those of that render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartHydrated]);
 
   const setQty = (productId: string, nextQty: number) => {
     const next = { ...(cart || {}) };
@@ -124,21 +167,25 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       const previewDiscount = result.valid ? couponPreviewDiscount(result.newSubtotal, subtotal) : 0;
       if (result.valid && previewDiscount > 0) {
         setAppliedCode(code);
+        setPromoCode({ code, linesKey });
         setDiscount(previewDiscount);
         setCodeInput("");
         setCodeError(null);
       } else if (result.valid) {
         // Valid, but the total did not drop: never say "applied" (RW3-4).
         setAppliedCode(null);
+        setPromoCode(null);
         setDiscount(0);
         setCodeError(COUPON_NO_EFFECT_COPY);
       } else {
         setAppliedCode(null);
+        setPromoCode(null);
         setDiscount(0);
         setCodeError(couponErrorCopy(result.reason));
       }
     } catch {
       setAppliedCode(null);
+      setPromoCode(null);
       setDiscount(0);
       setCodeError(couponErrorCopy(undefined));
     } finally {
@@ -148,6 +195,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
 
   const onRemoveCode = () => {
     setAppliedCode(null);
+    setPromoCode(null);
     setDiscount(0);
     setCodeError(null);
     setCodeInput("");
@@ -169,6 +217,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // and never silently charge full (plan §5.5 / R2).
       if (appliedCode) {
         setAppliedCode(null);
+        setPromoCode(null);
         setDiscount(0);
       }
       setCodeError(
