@@ -205,7 +205,10 @@ const storefrontGrid = {
   id: 'shop',
   type: { kind: 'layout', dispatchId: 'products-grid' },
   enabled: true,
-  config: { bindings: [{ collectionId: 'prod-col', integrationId: 'stripe-1' }] },
+  // `integrationProvider` is the key `collectTargets` (and so `buildPageContext`)
+  // reads to route a binding to the products read; the earlier `integrationId`
+  // fixture key is one no reader looks at.
+  config: { bindings: [{ collectionId: 'prod-col', integrationProvider: 'stripe' }] },
 };
 const storefrontOnlyPage = { format: 'grid', blocks: [storefrontGrid] };
 
@@ -228,6 +231,36 @@ test('#188 ALLOW: the same page truly empty, with no query, still decides and so
   assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {} }), true, 'what parseProductQuery returns for no params');
   assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: {}, search: '' }), true, 'an empty ?search= sends nothing upstream');
   assert.equal(emptinessIsDecidable({ format: 'list', blocks: [emptyLongform] }, { filters: {} }), true);
+});
+
+// Second pass of the review: only a query that reaches a read counts. The
+// storefront round-trips `f_<key>`, `search` and `sort`, and only the products
+// read (a payments-provider binding) receives them.
+
+const collectionOnlyList = {
+  format: 'list',
+  blocks: [{ id: 'l', type: { kind: 'layout', dispatchId: 'longform' }, enabled: true,
+    config: { bindings: [{ collectionId: 'c-empty', displayAs: 'longform' }] } }],
+};
+
+test('#188 ALLOW (404 kept): a crafted ?f_x or ?search on a page with no storefront does not save a truly empty page', () => {
+  assert.equal(emptinessIsDecidable(collectionOnlyList, { filters: { x: '1' } }), true);
+  assert.equal(emptinessIsDecidable(collectionOnlyList, { filters: {}, search: 'x' }), true);
+  assert.equal(emptinessIsDecidable({ format: 'standard', blocks: collectionOnlyList.blocks }, { filters: { x: '1' }, search: 'x' }), true);
+});
+
+test('#188 REFUSE (200 kept): the same query on a storefront still renders, including a Square one and one nested in a group', () => {
+  assert.equal(emptinessIsDecidable(storefrontOnlyPage, { filters: { x: '1' } }), false);
+  const square = { format: 'grid', blocks: [{ ...storefrontGrid, config: { bindings: [{ integrationProvider: 'Square' }] } }] };
+  assert.equal(emptinessIsDecidable(square, { filters: {}, search: 'x' }), false);
+  const grouped = { format: 'standard', blocks: [{ id: 'g', type: { kind: 'group' }, enabled: true, config: { children: [storefrontGrid] } }] };
+  assert.equal(emptinessIsDecidable(grouped, { filters: { color: 'red' } }), false);
+});
+
+test('#188 REFUSE (200 kept): a legacy page with no blocks keeps the old answer for any narrowing query', () => {
+  assert.equal(pageMustDecideEmptiness({ format: 'grid' }), true, 'precondition: a legacy page could be empty');
+  assert.equal(emptinessIsDecidable({ format: 'grid' }, { filters: { x: '1' } }), false);
+  assert.equal(emptinessIsDecidable({ format: 'grid' }, { filters: {} }), true);
 });
 
 test('#188 ALLOW: sort only reorders, so a sorted empty page is still empty', () => {

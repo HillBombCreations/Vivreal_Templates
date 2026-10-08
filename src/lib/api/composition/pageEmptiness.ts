@@ -1,9 +1,14 @@
 /**
  * Pure block-shape predicates for the generic-format `isEmpty` → notFound()
- * guard (buildPageContext.ts). Extracted to a sibling with NO imports so they
- * run under `node --test` (server-only/next modules can't load there — house
- * lesson from the Phase T round).
+ * guard (buildPageContext.ts). Extracted to a sibling with no server-only or
+ * Next import so they run under `node --test` (server-only/next modules can't
+ * load there — house lesson from the Phase T round). The two imports below are
+ * plain modules for the same reason.
  */
+
+import type { PageConfig } from '@/types/SiteData';
+import { isPaymentsProvider } from '../../payments.ts';
+import { collectTargets } from './bindingTargets.ts';
 
 /**
  * A FORM binding is content with zero items BY DESIGN (its collection is a
@@ -253,6 +258,24 @@ export function shopperQueryNarrows(query?: ShopperQuery): boolean {
 }
 
 /**
+ * True when the page's reads could be narrowed by a shopper query, which is
+ * only the products read: `buildPageContext` sends the query to a payments
+ * provider binding and to nothing else (collections read with `{limit:100}`).
+ *
+ * A legacy page (no `blocks`) binds through `getPageBindingsByRole`, which is
+ * server-only and cannot be called here, so it is assumed to read products.
+ * That keeps the old answer for it, a 200 for any narrowing query, rather than
+ * risk a 404 on a legacy storefront searched with no matches.
+ */
+function pageReadsProducts(page: { blocks?: unknown }): boolean {
+  if (!Array.isArray(page.blocks) || page.blocks.length === 0) return true;
+  // collectTargets reads only `blocks` and `hero` on this path, and `hero` adds
+  // collection ids, never an integration type; a full PageConfig is not needed.
+  const { integrationTypes } = collectTargets({ blocks: page.blocks } as PageConfig, null);
+  return integrationTypes.some(isPaymentsProvider);
+}
+
+/**
  * Whether the empty-page 404 may be decided for this request at all.
  *
  * Review of #188, blocker 2: the products read is filtered on the server, so
@@ -261,12 +284,17 @@ export function shopperQueryNarrows(query?: ShopperQuery): boolean {
  * the shopper lost the page, the toolbar, and the way back. A page with a
  * narrowing query is therefore never empty. It renders, and the storefront
  * shows its own no-matches state under a 200.
+ *
+ * Only a query that reaches a read counts. On a page with no storefront, a
+ * crafted `?f_x=1` or `?search=x` narrows nothing, so a truly empty page still
+ * 404s with it (second pass of the review, optional tightening).
  */
 export function emptinessIsDecidable(
   page: { format?: string; blocks?: unknown; hero?: unknown },
   query?: ShopperQuery,
 ): boolean {
-  return pageMustDecideEmptiness(page) && !shopperQueryNarrows(query);
+  if (!pageMustDecideEmptiness(page)) return false;
+  return !(shopperQueryNarrows(query) && pageReadsProducts(page));
 }
 
 /**

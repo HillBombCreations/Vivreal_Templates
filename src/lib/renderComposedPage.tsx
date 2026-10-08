@@ -35,9 +35,12 @@ type ComposeComponents = any;
  * healthy request the render's own call is served from the same cache entries.
  * A FAILED read is never cached (`unstable_cache` stores no throw), so on an
  * outage these pages read twice per request, accepted in the review of #188.
- * Measured with `next start`: the second read logs AFTER the refusal, and a
- * React `cache` slot shared by metadata and render left it at two, so it was
- * not kept.
+ * Measured with `next start` (follow-ups to #188): this metadata read and the
+ * render's read already make ONE upstream call between them. The second call is
+ * this function running again in the separate render pass Next makes for the
+ * 500 response, which gets a fresh React `cache` scope, so a request-scoped
+ * cache keyed on the URL string (tried, and it did hit for the first pair)
+ * cannot reach it. It was not kept.
  * Only `isEmpty`: an unknown verdict (a failed read) is never called empty, and
  * a page searched or filtered by the shopper is never empty
  * (`emptinessIsDecidable`).
@@ -161,8 +164,11 @@ export async function renderComposedPage({
   // Ordering is the old body guard's, unchanged: a failed read REFUSES (a 5xx,
   // now a real one too, "come back later") before an empty read can 404, because
   // a failed read and an empty collection are the same `[]`. The 404 is never
-  // page-cached: every caller awaits `searchParams` before reaching here, so the
-  // route is dynamic even under ISR (`no-store`). It lasts only as long as the
+  // page-cached: every caller that can reach it awaits `searchParams` first, so
+  // the route is dynamic even under ISR (`no-store`). The static arm of
+  // [slug]/page.tsx does not await it, and needs not to: `static` is not a
+  // generic format, so `emptinessIsDecidable` is false there and no 404 is
+  // decided. It lasts only as long as the
   // collection's data-cache entry (`SITE_CACHE_TTL_SECONDS`), and the portal's
   // save webhook (`/api/revalidate`) drops the `collection:<id>` tag these reads
   // carry, so the next request answers 200 once the page has content.
