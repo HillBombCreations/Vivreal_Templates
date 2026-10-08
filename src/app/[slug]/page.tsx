@@ -25,6 +25,8 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
 import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
+import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
+import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
@@ -735,26 +737,8 @@ async function ComposedFormatBody({
     if (isEmpty) return notFound();
   }
 
-  return (
-    <>
-      {/*
-        The order confirmation email, fired once per completed checkout.
-        Renders nothing; it reads `?session_id=` and posts it to
-        /api/checkout/confirm. See OrderConfirmationTrigger.tsx for why the
-        effect lives here rather than in the renderer's CheckoutResultTemplate
-        (shared with the Studio preview) or in this server render (ISR-cached,
-        so it is not tied to the buyer in front of it).
-
-        Gated on the FORMAT, not on the slug: a customer can name their success
-        page anything, and `checkout-success` is what createCheckoutSession's
-        success_url actually lands on.
-      */}
-      {format === "checkout-success" && <OrderConfirmationTrigger />}
-      {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
-      {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
-      {/* RW4-6: a failed list read on a page with other content. See the component. */}
-      {listReadFailed && <ListLoadFailedNotice />}
-      {/* H177: resolver around the composed body. See src/components/RichTextImages. */}
+  // H177: resolver around the composed body. See src/components/RichTextImages.
+  const composedBody = (
       <RichTextImages map={richTextImageUrls}>
       {composePage(
         components || scheduleView || suppressSrTitle
@@ -776,6 +760,34 @@ async function ComposedFormatBody({
           : input,
       )}
       </RichTextImages>
+  );
+
+  return (
+    <>
+      {/*
+        The order confirmation email, fired once per completed checkout.
+        Renders nothing; it reads `?session_id=` and posts it to
+        /api/checkout/confirm. See OrderConfirmationTrigger.tsx for why the
+        effect lives here rather than in the renderer's CheckoutResultTemplate
+        (shared with the Studio preview) or in this server render (ISR-cached,
+        so it is not tied to the buyer in front of it).
+
+        Gated on the FORMAT, not on the slug: a customer can name their success
+        page anything, and `checkout-success` is what createCheckoutSession's
+        success_url actually lands on.
+      */}
+      {format === "checkout-success" && <OrderConfirmationTrigger />}
+      {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
+      {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
+      {/* RW4-6: a failed list read on a page with other content. See the component. */}
+      {listReadFailed && <ListLoadFailedNotice />}
+      {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
+          See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
+      {format === "checkout-success" ? (
+        <ConfirmedOrderGate shopHref={shopHrefFor(siteData.pageConfigs)}>{composedBody}</ConfirmedOrderGate>
+      ) : (
+        composedBody
+      )}
     </>
   );
 }
