@@ -6,6 +6,7 @@ import { stripComments } from "../../lib/source/stripComments.ts";
 /**
  * The component is .tsx, which `node --experimental-strip-types` cannot load,
  * so its decision is tested behaviourally in `lib/confirmedOrderCart.test.ts`
+ * and `lib/confirmOrder.test.ts`,
  * and this pins the wiring, which is where RW3-6 could still be silently wrong.
  */
 const componentSrc = fs.readFileSync(new URL("./ClearCartOnConfirmedOrder.tsx", import.meta.url), "utf8");
@@ -29,7 +30,16 @@ test("it clears only after the stored cart has hydrated, through the tested deci
   // Before hydration the provider's IndexedDB read would put the items back.
   assert.match(component, /if \(!cartHydrated \|\| !setCart\) return;/);
   assert.match(component, /\[cartHydrated, setCart\]/, "re-runs when hydration completes");
-  assert.match(component, /if \(shouldClearCartForOrder\(window\.location\.search, storage\)\) setCart\(\{\}\);/);
+  assert.match(
+    component,
+    /clearCartIfOrderConfirmed\(\{\s*search: window\.location\.search,\s*confirm: confirmOrder,\s*storage,\s*clear: \(\) => setCart\(\{\}\),\s*\}\)/,
+  );
+});
+
+test("REFUSE (RW5): it never clears on the URL alone, only through the server's answer", () => {
+  assert.match(component, /import \{ confirmOrder \} from "@\/lib\/confirmOrder"/);
+  assert.equal((component.match(/setCart\(/g) ?? []).length, 1, "the only clear is the one handed to the decision");
+  assert.doesNotMatch(component, /shouldClearCartForOrder|isOrderConfirmationId/, "no format-only path remains");
 });
 
 test("it tolerates a site with no cart provider", () => {

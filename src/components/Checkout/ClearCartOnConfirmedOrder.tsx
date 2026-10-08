@@ -2,12 +2,15 @@
 
 import { useEffect } from "react";
 import { useOptionalCart } from "@/contexts/CartContext";
-import { shouldClearCartForOrder, type ClearedOrderStore } from "@/lib/confirmedOrderCart";
+import { clearCartIfOrderConfirmed, type ClearedOrderStore } from "@/lib/confirmedOrderCart";
+import { confirmOrder } from "@/lib/confirmOrder";
 
 /**
- * Empties the cart once a buyer lands back from a completed checkout (RW3-6).
- * Which landings count as a confirmed order is decided, and tested, in
- * `lib/confirmedOrderCart.ts`; this only wires it to the cart.
+ * Empties the cart once a buyer lands back from a completed checkout (RW3-6),
+ * and only after `/api/checkout/confirm` confirms that order paid (RW5). The
+ * decision is made, and tested, in `lib/confirmedOrderCart.ts`; this only
+ * wires it to the cart. `setCart` is a state setter, so an answer that lands
+ * after this unmounts still clears, which is right: the bag was paid for.
  *
  * It waits for `cartHydrated`. The provider reads the stored cart from
  * IndexedDB asynchronously and then REPLACES the in-memory cart with it, so a
@@ -35,7 +38,12 @@ export default function ClearCartOnConfirmedOrder() {
       // for why the cart is still cleared without it.
       storage = null;
     }
-    if (shouldClearCartForOrder(window.location.search, storage)) setCart({});
+    void clearCartIfOrderConfirmed({
+      search: window.location.search,
+      confirm: confirmOrder,
+      storage,
+      clear: () => setCart({}),
+    });
   }, [cartHydrated, setCart]);
 
   return null;

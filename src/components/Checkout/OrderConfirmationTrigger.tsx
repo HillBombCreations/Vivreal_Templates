@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { confirmOrder } from "@/lib/confirmOrder";
 
 /**
  * Fires the order confirmation email, once, when a buyer lands back from Stripe.
@@ -32,19 +33,14 @@ import { useEffect } from "react";
  * worry about.
  */
 
-/**
- * Session ids this browsing context has already posted.
- *
- * Covers a remount and React's development double-invoked effect. It is
- * module scope, so a genuine page RELOAD starts empty and posts again, and
- * that is deliberate rather than an oversight: if the first attempt failed,
- * the reload is the retry that gets the buyer their receipt. A reload after a
- * SUCCESS costs one request and sends nothing, because VR_Client_API stamps
- * the Stripe PaymentIntent once the mail is queued and answers `already-sent`
- * on every attempt after that. Persisting this in sessionStorage would save
- * that one request and cost the retry, which is the wrong way round.
+/*
+ * Posting at most once per order, and retrying only after a network failure,
+ * live in `lib/confirmOrder.ts`, because ClearCartOnConfirmedOrder reads the
+ * same answer (RW5). They are module scope there and not persisted, so a
+ * genuine page RELOAD posts again: if the first attempt failed, the reload is
+ * the retry that gets the buyer their receipt, and after a success
+ * VR_Client_API answers `already-sent` and sends nothing.
  */
-const attempted = new Set<string>();
 
 export default function OrderConfirmationTrigger() {
   useEffect(() => {
@@ -57,32 +53,11 @@ export default function OrderConfirmationTrigger() {
     // (VR_Client_API points the payment link's redirect at it). Somebody can
     // also simply open the page with no id, which is normal and is not an
     // order to confirm. The route checks the id's shape.
-    if (!sessionId || attempted.has(sessionId)) return;
-    attempted.add(sessionId);
+    if (!sessionId) return;
 
-    // Deliberately not awaited and deliberately not surfaced. `keepalive` so
-    // the request survives the shopper navigating away from the confirmation
-    // page before it completes, which is exactly what people do after buying.
-    fetch("/api/checkout/confirm", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId }),
-      keepalive: true,
-    }).catch(() => {
-      // Swallowed with a reason: the order is paid for and recorded whatever
-      // happens to this request, and there is no action the shopper could
-      // take. Letting it reject unhandled would put a red line in their
-      // console on a page that is telling them everything went fine.
-      //
-      // The send is observable where it can actually be acted on: the route
-      // logs the refusal server-side, and the queue behind it carries stale,
-      // DLQ-depth and consumer-error alarms.
-      //
-      // The id is REMOVED from the attempted set so a remount can retry. A
-      // network failure is the one case where trying again is free and might
-      // work.
-      attempted.delete(sessionId);
-    });
+    // Deliberately not awaited and deliberately not surfaced: confirmOrder
+    // never rejects, and a refusal is logged server-side by the route.
+    void confirmOrder(sessionId);
   }, []);
 
   return null;

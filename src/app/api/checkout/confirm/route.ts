@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isOrderConfirmationId } from "../../../../lib/orderConfirmationId";
+import { isConfirmedOrderAnswer, isOrderConfirmationId } from "../../../../lib/orderConfirmationId";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -44,7 +44,9 @@ export const dynamic = "force-dynamic";
  * looking at. There is no UI for a failure here and there should not be: the
  * money is taken and the order is real whatever this returns, so a red banner
  * about email would frighten somebody whose purchase went through fine. The
- * response carries `sent` for observability and nothing the page renders.
+ * response carries `sent` for observability, and `confirmed`, true only when
+ * VR_Client_API found the order paid. The page empties the cart on that and
+ * renders nothing from either.
  */
 
 export async function POST(request: NextRequest) {
@@ -98,7 +100,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ sent: false, reason: "upstream" }, { status: 200 });
     }
 
-    return NextResponse.json({ sent: true }, { status: 200 });
+    // `confirmed` is what the success page empties the cart on (RW5). Only
+    // two fields of the upstream body are read; it is never logged or returned.
+    const confirmed = isConfirmedOrderAnswer(await res.json().catch(() => null));
+    return NextResponse.json({ sent: true, confirmed }, { status: 200 });
   } catch {
     // The order is already paid for and recorded. A mail-infrastructure blip
     // must not turn the shopper's confirmation page into an error page, so

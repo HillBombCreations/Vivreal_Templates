@@ -22,3 +22,19 @@ const SQUARE_ORDER_ID = /^[A-Za-z0-9]{10,64}$/;
 export function isOrderConfirmationId(value: unknown): value is string {
   return typeof value === "string" && (STRIPE_SESSION_ID.test(value) || SQUARE_ORDER_ID.test(value));
 }
+
+/**
+ * Whether VR_Client_API's `sendOrderPlacedEmail` answer confirms the order
+ * (RW5). Its envelope is `{ success, data: { sent, reason } }`, and it answers
+ * `sent: true` (mail queued) or `reason: "already-sent"` only AFTER it has
+ * read the order from the merchant's own Stripe or Square account and found it
+ * paid. Everything else (`not-paid`, `provider-not-supported`, a 4xx for an
+ * unknown order, an unreadable body) is not a confirmation.
+ */
+export function isConfirmedOrderAnswer(body: unknown): boolean {
+  if (typeof body !== "object" || body === null) return false;
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return false;
+  const { sent, reason } = data as { sent?: unknown; reason?: unknown };
+  return sent === true || reason === "already-sent";
+}

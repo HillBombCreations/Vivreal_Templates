@@ -82,7 +82,9 @@ test("control: the draft really did send all four of those", () => {
 test("the session id is shape-checked before it reaches an upstream URL", () => {
   // The charset itself (Stripe `cs_` and Square order ids) is behaviour-tested
   // in src/lib/orderConfirmationId.test.ts; this pins that the route applies it.
-  assert.match(code, /import \{ isOrderConfirmationId \} from "[^"]*lib\/orderConfirmationId"/, "must use the shared id check");
+  // The import list also names isConfirmedOrderAnswer since RW5, so the pin
+  // matches the name inside the list rather than a one-name import.
+  assert.match(code, /import \{[^}]*\bisOrderConfirmationId\b[^}]*\} from "[^"]*lib\/orderConfirmationId"/, "must use the shared id check");
   assert.match(code, /if \(!isOrderConfirmationId\(sessionId\)\)/, "and must actually apply it before the fetch");
   assert.ok(code.indexOf("isOrderConfirmationId(sessionId)") < code.indexOf("fetch("), "checked BEFORE the upstream call");
 });
@@ -120,4 +122,14 @@ test("an upstream or network failure is a 200, never a broken confirmation page"
 
 test("the catch does not swallow silently: it logs before it answers", () => {
   assert.match(code, /catch \{\s*\n\s*console\.error/, "the catch block must log");
+});
+
+test("RW5: the answer carries `confirmed`, decided by the tested upstream-answer check", () => {
+  assert.match(code, /import \{ isConfirmedOrderAnswer, isOrderConfirmationId \} from "[^"]*lib\/orderConfirmationId"/);
+  assert.match(code, /const confirmed = isConfirmedOrderAnswer\(await res\.json\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(code, /NextResponse\.json\(\{ sent: true, confirmed \}/);
+  // Only the ok path can confirm: every other answer omits it, which the page reads as false.
+  // Case-sensitive, so isConfirmedOrderAnswer (capital C) is not counted.
+  assert.equal((code.match(/\bconfirmed\b/g) ?? []).length, 2, "computed once, returned once; nowhere else");
+  assert.ok(code.indexOf("if (!res.ok)") < code.indexOf("isConfirmedOrderAnswer(await"), "a refused upstream never confirms");
 });

@@ -73,43 +73,25 @@ test("the URL is read inside the effect, never in a useState initializer", () =>
   );
 });
 
-test("it posts at most once per session id per browsing context", () => {
-  assert.match(trigger, /const attempted = new Set<string>\(\)/, "module-scope guard");
-  assert.match(trigger, /attempted\.has\(sessionId\)\) return/, "checked before posting");
-  assert.match(trigger, /attempted\.add\(sessionId\)/, "and recorded before the request");
+test("it posts through the shared confirmOrder, so the cart clear reads the same single request", () => {
+  // Once per order, the network-failure retry, keepalive and the swallowed
+  // rejection are behaviour-tested in lib/confirmOrder.test.ts (RW5).
+  assert.match(trigger, /import \{ confirmOrder \} from "@\/lib\/confirmOrder"/);
+  assert.match(trigger, /void confirmOrder\(sessionId\);/);
+  assert.doesNotMatch(trigger, /fetch\(/, "no second request beside the shared one");
 });
 
 test("the guard is NOT persisted, so a reload after a failure retries", () => {
-  // A reload after a SUCCESS is free: the upstream stamps the PaymentIntent
-  // and answers already-sent. A reload after a FAILURE is the retry that gets
-  // the buyer their receipt. sessionStorage would trade the second for the
-  // first, which is the wrong way round.
   assert.doesNotMatch(trigger, /sessionStorage/);
   assert.doesNotMatch(trigger, /localStorage/);
 });
 
 test("no session id means no post, so opening the page sends nothing", () => {
-  assert.match(trigger, /if \(!sessionId \|\| attempted\.has\(sessionId\)\) return;/);
-});
-
-test("the request survives the shopper navigating away", () => {
-  assert.match(trigger, /keepalive: true/);
-});
-
-test("the rejection is handled, and the handler says why it is swallowed", () => {
-  assert.match(trigger, /\.catch\(\(\) => \{/, "a rejection must not surface as unhandled");
-  // The reason lives in the comment, which is exactly why this one assertion
-  // reads the RAW source rather than the stripped copy.
-  assert.match(triggerSrc, /Swallowed with a reason/);
+  assert.match(trigger, /if \(!sessionId\) return;/);
+  assert.ok(trigger.indexOf("if (!sessionId) return;") < trigger.indexOf("confirmOrder(sessionId)"));
 });
 
 test("it renders nothing, so the Studio preview card stays effect-free", () => {
   assert.match(trigger, /return null;/);
   assert.doesNotMatch(trigger, /CheckoutResultTemplate/, "it sits beside the card, not inside it");
-});
-
-test("it posts to the confirm route and nowhere else", () => {
-  assert.match(trigger, /fetch\("\/api\/checkout\/confirm"/);
-  const fetches = [...trigger.matchAll(/fetch\(\s*["'`]([^"'`]+)/g)].map((m) => m[1]);
-  assert.deepEqual(fetches, ["/api/checkout/confirm"]);
 });
