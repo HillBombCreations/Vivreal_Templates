@@ -47,13 +47,14 @@ import { bailOutOfCachingDegradedRender } from '@/lib/renderGate';
 export default async function ListLoadFailedNotice() {
   await bailOutOfCachingDegradedRender();
   return (
-    <p
-      role="status"
-      data-list-load-failed=""
-      className="content-grid py-6 text-center text-base"
-      style={{ color: 'var(--text-secondary, #555)' }}
-    >
-      Part of this page could not load. Please try again in a moment.
-    </p>
+    // FQ-3: `content-grid` is a grid, so the sentence must sit in a CHILD
+    // (which the grid places in its content track). Put directly on the text
+    // element, the bare text became a grid item in the first, gutter-width
+    // track: 61px wide, one word per line, at 390 and 1440 alike.
+    <div role="status" data-list-load-failed="" className="content-grid py-6">
+      <p className="text-center text-base" style={{ color: 'var(--text-secondary, #555)' }}>
+        Part of this page could not load. Please try again in a moment.
+      </p>
+    </div>
   );
 }

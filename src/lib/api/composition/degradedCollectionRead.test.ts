@@ -705,6 +705,28 @@ test('SOURCE PIN (RW4-6): the notice takes the render off the caches before it r
   assert.ok(bailAt < returnAt, 'bail first, so no path renders the note without it');
 });
 
+test('SOURCE PIN (FQ-3): the notice text is a child of the content-grid, not a grid item', () => {
+  // `.content-grid` is `display: grid` and places only its CHILD ELEMENTS in
+  // the content track. Bare text on the grid element itself lands in the first
+  // gutter-width track, which rendered the note 61px wide, one word per line.
+  const code = source('../../../components/ListLoadFailedNotice.tsx');
+  const body = code.slice(code.indexOf('export default async function ListLoadFailedNotice('));
+  const sentence = 'Part of this page could not load.';
+  const gridAt = body.indexOf('className="content-grid');
+  const textAt = body.indexOf(sentence);
+  assert.ok(gridAt > 0 && textAt > 0, 'sanity: this test read nothing');
+  const gridTagEnd = body.indexOf('>', gridAt);
+  assert.ok(gridTagEnd > gridAt && gridTagEnd < textAt, 'sanity: the grid tag closes before the text');
+  const directContent = body.slice(gridTagEnd + 1, body.indexOf('<', gridTagEnd + 1));
+  assert.equal(directContent.trim(), '', 'the content-grid element must not hold the text directly');
+  const childOpen = body.lastIndexOf('<', textAt);
+  assert.ok(childOpen > gridTagEnd, 'the text must sit inside a child element of the grid');
+  assert.ok(
+    !body.slice(childOpen, textAt).includes('content-grid'),
+    'the child holding the text must not itself be a content-grid',
+  );
+});
+
 test('SOURCE PIN (RW4-6): every composed body renders the notice on a failed read', () => {
   // The three places a page body is composed from buildPageContext. Each is
   // sliced to its own function so a mention elsewhere in the file cannot pass.
