@@ -7,9 +7,10 @@ import {
   resolveOrderConfirmation,
   type OrderConfirmationStatus,
   ORDER_CHECKING_COPY,
-  ORDER_NOT_FOUND_HEADING,
-  ORDER_NOT_FOUND_BODY,
+  ORDER_CHECK_TIMEOUT_MS,
+  UNCONFIRMED_COPY,
   BACK_TO_SHOP_COPY,
+  statusAfterTimeout,
 } from "@/lib/orderConfirmationGate";
 
 /**
@@ -21,6 +22,11 @@ import {
  * HTML never carries the congratulations and hydration matches. The URL is
  * read in the effect, never in a state initializer (see
  * OrderConfirmationTrigger.tsx for why).
+ *
+ * A check still running after ORDER_CHECK_TIMEOUT_MS shows the "could not
+ * check" message. A late answer still replaces it, so a confirmation that
+ * arrives after the timeout shows the card, matching the cart, which
+ * ClearCartOnConfirmedOrder empties on that same answer.
  */
 export default function ConfirmedOrderGate({
   shopHref,
@@ -33,11 +39,14 @@ export default function ConfirmedOrderGate({
 
   useEffect(() => {
     let live = true;
+    const timer = window.setTimeout(() => setStatus(statusAfterTimeout), ORDER_CHECK_TIMEOUT_MS);
     void resolveOrderConfirmation({ search: window.location.search, confirm: confirmOrder }).then((next) => {
+      window.clearTimeout(timer);
       if (live) setStatus(next);
     });
     return () => {
       live = false;
+      window.clearTimeout(timer);
     };
   }, []);
 
@@ -53,9 +62,9 @@ export default function ConfirmedOrderGate({
         ) : (
           <>
             <h1 className="mb-2 text-2xl font-bold tracking-tight text-[var(--text-primary)]">
-              {ORDER_NOT_FOUND_HEADING}
+              {UNCONFIRMED_COPY[status].heading}
             </h1>
-            <p className="mb-8 leading-relaxed text-black/55">{ORDER_NOT_FOUND_BODY}</p>
+            <p className="mb-8 leading-relaxed text-black/55">{UNCONFIRMED_COPY[status].body}</p>
             <Link
               href={shopHref}
               className="inline-flex h-11 items-center rounded-2xl bg-[var(--primary,#365b99)] px-6 font-semibold text-white"

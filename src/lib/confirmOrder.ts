@@ -1,6 +1,7 @@
 /**
  * The ONE `/api/checkout/confirm` request a success page makes per order, and
- * whether it confirmed that order (RW5).
+ * what it said about that order (RW5; three outcomes since the TB-5 final
+ * pass, see `OrderCheck` in `orderConfirmationId.ts`).
  *
  * Two components need it: OrderConfirmationTrigger (the receipt email) and
  * ClearCartOnConfirmedOrder (which empties the bag only for an order the
@@ -12,6 +13,8 @@
  * `already-sent` after a success). A network failure removes the entry, so a
  * remount can retry; any other answer is final for this page load.
  */
+
+import { isOrderCheck, type OrderCheck } from "./orderConfirmationId.ts";
 
 /** The part of a fetch Response this reads. */
 export type ConfirmResponse = { ok: boolean; json: () => Promise<unknown> };
@@ -27,25 +30,33 @@ const postConfirm: PostConfirm = (sessionId) =>
     keepalive: true,
   });
 
-const answers = new Map<string, Promise<boolean>>();
+const answers = new Map<string, Promise<OrderCheck>>();
 
-export function confirmOrder(sessionId: string, post: PostConfirm = postConfirm): Promise<boolean> {
+/** The route's `outcome`. A body without one (a tab open across a deploy) reads `confirmed`. */
+function orderCheckFromRoute(body: unknown): OrderCheck {
+  if (typeof body !== "object" || body === null) return "unverified";
+  // Narrowed field by field below; the cast only names the two fields read.
+  const { outcome, confirmed } = body as { outcome?: unknown; confirmed?: unknown };
+  if (isOrderCheck(outcome)) return outcome;
+  return confirmed === true ? "confirmed" : "unverified";
+}
+
+export function confirmOrder(sessionId: string, post: PostConfirm = postConfirm): Promise<OrderCheck> {
   const existing = answers.get(sessionId);
   if (existing) return existing;
   const answer = post(sessionId)
     .then(async (res) => {
-      if (!res.ok) return false;
-      const body = await res.json();
-      return typeof body === "object" && body !== null && (body as { confirmed?: unknown }).confirmed === true;
+      if (!res.ok) return "unverified" as const;
+      return orderCheckFromRoute(await res.json());
     })
     .catch(() => {
       // Swallowed with a reason: the order is paid for and recorded whatever
       // happens to this request, and there is nothing the shopper could do.
       // The route logs refusals server-side and the mail queue is alarmed.
-      // Unconfirmed means the cart is kept, the safe side. The entry is
+      // Unverified means the cart is kept, the safe side. The entry is
       // removed so a remount can retry, the one case where retrying is free.
       answers.delete(sessionId);
-      return false;
+      return "unverified" as const;
     });
   answers.set(sessionId, answer);
   return answer;

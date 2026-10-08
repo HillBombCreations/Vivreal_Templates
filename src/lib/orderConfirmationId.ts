@@ -38,3 +38,42 @@ export function isConfirmedOrderAnswer(body: unknown): boolean {
   const { sent, reason } = data as { sent?: unknown; reason?: unknown };
   return sent === true || reason === "already-sent";
 }
+
+/**
+ * What the success page may tell the shopper about an order (TB-5 final pass).
+ *
+ *   - `confirmed`: VR_Client_API read the order from the merchant's own Stripe
+ *     or Square account and found it paid.
+ *   - `no-paid-order`: it positively answered that there is no such paid
+ *     order on this store (an unknown id, or one that is not paid).
+ *   - `unverified`: nobody could check. No id on the return link (a Square
+ *     buyer when the redirect missed), a failed or timed out call, an
+ *     unsupported provider, an unreadable answer. A paying buyer lands here,
+ *     so the page must not say the order does not exist.
+ */
+export type OrderCheck = "confirmed" | "no-paid-order" | "unverified";
+
+const ORDER_CHECKS: ReadonlySet<unknown> = new Set<OrderCheck>(["confirmed", "no-paid-order", "unverified"]);
+
+export function isOrderCheck(value: unknown): value is OrderCheck {
+  return ORDER_CHECKS.has(value);
+}
+
+/** A 2xx answer from `sendOrderPlacedEmail`. Only `not-paid` is a positive no. */
+export function orderCheckFromAnswer(body: unknown): OrderCheck {
+  if (isConfirmedOrderAnswer(body)) return "confirmed";
+  if (typeof body !== "object" || body === null) return "unverified";
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== "object" || data === null) return "unverified";
+  return (data as { reason?: unknown }).reason === "not-paid" ? "no-paid-order" : "unverified";
+}
+
+/**
+ * A refused answer. 404 is VR_Client_API's "That order could not be found."
+ * (an unknown id, another location's order, or the other provider's id
+ * shape). Every other status (400 no key, 409, 5xx) is a fault on our side,
+ * not news about the order.
+ */
+export function orderCheckFromRefusal(status: number): OrderCheck {
+  return status === 404 ? "no-paid-order" : "unverified";
+}

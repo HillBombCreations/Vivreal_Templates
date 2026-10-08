@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clearCartIfOrderConfirmed, CART_CLEARED_KEY_PREFIX, type ClearedOrderStore } from "./confirmedOrderCart.ts";
+import type { OrderCheck } from "./orderConfirmationId.ts";
 
 /** A faithful in-memory sessionStorage: getItem answers null for a missing key. */
 function memoryStore(): ClearedOrderStore & { data: Map<string, string> } {
@@ -18,17 +19,19 @@ const STRIPE = "cs_test_a1B2c3D4e5F6";
 const SQUARE = "Xk9pQ2mNz7Lr4TbW";
 
 /**
- * Runs the decision with a server answer of `confirmed` and records what was
- * asked and whether the cart was cleared.
+ * Runs the decision with a server answer and records what was asked and
+ * whether the cart was cleared. `true` is "confirmed", `false` the server's
+ * positive "no paid order".
  */
-async function land(search: string, confirmed: boolean, storage: ClearedOrderStore | null = memoryStore()) {
+async function land(search: string, confirmed: boolean | OrderCheck, storage: ClearedOrderStore | null = memoryStore()) {
+  const answer: OrderCheck = confirmed === true ? "confirmed" : confirmed === false ? "no-paid-order" : confirmed;
   const asked: string[] = [];
   let cleared = 0;
   const result = await clearCartIfOrderConfirmed({
     search,
     confirm: async (id) => {
       asked.push(id);
-      return confirmed;
+      return answer;
     },
     storage,
     clear: () => {
@@ -61,6 +64,17 @@ test("REFUSE (RW5): a crafted id that LOOKS valid but the server does not confir
     assert.equal(cleared, 0, id);
     assert.deepEqual(asked, [id], "it did ask the server");
     assert.equal(store.data.size, 0, "an unconfirmed order is not recorded as cleared");
+  }
+});
+
+test("REFUSE (TB-5 final pass): a check nobody could make keeps the cart, Stripe and Square", async () => {
+  for (const id of [STRIPE, SQUARE]) {
+    const store = memoryStore();
+    const { result, asked, cleared } = await land(`?session_id=${id}`, "unverified", store);
+    assert.equal(result, false, id);
+    assert.equal(cleared, 0, id);
+    assert.deepEqual(asked, [id]);
+    assert.equal(store.data.size, 0, "not recorded, so a reload that confirms still clears");
   }
 });
 

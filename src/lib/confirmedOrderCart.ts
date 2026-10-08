@@ -17,7 +17,8 @@
  * Everything else keeps the cart:
  *   - a malformed id, or none (a bare `/checkoutsuccess`), is never posted;
  *   - an unpaid or unknown order, or one from another store, is not confirmed;
- *   - a failed request is not confirmed (the safe side is a full bag);
+ *   - a failed or unanswered request is not confirmed (the safe side is a
+ *     full bag);
  *   - a cancelled Stripe checkout lands on `/checkoutcancel`, which never
  *     renders the component that calls this.
  *
@@ -27,7 +28,7 @@
  * is cleared on every visit to that order's page: the buyer has already paid
  * for what was in it, so an empty bag is the safe side.
  */
-import { isOrderConfirmationId } from "./orderConfirmationId.ts";
+import { isOrderConfirmationId, type OrderCheck } from "./orderConfirmationId.ts";
 
 export const CART_CLEARED_KEY_PREFIX = "vr-cart-cleared:";
 
@@ -44,13 +45,13 @@ export async function clearCartIfOrderConfirmed({
   clear,
 }: {
   search: string;
-  confirm: (orderId: string) => Promise<boolean>;
+  confirm: (orderId: string) => Promise<OrderCheck>;
   storage: ClearedOrderStore | null;
   clear: () => void;
 }): Promise<boolean> {
   const orderId = new URLSearchParams(search).get("session_id");
   if (!isOrderConfirmationId(orderId)) return false;
-  if (!(await confirm(orderId))) return false;
+  if ((await confirm(orderId)) !== "confirmed") return false;
   if (!firstClearForOrder(orderId, storage)) return false;
   clear();
   return true;

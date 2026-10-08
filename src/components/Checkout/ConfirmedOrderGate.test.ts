@@ -42,9 +42,16 @@ test("it decides through the shared server confirmation, reading the URL in the 
   );
 });
 
-test("the unconfirmed state links back to the shop with the neutral copy", () => {
+test("each unconfirmed state shows its own copy and links back to the shop", () => {
   assert.match(component, /<Link\s+href=\{shopHref\}/);
-  assert.match(component, /\{ORDER_NOT_FOUND_HEADING\}/);
-  assert.match(component, /\{ORDER_NOT_FOUND_BODY\}/);
+  assert.match(component, /\{UNCONFIRMED_COPY\[status\]\.heading\}/);
+  assert.match(component, /\{UNCONFIRMED_COPY\[status\]\.body\}/);
   assert.match(component, /\{BACK_TO_SHOP_COPY\}/);
+  assert.doesNotMatch(component, /ORDER_NOT_FOUND/, "the one-size 'could not find that order' copy is gone");
+});
+
+test("(b): a check still running at the timeout becomes unverified, and a late answer still lands", () => {
+  assert.match(component, /window\.setTimeout\(\(\) => setStatus\(statusAfterTimeout\), ORDER_CHECK_TIMEOUT_MS\)/);
+  assert.match(component, /\.then\(\(next\) => \{\s*window\.clearTimeout\(timer\);\s*if \(live\) setStatus\(next\);/);
+  assert.match(component, /return \(\) => \{\s*live = false;\s*window\.clearTimeout\(timer\);/, "no timer outlives the page");
 });

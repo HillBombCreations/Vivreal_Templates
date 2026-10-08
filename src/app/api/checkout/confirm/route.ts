@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isConfirmedOrderAnswer, isOrderConfirmationId } from "../../../../lib/orderConfirmationId";
+import { isOrderConfirmationId, orderCheckFromAnswer, orderCheckFromRefusal } from "../../../../lib/orderConfirmationId";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -45,8 +45,9 @@ export const dynamic = "force-dynamic";
  * money is taken and the order is real whatever this returns, so a red banner
  * about email would frighten somebody whose purchase went through fine. The
  * response carries `sent` for observability, and `confirmed`, true only when
- * VR_Client_API found the order paid. The page empties the cart on that and
- * renders nothing from either.
+ * VR_Client_API found the order paid, which the page empties the cart on.
+ * `outcome` says which of three things the page may tell the shopper
+ * (lib/orderConfirmationId.ts `OrderCheck`). No order detail is ever returned.
  */
 
 export async function POST(request: NextRequest) {
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
   // reaching a live API with a nonsense id, and the upstream would 400 on the
   // ObjectId shape anyway.
   if (!apiKey || !siteId || siteId === "preview") {
-    return NextResponse.json({ sent: false, reason: "not-configured" }, { status: 200 });
+    return NextResponse.json({ sent: false, reason: "not-configured", outcome: "unverified" }, { status: 200 });
   }
 
   try {
@@ -95,15 +96,21 @@ export async function POST(request: NextRequest) {
     // the rule is the one the sibling checkout route pins: an upstream body
     // can quote back the value it objected to, and here that value is a
     // session id, which is an order-scoped identifier.
+    // `outcome` is what the success page shows (TB-5 final pass): a 404 is a
+    // positive "no such order", any other refusal means nobody could check.
     if (!res.ok) {
       console.error("[checkout/confirm] upstream refused, status:", res.status);
-      return NextResponse.json({ sent: false, reason: "upstream" }, { status: 200 });
+      return NextResponse.json(
+        { sent: false, reason: "upstream", outcome: orderCheckFromRefusal(res.status) },
+        { status: 200 },
+      );
     }
 
     // `confirmed` is what the success page empties the cart on (RW5). Only
     // two fields of the upstream body are read; it is never logged or returned.
-    const confirmed = isConfirmedOrderAnswer(await res.json().catch(() => null));
-    return NextResponse.json({ sent: true, confirmed }, { status: 200 });
+    const outcome = orderCheckFromAnswer(await res.json().catch(() => null));
+    const confirmed = outcome === "confirmed";
+    return NextResponse.json({ sent: true, confirmed, outcome }, { status: 200 });
   } catch {
     // The order is already paid for and recorded. A mail-infrastructure blip
     // must not turn the shopper's confirmation page into an error page, so
@@ -112,6 +119,6 @@ export async function POST(request: NextRequest) {
     // `vivreal-email-queue`, which has stale, DLQ-depth and consumer-error
     // alarms on it.
     console.error("[checkout/confirm] upstream request failed");
-    return NextResponse.json({ sent: false, reason: "unreachable" }, { status: 200 });
+    return NextResponse.json({ sent: false, reason: "unreachable", outcome: "unverified" }, { status: 200 });
   }
 }
