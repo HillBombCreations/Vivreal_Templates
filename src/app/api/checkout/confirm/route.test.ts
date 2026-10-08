@@ -139,7 +139,9 @@ test("RW5 + TB-5 final pass: `confirmed` and `outcome` come from the tested upst
 });
 
 test("(b)/(c): a refusal is classified by status; a failed call or missing config is unverified", () => {
-  assert.match(code, /reason: "upstream", outcome: orderCheckFromRefusal\(res\.status\)/);
+  // The refusal body is read so a 404 for the SITE is not taken for a 404 for the order.
+  assert.match(code, /const outcome = orderCheckFromRefusal\(res\.status, await res\.json\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(code, /\{ sent: false, reason: "upstream", outcome \}/);
   assert.match(code, /reason: "unreachable", outcome: "unverified"/);
   assert.match(code, /reason: "not-configured", outcome: "unverified"/);
   // Never a positive no without the upstream saying so.

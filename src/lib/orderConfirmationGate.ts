@@ -21,7 +21,9 @@
  *   - `unverified`, nobody could check: thanks, and if you paid, the shop has
  *     your order and a receipt is coming.
  *   - `no-paid-order`, VR_Client_API positively answered that this store has
- *     no paid order for the id: a neutral line.
+ *     no such order: a neutral line. An order that exists but is not paid yet
+ *     (still processing, approved but not captured) is `unverified`, as is a
+ *     configuration fault (orderConfirmationId.ts says why).
  * Both link back to the shop and keep the cart. Nothing about the order is
  * shown unless it was confirmed.
  */

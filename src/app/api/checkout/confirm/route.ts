@@ -96,14 +96,14 @@ export async function POST(request: NextRequest) {
     // the rule is the one the sibling checkout route pins: an upstream body
     // can quote back the value it objected to, and here that value is a
     // session id, which is an order-scoped identifier.
-    // `outcome` is what the success page shows (TB-5 final pass): a 404 is a
-    // positive "no such order", any other refusal means nobody could check.
+    // `outcome` is what the success page shows: only a 404 saying the ORDER
+    // was not found is a positive "no such order"; a 404 for the site, or any
+    // other refusal, means nobody could check (lib/orderConfirmationId.ts).
+    // The body is parsed only to read that one field.
     if (!res.ok) {
       console.error("[checkout/confirm] upstream refused, status:", res.status);
-      return NextResponse.json(
-        { sent: false, reason: "upstream", outcome: orderCheckFromRefusal(res.status) },
-        { status: 200 },
-      );
+      const outcome = orderCheckFromRefusal(res.status, await res.json().catch(() => null));
+      return NextResponse.json({ sent: false, reason: "upstream", outcome }, { status: 200 });
     }
 
     // `confirmed` is what the success page empties the cart on (RW5). Only

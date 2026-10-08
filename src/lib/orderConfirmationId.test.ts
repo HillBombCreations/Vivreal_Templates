@@ -6,6 +6,7 @@ import {
   isOrderConfirmationId,
   orderCheckFromAnswer,
   orderCheckFromRefusal,
+  ORDER_NOT_FOUND_ERROR,
 } from "./orderConfirmationId.ts";
 
 test("ALLOW: a Stripe Checkout Session id", () => {
@@ -50,25 +51,55 @@ test("(a) TB-5 final pass: an upstream confirmation is `confirmed`", () => {
   assert.equal(orderCheckFromAnswer({ success: true, data: { sent: false, reason: "already-sent" } }), "confirmed");
 });
 
-test("(c): only `not-paid` and a 404 are a positive no, for Stripe and Square alike", () => {
-  // VR_Client_API answers both providers' unpaid orders with `not-paid`, and
-  // an unknown id, another location's order, or the other provider's shape with 404.
-  assert.equal(orderCheckFromAnswer({ success: true, data: { sent: false, reason: "not-paid" } }), "no-paid-order");
-  assert.equal(orderCheckFromRefusal(404), "no-paid-order");
+// What VR_Client_API (fix/checkout-variant-label, sendOrderPlacedEmail.js,
+// fetchPaidOrder.js, fetchPaidSquareOrder.js) answers for each provider state,
+// and what the success page may say about it.
+const NOT_PAID = { success: true, data: { sent: false, reason: "not-paid" } };
+const orderNotFound = { success: false, data: null, error: "That order could not be found." };
+const siteNotFound = { success: false, data: null, error: "That site could not be found." };
+
+test("(c) ALLOW: only a 404 saying the ORDER is not found is a positive no, Stripe and Square", () => {
+  // Stripe: an unknown session (Stripe 404), or a Square id on a Stripe store.
+  // Square: an unknown order, another location's order, or a `cs_` id.
+  assert.equal(orderCheckFromRefusal(404, orderNotFound), "no-paid-order");
+  assert.equal(ORDER_NOT_FOUND_ERROR, orderNotFound.error, "the sentence upstream writes");
 });
 
-test("REFUSE (b): an unsupported provider, an unreadable answer, or any other refusal is `unverified`", () => {
-  for (const body of [
-    { success: true, data: { sent: false, reason: "provider-not-supported" } },
-    { success: true, data: { sent: false } },
-    { success: true, data: { sent: false, reason: "NOT-PAID" } },
-    { reason: "not-paid" },
-    null, undefined, "not-paid", 42, [],
-  ]) {
-    assert.equal(orderCheckFromAnswer(body), "unverified", JSON.stringify(body));
+test("REFUSE: an existing order not paid yet is `unverified`, never a positive no", () => {
+  // Every one of these reaches the page as a 200 `not-paid`:
+  //   Stripe: session open (buyer still on Checkout), session complete with
+  //     payment_status `unpaid` (a bank payment still processing), expired.
+  //   Square: order OPEN (approved but not captured, or pending), DRAFT,
+  //     CANCELED. Upstream does not say which, so none may read as missing.
+  for (const provider of ["stripe open", "stripe processing", "stripe expired", "square OPEN", "square pending", "square CANCELED"]) {
+    assert.equal(orderCheckFromAnswer(NOT_PAID), "unverified", provider);
   }
+});
+
+test("REFUSE: a configuration fault is `unverified`, never a positive no", () => {
+  assert.equal(orderCheckFromRefusal(404, siteNotFound), "unverified", "misconfigured SITE_ID");
+  assert.equal(orderCheckFromRefusal(404, { message: "Not Found" }), "unverified", "API Gateway 404, wrong API URL");
+  assert.equal(orderCheckFromRefusal(404, null), "unverified", "an HTML 404 page, unparseable");
+  assert.equal(orderCheckFromRefusal(400, { success: false, error: "No active Stripe integration found for this group" }), "unverified");
+  assert.equal(orderCheckFromRefusal(400, { success: false, error: "No active Square integration found for this group" }), "unverified");
+  assert.equal(orderCheckFromAnswer({ success: true, data: { sent: false, reason: "provider-not-supported" } }), "unverified");
+});
+
+test("REFUSE: the order-not-found sentence on any status but 404, or reworded, is `unverified`", () => {
   for (const status of [400, 401, 403, 409, 429, 500, 502, 503, 504]) {
-    assert.equal(orderCheckFromRefusal(status), "unverified", String(status));
+    assert.equal(orderCheckFromRefusal(status, orderNotFound), "unverified", String(status));
+  }
+  for (const error of ["That order could not be found", "that order could not be found.", " That order could not be found.", "Order not found"]) {
+    assert.equal(orderCheckFromRefusal(404, { success: false, error }), "unverified", error);
+  }
+  for (const body of [undefined, "That order could not be found.", 42, [], { data: { error: orderNotFound.error } }]) {
+    assert.equal(orderCheckFromRefusal(404, body), "unverified", JSON.stringify(body));
+  }
+});
+
+test("REFUSE (b): an unreadable 2xx answer is `unverified`", () => {
+  for (const body of [{ success: true, data: { sent: false } }, { reason: "not-paid" }, null, undefined, "not-paid", 42, []]) {
+    assert.equal(orderCheckFromAnswer(body), "unverified", JSON.stringify(body));
   }
 });
 

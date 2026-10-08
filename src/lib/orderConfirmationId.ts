@@ -40,16 +40,17 @@ export function isConfirmedOrderAnswer(body: unknown): boolean {
 }
 
 /**
- * What the success page may tell the shopper about an order (TB-5 final pass).
+ * What the success page may tell the shopper about an order (TB-5 final pass,
+ * narrowed 2026-10-08).
  *
  *   - `confirmed`: VR_Client_API read the order from the merchant's own Stripe
  *     or Square account and found it paid.
- *   - `no-paid-order`: it positively answered that there is no such paid
- *     order on this store (an unknown id, or one that is not paid).
- *   - `unverified`: nobody could check. No id on the return link (a Square
- *     buyer when the redirect missed), a failed or timed out call, an
- *     unsupported provider, an unreadable answer. A paying buyer lands here,
- *     so the page must not say the order does not exist.
+ *   - `no-paid-order`: the provider positively said this store has NO such
+ *     order. Only that, see `orderCheckFromRefusal`.
+ *   - `unverified`: anything short of that. No id on the return link, a failed
+ *     or timed out call, an unsupported provider, a configuration fault, an
+ *     unreadable answer, AND an order that exists but is not paid yet. A
+ *     paying buyer lands here, so the page must not say the order is missing.
  */
 export type OrderCheck = "confirmed" | "no-paid-order" | "unverified";
 
@@ -59,21 +60,41 @@ export function isOrderCheck(value: unknown): value is OrderCheck {
   return ORDER_CHECKS.has(value);
 }
 
-/** A 2xx answer from `sendOrderPlacedEmail`. Only `not-paid` is a positive no. */
+/**
+ * A 2xx answer from `sendOrderPlacedEmail`. Never a positive no.
+ *
+ * `not-paid` is NOT news that the order is missing. VR_Client_API answers it
+ * for any Stripe session whose `payment_status` is not `paid` and any Square
+ * order whose `state` is not `COMPLETED`. That covers a session still open, a
+ * completed session whose bank payment is still processing, and a Square order
+ * still OPEN (approved but not captured, or pending), all of which a buyer who
+ * paid can hit. It also covers expired and cancelled orders, but the answer
+ * does not say which, so it reads as "could not check" and the cart is kept.
+ */
 export function orderCheckFromAnswer(body: unknown): OrderCheck {
-  if (isConfirmedOrderAnswer(body)) return "confirmed";
-  if (typeof body !== "object" || body === null) return "unverified";
-  const data = (body as { data?: unknown }).data;
-  if (typeof data !== "object" || data === null) return "unverified";
-  return (data as { reason?: unknown }).reason === "not-paid" ? "no-paid-order" : "unverified";
+  return isConfirmedOrderAnswer(body) ? "confirmed" : "unverified";
 }
 
 /**
- * A refused answer. 404 is VR_Client_API's "That order could not be found."
- * (an unknown id, another location's order, or the other provider's id
- * shape). Every other status (400 no key, 409, 5xx) is a fault on our side,
- * not news about the order.
+ * VR_Client_API's sentence for "this store has no such order": an unknown
+ * Stripe session (Stripe 404), an unknown Square order, another location's
+ * order, or the other provider's id shape. Its handler writes it as
+ * `{ success: false, data: null, error }` on a 404.
  */
-export function orderCheckFromRefusal(status: number): OrderCheck {
-  return status === 404 ? "no-paid-order" : "unverified";
+export const ORDER_NOT_FOUND_ERROR = "That order could not be found.";
+
+/**
+ * A refused answer. Only a 404 that carries the order-not-found sentence is a
+ * positive no. Every other refusal is a fault on our side, not news about the
+ * order: a 404 "That site could not be found." (a misconfigured SITE_ID), a
+ * 404 from a gateway or an unknown path (a misconfigured API URL), a 400 with
+ * no payment key, a 409, any 5xx. The sentence is matched exactly, so if
+ * upstream ever rewords it the page falls back to "could not check", the safe
+ * side, rather than telling a buyer their order is missing.
+ */
+export function orderCheckFromRefusal(status: number, body: unknown): OrderCheck {
+  if (status !== 404) return "unverified";
+  if (typeof body !== "object" || body === null) return "unverified";
+  // The cast only names the one field read; it is compared, never trusted.
+  return (body as { error?: unknown }).error === ORDER_NOT_FOUND_ERROR ? "no-paid-order" : "unverified";
 }
