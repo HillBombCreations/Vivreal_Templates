@@ -7,6 +7,7 @@ import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
+import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
@@ -47,7 +48,7 @@ async function Resolved() {
   // both showcase (shows/partners/reviews bindings) and ecommerce (role-bucketed
   // collection + integration bindings); banner logo fallback + CTA-by-default are
   // owned by composePage's home branches.
-  const { input, richTextImageUrls } = await buildPageContext({
+  const { input, richTextImageUrls, listReadFailed } = await buildPageContext({
     siteData,
     page: homePageConfig,
     isHome: true,
@@ -61,6 +62,8 @@ async function Resolved() {
   return (
     <>
       <Navbar page={homePageConfig as unknown as RendererPageConfig} />
+      {/* RW4-6: a failed list read must not be page-cached. See the component. */}
+      {listReadFailed && <ListLoadFailedNotice />}
       {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are
           Templates chrome and carry no CMS rich text, so widening the boundary
           would buy nothing and put a client component above the whole page. */}

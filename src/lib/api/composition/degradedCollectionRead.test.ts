@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 // Explicit .ts extensions: runs under `node --experimental-strip-types --test`
 // (see package.json "test"), which has no tsconfig `paths` resolution.
 import { readOrDegrade } from '../degradedRead.ts';
-import { decidePageEmptiness, pageDataReads, type PageDataRead } from './pageEmptiness.ts';
+import {
+  decidePageEmptiness,
+  pageDataReads,
+  someListReadFailed,
+  type PageDataRead,
+} from './pageEmptiness.ts';
 
 /**
  * A DEGRADED COLLECTION READ MUST NOT 404 A REAL PUBLISHED PAGE.
@@ -625,4 +630,99 @@ test('SOURCE PIN: the [slug] mirror of the guard refuses first as well', () => {
   assert.ok(refusalAt > 0, 'the mirrored guard must refuse a degraded read too');
   assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');
   assert.ok(refusalAt < notFoundAt, 'refuse first, same order as the live copy');
+});
+
+// ---------------------------------------------------------------------------
+// RW4-6: a failed list read on a page that HAS other content
+// ---------------------------------------------------------------------------
+//
+// The emptiness verdict above never fires for such a page (`pageCouldBeEmpty`
+// rules it out), so before RW4-6 it rendered a complete-looking 200 with the
+// list gone, and on an ISR home page that render was stored and kept being
+// served after recovery. `someListReadFailed` is the flag the routes read.
+
+test('RW4-6 REFUSE: one failed read among healthy ones is reported, whatever the page holds', () => {
+  const reads: PageDataRead[] = [
+    { sourceCount: 3, degraded: false },
+    { sourceCount: 0, degraded: true },
+  ];
+  assert.equal(someListReadFailed(reads), true);
+  // The case RW4-6 is about: the emptiness verdict says "not empty, not
+  // unknown" for a page with a written hero, so nothing else would notice.
+  const verdict = decidePageEmptiness({
+    isHome: false,
+    format: 'standard',
+    blocks: [{ id: 'h', type: { kind: 'home-section', dispatchId: 'hero' }, enabled: true }],
+    hero: { title: 'Questions we hear' },
+    reads,
+  });
+  assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
+});
+
+test('RW4-6 REFUSE: a home page with a failed read is reported too', () => {
+  // Home is the route ISR page-caches, so it is the one where a missed flag
+  // was stored rather than just served.
+  assert.equal(someListReadFailed(pageDataReads([{ sourceCount: 0, degraded: true }])), true);
+});
+
+test('RW4-6 ALLOW: healthy reads, including genuinely empty ones, are not a failure', () => {
+  assert.equal(someListReadFailed([]), false, 'a page with no lists has nothing that failed');
+  assert.equal(
+    someListReadFailed([
+      { sourceCount: 0, degraded: false },
+      { sourceCount: 5, degraded: false },
+    ]),
+    false,
+    'an empty collection that answered is an answer, not a failure',
+  );
+});
+
+test('RW4-6 ALLOW/REFUSE end to end through readOrDegrade', async () => {
+  const empty = () => ({ items: [] as unknown[], totalCount: 0 });
+  const answeredEmpty = await readOrDegrade(empty, async () => ({ items: [], totalCount: 0 }));
+  const failed = await readOrDegrade(empty, async (fallback) => fallback);
+  const toRead = (o: typeof answeredEmpty) => ({ sourceCount: o.value.items.length, degraded: o.degraded });
+  assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty)])), false);
+  assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty), toRead(failed)])), true);
+});
+
+test('SOURCE PIN (RW4-6): buildPageContext reports the flag from the tested predicate', () => {
+  const code = source('./buildPageContext.ts');
+  assert.ok(
+    code.includes('listReadFailed: someListReadFailed(reads)'),
+    'the flag must come from the same reads the emptiness verdict uses',
+  );
+});
+
+test('SOURCE PIN (RW4-6): the notice takes the render off the caches before it renders', () => {
+  const code = source('../../../components/ListLoadFailedNotice.tsx');
+  const fnAt = code.indexOf('export default async function ListLoadFailedNotice(');
+  assert.ok(fnAt > 0, 'sanity: this test read nothing');
+  const body = code.slice(fnAt);
+  const bailAt = body.indexOf('await bailOutOfCachingDegradedRender();');
+  const returnAt = body.indexOf('return (');
+  assert.ok(bailAt > 0, 'without the bail an ISR page stores the incomplete render');
+  assert.ok(bailAt < returnAt, 'bail first, so no path renders the note without it');
+});
+
+test('SOURCE PIN (RW4-6): every composed body renders the notice on a failed read', () => {
+  // The three places a page body is composed from buildPageContext. Each is
+  // sliced to its own function so a mention elsewhere in the file cannot pass.
+  const sites: [string, string][] = [
+    ['../../renderComposedPage.tsx', 'async function ComposedPageBody('],
+    ['../../../app/[slug]/page.tsx', 'async function ComposedFormatBody('],
+    ['../../../app/page.tsx', 'async function Resolved('],
+  ];
+  for (const [file, fn] of sites) {
+    const whole = source(file);
+    const at = whole.indexOf(fn);
+    assert.ok(at > 0, 'sanity: ' + fn + ' not found in ' + file);
+    const next = whole.indexOf('\nexport ', at + 1);
+    const body = whole.slice(at, next === -1 ? undefined : next);
+    assert.ok(body.includes('listReadFailed'), fn + ' must read the flag');
+    assert.ok(
+      body.includes('{listReadFailed && <ListLoadFailedNotice />}'),
+      fn + ' must render the notice (and with it the cache bail) on a failed read',
+    );
+  }
 });

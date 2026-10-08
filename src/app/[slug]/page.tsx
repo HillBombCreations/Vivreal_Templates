@@ -28,6 +28,7 @@ import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirme
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
+import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
@@ -702,7 +703,7 @@ async function ComposedFormatBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty, emptinessUnknown, richTextImageUrls } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown, listReadFailed, richTextImageUrls } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -751,6 +752,8 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <OrderConfirmationTrigger />}
       {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
       {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
+      {/* RW4-6: a failed list read on a page with other content. See the component. */}
+      {listReadFailed && <ListLoadFailedNotice />}
       {/* H177: resolver around the composed body. See src/components/RichTextImages. */}
       <RichTextImages map={richTextImageUrls}>
       {composePage(

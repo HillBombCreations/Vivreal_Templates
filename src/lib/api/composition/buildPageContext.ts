@@ -13,7 +13,7 @@ import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
 import { applySocialBands } from '@/lib/api/collections/socialBand';
 import { isPaymentsProvider } from '@/lib/payments';
-import { decidePageEmptiness, pageDataReads } from './pageEmptiness';
+import { decidePageEmptiness, pageDataReads, someListReadFailed } from './pageEmptiness';
 import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 
 export interface PageContextResult {
@@ -36,6 +36,14 @@ export interface PageContextResult {
    * `../degradedRead.ts` and `./pageEmptiness.ts`.
    */
   emptinessUnknown: boolean;
+  /**
+   * RW4-6: true when ANY list read on this page failed, including on a page
+   * whose other content means it is neither empty nor unknown. The caller must
+   * render `ListLoadFailedNotice` (src/components/ListLoadFailedNotice.tsx),
+   * which keeps this render out of every cache and tells the shopper the
+   * missing part could not load. See `someListReadFailed` in ./pageEmptiness.
+   */
+  listReadFailed: boolean;
   /**
    * H177 - every inline rich-text image key this page can render, mapped to a
    * freshly signed media URL.
@@ -216,5 +224,11 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     reads,
   });
 
-  return { input, isEmpty, emptinessUnknown, richTextImageUrls };
+  return {
+    input,
+    isEmpty,
+    emptinessUnknown,
+    listReadFailed: someListReadFailed(reads),
+    richTextImageUrls,
+  };
 }

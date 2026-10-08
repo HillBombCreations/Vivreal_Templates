@@ -161,6 +161,25 @@ export function pageDataReads(
 }
 
 /**
+ * RW4-6: true when at least one of the page's list reads FAILED, whatever else
+ * the page holds.
+ *
+ * `decidePageEmptiness` only asks this question when the page's whole body is
+ * its lists. A page with authored copy beside a list (an FAQ with a written
+ * hero, a menu with a subtitle) never reached it, so a failed read rendered
+ * that page as a complete-looking 200 with the list simply gone. Under ISR the
+ * home page is page-cached, so that incomplete render was STORED and kept
+ * being served after the upstream recovered (measured: `s-maxage=60`,
+ * `x-nextjs-cache: HIT`, list still missing on every read after recovery).
+ *
+ * The caller renders `ListLoadFailedNotice`, which takes the render off every
+ * cache and tells the shopper this part could not load.
+ */
+export function someListReadFailed(reads: readonly PageDataRead[]): boolean {
+  return reads.some((read) => read.degraded);
+}
+
+/**
  * What a page's body resolved to, once "empty" and "unknown" are separated.
  *
  * `isEmpty` and `emptinessUnknown` are mutually exclusive by construction. That

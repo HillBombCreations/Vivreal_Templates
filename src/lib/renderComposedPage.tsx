@@ -14,6 +14,7 @@ import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import type { PageContextResult } from '@/lib/api/composition/buildPageContext';
 import { emptinessIsDecidable } from '@/lib/api/composition/pageEmptiness';
 import RichTextImages from '@/components/RichTextImages';
+import ListLoadFailedNotice from '@/components/ListLoadFailedNotice';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
@@ -291,7 +292,7 @@ async function ComposedPageBody({
   /** The context `renderComposedPage` already read, when it had to (QA-G1-2). */
   context?: PageContextResult;
 }) {
-  const { input, richTextImageUrls } =
+  const { input, richTextImageUrls, listReadFailed } =
     context ??
     (await buildPageContext({
       siteData,
@@ -333,13 +334,17 @@ async function ComposedPageBody({
   //
   // Nothing in the synchronous shell needs it: Navbar, TitleBand and Footer are
   // Templates chrome, not CMS rich text.
+  // RW4-6: a failed list read on a page with other content. See the component.
   return (
-    <RichTextImages map={richTextImageUrls}>
-      {composePage(
-        Object.keys(extraOptions).length
-          ? { ...input, options: { ...input.options!, ...extraOptions } }
-          : input,
-      )}
-    </RichTextImages>
+    <>
+      {listReadFailed && <ListLoadFailedNotice />}
+      <RichTextImages map={richTextImageUrls}>
+        {composePage(
+          Object.keys(extraOptions).length
+            ? { ...input, options: { ...input.options!, ...extraOptions } }
+            : input,
+        )}
+      </RichTextImages>
+    </>
   );
 }
