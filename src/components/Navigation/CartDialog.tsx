@@ -14,6 +14,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { cartSubtotal, cartUnitPrice, cartLineTotal } from "@/lib/cartPrice";
 import { shipsOrders } from "@/lib/shipping";
+import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 
 const currency = (n: number) =>
   new Intl.NumberFormat("en-US", {
@@ -118,20 +119,19 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     setCodeError(null);
     try {
       const result: CouponPreview = await validateCoupon(code, cartLineItems);
-      if (result.valid) {
-        // VR_Client_API returns `newSubtotal` in CENTS (it prices off Stripe
-        // unit_amount). Our cart `subtotal` is in DOLLARS (display price string),
-        // so convert the server value before differencing. The displayed
-        // discount is a PREVIEW; Stripe applies the authoritative amount at
-        // checkout. Clamp to [0, subtotal] so a stale/odd value never shows a
-        // negative or larger-than-cart discount.
-        const newSubtotalDollars =
-          typeof result.newSubtotal === "number" ? result.newSubtotal / 100 : subtotal;
-        const previewDiscount = Math.min(subtotal, Math.max(0, subtotal - newSubtotalDollars));
+      // Units, clamping and why a valid code can take nothing off: see
+      // lib/couponPreview.ts.
+      const previewDiscount = result.valid ? couponPreviewDiscount(result.newSubtotal, subtotal) : 0;
+      if (result.valid && previewDiscount > 0) {
         setAppliedCode(code);
         setDiscount(previewDiscount);
         setCodeInput("");
         setCodeError(null);
+      } else if (result.valid) {
+        // Valid, but the total did not drop: never say "applied" (RW3-4).
+        setAppliedCode(null);
+        setDiscount(0);
+        setCodeError(COUPON_NO_EFFECT_COPY);
       } else {
         setAppliedCode(null);
         setDiscount(0);

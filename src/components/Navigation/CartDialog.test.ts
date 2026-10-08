@@ -69,3 +69,20 @@ test("the dash and company checks can both fail (control)", () => {
   assert.ok(source.includes(EM), "expected em dashes in the comments, found none");
   assert.ok(source.includes("Square"), "expected the word in a comment, found none");
 });
+
+test("RW3-4: a code is marked applied only when the preview takes something off", () => {
+  assert.match(code, /import \{ couponPreviewDiscount, COUPON_NO_EFFECT_COPY \} from "@\/lib\/couponPreview"/);
+  assert.match(code, /const previewDiscount = result\.valid \? couponPreviewDiscount\(result\.newSubtotal, subtotal\) : 0;/);
+  assert.match(code, /if \(result\.valid && previewDiscount > 0\) \{\s*setAppliedCode\(code\);/);
+  // The only setAppliedCode(code) is the one behind that guard.
+  assert.equal((code.match(/setAppliedCode\(code\)/g) ?? []).length, 1);
+});
+
+test("RW3-4: a valid code with no effect clears the code and says it does not apply", () => {
+  assert.match(
+    code,
+    /\} else if \(result\.valid\) \{\s*setAppliedCode\(null\);\s*setDiscount\(0\);\s*setCodeError\(COUPON_NO_EFFECT_COPY\);/,
+  );
+  // The old inline math, which set the code applied whatever it computed, is gone.
+  assert.doesNotMatch(code, /newSubtotalDollars/);
+});
