@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { Product } from "../Products";
+import type { StoredPromoCode } from "@/lib/promoCodeRestore";
 
 export interface CartItem {
     _id: string;
@@ -20,6 +21,9 @@ export interface CartContextValue {
     openCartMenu: boolean;
     setOpenCartMenu: Dispatch<SetStateAction<boolean>>;
     cartHydrated: boolean;
+    /** TB-6: the applied promo code, persisted with the cart. See lib/promoCodeRestore.ts. */
+    promoCode: StoredPromoCode | null;
+    setPromoCode: Dispatch<SetStateAction<StoredPromoCode | null>>;
 }
 
 export interface CartDialogProps {

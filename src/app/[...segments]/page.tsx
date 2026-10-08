@@ -1,7 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -69,6 +69,11 @@ export default async function DeepRedirectCatchAll({
 
 export async function generateMetadata() {
   const siteData = await getSiteData();
+  // RW4-7: on a degraded read the page list is empty because nothing was
+  // read, so the branches below would title a 500 "Not Found". The render
+  // refuses (assertUpstreamHealthy); metadata makes no claim at all, the
+  // pattern rootMetadata.ts set for the same state.
+  if (isDegradedSiteData(siteData)) return {};
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
   return { title: `Not Found | ${siteName}` };
 }

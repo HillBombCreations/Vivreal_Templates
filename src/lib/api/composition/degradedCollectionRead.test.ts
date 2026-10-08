@@ -4,7 +4,12 @@ import { readFileSync } from 'node:fs';
 // Explicit .ts extensions: runs under `node --experimental-strip-types --test`
 // (see package.json "test"), which has no tsconfig `paths` resolution.
 import { readOrDegrade } from '../degradedRead.ts';
-import { decidePageEmptiness, pageDataReads, type PageDataRead } from './pageEmptiness.ts';
+import {
+  decidePageEmptiness,
+  pageDataReads,
+  someListReadFailed,
+  type PageDataRead,
+} from './pageEmptiness.ts';
 
 /**
  * A DEGRADED COLLECTION READ MUST NOT 404 A REAL PUBLISHED PAGE.
@@ -531,28 +536,44 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
   // at all — see `pageEmptiness.ts`.
 });
 
-test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()', () => {
+test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound(), ABOVE the Suspense boundary', () => {
   // `src/lib/renderComposedPage.tsx` is where standard/list/grid actually land:
   // `[slug]/page.tsx` returns early into it for every generic format.
-  // Sliced to the function body, the same discipline the [slug] pin below uses.
-  // Over whole-file text one comment mentioning either call makes this pass or
-  // fail for no reason, and this file's comments are dense.
+  //
+  // QA-G1-2 moved the guard out of ComposedPageBody and into the un-suspended
+  // parent, so a 404 is a real status and a refusal a real 5xx. Sliced to the
+  // parent's body up to its <Suspense>, the same discipline the [slug] pin below
+  // uses: over whole-file text one comment mentioning either call makes this
+  // pass or fail for no reason, and this file's comments are dense.
   const whole = source('../../renderComposedPage.tsx');
-  const bodyAt = whole.indexOf('async function ComposedPageBody');
-  assert.ok(bodyAt > 0, 'sanity: this test read nothing');
-  const code = whole.slice(bodyAt);
+  const parentAt = whole.indexOf('export async function renderComposedPage(');
+  const boundaryAt = whole.indexOf('<Suspense', parentAt);
+  assert.ok(parentAt > 0 && boundaryAt > parentAt, 'sanity: this test read nothing');
+  const code = whole.slice(parentAt, boundaryAt);
   const refusalAt = code.indexOf('refuseUnknownEmptiness(');
-  const notFoundAt = code.indexOf('return notFound()');
+  const notFoundAt = code.indexOf('notFound()');
   assert.ok(refusalAt > 0, 'the guard must refuse a degraded read rather than 404 it');
-  assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');
+  assert.ok(notFoundAt > 0, 'the genuine-empty 404 must run above the boundary, or its status is already 200');
   assert.ok(
     refusalAt < notFoundAt,
     'refuse first, or an unknowable verdict falls through to the 404 this fix exists to prevent',
   );
   assert.ok(
-    code.includes('GENERIC_FORMATS.has(composedPage.format)'),
+    code.includes('if (emptinessIsDecidable(composedPage, productQuery))'),
+    'the early read stays scoped to pages that could be empty, and skips a shopper-narrowed query',
+  );
+  assert.ok(
+    source('./pageEmptiness.ts').includes("GENERIC_FORMATS.has(page.format ?? '') &&"),
     'the refusal stays scoped to the same formats the 404 was scoped to',
   );
+
+  // And nothing below the boundary can call notFound() any more: from there it
+  // would only swap the body under an already-committed 200.
+  const bodyAt = whole.indexOf('async function ComposedPageBody');
+  assert.ok(bodyAt > boundaryAt, 'sanity: the body was found');
+  const body = whole.slice(bodyAt);
+  assert.ok(!body.includes('notFound()'), 'ComposedPageBody must not 404 after the shell flushed');
+  assert.ok(body.includes('context ??'), 'the body renders the context the parent already read');
 });
 
 test('SOURCE PIN: both guards refuse through the SAME helper, so they cannot drift', () => {
@@ -609,4 +630,121 @@ test('SOURCE PIN: the [slug] mirror of the guard refuses first as well', () => {
   assert.ok(refusalAt > 0, 'the mirrored guard must refuse a degraded read too');
   assert.ok(notFoundAt > 0, 'sanity: the genuine-empty 404 is still here');
   assert.ok(refusalAt < notFoundAt, 'refuse first, same order as the live copy');
+});
+
+// ---------------------------------------------------------------------------
+// RW4-6: a failed list read on a page that HAS other content
+// ---------------------------------------------------------------------------
+//
+// The emptiness verdict above never fires for such a page (`pageCouldBeEmpty`
+// rules it out), so before RW4-6 it rendered a complete-looking 200 with the
+// list gone, and on an ISR home page that render was stored and kept being
+// served after recovery. `someListReadFailed` is the flag the routes read.
+
+test('RW4-6 REFUSE: one failed read among healthy ones is reported, whatever the page holds', () => {
+  const reads: PageDataRead[] = [
+    { sourceCount: 3, degraded: false },
+    { sourceCount: 0, degraded: true },
+  ];
+  assert.equal(someListReadFailed(reads), true);
+  // The case RW4-6 is about: the emptiness verdict says "not empty, not
+  // unknown" for a page with a written hero, so nothing else would notice.
+  const verdict = decidePageEmptiness({
+    isHome: false,
+    format: 'standard',
+    blocks: [{ id: 'h', type: { kind: 'home-section', dispatchId: 'hero' }, enabled: true }],
+    hero: { title: 'Questions we hear' },
+    reads,
+  });
+  assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
+});
+
+test('RW4-6 REFUSE: a home page with a failed read is reported too', () => {
+  // Home is the route ISR page-caches, so it is the one where a missed flag
+  // was stored rather than just served.
+  assert.equal(someListReadFailed(pageDataReads([{ sourceCount: 0, degraded: true }])), true);
+});
+
+test('RW4-6 ALLOW: healthy reads, including genuinely empty ones, are not a failure', () => {
+  assert.equal(someListReadFailed([]), false, 'a page with no lists has nothing that failed');
+  assert.equal(
+    someListReadFailed([
+      { sourceCount: 0, degraded: false },
+      { sourceCount: 5, degraded: false },
+    ]),
+    false,
+    'an empty collection that answered is an answer, not a failure',
+  );
+});
+
+test('RW4-6 ALLOW/REFUSE end to end through readOrDegrade', async () => {
+  const empty = () => ({ items: [] as unknown[], totalCount: 0 });
+  const answeredEmpty = await readOrDegrade(empty, async () => ({ items: [], totalCount: 0 }));
+  const failed = await readOrDegrade(empty, async (fallback) => fallback);
+  const toRead = (o: typeof answeredEmpty) => ({ sourceCount: o.value.items.length, degraded: o.degraded });
+  assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty)])), false);
+  assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty), toRead(failed)])), true);
+});
+
+test('SOURCE PIN (RW4-6): buildPageContext reports the flag from the tested predicate', () => {
+  const code = source('./buildPageContext.ts');
+  assert.ok(
+    code.includes('listReadFailed: someListReadFailed(reads)'),
+    'the flag must come from the same reads the emptiness verdict uses',
+  );
+});
+
+test('SOURCE PIN (RW4-6): the notice takes the render off the caches before it renders', () => {
+  const code = source('../../../components/ListLoadFailedNotice.tsx');
+  const fnAt = code.indexOf('export default async function ListLoadFailedNotice(');
+  assert.ok(fnAt > 0, 'sanity: this test read nothing');
+  const body = code.slice(fnAt);
+  const bailAt = body.indexOf('await bailOutOfCachingDegradedRender();');
+  const returnAt = body.indexOf('return (');
+  assert.ok(bailAt > 0, 'without the bail an ISR page stores the incomplete render');
+  assert.ok(bailAt < returnAt, 'bail first, so no path renders the note without it');
+});
+
+test('SOURCE PIN (FQ-3): the notice text is a child of the content-grid, not a grid item', () => {
+  // `.content-grid` is `display: grid` and places only its CHILD ELEMENTS in
+  // the content track. Bare text on the grid element itself lands in the first
+  // gutter-width track, which rendered the note 61px wide, one word per line.
+  const code = source('../../../components/ListLoadFailedNotice.tsx');
+  const body = code.slice(code.indexOf('export default async function ListLoadFailedNotice('));
+  const sentence = 'Part of this page could not load.';
+  const gridAt = body.indexOf('className="content-grid');
+  const textAt = body.indexOf(sentence);
+  assert.ok(gridAt > 0 && textAt > 0, 'sanity: this test read nothing');
+  const gridTagEnd = body.indexOf('>', gridAt);
+  assert.ok(gridTagEnd > gridAt && gridTagEnd < textAt, 'sanity: the grid tag closes before the text');
+  const directContent = body.slice(gridTagEnd + 1, body.indexOf('<', gridTagEnd + 1));
+  assert.equal(directContent.trim(), '', 'the content-grid element must not hold the text directly');
+  const childOpen = body.lastIndexOf('<', textAt);
+  assert.ok(childOpen > gridTagEnd, 'the text must sit inside a child element of the grid');
+  assert.ok(
+    !body.slice(childOpen, textAt).includes('content-grid'),
+    'the child holding the text must not itself be a content-grid',
+  );
+});
+
+test('SOURCE PIN (RW4-6): every composed body renders the notice on a failed read', () => {
+  // The three places a page body is composed from buildPageContext. Each is
+  // sliced to its own function so a mention elsewhere in the file cannot pass.
+  const sites: [string, string][] = [
+    ['../../renderComposedPage.tsx', 'async function ComposedPageBody('],
+    ['../../../app/[slug]/page.tsx', 'async function ComposedFormatBody('],
+    ['../../../app/page.tsx', 'async function Resolved('],
+  ];
+  for (const [file, fn] of sites) {
+    const whole = source(file);
+    const at = whole.indexOf(fn);
+    assert.ok(at > 0, 'sanity: ' + fn + ' not found in ' + file);
+    const next = whole.indexOf('\nexport ', at + 1);
+    const body = whole.slice(at, next === -1 ? undefined : next);
+    assert.ok(body.includes('listReadFailed'), fn + ' must read the flag');
+    assert.ok(
+      body.includes('{listReadFailed && <ListLoadFailedNotice />}'),
+      fn + ' must render the notice (and with it the cache bail) on a failed read',
+    );
+  }
 });

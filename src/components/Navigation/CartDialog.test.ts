@@ -69,3 +69,45 @@ test("the dash and company checks can both fail (control)", () => {
   assert.ok(source.includes(EM), "expected em dashes in the comments, found none");
   assert.ok(source.includes("Square"), "expected the word in a comment, found none");
 });
+
+test("RW3-4: a code is marked applied only when the preview takes something off", () => {
+  assert.match(code, /import \{ couponPreviewDiscount, COUPON_NO_EFFECT_COPY \} from "@\/lib\/couponPreview"/);
+  assert.match(code, /const previewDiscount = result\.valid \? couponPreviewDiscount\(result\.newSubtotal, subtotal\) : 0;/);
+  assert.match(code, /if \(result\.valid && previewDiscount > 0\) \{\s*setAppliedCode\(code\);/);
+  // The only setAppliedCode(code) is the one behind that guard.
+  assert.equal((code.match(/setAppliedCode\(code\)/g) ?? []).length, 1);
+});
+
+test("RW3-4: a valid code with no effect clears the code and says it does not apply", () => {
+  assert.match(
+    code,
+    /\} else if \(result\.valid\) \{\s*setAppliedCode\(null\);\s*setPromoCode\(null\);\s*setDiscount\(0\);\s*setCodeError\(COUPON_NO_EFFECT_COPY\);/,
+  );
+  // The old inline math, which set the code applied whatever it computed, is gone.
+  assert.doesNotMatch(code, /newSubtotalDollars/);
+});
+
+const context = stripComments(fs.readFileSync(new URL("../../contexts/CartContext.tsx", import.meta.url), "utf8"));
+
+test("TB-6: the applied code is stored beside the cart and hydrated with it", () => {
+  assert.match(context, /store\.put\(\{ cart, promoCode, timestamp: Date\.now\(\) \} satisfies StoredCart, CART_KEY\)/);
+  assert.match(context, /setCart\(stored\.cart\);\s*setPromoCode\(stored\.promoCode\);\s*setCartHydrated\(true\);/);
+  assert.match(context, /isStoredPromoCode\(stored\.promoCode\) \? stored\.promoCode : null/);
+  assert.match(context, /\[cart, promoCode, cartHydrated\]/);
+});
+
+test("TB-6: a stored code is rechecked once after hydration and shown only when kept", () => {
+  assert.match(code, /if \(!cartHydrated \|\| restoreStarted\.current\) return;/);
+  assert.match(code, /revalidateStoredPromoCode\(\{\s*stored: promoCode,\s*lines: cartLineItems,\s*subtotal,\s*validate: validateCoupon,\s*\}\)/);
+  assert.match(code, /if \(restored\.kind === "kept"\) \{\s*setAppliedCode\(restored\.code\);\s*setDiscount\(restored\.discount\);/);
+  assert.match(code, /restored\.kind === "dropped"\) \{\s*setPromoCode\(null\);\s*setCodeError\(PROMO_CODE_DROPPED_COPY\);/);
+  assert.match(code, /if \(linesKeyRef\.current !== startedKey\) return;/, "a late answer cannot revive a dropped code");
+});
+
+test("TB-6: the stored code is written only on a successful apply and cleared on every other path", () => {
+  assert.equal((code.match(/setPromoCode\(\{ code, linesKey \}\)/g) ?? []).length, 1);
+  assert.match(code, /setAppliedCode\(code\);\s*setPromoCode\(\{ code, linesKey \}\);/);
+  // no-effect, invalid, failed apply, remove, failed checkout, dropped, discard, cart change
+  assert.ok((code.match(/setPromoCode\(null\)/g) ?? []).length >= 8);
+  assert.match(code, /if \(promoCode && promoCode\.linesKey !== linesKey\) setPromoCode\(null\);/);
+});

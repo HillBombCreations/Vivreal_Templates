@@ -6,7 +6,7 @@ import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
 import type { SiteData } from "@/types/SiteData";
 import {
   resolveSiteOrigin,
@@ -1076,6 +1076,11 @@ export async function generateMetadata({ params }: Props) {
   await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
   const siteData = await getSiteData();
+  // RW4-7: on a degraded read the page list is empty because nothing was
+  // read, so the branches below would title a 500 "Not Found". The render
+  // refuses (assertUpstreamHealthy); metadata makes no claim at all, the
+  // pattern rootMetadata.ts set for the same state.
+  if (isDegradedSiteData(siteData)) return {};
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const routeCanonicalMetadata = buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`);

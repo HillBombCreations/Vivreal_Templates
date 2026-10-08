@@ -7,12 +7,12 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
 import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
-import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
-import { getPageBySlug } from "@/lib/pages";
+import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
+import { resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -24,10 +24,15 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
-import { renderComposedPage } from "@/lib/renderComposedPage";
+import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
+import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
+import { shopHrefFor } from "@/lib/orderConfirmationGate";
+import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
+import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -260,7 +265,7 @@ export default async function DynamicPage({
   const siteData = await getSiteData();
   // A degraded read must never 404 a page that exists. `getSiteData()` hands
   // back `FALLBACK_SITE_DATA` when VR_Client_API cannot be read, and its
-  // `pageConfigs: []` makes `getPageBySlug` miss EVERY real slug on the site,
+  // `pageConfigs: []` makes `resolvePageForSlug` miss EVERY real slug on the site,
   // so without this line a transient upstream wobble answers 404 on every page
   // except /privacy and /terms. A 404 tells a crawler the URL is gone and to
   // drop it; a 5xx tells it to come back. See `assertUpstreamHealthy`.
@@ -270,7 +275,13 @@ export default async function DynamicPage({
   // degraded read too, which would otherwise turn every authored 301 into a
   // 404 for the duration.
   assertUpstreamHealthy(siteData);
-  const pageConfig = getPageBySlug(siteData, slug);
+  // The stored page for this slug, or, for the two checkout result slugs
+  // VR_Client_API hardcodes as Stripe's success/cancel URLs, a built-in bare
+  // page when the site stores none. That is what lets a site that became a
+  // store after its first build land the buyer on a confirmation (and fire
+  // OrderConfirmationTrigger below) instead of a 404. A stored page always
+  // wins. See src/lib/pages/builtInPages.ts.
+  const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
 
   // The owner turned this page OFF. Until this line, `enabled` was a
   // navigation flag and nothing else: the renderer dropped the page from the
@@ -694,7 +705,7 @@ async function ComposedFormatBody({
    */
   suppressSrTitle?: boolean;
 }) {
-  const { input, isEmpty, emptinessUnknown, richTextImageUrls } = await buildPageContext({
+  const { input, isEmpty, emptinessUnknown, listReadFailed, richTextImageUrls } = await buildPageContext({
     siteData,
     page: composedPage,
     isHome: false,
@@ -726,22 +737,8 @@ async function ComposedFormatBody({
     if (isEmpty) return notFound();
   }
 
-  return (
-    <>
-      {/*
-        The order confirmation email, fired once per completed checkout.
-        Renders nothing; it reads `?session_id=` and posts it to
-        /api/checkout/confirm. See OrderConfirmationTrigger.tsx for why the
-        effect lives here rather than in the renderer's CheckoutResultTemplate
-        (shared with the Studio preview) or in this server render (ISR-cached,
-        so it is not tied to the buyer in front of it).
-
-        Gated on the FORMAT, not on the slug: a customer can name their success
-        page anything, and `checkout-success` is what createCheckoutSession's
-        success_url actually lands on.
-      */}
-      {format === "checkout-success" && <OrderConfirmationTrigger />}
-      {/* H177: resolver around the composed body. See src/components/RichTextImages. */}
+  // H177: resolver around the composed body. See src/components/RichTextImages.
+  const composedBody = (
       <RichTextImages map={richTextImageUrls}>
       {composePage(
         components || scheduleView || suppressSrTitle
@@ -763,6 +760,34 @@ async function ComposedFormatBody({
           : input,
       )}
       </RichTextImages>
+  );
+
+  return (
+    <>
+      {/*
+        The order confirmation email, fired once per completed checkout.
+        Renders nothing; it reads `?session_id=` and posts it to
+        /api/checkout/confirm. See OrderConfirmationTrigger.tsx for why the
+        effect lives here rather than in the renderer's CheckoutResultTemplate
+        (shared with the Studio preview) or in this server render (ISR-cached,
+        so it is not tied to the buyer in front of it).
+
+        Gated on the FORMAT, not on the slug: a customer can name their success
+        page anything, and `checkout-success` is what createCheckoutSession's
+        success_url actually lands on.
+      */}
+      {format === "checkout-success" && <OrderConfirmationTrigger />}
+      {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
+      {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
+      {/* RW4-6: a failed list read on a page with other content. See the component. */}
+      {listReadFailed && <ListLoadFailedNotice />}
+      {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
+          See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
+      {format === "checkout-success" ? (
+        <ConfirmedOrderGate shopHref={shopHrefFor(siteData.pageConfigs)}>{composedBody}</ConfirmedOrderGate>
+      ) : (
+        composedBody
+      )}
     </>
   );
 }
@@ -772,13 +797,24 @@ const STATIC_PAGE_TITLES: Record<string, string> = {
   terms: "Terms of Service",
 };
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   // Same gate as the page, for the same reason: a gate-off build must not make
   // a `siteDetails` read that `force-dynamic` used to skip.
   await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
-  const pageConfig = getPageBySlug(siteData, slug);
+  // RW4-7: on a degraded read the page list is empty because nothing was
+  // read, so the branches below would title a 500 "Not Found". The render
+  // refuses (assertUpstreamHealthy); metadata makes no claim at all, the
+  // pattern rootMetadata.ts set for the same state.
+  if (isDegradedSiteData(siteData)) return {};
+  const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
   if (!pageConfig && !STATIC_PAGE_TITLES[slug]) {
@@ -791,6 +827,26 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // function already gives for a slug with no page at all.
   if (isPageTurnedOff(pageConfig)) {
     return { title: `Not Found | ${siteName}` };
+  }
+
+  // QA-G1-2: a composed page with nothing to show answers 404 in the render
+  // (`renderComposedPage`); its head says Not Found and noindex to match. Same
+  // verdict, same query, same cache entries, and no read at all for a page whose
+  // config already holds authored content.
+  //
+  // `searchParams` is awaited ONLY behind the config-only check. Reading it
+  // bails the route to dynamic, and a stored static page (privacy, terms) never
+  // reads it in the render either, so on an ISR site it must stay prerendered.
+  if (
+    pageConfig &&
+    pageMustDecideEmptiness(pageConfig) &&
+    (await composedPageIsEmpty({
+      siteData,
+      composedPage: pageConfig,
+      productQuery: parseProductQuery((await searchParams) ?? {}),
+    }))
+  ) {
+    return buildEmptyPageMetadata(siteName);
   }
 
   // Studio-authored SEO overrides take precedence over the label/name-derived

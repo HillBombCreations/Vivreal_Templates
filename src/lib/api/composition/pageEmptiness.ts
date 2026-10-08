@@ -1,9 +1,14 @@
 /**
  * Pure block-shape predicates for the generic-format `isEmpty` → notFound()
- * guard (buildPageContext.ts). Extracted to a sibling with NO imports so they
- * run under `node --test` (server-only/next modules can't load there — house
- * lesson from the Phase T round).
+ * guard (buildPageContext.ts). Extracted to a sibling with no server-only or
+ * Next import so they run under `node --test` (server-only/next modules can't
+ * load there — house lesson from the Phase T round). The two imports below are
+ * plain modules for the same reason.
  */
+
+import type { PageConfig } from '@/types/SiteData';
+import { isPaymentsProvider } from '../../payments.ts';
+import { collectTargets } from './bindingTargets.ts';
 
 /**
  * A FORM binding is content with zero items BY DESIGN (its collection is a
@@ -51,6 +56,63 @@ export const hasStaticContentBlock = (blocks: unknown): boolean =>
     );
   });
 
+/** The universal hero's block ids; its copy lives on `page.hero`, not the block. */
+const HERO_DISPATCH_IDS = new Set(['hero', 'hero-showcase', 'hero-ecommerce']);
+
+const hasText = (v: unknown): boolean => typeof v === 'string' && v.trim() !== '';
+
+/** A stored photo or video: a page media descriptor carrying a key or a signed source. */
+const hasMedia = (v: unknown): boolean => {
+  if (!v || typeof v !== 'object') return false;
+  const media = v as { key?: unknown; currentFile?: { source?: unknown } };
+  return hasText(media.key) || hasText(media.currentFile?.source);
+};
+
+/** The owner wrote something into the page hero: words, a side photo, or background media. */
+const heroIsAuthored = (hero: unknown): boolean => {
+  if (!hero || typeof hero !== 'object') return false;
+  const h = hero as {
+    eyebrow?: unknown;
+    title?: unknown;
+    subtitle?: unknown;
+    heroImage?: unknown;
+    background?: { image?: unknown; video?: unknown; slides?: unknown };
+  };
+  if (hasText(h.eyebrow) || hasText(h.title) || hasText(h.subtitle) || hasMedia(h.heroImage)) return true;
+  const bg = h.background;
+  return !!bg && typeof bg === 'object' && (hasMedia(bg.image) || hasMedia(bg.video) || (Array.isArray(bg.slides) && bg.slides.length > 0));
+};
+
+/**
+ * ST3 (fix-plan 2026-10-07): an enabled HERO block, or a config-authored
+ * home-section block (a Split hero, a gallery of photos), is content with zero
+ * collection items BY DESIGN, exactly like the static blocks above. Without
+ * this, a page made from Blank with a Split hero titled "Hello" and a Long-form
+ * list that holds nothing live yet was judged empty and answered 404.
+ *
+ * Only AUTHORED copy counts: the hero's own words or media on `page.hero`, or
+ * a home-section block's labels. A bare hero block with nothing written (the
+ * renderer would paint only the site name) is still no content, and a bound
+ * list (`layout`, `page-template`) with nothing live is still no content.
+ */
+export const hasAuthoredHeroOrSectionBlock = (blocks: unknown, hero: unknown): boolean =>
+  Array.isArray(blocks) &&
+  blocks.some((b) => {
+    const block = b as {
+      enabled?: boolean;
+      type?: { kind?: string; dispatchId?: string };
+      config?: { labels?: Record<string, unknown> };
+    };
+    if (block?.enabled === false || block?.type?.kind !== 'home-section') return false;
+    if (HERO_DISPATCH_IDS.has(block.type.dispatchId ?? '')) return heroIsAuthored(hero);
+    const labels = block.config?.labels;
+    return (
+      !!labels &&
+      Object.values(labels).some(
+        (v) => hasText(v) || (Array.isArray(v) ? v.length > 0 : !!v && typeof v === 'object'),
+      )
+    );
+  });
 
 /**
  * One collection or integration read, reduced to the two things the emptiness
@@ -99,6 +161,25 @@ export function pageDataReads(
 }
 
 /**
+ * RW4-6: true when at least one of the page's list reads FAILED, whatever else
+ * the page holds.
+ *
+ * `decidePageEmptiness` only asks this question when the page's whole body is
+ * its lists. A page with authored copy beside a list (an FAQ with a written
+ * hero, a menu with a subtitle) never reached it, so a failed read rendered
+ * that page as a complete-looking 200 with the list simply gone. Under ISR the
+ * home page is page-cached, so that incomplete render was STORED and kept
+ * being served after the upstream recovered (measured: `s-maxage=60`,
+ * `x-nextjs-cache: HIT`, list still missing on every read after recovery).
+ *
+ * The caller renders `ListLoadFailedNotice`, which takes the render off every
+ * cache and tells the shopper this part could not load.
+ */
+export function someListReadFailed(reads: readonly PageDataRead[]): boolean {
+  return reads.some((read) => read.degraded);
+}
+
+/**
  * What a page's body resolved to, once "empty" and "unknown" are separated.
  *
  * `isEmpty` and `emptinessUnknown` are mutually exclusive by construction. That
@@ -125,6 +206,115 @@ export interface EmptinessVerdict {
 
 /** Formats whose pages are never empty by definition. */
 const NEVER_EMPTY_FORMATS = new Set(['static', 'checkout-success', 'checkout-cancel']);
+
+/**
+ * The structural half of the verdict, from the page config alone: no read.
+ *
+ * QA-G1-2: `renderComposedPage` calls this BEFORE its Suspense boundary to decide
+ * which pages must have their data read before the shell flushes. Only a page
+ * this returns true for can ever be judged empty, so only those pages give up
+ * the streaming split to earn a real 404 status; every page with authored copy
+ * keeps streaming exactly as before. `decidePageEmptiness` below reads the same
+ * function, so the two cannot disagree about which pages could be empty.
+ */
+export function pageCouldBeEmpty(args: {
+  isHome: boolean;
+  format?: string;
+  blocks?: unknown;
+  hero?: unknown;
+}): boolean {
+  return (
+    !args.isHome &&
+    !NEVER_EMPTY_FORMATS.has(args.format ?? '') &&
+    !hasFormBlock(args.blocks) &&
+    !hasStaticContentBlock(args.blocks) &&
+    !hasAuthoredHeroOrSectionBlock(args.blocks, args.hero)
+  );
+}
+
+/** The formats the empty-page 404 has always been scoped to. */
+const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
+
+/**
+ * QA-G1-2: true when this page's body could be empty, so its data must be read
+ * BEFORE the Suspense boundary for a 404 to carry a real status. Generic formats
+ * only, and only pages whose config holds no authored content
+ * (`pageCouldBeEmpty`, the same structural test the verdict itself applies).
+ * Config only, no read, and no request input: `generateMetadata` calls it
+ * before touching `searchParams`, so a page this rules out (a stored privacy
+ * or terms page) never reads the URL query and stays prerenderable under ISR.
+ */
+export function pageMustDecideEmptiness(page: {
+  format?: string;
+  blocks?: unknown;
+  hero?: unknown;
+}): boolean {
+  return (
+    GENERIC_FORMATS.has(page.format ?? '') &&
+    pageCouldBeEmpty({ isHome: false, format: page.format, blocks: page.blocks, hero: page.hero })
+  );
+}
+
+/** The storefront query, as `parseProductQuery` returns it (structurally, no import). */
+interface ShopperQuery {
+  readonly filters?: Readonly<Record<string, string>>;
+  readonly search?: string;
+  readonly sort?: string;
+}
+
+/**
+ * True when the shopper's storefront query narrows the products read: a search
+ * term or any `f_` facet filter. Sort only reorders, so it does not count.
+ *
+ * Mirrors what `buildProductsQuery` actually sends upstream (`search` only when
+ * non-empty, a filter only when its value is non-empty, which
+ * `parseProductQuery` already guarantees).
+ */
+export function shopperQueryNarrows(query?: ShopperQuery): boolean {
+  if (!query) return false;
+  if (query.search) return true;
+  return !!query.filters && Object.keys(query.filters).length > 0;
+}
+
+/**
+ * True when the page's reads could be narrowed by a shopper query, which is
+ * only the products read: `buildPageContext` sends the query to a payments
+ * provider binding and to nothing else (collections read with `{limit:100}`).
+ *
+ * A legacy page (no `blocks`) binds through `getPageBindingsByRole`, which is
+ * server-only and cannot be called here, so it is assumed to read products.
+ * That keeps the old answer for it, a 200 for any narrowing query, rather than
+ * risk a 404 on a legacy storefront searched with no matches.
+ */
+function pageReadsProducts(page: { blocks?: unknown }): boolean {
+  if (!Array.isArray(page.blocks) || page.blocks.length === 0) return true;
+  // collectTargets reads only `blocks` and `hero` on this path, and `hero` adds
+  // collection ids, never an integration type; a full PageConfig is not needed.
+  const { integrationTypes } = collectTargets({ blocks: page.blocks } as PageConfig, null);
+  return integrationTypes.some(isPaymentsProvider);
+}
+
+/**
+ * Whether the empty-page 404 may be decided for this request at all.
+ *
+ * Review of #188, blocker 2: the products read is filtered on the server, so
+ * its `sourceCount` counts the MATCHES, not the catalogue. A storefront-only
+ * page searched for `zzz` reads zero rows, and judged on that it answered 404:
+ * the shopper lost the page, the toolbar, and the way back. A page with a
+ * narrowing query is therefore never empty. It renders, and the storefront
+ * shows its own no-matches state under a 200.
+ *
+ * Only a query that reaches a read counts. On a page with no storefront, a
+ * crafted `?f_x=1` or `?search=x` narrows nothing, so a truly empty page still
+ * 404s with it (second pass of the review, optional tightening).
+ */
+export function emptinessIsDecidable(
+  page: { format?: string; blocks?: unknown; hero?: unknown },
+  query?: ShopperQuery,
+): boolean {
+  if (!pageMustDecideEmptiness(page)) return false;
+  return !(shopperQueryNarrows(query) && pageReadsProducts(page));
+}
 
 /**
  * Decide whether a composed page has a body, and whether we are entitled to say
@@ -158,15 +348,11 @@ export function decidePageEmptiness(args: {
   isHome: boolean;
   format?: string;
   blocks?: unknown;
+  /** `page.hero`: where an enabled hero block's copy lives (ST3). */
+  hero?: unknown;
   reads: readonly PageDataRead[];
 }): EmptinessVerdict {
-  const couldBeEmpty =
-    !args.isHome &&
-    !NEVER_EMPTY_FORMATS.has(args.format ?? '') &&
-    !hasFormBlock(args.blocks) &&
-    !hasStaticContentBlock(args.blocks);
-
-  if (!couldBeEmpty) return { isEmpty: false, emptinessUnknown: false };
+  if (!pageCouldBeEmpty(args)) return { isEmpty: false, emptinessUnknown: false };
 
   // ROWS IN HAND SETTLE IT, and they settle it before the degraded flag is
   // consulted. `sourceCount > 0` is POSITIVE PROOF that a read succeeded: a

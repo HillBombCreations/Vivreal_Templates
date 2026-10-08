@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { upstreamErrorForVisitor } from "@/lib/upstreamErrorText";
 import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
 import { resolveContactRecipient, resolveSiteContact } from "@/lib/contactRecipient";
 import {
@@ -380,7 +381,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: data.error ?? "Failed to send message" },
+        { error: upstreamErrorForVisitor(data, "Failed to send message") },
         { status: res.status }
       );
     }

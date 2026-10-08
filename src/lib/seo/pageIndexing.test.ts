@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 // which has no tsconfig `paths` resolution.
 import {
   NON_INDEXABLE_PAGE_FORMATS,
+  buildEmptyPageMetadata,
   buildPageRobotsMetadata,
   isAuthorHiddenPage,
   isNonIndexablePageFormat,
@@ -163,4 +164,16 @@ test('the robots directive is a FRESH object per call, because Next.js owns what
   const b = buildPageRobotsMetadata({ format: 'checkout-success' });
   assert.deepEqual(a, b);
   assert.notEqual(a.robots, b.robots, 'no shared reference across page renders');
+});
+
+// ── QA-G1-2: an empty composed page is titled and indexed as not found ──────
+test('buildEmptyPageMetadata: Not Found title and noindex, nofollow', () => {
+  assert.deepEqual(buildEmptyPageMetadata('Cobalt & Crumb'), {
+    title: 'Not Found | Cobalt & Crumb',
+    robots: { index: false, follow: false },
+  });
+});
+
+test('buildEmptyPageMetadata: a fresh object per call (Next owns the returned metadata)', () => {
+  assert.notEqual(buildEmptyPageMetadata('A'), buildEmptyPageMetadata('A'));
 });

@@ -75,6 +75,17 @@ test('isLiveContentPath: privacy/terms are always live even when absent from slu
   assert.equal(isLiveContentPath('/terms', new Set()), true);
 });
 
+test('isLiveContentPath: the checkout result pages are always live, so a redirect cannot shadow them', () => {
+  // The route serves both on every site (src/lib/pages/builtInPages.ts). An
+  // authored redirect at either URL would send a paying buyer away from the
+  // confirmation and the receipt that fires from it.
+  assert.equal(isLiveContentPath('/checkoutsuccess', new Set()), true);
+  assert.equal(isLiveContentPath('/checkoutcancel', new Set()), true);
+  // Exact segment only: near misses are ordinary paths.
+  assert.equal(isLiveContentPath('/checkout', new Set()), false);
+  assert.equal(isLiveContentPath('/CheckoutSuccess', new Set()), false);
+});
+
 test('isLiveContentPath: first-segment-matches-a-live-slug ⇒ live (never shadow live content)', () => {
   const slugs = new Set(['shop', 'contact']);
   assert.equal(isLiveContentPath('/shop', slugs), true);

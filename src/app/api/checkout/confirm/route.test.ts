@@ -80,8 +80,13 @@ test("control: the draft really did send all four of those", () => {
 });
 
 test("the session id is shape-checked before it reaches an upstream URL", () => {
-  assert.match(code, /\^cs_\[A-Za-z0-9_\]/, "must pin the Stripe id charset");
-  assert.match(code, /SESSION_ID\.test\(sessionId\)/, "and must actually apply it");
+  // The charset itself (Stripe `cs_` and Square order ids) is behaviour-tested
+  // in src/lib/orderConfirmationId.test.ts; this pins that the route applies it.
+  // The import list also names the outcome classifiers, so the pin
+  // matches the name inside the list rather than a one-name import.
+  assert.match(code, /import \{[^}]*\bisOrderConfirmationId\b[^}]*\} from "[^"]*lib\/orderConfirmationId"/, "must use the shared id check");
+  assert.match(code, /if \(!isOrderConfirmationId\(sessionId\)\)/, "and must actually apply it before the fetch");
+  assert.ok(code.indexOf("isOrderConfirmationId(sessionId)") < code.indexOf("fetch("), "checked BEFORE the upstream call");
 });
 
 test("a preview build cannot post a nonsense site id at the live API", () => {
@@ -117,4 +122,28 @@ test("an upstream or network failure is a 200, never a broken confirmation page"
 
 test("the catch does not swallow silently: it logs before it answers", () => {
   assert.match(code, /catch \{\s*\n\s*console\.error/, "the catch block must log");
+});
+
+test("RW5 + TB-5 final pass: `confirmed` and `outcome` come from the tested upstream-answer checks", () => {
+  assert.match(
+    code,
+    /import \{ isOrderConfirmationId, orderCheckFromAnswer, orderCheckFromRefusal \} from "[^"]*lib\/orderConfirmationId"/,
+  );
+  assert.match(code, /const outcome = orderCheckFromAnswer\(await res\.json\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(code, /const confirmed = outcome === "confirmed";/);
+  assert.match(code, /NextResponse\.json\(\{ sent: true, confirmed, outcome \}/);
+  // Only the ok path can confirm. Case-sensitive, and `"confirmed"` in quotes
+  // is the comparison, so: declared, returned, and the string it compares to.
+  assert.equal((code.match(/\bconfirmed\b/g) ?? []).length, 3, "computed once, returned once; nowhere else");
+  assert.ok(code.indexOf("if (!res.ok)") < code.indexOf("orderCheckFromAnswer(await"), "a refused upstream never confirms");
+});
+
+test("(b)/(c): a refusal is classified by status; a failed call or missing config is unverified", () => {
+  // The refusal body is read so a 404 for the SITE is not taken for a 404 for the order.
+  assert.match(code, /const outcome = orderCheckFromRefusal\(res\.status, await res\.json\(\)\.catch\(\(\) => null\)\);/);
+  assert.match(code, /\{ sent: false, reason: "upstream", outcome \}/);
+  assert.match(code, /reason: "unreachable", outcome: "unverified"/);
+  assert.match(code, /reason: "not-configured", outcome: "unverified"/);
+  // Never a positive no without the upstream saying so.
+  assert.equal((code.match(/"no-paid-order"/g) ?? []).length, 0, "only the tested classifier may answer no-paid-order");
 });

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets } from "@/lib/log/redact";
+import { upstreamErrorForVisitor } from "@/lib/upstreamErrorText";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     if (!res.ok) {
       return NextResponse.json(
-        { error: data.error ?? data.message ?? "We could not check that code. Please try again." },
+        { error: upstreamErrorForVisitor(data, "We could not check that code. Please try again.") },
         { status: res.status }
       );
     }

@@ -22,7 +22,7 @@ test('generateMetadata composes its robots policy through the shared builder', (
   assert.match(source, /buildPageRobotsMetadata\(/, 'the route must reach the tested composer');
   assert.match(
     source,
-    /import \{ buildPageRobotsMetadata \} from "@\/lib\/seo\/pageIndexing"/,
+    /import \{ buildPageRobotsMetadata(, \w+)* \} from "@\/lib\/seo\/pageIndexing"/,
     'imported from the module that owns the non-indexable page-type list',
   );
 });
@@ -105,4 +105,64 @@ test('the 404 for an off page is titled as one, not as the retired page', () => 
     /if \(isPageTurnedOff\(pageConfig\)\) \{[\s\S]{0,80}?Not Found \| \$\{siteName\}/,
     'generateMetadata answers Not Found for an off page',
   );
+});
+
+// ── the checkout result pages are built in on every site ────────────────────
+//
+// The resolver's behaviour (stored page wins, built-in only for the two exact
+// checkout slugs, everything else undefined) is tested for real in
+// src/lib/pages/builtInPages.test.ts. These pin that BOTH lookups in this file
+// go through it: the render (so the page serves and the confirmation fires)
+// and generateMetadata (so a served page is not titled "Not Found").
+
+test('both the render and the metadata resolve pages through the built-in-aware resolver', () => {
+  const lookups = source.match(/resolvePageForSlug\(siteData\.pageConfigs, slug\)/g) ?? [];
+  assert.equal(lookups.length, 2, 'DynamicPage and generateMetadata');
+  assert.match(
+    source,
+    /import \{ resolvePageForSlug \} from "@\/lib\/pages\/builtInPages"/,
+  );
+  assert.doesNotMatch(
+    source,
+    /getPageBySlug\(/,
+    'a bare stored-only lookup would 404 /checkoutsuccess on a site that became a store later',
+  );
+});
+
+test('the built-in pages are resolved BEFORE the off guard reads the result', () => {
+  // A stored page is returned as stored, so an owner's off switch still 404s
+  // it; the guard has to see the resolver's answer to keep that true.
+  const resolve = source.indexOf('const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);');
+  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  assert.ok(resolve > 0 && guard > 0);
+  assert.ok(resolve < guard);
+});
+
+// ── QA-G1-2: metadata says what the body says for an empty composed page ────
+//
+// The verdict is the render's own (`decidePageEmptiness`, tested for real in
+// pageEmptiness.test.ts) and the metadata shape is tested in
+// pageIndexing.test.ts. This pins only that generateMetadata reaches both.
+test('generateMetadata answers Not Found, noindex, for a composed page that renders as not found', () => {
+  assert.match(
+    source,
+    /await composedPageIsEmpty\(\{[\s\S]{0,200}?\}\)\)[\s\S]{0,40}?return buildEmptyPageMetadata\(siteName\)/,
+    'the empty verdict must decide the metadata',
+  );
+  assert.match(source, /import \{ renderComposedPage, composedPageIsEmpty \} from "@\/lib\/renderComposedPage"/);
+});
+
+// Review of #188, concern 1: reading `searchParams` bails the route to dynamic,
+// so generateMetadata may read it ONLY after the config-only check says the page
+// could be empty. A stored static page (privacy, terms) must never reach it, or
+// an ISR site stops prerendering it. The predicate is tested for real in
+// pageEmptiness.test.ts; this pins the ordering in the route.
+test('generateMetadata reads searchParams only behind the config-only emptiness check', () => {
+  const meta = source.slice(source.indexOf('export async function generateMetadata'));
+  const gate = meta.indexOf('pageMustDecideEmptiness(pageConfig) &&');
+  const read = meta.indexOf('await searchParams');
+  assert.ok(gate > 0, 'the config-only check is in generateMetadata');
+  assert.ok(read > gate, 'searchParams is awaited after (inside) the check');
+  assert.equal(meta.match(/await searchParams/g)?.length, 1, 'and nowhere else in metadata');
+  assert.match(source, /import \{ pageMustDecideEmptiness \} from "@\/lib\/api\/composition\/pageEmptiness"/);
 });

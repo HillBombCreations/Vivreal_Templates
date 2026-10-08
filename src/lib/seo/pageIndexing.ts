@@ -200,3 +200,13 @@ export function buildPageRobotsMetadata(
   // reference across every page render is a mutation hazard for no gain.
   return { robots: { index: false, follow: FOLLOW_WHEN_BLOCKED[block] } };
 }
+
+/**
+ * QA-G1-2 (fix-plan 2026-10-07): metadata for a composed page that renders as
+ * not found. The render now answers a real 404 (the emptiness guard runs above
+ * the Suspense boundary, see `renderComposedPage.tsx`); this keeps the head in
+ * step with it, so the page is never titled or indexed as the page it is not.
+ */
+export function buildEmptyPageMetadata(siteName: string): Pick<Metadata, 'title' | 'robots'> {
+  return { title: `Not Found | ${siteName}`, robots: { index: false, follow: false } };
+}

@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Cart, CartContextValue } from "@/types/Cart";
+import { isStoredPromoCode, type StoredPromoCode } from "@/lib/promoCodeRestore";
 
 /* ------------------------------------------------------------------ */
 /*  IndexedDB helpers — no external deps                              */
@@ -20,8 +21,17 @@ const EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface StoredCart {
   cart: Cart;
+  /** TB-6: the applied promo code, kept with the cart it was validated for. */
+  promoCode?: StoredPromoCode | null;
   timestamp: number;
 }
+
+interface CartRecord {
+  cart: Cart;
+  promoCode: StoredPromoCode | null;
+}
+
+const EMPTY_RECORD: CartRecord = { cart: {}, promoCode: null };
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
@@ -34,7 +44,7 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-async function readCart(): Promise<Cart> {
+async function readCart(): Promise<CartRecord> {
   try {
     const db = await openDB();
     return new Promise((resolve) => {
@@ -44,24 +54,28 @@ async function readCart(): Promise<Cart> {
       req.onsuccess = () => {
         const stored = req.result as StoredCart | undefined;
         if (stored && Date.now() - stored.timestamp < EXPIRY_MS) {
-          resolve(stored.cart);
+          resolve({
+            cart: stored.cart,
+            // Records written before TB-6 carry no code; a malformed one is ignored.
+            promoCode: isStoredPromoCode(stored.promoCode) ? stored.promoCode : null,
+          });
         } else {
-          resolve({});
+          resolve(EMPTY_RECORD);
         }
       };
-      req.onerror = () => resolve({});
+      req.onerror = () => resolve(EMPTY_RECORD);
     });
   } catch {
-    return {};
+    return EMPTY_RECORD;
   }
 }
 
-async function writeCart(cart: Cart): Promise<void> {
+async function writeCart(cart: Cart, promoCode: StoredPromoCode | null): Promise<void> {
   try {
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
     const store = tx.objectStore(STORE_NAME);
-    store.put({ cart, timestamp: Date.now() } satisfies StoredCart, CART_KEY);
+    store.put({ cart, promoCode, timestamp: Date.now() } satisfies StoredCart, CART_KEY);
   } catch {
     // silently fail — cart will be recreated
   }
@@ -77,25 +91,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<Cart>({});
   const [openCartMenu, setOpenCartMenu] = useState(false);
   const [cartHydrated, setCartHydrated] = useState(false);
+  const [promoCode, setPromoCode] = useState<StoredPromoCode | null>(null);
 
-  // Hydrate from IndexedDB on mount
+  // Hydrate from IndexedDB on mount. The cart and its promo code are set in
+  // the same batch, so no render ever sees one without the other.
   useEffect(() => {
     readCart().then((stored) => {
-      setCart(stored);
+      setCart(stored.cart);
+      setPromoCode(stored.promoCode);
       setCartHydrated(true);
     });
   }, []);
 
-  // Persist to IndexedDB whenever cart changes (after hydration)
+  // Persist to IndexedDB whenever the cart or its code changes (after hydration)
   useEffect(() => {
     if (cartHydrated) {
-      writeCart(cart);
+      writeCart(cart, promoCode);
     }
-  }, [cart, cartHydrated]);
+  }, [cart, promoCode, cartHydrated]);
 
   return (
     <CartContext.Provider
-      value={{ cart, setCart, openCartMenu, setOpenCartMenu, cartHydrated }}
+      value={{ cart, setCart, openCartMenu, setOpenCartMenu, cartHydrated, promoCode, setPromoCode }}
     >
       {children}
     </CartContext.Provider>

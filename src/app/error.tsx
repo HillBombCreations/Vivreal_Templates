@@ -29,6 +29,18 @@ export default function ErrorPage({
         <p className="mt-3 text-base text-gray-500">
           We&apos;re having trouble loading this page. Please try again in a moment.
         </p>
+        {/*
+          RW4-7: the page had no way forward. A full reload, not `reset()`:
+          this boundary mostly catches a server render that refused (the API
+          did not answer), and only a new request can re-run that render.
+        */}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-6 inline-flex items-center justify-center rounded-md bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+        >
+          Try again
+        </button>
       </div>
     </div>
   );
