@@ -24,6 +24,7 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // no longer referenced HERE.
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
+import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
 import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
@@ -748,6 +749,8 @@ async function ComposedFormatBody({
         success_url actually lands on.
       */}
       {format === "checkout-success" && <OrderConfirmationTrigger />}
+      {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
+      {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
       {/* H177: resolver around the composed body. See src/components/RichTextImages. */}
       <RichTextImages map={richTextImageUrls}>
       {composePage(
