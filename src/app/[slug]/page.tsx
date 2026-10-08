@@ -7,7 +7,7 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
 import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
@@ -797,6 +797,11 @@ export async function generateMetadata({
   await enforceDynamicUnlessIsr();
   const { slug } = await params;
   const siteData = await getSiteData();
+  // RW4-7: on a degraded read the page list is empty because nothing was
+  // read, so the branches below would title a 500 "Not Found". The render
+  // refuses (assertUpstreamHealthy); metadata makes no claim at all, the
+  // pattern rootMetadata.ts set for the same state.
+  if (isDegradedSiteData(siteData)) return {};
   const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
