@@ -82,13 +82,16 @@ export default function ProductDetailClient({
   const variants: string[] = product?.usingVariant?.values || [];
 
   const onAddToCart = () => {
-    handleAddToCart({
+    // Nothing joined the bag (no checkout price, or sold out), so never open
+    // the "added" dialog for it.
+    const added = handleAddToCart({
       product,
       selectedVariant,
       quantity,
       cart,
       setCart,
     });
+    if (!added) return;
     // Snapshot current selections so the dialog doesn't change
     // if the user picks a different variant while it's open
     setAddedVariant(selectedVariant);

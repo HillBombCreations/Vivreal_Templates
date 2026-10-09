@@ -6,28 +6,46 @@
  * but the bag let a shopper pick 6 of something with 4 left and then told them
  * to "refresh the page", which changes nothing.
  *
- * THE STOCK RULE MATCHES CHECKOUT'S. A line is capped only when its stock is
- * TRACKED: a plain number for a product with no sizes, or a number stored under
- * the chosen size in a per-size map (`{ "Small": 4 }`). A size with no number
- * is untracked, so it has no cap, exactly as checkout sells it. It never falls
- * back to another size's count: that fallback is what made a card say "Only 4
- * left" while Large was chosen.
+ * The cap is checkout's own tracked-stock rule, `trackedLineStock` below, so
+ * the bag and checkout always agree on which lines are capped and where.
  *
  * Pure and free of `@/` imports, so it runs under `node --test`.
  */
 import type { Cart } from "../types/Cart";
 import type { ShortStockLine } from "./checkoutRequest.ts";
 
-type StockValue = number | Record<string, unknown> | undefined | null;
-
-/** The chosen line's stock, or `undefined` when it is not tracked. */
-export function resolveLineStock(stock: StockValue | unknown, variant: string): number | undefined {
-  const count =
-    typeof stock === "number"
-      ? stock
-      : stock && typeof stock === "object" && !Array.isArray(stock)
-        ? (stock as Record<string, unknown>)[variant]
-        : undefined;
+/**
+ * CHECKOUT'S TRACKED-STOCK RULE, ported line for line from VR_Client_API
+ * `src/api/site/_helpers/resolveProductVariantByPriceId.js` (Stripe) and
+ * `resolveSquareVariant.js` (Square), the readers `createCheckoutSession` and
+ * `checkoutDispatch` refuse on:
+ *
+ * 1. The line's VARIANT KEY is the key of the product's checkout-id map whose
+ *    value is the line's checkout id. A product whose checkout id is a plain
+ *    string has no key: it is single-price.
+ * 2. With a key, stock is `stock[key]`, only when that is a number.
+ * 3. With no key, stock is `stock` itself, only when it is a number.
+ * 4. Anything else is UNTRACKED: no cap. That includes a sized product whose
+ *    `stock` is a plain number (checkout ignores it there; the review of #189
+ *    found the bag capping it), and a size with no count of its own.
+ *
+ * It never borrows another size's count: that fallback is what made a card say
+ * "Only 4 left" while Large was chosen.
+ *
+ * The one input Templates cannot see is a Square product's `squareVariations`
+ * (VR_Client_API does not send it), so a Square line is judged on the checkout
+ * id Templates sends, which is the same id checkout receives.
+ */
+export function trackedLineStock(stock: unknown, checkoutIds: unknown, lineCheckoutId: string): number | undefined {
+  const isMap = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+  let count: unknown;
+  if (isMap(checkoutIds)) {
+    const variantKey = Object.keys(checkoutIds).find((k) => checkoutIds[k] === lineCheckoutId);
+    if (variantKey === undefined) return undefined;
+    count = isMap(stock) ? stock[variantKey] : undefined;
+  } else {
+    count = stock;
+  }
   if (typeof count !== "number" || !Number.isFinite(count)) return undefined;
   return Math.max(0, Math.floor(count));
 }

@@ -4,11 +4,11 @@ import {
   applyShortStock,
   capQuantity,
   clampCartToStock,
-  resolveLineStock,
+  trackedLineStock,
   stockAdjustedMessage,
   STOCK_REFUSAL_FALLBACK_COPY,
 } from "./cartStock.ts";
-import { CheckoutStockError, handleAddToCart, handleCheckout } from "./utils/cartUtils/index.ts";
+import { CheckoutStockError, SOLD_OUT_ITEM_MESSAGE, UNBUYABLE_ITEM_MESSAGE, addRefusal, handleAddToCart, handleCheckout } from "./utils/cartUtils/index.ts";
 import type { Cart } from "../types/Cart";
 import type { Product } from "../types/Products";
 
@@ -56,13 +56,47 @@ const cookieBox = (stock: Product["stock"]): Product => ({
   stock,
 } as Product); // a fixture with only the fields add-to-cart reads
 
-test("stock rule: the chosen size's count, a plain count, or untracked; never another size's", () => {
-  assert.equal(resolveLineStock(COOKIE_BOX_STOCK, "Small"), 4);
-  assert.equal(resolveLineStock(COOKIE_BOX_STOCK, "Large"), undefined, "Large is untracked, not Small's 4");
-  assert.equal(resolveLineStock(12, "default"), 12);
+const SIZE_IDS = { Small: "price_small", Large: "price_large" };
+
+test("checkout's rule, REFUSE side: tracked lines are capped (a size's own count, or a single-price count)", () => {
+  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_small"), 4);
+  assert.equal(trackedLineStock(12, "price_one", "price_one"), 12, "single-price product, plain count");
+  assert.equal(trackedLineStock({ Small: 0 }, SIZE_IDS, "price_small"), 0);
+});
+
+test("checkout's rule, ALLOW side: what checkout treats as untracked gets no cap", () => {
+  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_large"), undefined, "Large has no count; never Small's 4");
+  // The review's case: a sized product with a PLAIN number. Checkout
+  // (resolveProductVariantByPriceId.js) ignores it, so the bag must too.
+  assert.equal(trackedLineStock(12, SIZE_IDS, "price_small"), undefined);
+  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_unknown"), undefined, "an id the map does not hold");
+  assert.equal(trackedLineStock({ Small: 4 }, "price_one", "price_one"), undefined, "single-price product with a map");
   for (const untracked of [undefined, null, "4", { Small: "4" }, Number.NaN]) {
-    assert.equal(resolveLineStock(untracked, "Small"), undefined, String(untracked));
+    assert.equal(trackedLineStock(untracked, SIZE_IDS, "price_small"), undefined, String(untracked));
   }
+});
+
+test("ALLOW: a sized product with a plain numeric stock is not capped in the bag (checkout does not cap it)", () => {
+  const { cart } = addToCart(cookieBox(3), "Small", 6);
+  assert.equal(cart["cookie_Small"]?.quantity, 6);
+  assert.equal("stock" in (cart["cookie_Small"] ?? {}), false);
+});
+
+test("REFUSE: adding a sold-out size says it is sold out, never 'can't be bought online'", () => {
+  const soldOut = cookieBox({ Small: 0, Large: 2 });
+  const { added, cart } = addToCart(soldOut, "Small", 1);
+  assert.equal(added, false);
+  assert.deepEqual(cart, {}, "nothing joined the bag");
+  assert.deepEqual(addRefusal(soldOut, "Small"), { title: "Sold out", description: SOLD_OUT_ITEM_MESSAGE });
+  assert.doesNotMatch(SOLD_OUT_ITEM_MESSAGE, /only \d+ left|bought online/i);
+});
+
+test("ALLOW: an item with no checkout price keeps its own message; an in-stock size still adds", () => {
+  const unbuyable = { ...cookieBox(undefined), default_price: undefined } as Product; // the same fixture without a price
+  assert.deepEqual(addRefusal(unbuyable, "Small"), { title: "Not available online", description: UNBUYABLE_ITEM_MESSAGE });
+  const { added, cart } = addToCart(cookieBox({ Small: 0, Large: 2 }), "Large", 1);
+  assert.equal(added, true);
+  assert.equal(cart["cookie_Large"]?.quantity, 1);
 });
 
 test("REFUSE: the bag never goes above a tracked line's stock (Small x6 with 4 left is 4)", () => {

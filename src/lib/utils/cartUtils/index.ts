@@ -6,7 +6,7 @@ import type { Product } from "@/types/Products";
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
-import { capQuantity, resolveLineStock } from "../../cartStock.ts";
+import { capQuantity, trackedLineStock } from "../../cartStock.ts";
 import { CHECKOUT_OUT_OF_STOCK, type ShortStockLine } from "../../checkoutRequest.ts";
 
 interface AddToCartProps {
@@ -41,9 +41,10 @@ export function handleAddToCart({
   // (e.g. "lb"), never the whole variant→unit map.
   const unit = resolveVariantableString(product.quantityUnit, selectedVariant);
 
-  // QA-W2-1: the bag never holds more than the chosen size's tracked stock,
-  // the same cap checkout enforces. Nothing left means nothing to add.
-  const stock = resolveLineStock(product.stock, variant);
+  // QA-W2-1: the bag never holds more than the line's tracked stock, by
+  // checkout's own rule (lib/cartStock.ts). Nothing left means nothing to add;
+  // `addRefusal` tells the caller it was sold out, not unbuyable.
+  const stock = lineStock(product, priceID);
   if (stock === 0) return false;
 
   const existing = cart[cartKey];
@@ -97,6 +98,29 @@ export class CheckoutCouponError extends Error {
     super(message);
     this.name = "CheckoutCouponError";
   }
+}
+
+/** The line's tracked stock by checkout's rule, or `undefined` when untracked. */
+function lineStock(product: Product, priceID: string): number | undefined {
+  return trackedLineStock(product.stock, product.checkoutIdentifier ?? product.default_price, priceID);
+}
+
+/** Shown when Add to cart refuses because the chosen size has none left. */
+export const SOLD_OUT_ITEM_MESSAGE = "Sorry, that one has sold out. Check back soon.";
+
+/**
+ * Why `handleAddToCart` answered `false`, in the shopper's words: the chosen
+ * size is sold out, or the item cannot be bought online at all.
+ */
+export function addRefusal(
+  product: Product,
+  selectedVariant: string | null,
+): { title: string; description: string } {
+  const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
+  if (priceID.trim() && lineStock(product, priceID) === 0) {
+    return { title: "Sold out", description: SOLD_OUT_ITEM_MESSAGE };
+  }
+  return { title: "Not available online", description: UNBUYABLE_ITEM_MESSAGE };
 }
 
 /** Storefront Phase 0.2: shown when a bag holds a line with no checkout price. */
