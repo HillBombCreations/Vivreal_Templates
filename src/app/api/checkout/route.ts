@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       // pins this rule for itself.
       // The upstream `error` is read only to tell a stock refusal apart, never
       // shown (lib/checkoutRequest.ts).
-      return NextResponse.json(checkoutRefusal(res.status, data?.error), { status: res.status });
+      return NextResponse.json(checkoutRefusal(res.status, data?.error, data), { status: res.status });
     }
 
     // VR_Client_API returns { success, data: { url, sessionId } } or { data: "stripe_url" }

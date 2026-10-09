@@ -15,7 +15,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
+import { applyShortStock, capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -266,7 +266,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // to its stock and say exactly what changed; the code stays, because the
       // stock refusal says nothing about it.
       if (err instanceof CheckoutStockError) {
-        const { cart: adjusted, changed } = clampCartToStock(cart || {});
+        // The lines and counts checkout named win; the stock stored at add time
+        // is only the fallback for an older Client that names none.
+        const { cart: adjusted, changed } = err.items
+          ? applyShortStock(cart || {}, err.items)
+          : clampCartToStock(cart || {});
         if (changed.length > 0) setCart(adjusted);
         setStockNotice(stockAdjustedMessage(changed));
         return;

@@ -7,7 +7,7 @@ import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
 import { capQuantity, resolveLineStock } from "../../cartStock.ts";
-import { CHECKOUT_OUT_OF_STOCK } from "../../checkoutRequest.ts";
+import { CHECKOUT_OUT_OF_STOCK, type ShortStockLine } from "../../checkoutRequest.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -82,9 +82,12 @@ interface CheckoutProps {
  * The bag catches it, brings each line down to its stock and says what changed.
  */
 export class CheckoutStockError extends Error {
-  constructor(message: string) {
+  /** The short lines checkout named; absent from an older Client. */
+  readonly items?: ShortStockLine[];
+  constructor(message: string, items?: ShortStockLine[]) {
     super(message);
     this.name = "CheckoutStockError";
+    if (items) this.items = items;
   }
 }
 
@@ -174,7 +177,10 @@ export async function handleCheckout({
   const message =
     (typeof data.error === "string" && data.error) ||
     "Checkout could not be started. Please try again.";
-  if (data.reason === CHECKOUT_OUT_OF_STOCK) throw new CheckoutStockError(message);
+  if (data.reason === CHECKOUT_OUT_OF_STOCK) {
+    // Our own route already validated `items` (lib/checkoutRequest.ts).
+    throw new CheckoutStockError(message, Array.isArray(data.items) ? (data.items as ShortStockLine[]) : undefined);
+  }
   throw new CheckoutCouponError(message);
 }
 

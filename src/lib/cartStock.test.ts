@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  applyShortStock,
   capQuantity,
   clampCartToStock,
   resolveLineStock,
   stockAdjustedMessage,
   STOCK_REFUSAL_FALLBACK_COPY,
 } from "./cartStock.ts";
-import { handleAddToCart } from "./utils/cartUtils/index.ts";
+import { CheckoutStockError, handleAddToCart, handleCheckout } from "./utils/cartUtils/index.ts";
 import type { Cart } from "../types/Cart";
 import type { Product } from "../types/Products";
 
@@ -103,4 +104,67 @@ test("ALLOW: a bag within stock is unchanged; a refusal it cannot place gets the
   assert.deepEqual(changed, []);
   assert.equal(stockAdjustedMessage(changed), STOCK_REFUSAL_FALLBACK_COPY);
   assert.doesNotMatch(STOCK_REFUSAL_FALLBACK_COPY, /refresh/i, "a refresh changes nothing");
+});
+
+// Client #117: the counts come from the 409 response, not from stored stock.
+test("ALLOW: a 409 with items lowers exactly those lines, from the response's counts", () => {
+  const cart: Cart = {
+    a: { ...line("Cookie box (Small)", 6, 10), priceID: "price_small" }, // stored stock is stale (10)
+    b: { ...line("Cinnamon roll", 2), priceID: "price_roll" },
+    c: { ...line("Cookie box (Large)", 6), priceID: "price_large" },
+  };
+  const { cart: adjusted, changed } = applyShortStock(cart, [
+    { priceId: "price_small", available: 4 },
+    { priceId: "price_roll", available: 0 },
+  ]);
+  assert.equal(adjusted.a?.quantity, 4, "set to the response's 4, not the stored 10");
+  assert.equal(adjusted.a?.stock, 4, "and the line now caps there");
+  assert.equal(adjusted.b, undefined, "0 available removes the line");
+  assert.deepEqual(adjusted.c, cart.c, "a line the response did not name is untouched");
+  assert.equal(
+    stockAdjustedMessage(changed),
+    "Only 4 Cookie box (Small) left. Cinnamon roll has sold out. We've updated your bag.",
+  );
+});
+
+test("REFUSE: a 409 without items falls back to stored stock without crashing", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "Some of your bag has sold out since you added it. Lower the amount, then try again.", reason: "out_of_stock" }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  try {
+    const cart: Cart = { a: line("Cookie box (Small)", 6, 4) };
+    const err = await handleCheckout({ cart, requiresShipping: false, originUrl: "https://x.test" }).then(
+      () => assert.fail("checkout should refuse"),
+      (e: unknown) => e,
+    );
+    assert.ok(err instanceof CheckoutStockError);
+    assert.equal(err.items, undefined);
+    const { cart: adjusted, changed } = clampCartToStock(cart);
+    assert.equal(adjusted.a?.quantity, 4);
+    assert.equal(stockAdjustedMessage(changed), "Only 4 Cookie box (Small) left. We've updated your bag.");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("ALLOW: handleCheckout hands the named lines to the bag", async () => {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: "x", reason: "out_of_stock", items: [{ priceId: "price_a", available: 2 }] }), {
+      status: 409,
+      headers: { "Content-Type": "application/json" },
+    })) as typeof fetch;
+  try {
+    const err = await handleCheckout({ cart: { a: line("A", 3) }, requiresShipping: false, originUrl: "https://x.test" }).then(
+      () => assert.fail("checkout should refuse"),
+      (e: unknown) => e,
+    );
+    assert.ok(err instanceof CheckoutStockError);
+    assert.deepEqual(err.items, [{ priceId: "price_a", available: 2 }]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

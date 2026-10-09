@@ -16,6 +16,7 @@
  * Pure and free of `@/` imports, so it runs under `node --test`.
  */
 import type { Cart } from "../types/Cart";
+import type { ShortStockLine } from "./checkoutRequest.ts";
 
 type StockValue = number | Record<string, unknown> | undefined | null;
 
@@ -56,6 +57,29 @@ export function clampCartToStock(cart: Cart): { cart: Cart; changed: StockAdjust
     }
     changed.push({ name: line.name, available: stock });
     if (stock > 0) next[key] = { ...line, quantity: stock };
+  }
+  return { cart: next, changed };
+}
+
+/**
+ * The bag after checkout NAMED the short lines (Client #117): each named line is
+ * set to what is available, and removed at 0. The counts come from the
+ * response, never from the stock stored when the item was added, which can be
+ * stale. A line is matched on its checkout price id, the same id checkout was
+ * sent (the Stripe price, or the Square variation id).
+ */
+export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): { cart: Cart; changed: StockAdjustment[] } {
+  const availableByPrice = new Map(short.map((s) => [s.priceId, s.available]));
+  const next: Cart = {};
+  const changed: StockAdjustment[] = [];
+  for (const [key, line] of Object.entries(cart)) {
+    const available = availableByPrice.get(line.priceID);
+    if (available === undefined || line.quantity <= available) {
+      next[key] = line;
+      continue;
+    }
+    changed.push({ name: line.name, available });
+    if (available > 0) next[key] = { ...line, quantity: available, stock: available };
   }
   return { cart: next, changed };
 }

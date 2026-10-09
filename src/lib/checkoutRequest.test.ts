@@ -48,3 +48,29 @@ test("REFUSE (QA-W2-4): anything Client's validator would reject is left out, so
     assert.equal(checkoutSiteId(bad), undefined, String(bad));
   }
 });
+
+// Client #117: the over-stock 409 names the short lines.
+const NAMED_409 = {
+  success: false,
+  data: null,
+  error: "Not enough stock available",
+  errorCode: "INSUFFICIENT_STOCK",
+  items: [{ priceId: "price_small", available: 4 }, { priceId: "price_roll", available: 0 }],
+};
+
+test("ALLOW: a 409 with items carries exactly those lines to the bag", () => {
+  const refusal = checkoutRefusal(409, NAMED_409.error, NAMED_409);
+  assert.equal(refusal.reason, CHECKOUT_OUT_OF_STOCK);
+  assert.deepEqual(refusal.items, NAMED_409.items);
+});
+
+test("REFUSE: a 409 without items (an older Client) or with malformed items still maps, with no items", () => {
+  const older = checkoutRefusal(409, "Not enough stock available", { success: false, error: "Not enough stock available" });
+  assert.equal(older.reason, CHECKOUT_OUT_OF_STOCK);
+  assert.equal("items" in older, false);
+  for (const items of [undefined, "x", [], [{ priceId: "", available: 1 }], [{ priceId: "p", available: -1 }], [{ priceId: "p", available: 1.5 }]]) {
+    const refusal = checkoutRefusal(409, "Not enough stock available", { errorCode: "INSUFFICIENT_STOCK", items });
+    assert.equal("items" in refusal, false, JSON.stringify(items));
+  }
+  assert.equal(checkoutRefusal(409, "anything", { errorCode: "INSUFFICIENT_STOCK" }).reason, CHECKOUT_OUT_OF_STOCK, "the code alone is enough");
+});

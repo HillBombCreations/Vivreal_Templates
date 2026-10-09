@@ -15,10 +15,42 @@ export const CHECKOUT_OUT_OF_STOCK = "out_of_stock";
  */
 const STOCK_REFUSAL = /\bout of stock\b|\bnot enough stock\b/i;
 
+/** One line checkout named as short: its checkout price id and how many are left. */
+export interface ShortStockLine {
+  priceId: string;
+  available: number;
+}
+
 export interface CheckoutRefusal {
   error: string;
   reason?: typeof CHECKOUT_OUT_OF_STOCK;
+  /** Present only when VR_Client_API named the short lines (Client #117 and later). */
+  items?: ShortStockLine[];
 }
+
+/**
+ * Client #117's over-stock 409 names the short lines:
+ * `{ errorCode: 'INSUFFICIENT_STOCK', items: [{ priceId, available }] }`.
+ * Read at the boundary: a malformed entry is dropped, and no valid entry at all
+ * means `undefined`, so the bag falls back to the stock it stored.
+ */
+function readShortStockLines(body: unknown): ShortStockLine[] | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const { errorCode, items } = body as { errorCode?: unknown; items?: unknown };
+  if (errorCode !== "INSUFFICIENT_STOCK" || !Array.isArray(items)) return undefined;
+  const lines = items.flatMap((entry): ShortStockLine[] => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const { priceId, available } = entry as { priceId?: unknown; available?: unknown };
+    if (typeof priceId !== "string" || !priceId || typeof available !== "number" || !Number.isInteger(available) || available < 0) {
+      return [];
+    }
+    return [{ priceId, available }];
+  });
+  return lines.length > 0 ? lines : undefined;
+}
+
+const isInsufficientStock = (body: unknown) =>
+  typeof body === "object" && body !== null && (body as { errorCode?: unknown }).errorCode === "INSUFFICIENT_STOCK";
 
 /**
  * What the shopper is told when checkout will not start.
@@ -30,12 +62,15 @@ export interface CheckoutRefusal {
  * The upstream text is only READ, to tell a stock refusal apart. Every branch
  * says what to DO, because a cart that only says no is a dead button.
  */
-export function checkoutRefusal(status: number, upstreamError: unknown): CheckoutRefusal {
-  if (status === 409 && typeof upstreamError === "string" && STOCK_REFUSAL.test(upstreamError)) {
+export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown): CheckoutRefusal {
+  const stockByText = typeof upstreamError === "string" && STOCK_REFUSAL.test(upstreamError);
+  if (status === 409 && (stockByText || isInsufficientStock(upstreamBody))) {
     // The bag replaces this with the exact lines and counts it can name.
+    const items = readShortStockLines(upstreamBody);
     return {
       error: "Some of your bag has sold out since you added it. Lower the amount, then try again.",
       reason: CHECKOUT_OUT_OF_STOCK,
+      ...(items ? { items } : {}),
     };
   }
   if (status === 404 || status === 409 || status === 422) {

@@ -138,7 +138,7 @@ test("QA-W2-1: the bag caps quantity at stock, disables + at the cap, and handle
   assert.match(code, /\(typeof item\.stock === "number" && \(item\.quantity \|\| 0\) >= item\.stock\)/);
   assert.match(
     code,
-    /if \(err instanceof CheckoutStockError\) \{\s*const \{ cart: adjusted, changed \} = clampCartToStock\(cart \|\| \{\}\);\s*if \(changed\.length > 0\) setCart\(adjusted\);\s*setStockNotice\(stockAdjustedMessage\(changed\)\);\s*return;/,
+    /if \(err instanceof CheckoutStockError\) \{\s*const \{ cart: adjusted, changed \} = err\.items\s*\? applyShortStock\(cart \|\| \{\}, err\.items\)\s*: clampCartToStock\(cart \|\| \{\}\);\s*if \(changed\.length > 0\) setCart\(adjusted\);\s*setStockNotice\(stockAdjustedMessage\(changed\)\);\s*return;/,
   );
   // The stock branch runs before the branch that clears the promo code.
   const stockAt = code.indexOf("err instanceof CheckoutStockError");
