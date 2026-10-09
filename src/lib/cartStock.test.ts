@@ -9,6 +9,8 @@ import {
   STOCK_REFUSAL_FALLBACK_COPY,
 } from "./cartStock.ts";
 import { CheckoutStockError, SOLD_OUT_ITEM_MESSAGE, UNBUYABLE_ITEM_MESSAGE, addRefusal, handleAddToCart, handleCheckout } from "./utils/cartUtils/index.ts";
+import { rendererProductToTemplates } from "./cartProduct.ts";
+import type { DetailProductData } from "@hillbombcreations/site-renderer";
 import type { Cart } from "../types/Cart";
 import type { Product } from "../types/Products";
 
@@ -223,4 +225,41 @@ test("REFUSE (bag): a line whose price id the product does not hold is unavailab
 test("ALLOW (bag): a line the product holds is judged on its stock as before", () => {
   assert.equal(bagLineStock({ default_price: { Small: "price_small" }, stock: { Small: 5 } }, "price_small"), 5);
   assert.equal(bagLineStock({ checkoutIdentifier: "sq_one", price: "$5.00", stock: 3 }, "sq_one"), 3);
+});
+
+// Review of 7087197 (BLOCK): renderer 1.84.2 hands the bag a sized Square
+// product with a MAP checkoutIdentifier (size to variation id, from
+// squareVariations) and no default_price. Fed through the same bridge and add
+// the storefront uses.
+const sizedSquareFromRenderer = (stock: unknown): DetailProductData =>
+  ({
+    _id: "galette",
+    name: "Galette",
+    price: { Small: "$4.50", Large: "$6.75" },
+    usingVariant: { name: "Size", values: ["Small", "Large"] },
+    checkoutIdentifier: { Small: "sq_s", Large: "sq_l" },
+    stock,
+  }) as unknown as DetailProductData; // the renderer shape, only the fields the bag reads
+
+test("ALLOW (BLOCK fix): a sized Square product's chosen size adds to the bag, capped by its own count", () => {
+  const product = rendererProductToTemplates(sizedSquareFromRenderer({ Large: 3 }));
+  const { added, cart } = addToCart(product, "Large", 5);
+  assert.equal(added, true);
+  assert.equal(cart["galette_Large"]?.priceID, "sq_l");
+  assert.equal(cart["galette_Large"]?.quantity, 3, "Large's own 3, as checkout counts it");
+  const small = addToCart(product, "Small", 2);
+  assert.equal(small.added, true, "an untracked size adds with no cap");
+  assert.equal(small.cart["galette_Small"]?.quantity, 2);
+});
+
+test("REFUSE (BLOCK fix): a truly unknown id is still unavailable, Square map or Stripe", () => {
+  assert.equal(
+    bagLineStock({ checkoutIdentifier: { Small: "sq_s", Large: "sq_l" }, price: { Small: "$4.50", Large: "$6.75" }, stock: { Large: 3 } }, "sq_other"),
+    null,
+  );
+  assert.equal(bagLineStock({ default_price: { Small: "price_small" }, stock: 5 }, "price_other"), null);
+  // Through the add: an authored id map that names an id the product does not
+  // hold (the renderer passes an authored checkoutIdentifier first).
+  const product = rendererProductToTemplates(sizedSquareFromRenderer({ Large: 3 }));
+  assert.equal(bagLineStock(product, "sq_other"), null);
 });

@@ -26,7 +26,7 @@ const table = JSON.parse(raw) as { cases: StockCase[] }; // shape asserted just 
  * apart silently. Line endings are normalised first (this checkout writes CRLF).
  * Changing a case means changing it in both repos and both hashes together.
  */
-const SHARED_TABLE_SHA256 = "e9bd71b499c07ffea7aa2025afe35a2e558e54ddc860d1a4d838c4e9bac4b3b3";
+const SHARED_TABLE_SHA256 = "7aed08184948601e335e7d686933c1f3b56ca210e73257522e7c0d9f9edc2a60";
 
 test("the table is byte identical to Client's copy (sha256, LF line endings)", () => {
   const digest = createHash("sha256").update(raw.replace(/\r\n/g, "\n")).digest("hex");

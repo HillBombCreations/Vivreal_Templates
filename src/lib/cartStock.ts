@@ -103,13 +103,19 @@ export function trackedStock(
 /**
  * The bag's cap for one line: checkout's rule, fed what the bag has.
  *
- * One input never reaches the bag: a Square product's `squareVariations`. The
- * renderer builds the product it hands the bag from a fixed set of fields, and
- * that is not one of them. Without it, a SIZED Square product (its `price` is a
- * map) cannot be judged the way checkout judges it, so it gets no cap: the bag
- * never refuses what checkout would sell, and checkout's 409 `items` brings the
- * line down if it was short. A Square product with one price, and every Stripe
- * product, is judged exactly.
+ * WHICH PROVIDER. A Stripe product carries `default_price`; a Square product
+ * does not, and carries its checkout ids in `checkoutIdentifier` instead: a
+ * plain string for one price, or (renderer 1.84.2, `squareCheckoutIdentifier`)
+ * a `{ size: variationId }` map built from the product's `squareVariations`.
+ *
+ * A SIZED SQUARE PRODUCT is judged exactly when that map is present: the map
+ * IS `squareVariations` (size name to variation id), so it is handed to the
+ * rule as such and checkout's own query and size lookup run on it. The review
+ * of `7087197` caught the bag reading that map as a Stripe product and refusing
+ * every sized Square add. With only a scalar id and a `price` map (an older
+ * payload with no `squareVariations`), the size checkout picks cannot be known
+ * here, so that line gets no cap: the bag never refuses what checkout would
+ * sell, and checkout's 409 `items` brings the line down if it was short.
  *
  * A non-finite count never refuses at checkout (`stock < requested` is false),
  * so it is no cap here either.
@@ -121,14 +127,19 @@ export function bagLineStock(
   product: { default_price?: unknown; checkoutIdentifier?: unknown; price?: unknown; stock?: unknown },
   lineId: string,
 ): number | undefined | null {
-  const square = product.default_price == null && typeof product.checkoutIdentifier === "string";
-  if (square && isPlainObject(product.price)) return undefined;
-  const verdict = trackedStock(
-    square ? "square" : "stripe",
+  const ids = product.checkoutIdentifier;
+  const square = product.default_price == null && (typeof ids === "string" || isPlainObject(ids));
+  let verdict: TrackedStock | null;
+  if (!square) {
+    verdict = trackedStock("stripe", { default_price: product.default_price, stock: product.stock }, lineId);
+  } else if (isPlainObject(ids)) {
+    const squareVariations = Object.entries(ids).map(([name, variationId]) => ({ name, variationId }));
+    verdict = trackedStock("square", { price: product.price, squareVariations, stock: product.stock }, lineId);
+  } else {
+    if (isPlainObject(product.price)) return undefined;
     // A Square line's id IS the product's variation id (`transformProduct`).
-    { default_price: product.default_price, variationId: square ? product.checkoutIdentifier : undefined, price: product.price, stock: product.stock },
-    lineId,
-  );
+    verdict = trackedStock("square", { variationId: ids, price: product.price, stock: product.stock }, lineId);
+  }
   if (verdict === null) return null;
   if (verdict.available === null || !Number.isFinite(verdict.available)) return undefined;
   return Math.max(0, Math.floor(verdict.available));
