@@ -29,6 +29,7 @@
  * Node-only import.
  */
 import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from './api/fetchWithReconnect.ts';
+import { withMarketingLlmsSection } from './llmsTxtMarketing.ts';
 
 export interface LlmsTxtResponseInit {
   status: number;
@@ -64,7 +65,10 @@ export async function fetchLlmsTxt(): Promise<LlmsTxtResponseInit> {
       { label: 'llmsTxtProxy', backoffMs: DEFAULT_BACKOFF_MS },
     );
 
-    const body = await upstream.text();
+    const upstreamBody = await upstream.text();
+    // T2: vivreal.io alone gains its code routes and the owner glossary; every
+    // other site, and any non-200 answer, passes through byte for byte.
+    const body = upstream.status === 200 ? withMarketingLlmsSection(upstreamBody, siteId) : upstreamBody;
     return {
       status: upstream.status,
       headers: {

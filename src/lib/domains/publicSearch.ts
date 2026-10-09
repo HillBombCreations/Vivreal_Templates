@@ -412,7 +412,7 @@ export const DOMAIN_SEARCH_COPY = Object.freeze({
   // owner's word.
   metaTitle: 'Get a Web Address (Domain Name) for Your Business | Vivreal',
   metaDescription:
-    'Search for the web address you want and see what it costs each year. Buy a new domain name, use one you already own, or move one over to Vivreal.',
+    'Search for the web address you want and see what it costs each year. Buy a new web address, use one you already own, or move one over to Vivreal.',
   heading: 'Get the web address for your business',
   intro:
     'Type the name you want and we will tell you whether it is free and what it costs. You do not need an account to look.',
@@ -470,7 +470,7 @@ export const DOMAIN_SEARCH_COPY = Object.freeze({
 export const DOMAIN_GUIDE = Object.freeze({
   answerHeading: 'What a web address is',
   answer:
-    'A web address, also called a domain name or a custom domain, is the name people type to find your business online, like yourbusiness.com. It is yours for as long as you renew it, once a year. In Vivreal you can buy a new one, use one you already own, or move one over to us, and it opens your Vivreal site.',
+    'A web address (domain) is the name people type to find your business online, like yourbusiness.com. It is yours for as long as you renew it, once a year. In Vivreal you can buy a new one, use one you already own, or move one over to us, and it opens your Vivreal site.',
   waysHeading: 'Three ways to get your address',
   waysColumns: Object.freeze(['', 'Good for', 'What happens', 'Who bills you'] as const),
   ways: Object.freeze([
@@ -503,12 +503,12 @@ export const DOMAIN_GUIDE = Object.freeze({
         'Search for the name you want on this page. If it is free, choose it, make your Vivreal account, and finish buying it in Addresses. We set it up for you, so there is nothing technical to do.',
     }),
     Object.freeze({
-      question: 'Can I use a domain name I already own?',
+      question: 'Can I use a web address I already own?',
       answer:
         'Yes. Keep it where you bought it and connect it from Addresses in Vivreal. We show you a few lines to copy into the place you bought it, and it can take from a few minutes to a day to start working. Your site needs to be published first.',
     }),
     Object.freeze({
-      question: 'Can I move my domain name to Vivreal?',
+      question: 'Can I move my web address to Vivreal?',
       answer:
         'Yes. Moving brings the address and its yearly bill to Vivreal, so you look after everything in one place. It usually takes 5 to 10 days, and your site and your email keep working the whole time. We email you a link to confirm the move, and you have 5 days to open it. Moving adds a year to how long you own the address.',
     }),
@@ -519,7 +519,7 @@ export const DOMAIN_GUIDE = Object.freeze({
     Object.freeze({
       question: 'What is the difference between a website and a web address?',
       answer:
-        'Your website is the pages people see. Your web address is the name that takes them there. Every Vivreal site starts with a free address made from its name, like yourbusiness.vivreal.io, and you can add your own custom domain whenever you are ready.',
+        'Your website is the pages people see. Your web address is the name that takes them there. Every Vivreal site starts with a free address made from its name, like yourbusiness.vivreal.io, and you can add your own web address whenever you are ready.',
     }),
     Object.freeze({
       question: 'Do I need to know anything technical?',
