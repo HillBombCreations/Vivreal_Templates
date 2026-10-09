@@ -208,3 +208,19 @@ test("ALLOW: handleCheckout hands the named lines to the bag", async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+// Client #117 parity: checkout finds no product for an id the product does not
+// hold and refuses it, so the bag never takes it.
+test("REFUSE (bag): a line whose price id the product does not hold is unavailable, not capped", () => {
+  assert.equal(bagLineStock({ default_price: { Small: "price_small" }, stock: 5 }, "price_other"), null);
+  const product = { ...cookieBox(5), checkoutIdentifier: { Small: "price_other" } } as Product; // an authored id the price map lacks
+  const { added, cart } = addToCart(product, "Small", 1);
+  assert.equal(added, false);
+  assert.deepEqual(cart, {});
+  assert.deepEqual(addRefusal(product, "Small"), { title: "Not available online", description: UNBUYABLE_ITEM_MESSAGE });
+});
+
+test("ALLOW (bag): a line the product holds is judged on its stock as before", () => {
+  assert.equal(bagLineStock({ default_price: { Small: "price_small" }, stock: { Small: 5 } }, "price_small"), 5);
+  assert.equal(bagLineStock({ checkoutIdentifier: "sq_one", price: "$5.00", stock: 3 }, "sq_one"), 3);
+});

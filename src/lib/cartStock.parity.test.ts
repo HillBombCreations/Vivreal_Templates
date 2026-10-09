@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { trackedStock, type StockProvider } from "./cartStock.ts";
 
 /**
@@ -13,19 +14,32 @@ interface StockCase {
   provider: StockProvider;
   objectValue: Record<string, unknown>;
   lineId: string;
-  expected: { tracked: boolean; available: number | null };
+  /** `null`: checkout finds no product for the line, so it is unavailable. */
+  expected: { tracked: boolean; available: number | null } | null;
 }
 
-const table = JSON.parse(
-  fs.readFileSync(new URL("../../test/fixtures/tracked-stock-cases.json", import.meta.url), "utf8"),
-) as { cases: StockCase[] }; // shape asserted just below
+const raw = fs.readFileSync(new URL("../../test/fixtures/tracked-stock-cases.json", import.meta.url), "utf8");
+const table = JSON.parse(raw) as { cases: StockCase[] }; // shape asserted just below
+
+/**
+ * VR_Client_API asserts the SAME hash of its copy, so the two files cannot drift
+ * apart silently. Line endings are normalised first (this checkout writes CRLF).
+ * Changing a case means changing it in both repos and both hashes together.
+ */
+const SHARED_TABLE_SHA256 = "e9bd71b499c07ffea7aa2025afe35a2e558e54ddc860d1a4d838c4e9bac4b3b3";
+
+test("the table is byte identical to Client's copy (sha256, LF line endings)", () => {
+  const digest = createHash("sha256").update(raw.replace(/\r\n/g, "\n")).digest("hex");
+  assert.equal(digest, SHARED_TABLE_SHA256);
+});
 
 test("the table is read and covers both providers and both verdicts", () => {
   assert.ok(table.cases.length >= 15, `only ${table.cases.length} cases`);
+  assert.ok(table.cases.some((c) => c.expected === null), "an unavailable case is present");
   for (const provider of ["stripe", "square"]) {
     for (const tracked of [true, false]) {
       assert.ok(
-        table.cases.some((c) => c.provider === provider && c.expected.tracked === tracked),
+        table.cases.some((c) => c.provider === provider && c.expected?.tracked === tracked),
         `${provider} has a ${tracked ? "tracked" : "untracked"} case`,
       );
     }

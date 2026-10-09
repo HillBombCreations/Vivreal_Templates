@@ -45,7 +45,7 @@ export function handleAddToCart({
   // checkout's own rule (lib/cartStock.ts). Nothing left means nothing to add;
   // `addRefusal` tells the caller it was sold out, not unbuyable.
   const stock = lineStock(product, priceID);
-  if (stock === 0) return false;
+  if (stock === 0 || stock === null) return false;
 
   const existing = cart[cartKey];
   const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, stock);
@@ -100,8 +100,11 @@ export class CheckoutCouponError extends Error {
   }
 }
 
-/** The line's tracked stock by checkout's rule, or `undefined` when untracked. */
-function lineStock(product: Product, priceID: string): number | undefined {
+/**
+ * The line's tracked stock by checkout's rule: `undefined` when untracked,
+ * `null` when checkout holds no product for the line (it cannot be sold).
+ */
+function lineStock(product: Product, priceID: string): number | undefined | null {
   return bagLineStock(product, priceID);
 }
 

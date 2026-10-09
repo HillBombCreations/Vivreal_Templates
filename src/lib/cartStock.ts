@@ -44,6 +44,24 @@ function squareVariantKey(objectValue: Record<string, unknown>, lineId: string):
 }
 
 /**
+ * Does checkout find a product for this line at all? The two resolvers' own
+ * queries: Stripe matches `default_price` equal to the line's id, or a
+ * `default_price` map holding it; Square matches `variationId`, or a
+ * `squareVariations` entry with it. No match means checkout refuses the line as
+ * unavailable, whatever the stock says.
+ */
+function holdsLine(provider: StockProvider, objectValue: Record<string, unknown>, lineId: string): boolean {
+  if (provider === "square") {
+    if (objectValue.variationId === lineId) return true;
+    const variations = Array.isArray(objectValue.squareVariations) ? objectValue.squareVariations : [];
+    return variations.some((v: unknown) => isPlainObject(v) && v.variationId === lineId);
+  }
+  const defaultPrice = objectValue.default_price;
+  if (defaultPrice === lineId) return true;
+  return isPlainObject(defaultPrice) && Object.values(defaultPrice).includes(lineId);
+}
+
+/**
  * CHECKOUT'S TRACKED-STOCK RULE, ported line for line from VR_Client_API, the
  * two readers checkout refuses on:
  * - Stripe, `src/api/site/_helpers/resolveProductVariantByPriceId.js`: the
@@ -51,6 +69,8 @@ function squareVariantKey(objectValue: Record<string, unknown>, lineId: string):
  * - Square, `src/api/site/_helpers/resolveSquareVariant.js`: the variant key is
  *   the name of the `squareVariations` entry holding the line's variation id,
  *   when the `price` map carries that name.
+ * First, a line whose id the product does not hold is `null`: checkout finds
+ * no product for it and refuses it as unavailable.
  * Then, for both: with a key, stock is `stock[key]` when it is a number; with no
  * key, stock is `stock` itself when it is a number; anything else is untracked.
  *
@@ -62,7 +82,8 @@ export function trackedStock(
   provider: StockProvider,
   objectValue: Record<string, unknown>,
   lineId: string,
-): TrackedStock {
+): TrackedStock | null {
+  if (!holdsLine(provider, objectValue, lineId)) return null;
   const variantKey =
     provider === "square" ? squareVariantKey(objectValue, lineId) : stripeVariantKey(objectValue, lineId);
   const stockField = objectValue.stock;
@@ -92,20 +113,25 @@ export function trackedStock(
  *
  * A non-finite count never refuses at checkout (`stock < requested` is false),
  * so it is no cap here either.
+ *
+ * Answers the cap, `undefined` for no cap, or `null` when checkout would find
+ * no product for the line (it cannot be sold, so it never joins the bag).
  */
 export function bagLineStock(
   product: { default_price?: unknown; checkoutIdentifier?: unknown; price?: unknown; stock?: unknown },
   lineId: string,
-): number | undefined {
+): number | undefined | null {
   const square = product.default_price == null && typeof product.checkoutIdentifier === "string";
   if (square && isPlainObject(product.price)) return undefined;
-  const { available } = trackedStock(
+  const verdict = trackedStock(
     square ? "square" : "stripe",
-    { default_price: product.default_price, price: product.price, stock: product.stock },
+    // A Square line's id IS the product's variation id (`transformProduct`).
+    { default_price: product.default_price, variationId: square ? product.checkoutIdentifier : undefined, price: product.price, stock: product.stock },
     lineId,
   );
-  if (available === null || !Number.isFinite(available)) return undefined;
-  return Math.max(0, Math.floor(available));
+  if (verdict === null) return null;
+  if (verdict.available === null || !Number.isFinite(verdict.available)) return undefined;
+  return Math.max(0, Math.floor(verdict.available));
 }
 
 /** `quantity`, capped at `stock` when stock is tracked. */
