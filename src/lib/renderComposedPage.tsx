@@ -41,7 +41,9 @@ type ComposeComponents = any;
  * this function running again in the separate render pass Next makes for the
  * 500 response, which gets a fresh React `cache` scope, so a request-scoped
  * cache keyed on the URL string (tried, and it did hit for the first pair)
- * cannot reach it. It was not kept.
+ * cannot reach it. It was not kept. V2 closed it at module scope instead: a
+ * failed `clientFetchCached` read is answered from a 5 s failure memo, so that
+ * second pass makes no upstream call (`src/lib/api/failureMemo.ts`).
  * Only `isEmpty`: an unknown verdict (a failed read) is never called empty, and
  * a page searched or filtered by the shopper is never empty
  * (`emptinessIsDecidable`).
