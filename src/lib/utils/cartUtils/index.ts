@@ -205,24 +205,53 @@ export async function validateCoupon(
 }
 
 /**
+ * How long the bag waits for a quote. Past this it behaves exactly as for a
+ * failed quote: list prices, never a sale, and Checkout is never held up.
+ */
+export const CART_QUOTE_TIMEOUT_MS = 3_000;
+
+/**
  * F4: the bag's live prices from the `/api/cart-quote` edge route (then
  * VR_Client_API `POST /tenant/cartQuote`, release plan contract C6). Answers the
  * parsed quote, or `null` when the quote failed for any reason (network, a
- * non-200, an unreadable body). `null` is not an error to the bag: it shows list
- * prices, which are never below what checkout charges, so nothing is thrown.
+ * non-200, an unreadable body, or no answer within `timeoutMs`). `null` is not
+ * an error to the bag: it shows list prices, which are never below what
+ * checkout charges, so nothing is thrown.
+ *
+ * The timeout races the request rather than trusting the abort alone, so even
+ * a transport that ignores the signal cannot hold the Checkout press.
  */
-export async function fetchCartQuote(cartLineItems: CartLineItemInput[]): Promise<CartQuote | null> {
+export async function fetchCartQuote(
+  cartLineItems: CartLineItemInput[],
+  timeoutMs: number = CART_QUOTE_TIMEOUT_MS,
+): Promise<CartQuote | null> {
   if (cartLineItems.length === 0) return null;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, timeoutMs);
+  });
+  const request = (async (): Promise<CartQuote | null> => {
+    try {
+      const res = await fetch("/api/cart-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartLineItems }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      return parseCartQuote(await res.json());
+    } catch {
+      return null;
+    }
+  })();
   try {
-    const res = await fetch("/api/cart-quote", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cartLineItems }),
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return parseCartQuote(await res.json());
-  } catch {
-    return null;
+    return await Promise.race([request, timedOut]);
+  } finally {
+    clearTimeout(timer);
   }
 }
