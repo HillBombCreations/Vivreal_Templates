@@ -579,6 +579,13 @@ export interface SiteData {
      */
     paymentsProvider?: 'stripe' | 'square' | null;
     /**
+     * F2: the business wide "Show Only 3 left" switch from the group record.
+     * `true` shows it on every site, `false` hides it, ABSENT means each
+     * template's own default (release plan contract C5). Only a boolean is ever
+     * mapped here; see `lib/api/siteData/showLowStock.ts`.
+     */
+    showLowStock?: boolean;
+    /**
      * Site-wide "get in touch" floating action button (parity #3). Stored flat on
      * the site doc (like `chrome` / `emailPopup`); the root layout mounts
      * {@link FloatingCta} from it. Absent ⇒ no FAB (back-compat).
