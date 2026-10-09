@@ -6,7 +6,7 @@ import type { Product } from "@/types/Products";
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
-import { capQuantity, trackedLineStock } from "../../cartStock.ts";
+import { bagLineStock, capQuantity } from "../../cartStock.ts";
 import { CHECKOUT_OUT_OF_STOCK, type ShortStockLine } from "../../checkoutRequest.ts";
 
 interface AddToCartProps {
@@ -102,7 +102,7 @@ export class CheckoutCouponError extends Error {
 
 /** The line's tracked stock by checkout's rule, or `undefined` when untracked. */
 function lineStock(product: Product, priceID: string): number | undefined {
-  return trackedLineStock(product.stock, product.checkoutIdentifier ?? product.default_price, priceID);
+  return bagLineStock(product, priceID);
 }
 
 /** Shown when Add to cart refuses because the chosen size has none left. */

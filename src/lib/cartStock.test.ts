@@ -4,7 +4,7 @@ import {
   applyShortStock,
   capQuantity,
   clampCartToStock,
-  trackedLineStock,
+  bagLineStock,
   stockAdjustedMessage,
   STOCK_REFUSAL_FALLBACK_COPY,
 } from "./cartStock.ts";
@@ -58,22 +58,28 @@ const cookieBox = (stock: Product["stock"]): Product => ({
 
 const SIZE_IDS = { Small: "price_small", Large: "price_large" };
 
-test("checkout's rule, REFUSE side: tracked lines are capped (a size's own count, or a single-price count)", () => {
-  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_small"), 4);
-  assert.equal(trackedLineStock(12, "price_one", "price_one"), 12, "single-price product, plain count");
-  assert.equal(trackedLineStock({ Small: 0 }, SIZE_IDS, "price_small"), 0);
+// The rule itself runs from the shared table (cartStock.parity.test.ts). These
+// pin what the BAG does with it.
+test("REFUSE (bag): tracked lines are capped, Stripe sized and single-price, Square single-price", () => {
+  assert.equal(bagLineStock({ default_price: SIZE_IDS, checkoutIdentifier: SIZE_IDS, stock: COOKIE_BOX_STOCK }, "price_small"), 4);
+  assert.equal(bagLineStock({ default_price: "price_one", checkoutIdentifier: "price_one", stock: 12 }, "price_one"), 12);
+  assert.equal(bagLineStock({ checkoutIdentifier: "sq_one", price: "$5.00", stock: 0 }, "sq_one"), 0, "square single-price sold out");
 });
 
-test("checkout's rule, ALLOW side: what checkout treats as untracked gets no cap", () => {
-  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_large"), undefined, "Large has no count; never Small's 4");
-  // The review's case: a sized product with a PLAIN number. Checkout
-  // (resolveProductVariantByPriceId.js) ignores it, so the bag must too.
-  assert.equal(trackedLineStock(12, SIZE_IDS, "price_small"), undefined);
-  assert.equal(trackedLineStock(COOKIE_BOX_STOCK, SIZE_IDS, "price_unknown"), undefined, "an id the map does not hold");
-  assert.equal(trackedLineStock({ Small: 4 }, "price_one", "price_one"), undefined, "single-price product with a map");
-  for (const untracked of [undefined, null, "4", { Small: "4" }, Number.NaN]) {
-    assert.equal(trackedLineStock(untracked, SIZE_IDS, "price_small"), undefined, String(untracked));
-  }
+test("ALLOW (bag, review concern A): a sized Square product is never capped, so it is never wrongly sold out", () => {
+  // Checkout picks the size from squareVariations, which the bag never receives.
+  const sizedSquare = { checkoutIdentifier: "sq_s", price: { Small: "$4.50", Large: "$6.75" } };
+  assert.equal(bagLineStock({ ...sizedSquare, stock: 0 }, "sq_s"), undefined);
+  assert.equal(bagLineStock({ ...sizedSquare, stock: { Small: 0 } }, "sq_s"), undefined);
+  const added = addToCart({ ...cookieBox(0), default_price: undefined, checkoutIdentifier: "sq_s" } as Product, "Small", 2); // a sized Square fixture
+  assert.equal(added.added, true, "not refused as sold out");
+  assert.equal(added.cart["cookie_Small"]?.quantity, 2);
+});
+
+test("ALLOW (bag): untracked and non-finite counts give no cap", () => {
+  assert.equal(bagLineStock({ default_price: SIZE_IDS, stock: COOKIE_BOX_STOCK }, "price_large"), undefined);
+  assert.equal(bagLineStock({ default_price: SIZE_IDS, stock: 12 }, "price_small"), undefined);
+  assert.equal(bagLineStock({ default_price: "price_one", stock: Number.POSITIVE_INFINITY }, "price_one"), undefined);
 });
 
 test("ALLOW: a sized product with a plain numeric stock is not capped in the bag (checkout does not cap it)", () => {

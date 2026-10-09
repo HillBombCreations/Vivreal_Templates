@@ -74,3 +74,14 @@ test("REFUSE: a 409 without items (an older Client) or with malformed items stil
   }
   assert.equal(checkoutRefusal(409, "anything", { errorCode: "INSUFFICIENT_STOCK" }).reason, CHECKOUT_OUT_OF_STOCK, "the code alone is enough");
 });
+
+test("REFUSE (review concern B): REQUEST_FAILED, and any unknown code, shows the generic failure with no stock reason", () => {
+  for (const errorCode of ["REQUEST_FAILED", "SOMETHING_NEW", "insufficient_stock", undefined]) {
+    const refusal = checkoutRefusal(409, "x", { success: false, error: "x", errorCode, items: [{ priceId: "p", available: 1 }] });
+    assert.deepEqual(
+      refusal,
+      { error: "Something in your bag is no longer available. Refresh the page, then try again." },
+      String(errorCode),
+    );
+  }
+});

@@ -6,7 +6,7 @@
  * but the bag let a shopper pick 6 of something with 4 left and then told them
  * to "refresh the page", which changes nothing.
  *
- * The cap is checkout's own tracked-stock rule, `trackedLineStock` below, so
+ * The cap is checkout's own tracked-stock rule, `trackedStock` below, so
  * the bag and checkout always agree on which lines are capped and where.
  *
  * Pure and free of `@/` imports, so it runs under `node --test`.
@@ -14,40 +14,98 @@
 import type { Cart } from "../types/Cart";
 import type { ShortStockLine } from "./checkoutRequest.ts";
 
+export type StockProvider = "stripe" | "square";
+
+export interface TrackedStock {
+  tracked: boolean;
+  /** The count checkout compares against, as stored; `null` when untracked. */
+  available: number | null;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+/** Stripe: the `default_price` map's key whose value is the line's price id (`|| null`, as in Client). */
+function stripeVariantKey(objectValue: Record<string, unknown>, lineId: string): string | null {
+  const defaultPrice = objectValue.default_price;
+  if (!isPlainObject(defaultPrice)) return null;
+  return Object.keys(defaultPrice).find((k) => defaultPrice[k] === lineId) || null;
+}
+
+/** Square: the `squareVariations` entry with the line's id, when the `price` map has that size. */
+function squareVariantKey(objectValue: Record<string, unknown>, lineId: string): string | null {
+  const price = objectValue.price;
+  if (!isPlainObject(price)) return null;
+  const variations = Array.isArray(objectValue.squareVariations) ? objectValue.squareVariations : [];
+  const match = variations.find(
+    (v: unknown) => isPlainObject(v) && v.variationId === lineId && typeof v.name === "string",
+  ) as { name: string } | undefined; // the find above proved `name` is a string
+  return match && Object.prototype.hasOwnProperty.call(price, match.name) ? match.name : null;
+}
+
 /**
- * CHECKOUT'S TRACKED-STOCK RULE, ported line for line from VR_Client_API
- * `src/api/site/_helpers/resolveProductVariantByPriceId.js` (Stripe) and
- * `resolveSquareVariant.js` (Square), the readers `createCheckoutSession` and
- * `checkoutDispatch` refuse on:
+ * CHECKOUT'S TRACKED-STOCK RULE, ported line for line from VR_Client_API, the
+ * two readers checkout refuses on:
+ * - Stripe, `src/api/site/_helpers/resolveProductVariantByPriceId.js`: the
+ *   variant key is the `default_price` map's key holding the line's price id.
+ * - Square, `src/api/site/_helpers/resolveSquareVariant.js`: the variant key is
+ *   the name of the `squareVariations` entry holding the line's variation id,
+ *   when the `price` map carries that name.
+ * Then, for both: with a key, stock is `stock[key]` when it is a number; with no
+ * key, stock is `stock` itself when it is a number; anything else is untracked.
  *
- * 1. The line's VARIANT KEY is the key of the product's checkout-id map whose
- *    value is the line's checkout id. A product whose checkout id is a plain
- *    string has no key: it is single-price.
- * 2. With a key, stock is `stock[key]`, only when that is a number.
- * 3. With no key, stock is `stock` itself, only when it is a number.
- * 4. Anything else is UNTRACKED: no cap. That includes a sized product whose
- *    `stock` is a plain number (checkout ignores it there; the review of #189
- *    found the bag capping it), and a size with no count of its own.
- *
- * It never borrows another size's count: that fallback is what made a card say
- * "Only 4 left" while Large was chosen.
- *
- * The one input Templates cannot see is a Square product's `squareVariations`
- * (VR_Client_API does not send it), so a Square line is judged on the checkout
- * id Templates sends, which is the same id checkout receives.
+ * The SAME cases run on both sides from `test/fixtures/tracked-stock-cases.json`
+ * (Templates `cartStock.parity.test.ts`; Client keeps an identical copy), so a
+ * change to either rule fails one side's tests.
  */
-export function trackedLineStock(stock: unknown, checkoutIds: unknown, lineCheckoutId: string): number | undefined {
-  const isMap = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-  let count: unknown;
-  if (isMap(checkoutIds)) {
-    const variantKey = Object.keys(checkoutIds).find((k) => checkoutIds[k] === lineCheckoutId);
-    if (variantKey === undefined) return undefined;
-    count = isMap(stock) ? stock[variantKey] : undefined;
+export function trackedStock(
+  provider: StockProvider,
+  objectValue: Record<string, unknown>,
+  lineId: string,
+): TrackedStock {
+  const variantKey =
+    provider === "square" ? squareVariantKey(objectValue, lineId) : stripeVariantKey(objectValue, lineId);
+  const stockField = objectValue.stock;
+  let stock: unknown;
+  if (variantKey != null) {
+    const holder =
+      provider === "square"
+        ? stockField && typeof stockField === "object"
+        : isPlainObject(stockField);
+    stock = holder ? (stockField as Record<string, unknown>)[variantKey] : undefined; // `holder` proved it is an object
   } else {
-    count = stock;
+    stock = stockField;
   }
-  if (typeof count !== "number" || !Number.isFinite(count)) return undefined;
-  return Math.max(0, Math.floor(count));
+  return typeof stock === "number" ? { tracked: true, available: stock } : { tracked: false, available: null };
+}
+
+/**
+ * The bag's cap for one line: checkout's rule, fed what the bag has.
+ *
+ * One input never reaches the bag: a Square product's `squareVariations`. The
+ * renderer builds the product it hands the bag from a fixed set of fields, and
+ * that is not one of them. Without it, a SIZED Square product (its `price` is a
+ * map) cannot be judged the way checkout judges it, so it gets no cap: the bag
+ * never refuses what checkout would sell, and checkout's 409 `items` brings the
+ * line down if it was short. A Square product with one price, and every Stripe
+ * product, is judged exactly.
+ *
+ * A non-finite count never refuses at checkout (`stock < requested` is false),
+ * so it is no cap here either.
+ */
+export function bagLineStock(
+  product: { default_price?: unknown; checkoutIdentifier?: unknown; price?: unknown; stock?: unknown },
+  lineId: string,
+): number | undefined {
+  const square = product.default_price == null && typeof product.checkoutIdentifier === "string";
+  if (square && isPlainObject(product.price)) return undefined;
+  const { available } = trackedStock(
+    square ? "square" : "stripe",
+    { default_price: product.default_price, price: product.price, stock: product.stock },
+    lineId,
+  );
+  if (available === null || !Number.isFinite(available)) return undefined;
+  return Math.max(0, Math.floor(available));
 }
 
 /** `quantity`, capped at `stock` when stock is tracked. */
