@@ -39,7 +39,7 @@ test("the lines key ignores order and changes with any quantity or price", () =>
 
 test("ALLOW (TB-6): a still-valid code is kept after a reload, with its rechecked discount", async () => {
   const { result, asked } = await restore({ valid: true, newSubtotal: 300 });
-  assert.deepEqual(result, { kind: "kept", code: "TBFIX", discount: 3 });
+  assert.deepEqual(result, { kind: "kept", code: "TBFIX", discount: 3, newSubtotal: 300 });
   assert.equal(asked.length, 1, "it asks VR_Client_API every load");
   assert.equal(asked[0].code, "TBFIX");
 });

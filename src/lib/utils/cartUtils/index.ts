@@ -5,6 +5,7 @@ import type { Product } from "@/types/Products";
 // extensionless / directory resolution — see `checkoutIdentifier.test.ts`.
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
+import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -201,4 +202,27 @@ export async function validateCoupon(
   }
 
   return data as CouponPreview;
+}
+
+/**
+ * F4: the bag's live prices from the `/api/cart-quote` edge route (then
+ * VR_Client_API `POST /tenant/cartQuote`, release plan contract C6). Answers the
+ * parsed quote, or `null` when the quote failed for any reason (network, a
+ * non-200, an unreadable body). `null` is not an error to the bag: it shows list
+ * prices, which are never below what checkout charges, so nothing is thrown.
+ */
+export async function fetchCartQuote(cartLineItems: CartLineItemInput[]): Promise<CartQuote | null> {
+  if (cartLineItems.length === 0) return null;
+  try {
+    const res = await fetch("/api/cart-quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cartLineItems }),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return parseCartQuote(await res.json());
+  } catch {
+    return null;
+  }
 }
