@@ -87,3 +87,23 @@ test("transformProduct: variant-map default_price mirrors into checkoutIdentifie
   assert.deepEqual(p.default_price, map);
   assert.deepEqual(p.checkoutIdentifier, map);
 });
+
+// Contract C7 (renderer A, 2026-10-08): the sale name reaches the items the
+// renderer's cards and home showcase read.
+test("ALLOW (C7): a named sale's name reaches the product item", () => {
+  const product = transformProduct({
+    _id: "p1",
+    objectValue: { name: "Mug", price: "$10", salePercent: 15, saleName: "Spring sale" },
+  });
+  assert.equal(product.saleName, "Spring sale");
+});
+
+test("REFUSE (C7): an unnamed sale adds no key; a blank or non-string name is not a name", () => {
+  for (const saleName of [undefined, null, "", "   ", 7]) {
+    const product = transformProduct({
+      _id: "p1",
+      objectValue: { name: "Mug", price: "$10", salePercent: 15, saleName },
+    });
+    assert.equal("saleName" in product, false, JSON.stringify(saleName));
+  }
+});

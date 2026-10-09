@@ -70,6 +70,8 @@ export interface Product {
     saleAmount?: Variantable<number>;
     saleStart?: string;
     saleEnd?: string;
+    /** The owner's sale name ("Spring sale"). Absent when unnamed (contract C7). */
+    saleName?: string;
 }
 
 export type ProductVariantKey = "name" | "price" | "description" | "imageUrl" | "imageSrcSet";
