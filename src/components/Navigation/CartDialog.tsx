@@ -8,12 +8,14 @@ import { BrandMark } from "@hillbombcreations/site-renderer";
 import type { CartDialogProps } from "@/types/Cart";
 import {
   handleCheckout,
+  CheckoutStockError,
   validateCoupon,
   type CouponPreview,
   type CartLineItemInput,
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
+import { capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -70,6 +72,9 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // F4: a price the bag showed went up (a sale ended). Checkout waits for a
   // second press so the shopper sees the new total first.
   const [saleEnded, setSaleEnded] = useState(false);
+  // QA-W2-1: what changed when checkout refused a line for stock. Its own state,
+  // so the cart-change effect that clears a code's error cannot wipe it.
+  const [stockNotice, setStockNotice] = useState<string | null>(null);
 
   const itemsArray = useMemo(() => {
     const entries = cart ? Object.entries(cart) : [];
@@ -181,7 +186,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     if (nextQty <= 0) {
       delete next[productId];
     } else if (next[productId]) {
-      next[productId] = { ...next[productId], quantity: nextQty };
+      // QA-W2-1: never above the line's tracked stock (no cap when untracked).
+      next[productId] = { ...next[productId], quantity: capQuantity(nextQty, next[productId].stock) };
     }
     setCart(next);
   };
@@ -235,6 +241,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
 
   const onCheckout = async () => {
     setLoadingCheckout(true);
+    setStockNotice(null);
     try {
       // F4: price the bag again right before paying. If a price the shopper was
       // shown went up (a sale ended), show the new total and wait for a second
@@ -255,6 +262,15 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       });
       setOpenCartMenu(false);
     } catch (err) {
+      // QA-W2-1: checkout refused a line above its stock. Bring every line down
+      // to its stock and say exactly what changed; the code stays, because the
+      // stock refusal says nothing about it.
+      if (err instanceof CheckoutStockError) {
+        const { cart: adjusted, changed } = clampCartToStock(cart || {});
+        if (changed.length > 0) setCart(adjusted);
+        setStockNotice(stockAdjustedMessage(changed));
+        return;
+      }
       // Re-validation failed at checkout (e.g. code limit hit between apply and
       // checkout). Clear the code + surface the error — never proceed silently
       // and never silently charge full (plan §5.5 / R2).
@@ -419,7 +435,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                             <button
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
-                              disabled={loadingCheckout}
+                              disabled={
+                                loadingCheckout ||
+                                (typeof item.stock === "number" && (item.quantity || 0) >= item.stock)
+                              }
                               onClick={() =>
                                 setQty(item.id, (item.quantity || 0) + 1)
                               }
@@ -511,6 +530,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                   ) : null}
                 </>
               )}
+            </div>
+          ) : null}
+
+          {stockNotice ? (
+            <div className="mb-2 text-xs font-medium" role="alert">
+              {stockNotice}
             </div>
           ) : null}
 

@@ -6,6 +6,8 @@ import type { Product } from "@/types/Products";
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
+import { capQuantity, resolveLineStock } from "../../cartStock.ts";
+import { CHECKOUT_OUT_OF_STOCK } from "../../checkoutRequest.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -39,8 +41,13 @@ export function handleAddToCart({
   // (e.g. "lb"), never the whole variant→unit map.
   const unit = resolveVariantableString(product.quantityUnit, selectedVariant);
 
+  // QA-W2-1: the bag never holds more than the chosen size's tracked stock,
+  // the same cap checkout enforces. Nothing left means nothing to add.
+  const stock = resolveLineStock(product.stock, variant);
+  if (stock === 0) return false;
+
   const existing = cart[cartKey];
-  const newQty = existing ? existing.quantity + quantity : quantity;
+  const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, stock);
 
   const item: CartItem = {
     _id: product._id,
@@ -51,6 +58,7 @@ export function handleAddToCart({
     imageUrl,
     variant,
     ...(unit && { unit }),
+    ...(stock !== undefined ? { stock } : {}),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));
@@ -67,6 +75,17 @@ interface CheckoutProps {
    * trusted as-is — the client only controls the code string + quantities.
    */
   code?: string;
+}
+
+/**
+ * QA-W2-1: thrown when checkout refused because a line is above its stock.
+ * The bag catches it, brings each line down to its stock and says what changed.
+ */
+export class CheckoutStockError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckoutStockError";
+  }
 }
 
 /** Thrown when checkout-time re-validation of the promo code fails (plan §5.5). */
@@ -155,6 +174,7 @@ export async function handleCheckout({
   const message =
     (typeof data.error === "string" && data.error) ||
     "Checkout could not be started. Please try again.";
+  if (data.reason === CHECKOUT_OUT_OF_STOCK) throw new CheckoutStockError(message);
   throw new CheckoutCouponError(message);
 }
 

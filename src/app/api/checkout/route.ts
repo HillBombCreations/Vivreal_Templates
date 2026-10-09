@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets, topLevelKeys } from "@/lib/log/redact";
+import { checkoutRefusal, checkoutSiteId } from "@/lib/checkoutRequest";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -19,29 +20,6 @@ function isCheckoutItem(item: unknown): item is CheckoutItem {
     obj.quantity > 0 &&
     Number.isInteger(obj.quantity)
   );
-}
-
-/**
- * What the shopper is told when checkout will not start.
- *
- * Deliberately OUR words. The upstream refusal prose names payment companies
- * and internal group ids ("No active Stripe integration found for this group"),
- * and this string is rendered straight into the cart, so echoing it would put
- * the wrong company's name and our internal vocabulary in front of a customer.
- * Every branch also says what to DO, because a cart that only says no is a
- * dead button.
- */
-function shopperMessage(status: number): string {
-  if (status === 404 || status === 409 || status === 422) {
-    return "Something in your bag is no longer available. Refresh the page, then try again.";
-  }
-  if (status === 429) {
-    return "Checkout is busy right now. Wait a moment, then try again.";
-  }
-  if (status >= 500) {
-    return "We could not start checkout just now. Please try again in a moment.";
-  }
-  return "We could not start checkout. Refresh the page, then try again.";
 }
 
 export async function POST(request: NextRequest) {
@@ -99,6 +77,7 @@ export async function POST(request: NextRequest) {
 
   // Forward to VR_Client_API — Stripe key is resolved server-side from group integrations
   const apiKey = process.env.API_KEY;
+  const siteId = checkoutSiteId(process.env.SITE_ID);
   const clientApiUrl =
     process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
 
@@ -117,6 +96,9 @@ export async function POST(request: NextRequest) {
         originUrl,
         // Only forward when present so no-code checkouts are byte-identical.
         ...(normalizedCode ? { code: normalizedCode } : {}),
+        // QA-W2-4: names the checkout's business, logo and colour. Sent only
+        // when it is a well-formed id; see lib/checkoutRequest.ts.
+        ...(siteId ? { siteId } : {}),
       }),
     });
 
@@ -144,10 +126,9 @@ export async function POST(request: NextRequest) {
       // into the browser, which is the same leak in the other direction and has
       // no consumer (the cart reads `error`). The delivery-quote route already
       // pins this rule for itself.
-      return NextResponse.json(
-        { error: shopperMessage(res.status) },
-        { status: res.status }
-      );
+      // The upstream `error` is read only to tell a stock refusal apart, never
+      // shown (lib/checkoutRequest.ts).
+      return NextResponse.json(checkoutRefusal(res.status, data?.error), { status: res.status });
     }
 
     // VR_Client_API returns { success, data: { url, sessionId } } or { data: "stripe_url" }
@@ -162,7 +143,7 @@ export async function POST(request: NextRequest) {
         "[checkout] upstream returned no usable checkout URL; fields:",
         topLevelKeys(data).join(",")
       );
-      return NextResponse.json({ error: shopperMessage(502) }, { status: 502 });
+      return NextResponse.json(checkoutRefusal(502, undefined), { status: 502 });
     }
 
     return NextResponse.json({ url });
@@ -171,9 +152,6 @@ export async function POST(request: NextRequest) {
     // Redacted by SHAPE: a fetch failure message routinely quotes the URL it
     // was calling, and an upstream one can quote the response.
     console.error("[checkout] upstream request failed:", redactSecrets(message));
-    return NextResponse.json(
-      { error: shopperMessage(502) },
-      { status: 502 }
-    );
+    return NextResponse.json(checkoutRefusal(502, undefined), { status: 502 });
   }
 }

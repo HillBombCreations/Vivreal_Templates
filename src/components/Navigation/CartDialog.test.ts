@@ -132,3 +132,16 @@ test("TB-6: the stored code is written only on a successful apply and cleared on
   assert.ok((code.match(/setPromoCode\(null\)/g) ?? []).length >= 8);
   assert.match(code, /if \(promoCode && promoCode\.linesKey !== linesKey\) setPromoCode\(null\);/);
 });
+
+test("QA-W2-1: the bag caps quantity at stock, disables + at the cap, and handles a stock refusal", () => {
+  assert.match(code, /quantity: capQuantity\(nextQty, next\[productId\]\.stock\)/);
+  assert.match(code, /\(typeof item\.stock === "number" && \(item\.quantity \|\| 0\) >= item\.stock\)/);
+  assert.match(
+    code,
+    /if \(err instanceof CheckoutStockError\) \{\s*const \{ cart: adjusted, changed \} = clampCartToStock\(cart \|\| \{\}\);\s*if \(changed\.length > 0\) setCart\(adjusted\);\s*setStockNotice\(stockAdjustedMessage\(changed\)\);\s*return;/,
+  );
+  // The stock branch runs before the branch that clears the promo code.
+  const stockAt = code.indexOf("err instanceof CheckoutStockError");
+  const clearCodeAt = code.search(/setCodeError\(\s*err instanceof Error/);
+  assert.ok(stockAt > -1 && clearCodeAt > -1 && stockAt < clearCodeAt, "stock refusal handled first");
+});

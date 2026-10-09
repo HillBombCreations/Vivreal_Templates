@@ -7,6 +7,7 @@ import type { ContentItem } from "@/types/ContentItem";
 import { useCartContext } from "@/contexts/CartContext";
 import { getProductKey, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { handleAddToCart } from "@/lib/utils/cartUtils";
+import { capQuantity } from "@/lib/cartStock";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import ContentRenderer from "@/components/ContentRenderer";
 
@@ -43,7 +44,8 @@ export default function ProductGrid({
     if (nextQty <= 0) {
       delete next[cartKey];
     } else if (next[cartKey]) {
-      next[cartKey] = { ...next[cartKey], quantity: nextQty };
+      // QA-W2-1: never above the line's tracked stock, same as the bag.
+      next[cartKey] = { ...next[cartKey], quantity: capQuantity(nextQty, next[cartKey].stock) };
     }
     setCart(next);
   };
