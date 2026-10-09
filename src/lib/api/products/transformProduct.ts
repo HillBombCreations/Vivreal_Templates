@@ -216,5 +216,12 @@ export function transformProduct(raw: Record<string, unknown>): Product {
     saleAmount: (objectValue.saleAmount as Product["saleAmount"]) ?? undefined,
     saleStart: typeof objectValue.saleStart === "string" ? objectValue.saleStart : undefined,
     saleEnd: typeof objectValue.saleEnd === "string" ? objectValue.saleEnd : undefined,
+    // Contract C7: the owner's sale name, which every sale mark shows when set.
+    // This allowlist is the only thing between it and the renderer (cards and
+    // the home showcase read the Product as `raw`). Spread so an unnamed sale
+    // adds no key at all; the renderer trims and caps it (`readSaleName`).
+    ...(typeof objectValue.saleName === "string" && objectValue.saleName.trim()
+      ? { saleName: objectValue.saleName }
+      : {}),
   };
 }

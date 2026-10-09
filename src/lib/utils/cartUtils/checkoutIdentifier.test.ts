@@ -44,8 +44,12 @@ test("handleAddToCart: checkoutIdentifier only (Square) -> priceID uses it", () 
 });
 
 test("handleAddToCart: both present -> checkoutIdentifier wins", () => {
+  // `default_price` must still HOLD the line's id: checkout finds no product for
+  // an id it does not hold and refuses it, so the bag does too (lib/cartStock.ts,
+  // the shared tracked-stock table). A map that holds it keeps this test about
+  // precedence alone: the scalar authored id wins over the map.
   const cart = addToCart(
-    baseProduct({ checkoutIdentifier: "SQVAR", default_price: "price_123" })
+    baseProduct({ checkoutIdentifier: "SQVAR", default_price: { Regular: "SQVAR", Large: "price_123" } })
   );
   assert.equal(cart["prod1_default"]?.priceID, "SQVAR");
 });

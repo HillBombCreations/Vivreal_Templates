@@ -22,6 +22,14 @@ import type { ContentItem } from '@/types/ContentItem';
 const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thumbnail'] as const;
 
 /**
+ * Media fields that are never a picture, so the type-based scan skips them.
+ * Contract C12 (OW7): a help row carries `video`, `videoDesktop` and
+ * `videoCaptions` (a WebVTT file). Without this, a row with a video and no
+ * `image` would get the video's URL as its picture.
+ */
+const NON_IMAGE_MEDIA_FIELDS: ReadonlySet<string> = new Set(['video', 'videoDesktop', 'videoCaptions']);
+
+/**
  * Resolve the signed image URL for an object by the field's TYPE, not its name.
  *
  * Users define their own schemas, so an image can live under any key
@@ -49,7 +57,8 @@ function resolveImage(objectValue: Record<string, unknown>): {
   }
   // 2. Type-based fallback — any field whose value is a media descriptor,
   //    covering arbitrary user-defined schema keys.
-  for (const value of Object.values(objectValue)) {
+  for (const [field, value] of Object.entries(objectValue)) {
+    if (NON_IMAGE_MEDIA_FIELDS.has(field)) continue;
     const url = getSignedUrl(value);
     if (url) return { url, srcset: getSrcSet(value), artDirectedSources: getArtDirectedSources(value) };
   }

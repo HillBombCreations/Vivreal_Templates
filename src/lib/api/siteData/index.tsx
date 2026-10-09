@@ -25,6 +25,7 @@ import { buildSiteMapForSite } from '@/lib/seo/siteMapPolicy';
 import { toOriginSource } from './originSource';
 import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
+import { readShowLowStock } from './showLowStock';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { refuseDegradedClaim } from './degraded';
 import { getCollectionItems } from '@/lib/api/collections';
@@ -256,6 +257,9 @@ export const getSiteData = async (): Promise<SiteData> => {
     defaultOgImage: (raw.siteDetails.values as SiteData).defaultOgImage,
     tier: raw.tier,
     paymentsProvider: raw.paymentsProvider,
+    // F2: the business wide low stock switch. Absent stays absent (contract C5),
+    // so each template's own default decides. See ./showLowStock.ts.
+    ...readShowLowStock(raw),
     // H177 - the SHELL's inline rich-text image map. Read top-level only: unlike
     // the strips above there is no `values` copy to fall back to, because
     // VR_Client_API builds this map at read time by walking the payload it is

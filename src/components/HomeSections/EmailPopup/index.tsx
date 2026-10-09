@@ -8,6 +8,7 @@ import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
 import { trackLeadConversion } from "@/lib/analytics";
 import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
+import { PHONE_MEDIA_QUERY, classifyPopupPath, resolvePopupTrigger } from "./popupPolicy";
 
 // REUSE the live wrapper's existing keys so users mid-cap aren't reset.
 // vivreal_subscribed = permanent "never again" (set on subscribe).
@@ -76,6 +77,9 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
   const currentSlug = normalizePageSlug(pathname);
   const isHome = currentSlug === "";
   const pageAllowed = isPageAllowed(cfg.pages, currentSlug, isHome);
+  // O10 and QA-W2-2: never on a checkout page; on a phone, never on a shop or
+  // product page.
+  const pathKind = classifyPopupPath(siteData?.pageConfigs ?? [], pathname);
 
   // ── Resolve collectionId. Precedence (per SP-6 Task 6 / OQ-7):
   //   1. cfg.collectionId — Studio-authored EmailPopup override. MUST stay FIRST:
@@ -136,8 +140,17 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
       setOpen(true);
     };
 
-    // ── Trigger. ABSENT ⇒ 'delay' 3000ms (legacy).
-    const triggerMode = cfg.trigger?.mode ?? "delay";
+    // ── Trigger. ABSENT ⇒ 'delay' 3000ms on a computer (legacy), a scroll on a
+    // phone; never on a checkout page, nor on a phone shop or product page (O10, QA-W2-2, see
+    // ./popupPolicy.ts). An owner's chosen trigger is kept as chosen.
+    const isPhone =
+      typeof window.matchMedia === "function" && window.matchMedia(PHONE_MEDIA_QUERY).matches;
+    const triggerMode = resolvePopupTrigger({
+      ownerMode: cfg.trigger?.mode,
+      isPhone,
+      pathKind,
+    });
+    if (triggerMode === null) return;
 
     if (triggerMode === "scroll") {
       const pct = Math.min(Math.max(cfg.trigger?.scrollPct ?? 50, 0), 100);
@@ -183,7 +196,7 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
     // The exhaustive-deps disable that used to sit here is gone: it was needed
     // when `pageAllowed` was an inline IIFE closing over `cfg.pages`. Now that
     // the rule lives in the shared resolver, the listed deps satisfy the lint.
-  }, [enabled, pageAllowed, pathname, cfg.trigger?.mode, cfg.trigger?.delayMs, cfg.trigger?.scrollPct, cfg.frequency?.mode, cfg.frequency?.days]);
+  }, [enabled, pageAllowed, pathKind, pathname, cfg.trigger?.mode, cfg.trigger?.delayMs, cfg.trigger?.scrollPct, cfg.frequency?.mode, cfg.frequency?.days]);
 
   if (!enabled || !pageAllowed) return null;
 

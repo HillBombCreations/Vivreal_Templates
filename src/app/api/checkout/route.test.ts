@@ -15,6 +15,7 @@ const source = fs.readFileSync(new URL("./route.ts", import.meta.url), "utf8");
  * was removed, and the check silently becomes one that can never pass.
  */
 const code = stripComments(source);
+const refusalCode = stripComments(fs.readFileSync(new URL("../../../lib/checkoutRequest.ts", import.meta.url), "utf8"));
 
 /** The two lines this route shipped before H37, kept as the control. */
 const OLD_BODY_LOG =
@@ -84,10 +85,14 @@ test("the checkout URL handed back is proven to be a string URL", () => {
 test("the shopper is told what to do in our words, not the upstream's", () => {
   // Upstream refusals read "No active Stripe integration found for this group",
   // which names the wrong company on a Square site and is internal vocabulary.
-  assert.match(source, /function shopperMessage\(status: number\): string/);
+  // The sentences moved to lib/checkoutRequest.ts (QA-W2-1), where they are
+  // also tested by being CALLED; the route only reads the upstream `error` to
+  // tell a stock refusal apart.
+  assert.match(code, /NextResponse\.json\(checkoutRefusal\(res\.status, data\?\.error, data\), \{ status: res\.status \}\)/);
   assert.doesNotMatch(code, /data\.error \?\? data\.message/, "upstream prose is still echoed");
   for (const banned of ["integration", "Stripe", "Square", "endpoint", "API_KEY is"]) {
-    const messages = code.match(/return "[^"]+";/g) ?? [];
+    const messages = refusalCode.match(/error: "[^"]+"/g) ?? [];
+    assert.ok(messages.length >= 5, "read the refusal sentences");
     for (const m of messages) {
       assert.ok(!m.includes(banned), `shopper-facing copy names "${banned}": ${m}`);
     }
@@ -95,7 +100,7 @@ test("the shopper is told what to do in our words, not the upstream's", () => {
 });
 
 test("shopper-facing copy carries no em dash and no en dash", () => {
-  const messages = code.match(/"[^"]{20,}"/g) ?? [];
+  const messages = refusalCode.match(/"[^"]{20,}"/g) ?? [];
   assert.ok(messages.length >= 4, `only found ${messages.length} sentences to check`);
   for (const m of messages) {
     assert.ok(!m.includes(String.fromCharCode(8212)), `em dash in ${m}`);

@@ -11,6 +11,12 @@ export interface CartItem {
     imageUrl: string;
     variant: string;
     unit?: string;
+    /**
+     * QA-W2-1: this line's stock when it is tracked (a plain count, or the
+     * chosen size's count). Absent means untracked, so no cap. See
+     * lib/cartStock.ts.
+     */
+    stock?: number;
 }
 
 export type Cart = Record<string, CartItem>;

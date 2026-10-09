@@ -8,7 +8,7 @@ import {
   handleAddToCart,
   handleCheckout,
   BUY_NOW_FAILED_MESSAGE,
-  UNBUYABLE_ITEM_MESSAGE,
+  addRefusal,
 } from "@/lib/utils/cartUtils";
 import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
@@ -37,21 +37,22 @@ export function useCartAdapter(): CartAdapter | null {
     const { cart, setCart } = cartCtx;
     return {
       addToCart: ({ product, variant, quantity }) => {
+        const templatesProduct = rendererProductToTemplates(product);
         const added = handleAddToCart({
-          product: rendererProductToTemplates(product),
+          product: templatesProduct,
           selectedVariant: variant,
           quantity,
           cart,
           setCart,
         });
-        // `handleAddToCart` returns false for an item with no checkout price.
-        // That answer used to be discarded here, so the button animated and
-        // nothing joined the bag, with nothing said (H45's "dead button").
+        // `handleAddToCart` returns false for an item with no checkout price,
+        // and for a size that has sold out. That answer used to be discarded
+        // here, so the button animated and nothing joined the bag, with nothing
+        // said (H45's "dead button"). `addRefusal` says which it was.
         if (!added) {
           toast({
             variant: "destructive",
-            title: "Not available online",
-            description: UNBUYABLE_ITEM_MESSAGE,
+            ...addRefusal(templatesProduct, variant),
             duration: FAILURE_TOAST_MS,
           });
         }

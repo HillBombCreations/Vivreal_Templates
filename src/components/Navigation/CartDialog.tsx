@@ -8,11 +8,14 @@ import { BrandMark } from "@hillbombcreations/site-renderer";
 import type { CartDialogProps } from "@/types/Cart";
 import {
   handleCheckout,
+  CheckoutStockError,
   validateCoupon,
   type CouponPreview,
   type CartLineItemInput,
 } from "@/lib/utils/cartUtils";
-import { cartSubtotal, cartUnitPrice, cartLineTotal } from "@/lib/cartPrice";
+import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
+import { useCartQuote } from "@/hooks/use-cart-quote";
+import { applyShortStock, capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -60,19 +63,23 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [codeInput, setCodeInput] = useState("");
   const [applyingCode, setApplyingCode] = useState(false);
   const [appliedCode, setAppliedCode] = useState<string | null>(null);
-  const [discount, setDiscount] = useState(0);
+  // The applied code's `newSubtotal` (cents, list based) from validateCoupon.
+  // The discount is DERIVED from it against the quoted subtotal on every
+  // render, never stored, so a quote that lands after the code was applied can
+  // never stack the code on a sale (F4, review-3 BLOCK 5; see lib/cartQuote.ts).
+  const [codeNewSubtotal, setCodeNewSubtotal] = useState<number | null>(null);
   const [codeError, setCodeError] = useState<string | null>(null);
+  // F4: a price the bag showed went up (a sale ended). Checkout waits for a
+  // second press so the shopper sees the new total first.
+  const [saleEnded, setSaleEnded] = useState(false);
+  // QA-W2-1: what changed when checkout refused a line for stock. Its own state,
+  // so the cart-change effect that clears a code's error cannot wipe it.
+  const [stockNotice, setStockNotice] = useState<string | null>(null);
 
   const itemsArray = useMemo(() => {
     const entries = cart ? Object.entries(cart) : [];
     return entries.map(([id, item]) => ({ id, ...item }));
   }, [cart]);
-
-  // H34: prices are CMS display strings, so "$24.99" has to be read with the
-  // tolerant parser the product card already uses. A bare Number() made it NaN,
-  // the `|| 0` beside it floored that to zero, and the shopper saw a Subtotal
-  // of $0.00 while checkout charged the real amount. See lib/cartPrice.ts.
-  const subtotal = useMemo(() => cartSubtotal(itemsArray), [itemsArray]);
 
   const totalQty = useMemo(() => {
     return itemsArray.reduce((acc, item) => acc + (item.quantity || 0), 0);
@@ -88,9 +95,6 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     [itemsArray]
   );
 
-  const hasDiscount = appliedCode != null && discount > 0;
-  const total = Math.max(0, subtotal - (hasDiscount ? discount : 0));
-
   // TB-6: a string, so the effects below fire on a real change to the lines
   // and not on a new array with the same contents.
   const linesKey = useMemo(() => cartLinesKey(cartLineItems), [cartLineItems]);
@@ -99,6 +103,37 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     linesKeyRef.current = linesKey;
   }, [linesKey]);
 
+  // F4 (SF2): live prices from the server quote, asked when the bag opens and
+  // when its lines change. Until it answers, and whenever it fails, each line
+  // shows its list price (H34: read through the tolerant `cartUnitPrice`, never
+  // a bare Number()), which is never below what checkout charges.
+  const { quote, requote } = useCartQuote(cartLineItems, linesKey, open);
+  const { subtotal, discount, total } = useMemo(
+    () => bagTotals(itemsArray, quote, appliedCode ? codeNewSubtotal : null),
+    [itemsArray, quote, appliedCode, codeNewSubtotal]
+  );
+  const hasDiscount = appliedCode != null && discount > 0;
+
+  // F4: tell the shopper when a price they were shown went up. Compared quote
+  // to quote only; a failed quote is not a sale ending.
+  const shownQuoteRef = useRef<CartQuote | null>(null);
+  useEffect(() => {
+    if (quoteRaisedAPrice(shownQuoteRef.current, quote)) setSaleEnded(true);
+    if (quote) shownQuoteRef.current = quote;
+  }, [quote]);
+
+  // RW3-4 under F4: once the quote lands, a code that no longer lowers the
+  // total (the sale already saves more) is not "applied" and does not ride
+  // into checkout.
+  useEffect(() => {
+    if (appliedCode && discount <= 0) {
+      setAppliedCode(null);
+      setPromoCode(null);
+      setCodeNewSubtotal(null);
+      setCodeError(COUPON_NO_EFFECT_COPY);
+    }
+  }, [appliedCode, discount, setPromoCode]);
+
   // A coupon's discount depends on the exact cart. Any cart change invalidates a
   // previously-applied code — clear it rather than show a stale discount (R2).
   // The stored code goes with it (TB-6). Hydration is not a change here: the
@@ -106,9 +141,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   useEffect(() => {
     if (appliedCode) {
       setAppliedCode(null);
-      setDiscount(0);
+      setCodeNewSubtotal(null);
       setCodeError(null);
     }
+    setSaleEnded(false);
     if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
     // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,7 +169,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       if (linesKeyRef.current !== startedKey) return;
       if (restored.kind === "kept") {
         setAppliedCode(restored.code);
-        setDiscount(restored.discount);
+        setCodeNewSubtotal(restored.newSubtotal);
       } else if (restored.kind === "dropped") {
         setPromoCode(null);
         setCodeError(PROMO_CODE_DROPPED_COPY);
@@ -150,7 +186,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     if (nextQty <= 0) {
       delete next[productId];
     } else if (next[productId]) {
-      next[productId] = { ...next[productId], quantity: nextQty };
+      // QA-W2-1: never above the line's tracked stock (no cap when untracked).
+      next[productId] = { ...next[productId], quantity: capQuantity(nextQty, next[productId].stock) };
     }
     setCart(next);
   };
@@ -168,25 +205,26 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       if (result.valid && previewDiscount > 0) {
         setAppliedCode(code);
         setPromoCode({ code, linesKey });
-        setDiscount(previewDiscount);
+        // `previewDiscount > 0` proves newSubtotal is a finite number.
+        setCodeNewSubtotal(result.newSubtotal as number);
         setCodeInput("");
         setCodeError(null);
       } else if (result.valid) {
         // Valid, but the total did not drop: never say "applied" (RW3-4).
         setAppliedCode(null);
         setPromoCode(null);
-        setDiscount(0);
+        setCodeNewSubtotal(null);
         setCodeError(COUPON_NO_EFFECT_COPY);
       } else {
         setAppliedCode(null);
         setPromoCode(null);
-        setDiscount(0);
+        setCodeNewSubtotal(null);
         setCodeError(couponErrorCopy(result.reason));
       }
     } catch {
       setAppliedCode(null);
       setPromoCode(null);
-      setDiscount(0);
+      setCodeNewSubtotal(null);
       setCodeError(couponErrorCopy(undefined));
     } finally {
       setApplyingCode(false);
@@ -196,14 +234,26 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const onRemoveCode = () => {
     setAppliedCode(null);
     setPromoCode(null);
-    setDiscount(0);
+    setCodeNewSubtotal(null);
     setCodeError(null);
     setCodeInput("");
   };
 
   const onCheckout = async () => {
     setLoadingCheckout(true);
+    setStockNotice(null);
     try {
+      // F4: price the bag again right before paying. If a price the shopper was
+      // shown went up (a sale ended), show the new total and wait for a second
+      // press rather than send them to a charge the bag did not show.
+      const shown = quote;
+      const fresh = await requote();
+      if (!fresh.current) return;
+      if (quoteRaisedAPrice(shown, fresh.quote)) {
+        setSaleEnded(true);
+        return;
+      }
+      setSaleEnded(false);
       await handleCheckout({
         cart,
         requiresShipping: shipsOrders(businessInfo),
@@ -212,13 +262,26 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       });
       setOpenCartMenu(false);
     } catch (err) {
+      // QA-W2-1: checkout refused a line above its stock. Bring every line down
+      // to its stock and say exactly what changed; the code stays, because the
+      // stock refusal says nothing about it.
+      if (err instanceof CheckoutStockError) {
+        // The lines and counts checkout named win; the stock stored at add time
+        // is only the fallback for an older Client that names none.
+        const { cart: adjusted, changed } = err.items
+          ? applyShortStock(cart || {}, err.items)
+          : clampCartToStock(cart || {});
+        if (changed.length > 0) setCart(adjusted);
+        setStockNotice(stockAdjustedMessage(changed));
+        return;
+      }
       // Re-validation failed at checkout (e.g. code limit hit between apply and
       // checkout). Clear the code + surface the error — never proceed silently
       // and never silently charge full (plan §5.5 / R2).
       if (appliedCode) {
         setAppliedCode(null);
         setPromoCode(null);
-        setDiscount(0);
+        setCodeNewSubtotal(null);
       }
       setCodeError(
         err instanceof Error && err.message
@@ -297,8 +360,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           ) : (
             <div className="space-y-3">
               {itemsArray.map((item) => {
-                const priceEach = cartUnitPrice(item);
-                const line = cartLineTotal(item);
+                const price = linePrice(item, quote);
+                const line = price.unit * (item.quantity || 0);
                 return (
                   <div
                     key={item.id}
@@ -323,12 +386,28 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                               {item?.name}
                             </div>
                             <div className="mt-1 text-xs text-black/60">
-                              {currency(priceEach)}{" "}
+                              {price.was !== null ? (
+                                <>
+                                  <span className="sr-only">Was </span>
+                                  <s className="text-black/40">{currency(price.was)}</s>{" "}
+                                  <span className="sr-only">Now </span>
+                                </>
+                              ) : null}
+                              {currency(price.unit)}{" "}
                               <span className="text-black/35">&bull;</span>{" "}
                               <span className="text-black/70">
                                 {currency(line)}
                               </span>
                             </div>
+                            {price.saleName ? (
+                              <div
+                                className="mt-0.5 truncate text-xs font-semibold"
+                                style={{ color: "var(--primary,#365b99)" }}
+                                title={price.saleName}
+                              >
+                                {price.saleName}
+                              </div>
+                            ) : null}
                           </div>
 
                           <button
@@ -360,7 +439,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                             <button
                               type="button"
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
-                              disabled={loadingCheckout}
+                              disabled={
+                                loadingCheckout ||
+                                (typeof item.stock === "number" && (item.quantity || 0) >= item.stock)
+                              }
                               onClick={() =>
                                 setQty(item.id, (item.quantity || 0) + 1)
                               }
@@ -452,6 +534,18 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                   ) : null}
                 </>
               )}
+            </div>
+          ) : null}
+
+          {stockNotice ? (
+            <div className="mb-2 text-xs font-medium" role="alert">
+              {stockNotice}
+            </div>
+          ) : null}
+
+          {saleEnded ? (
+            <div className="mb-2 text-xs font-medium" role="status">
+              {SALE_ENDED_COPY}
             </div>
           ) : null}
 

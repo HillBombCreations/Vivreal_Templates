@@ -12,8 +12,16 @@ import { BOT_VERDICT_HEADER } from '../botVerdict';
 import { buildFetchFailureCapture } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
+import { createFailureMemo, readWithFailureMemo } from './failureMemo';
 
 export { ApiError, isQuotaError };
+
+/**
+ * V2: module scope on purpose. Both render passes of one request (the page and
+ * the separate pass Next makes for a 500) run in this process, and a request
+ * scoped cache cannot reach the second one. See ./failureMemo.ts.
+ */
+const FAILED_READS = createFailureMemo();
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
@@ -227,10 +235,12 @@ export async function clientFetchCached<T>(
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
 
-  try {
-    return await cached();
-  } catch (err) {
-    // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page; never cache it.
+  // V2: a read that failed in the last 5 s answers its fallback without going
+  // upstream again, so an outage costs one call per page request rather than
+  // two. Failures only; see ./failureMemo.ts.
+  return readWithFailureMemo(FAILED_READS, path, cached, fallback, (err) => {
+    // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
+    // never cache it, and never memoise it (a throw here records nothing).
     if (err instanceof ApiError && err.status === 402) {
       throw err;
     }
@@ -242,5 +252,5 @@ export async function clientFetchCached<T>(
     );
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
     return fallback;
-  }
+  });
 }

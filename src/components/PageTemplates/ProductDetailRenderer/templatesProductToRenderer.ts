@@ -48,5 +48,8 @@ export function templatesProductToRenderer(product: Product, siteLogo: string): 
     saleAmount: product.saleAmount,
     saleStart: product.saleStart,
     saleEnd: product.saleEnd,
+    // Contract C7: the owner's sale name on the product page's sale mark
+    // (renderer 1.84.0). An unnamed sale adds no key at all.
+    ...(product.saleName ? { saleName: product.saleName } : {}),
   };
 }

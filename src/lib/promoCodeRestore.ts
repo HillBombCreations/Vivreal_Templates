@@ -34,7 +34,7 @@ export type PromoPreview = { valid: boolean; newSubtotal?: number | null; reason
 export type PromoLine = { price: string; quantity: number };
 
 export type PromoRestore =
-  | { kind: "kept"; code: string; discount: number }
+  | { kind: "kept"; code: string; discount: number; newSubtotal: number }
   | { kind: "dropped" }
   | { kind: "discard" }
   | { kind: "unchecked" };
@@ -81,5 +81,9 @@ export async function revalidateStoredPromoCode({
   if (!result.valid && result.reason === "error") return { kind: "unchecked" };
 
   const discount = result.valid ? couponPreviewDiscount(result.newSubtotal, subtotal) : 0;
-  return discount > 0 ? { kind: "kept", code: stored.code, discount } : { kind: "dropped" };
+  // `newSubtotal` rides along so the bag can re-derive the discount against its
+  // quoted subtotal (F4, review-3 BLOCK 5); `discount > 0` proves it is a number.
+  return discount > 0
+    ? { kind: "kept", code: stored.code, discount, newSubtotal: result.newSubtotal as number }
+    : { kind: "dropped" };
 }

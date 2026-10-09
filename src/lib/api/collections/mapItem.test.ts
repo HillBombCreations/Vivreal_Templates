@@ -97,3 +97,45 @@ test("toContentItem: no link/url, blank strings, or non-string values → href u
     undefined,
   );
 });
+
+// Contract C12 (OW7): a help row's video fields are media, but never a picture.
+const media = (source: string) => ({ currentFile: { source } });
+
+test("REFUSE (C12): a row with only video fields gets no imageUrl from them", () => {
+  const item = toContentItem(
+    {
+      _id: "row1",
+      objectValue: {
+        title: "Step 1",
+        video: media("https://media.vivreal.io/a-402.mp4"),
+        videoDesktop: media("https://media.vivreal.io/a-1440.mp4"),
+        videoCaptions: media("https://media.vivreal.io/a.vtt"),
+      },
+    },
+    "collection",
+  );
+  assert.equal(item.imageUrl, undefined);
+});
+
+test("ALLOW (C12): a row with an image and a video still gets its image", () => {
+  const item = toContentItem(
+    {
+      _id: "row2",
+      objectValue: {
+        title: "Step 2",
+        video: media("https://media.vivreal.io/b-402.mp4"),
+        image: media("https://media.vivreal.io/b.jpg"),
+      },
+    },
+    "collection",
+  );
+  assert.equal(item.imageUrl, "https://media.vivreal.io/b.jpg");
+});
+
+test("ALLOW (C12): an image under any other field name is still found after a video", () => {
+  const item = toContentItem(
+    { _id: "row3", objectValue: { video: media("https://media.vivreal.io/c.mp4"), coverArt: media("https://media.vivreal.io/c.jpg") } },
+    "collection",
+  );
+  assert.equal(item.imageUrl, "https://media.vivreal.io/c.jpg");
+});

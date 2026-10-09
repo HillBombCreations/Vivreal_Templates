@@ -5,6 +5,9 @@ import type { Product } from "@/types/Products";
 // extensionless / directory resolution — see `checkoutIdentifier.test.ts`.
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
+import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
+import { bagLineStock, capQuantity } from "../../cartStock.ts";
+import { CHECKOUT_OUT_OF_STOCK, type ShortStockLine } from "../../checkoutRequest.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -38,8 +41,14 @@ export function handleAddToCart({
   // (e.g. "lb"), never the whole variant→unit map.
   const unit = resolveVariantableString(product.quantityUnit, selectedVariant);
 
+  // QA-W2-1: the bag never holds more than the line's tracked stock, by
+  // checkout's own rule (lib/cartStock.ts). Nothing left means nothing to add;
+  // `addRefusal` tells the caller it was sold out, not unbuyable.
+  const stock = lineStock(product, priceID);
+  if (stock === 0 || stock === null) return false;
+
   const existing = cart[cartKey];
-  const newQty = existing ? existing.quantity + quantity : quantity;
+  const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, stock);
 
   const item: CartItem = {
     _id: product._id,
@@ -50,6 +59,7 @@ export function handleAddToCart({
     imageUrl,
     variant,
     ...(unit && { unit }),
+    ...(stock !== undefined ? { stock } : {}),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));
@@ -68,12 +78,52 @@ interface CheckoutProps {
   code?: string;
 }
 
+/**
+ * QA-W2-1: thrown when checkout refused because a line is above its stock.
+ * The bag catches it, brings each line down to its stock and says what changed.
+ */
+export class CheckoutStockError extends Error {
+  /** The short lines checkout named; absent from an older Client. */
+  readonly items?: ShortStockLine[];
+  constructor(message: string, items?: ShortStockLine[]) {
+    super(message);
+    this.name = "CheckoutStockError";
+    if (items) this.items = items;
+  }
+}
+
 /** Thrown when checkout-time re-validation of the promo code fails (plan §5.5). */
 export class CheckoutCouponError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CheckoutCouponError";
   }
+}
+
+/**
+ * The line's tracked stock by checkout's rule: `undefined` when untracked,
+ * `null` when checkout holds no product for the line (it cannot be sold).
+ */
+function lineStock(product: Product, priceID: string): number | undefined | null {
+  return bagLineStock(product, priceID);
+}
+
+/** Shown when Add to cart refuses because the chosen size has none left. */
+export const SOLD_OUT_ITEM_MESSAGE = "Sorry, that one has sold out. Check back soon.";
+
+/**
+ * Why `handleAddToCart` answered `false`, in the shopper's words: the chosen
+ * size is sold out, or the item cannot be bought online at all.
+ */
+export function addRefusal(
+  product: Product,
+  selectedVariant: string | null,
+): { title: string; description: string } {
+  const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
+  if (priceID.trim() && lineStock(product, priceID) === 0) {
+    return { title: "Sold out", description: SOLD_OUT_ITEM_MESSAGE };
+  }
+  return { title: "Not available online", description: UNBUYABLE_ITEM_MESSAGE };
 }
 
 /** Storefront Phase 0.2: shown when a bag holds a line with no checkout price. */
@@ -154,6 +204,10 @@ export async function handleCheckout({
   const message =
     (typeof data.error === "string" && data.error) ||
     "Checkout could not be started. Please try again.";
+  if (data.reason === CHECKOUT_OUT_OF_STOCK) {
+    // Our own route already validated `items` (lib/checkoutRequest.ts).
+    throw new CheckoutStockError(message, Array.isArray(data.items) ? (data.items as ShortStockLine[]) : undefined);
+  }
   throw new CheckoutCouponError(message);
 }
 
@@ -201,4 +255,56 @@ export async function validateCoupon(
   }
 
   return data as CouponPreview;
+}
+
+/**
+ * How long the bag waits for a quote. Past this it behaves exactly as for a
+ * failed quote: list prices, never a sale, and Checkout is never held up.
+ */
+export const CART_QUOTE_TIMEOUT_MS = 3_000;
+
+/**
+ * F4: the bag's live prices from the `/api/cart-quote` edge route (then
+ * VR_Client_API `POST /tenant/cartQuote`, release plan contract C6). Answers the
+ * parsed quote, or `null` when the quote failed for any reason (network, a
+ * non-200, an unreadable body, or no answer within `timeoutMs`). `null` is not
+ * an error to the bag: it shows list prices, which are never below what
+ * checkout charges, so nothing is thrown.
+ *
+ * The timeout races the request rather than trusting the abort alone, so even
+ * a transport that ignores the signal cannot hold the Checkout press.
+ */
+export async function fetchCartQuote(
+  cartLineItems: CartLineItemInput[],
+  timeoutMs: number = CART_QUOTE_TIMEOUT_MS,
+): Promise<CartQuote | null> {
+  if (cartLineItems.length === 0) return null;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(null);
+    }, timeoutMs);
+  });
+  const request = (async (): Promise<CartQuote | null> => {
+    try {
+      const res = await fetch("/api/cart-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartLineItems }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) return null;
+      return parseCartQuote(await res.json());
+    } catch {
+      return null;
+    }
+  })();
+  try {
+    return await Promise.race([request, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

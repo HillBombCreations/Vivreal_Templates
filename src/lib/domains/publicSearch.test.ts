@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { findRetiredTerms } from '../__testing__/retiredTerms.ts';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`.
 import {
   DEFAULT_DOMAIN_SEARCH_API,
@@ -568,4 +569,27 @@ test('an empty sitemap stays empty, and an unreadable origin changes nothing', (
 test('the entry is never added twice', () => {
   const map = [{ url: 'https://vivreal.io' }, { url: 'https://vivreal.io/domains' }];
   assert.equal(withDomainsSitemapEntry(map, VIVREAL_MARKETING_SITE_ID, build).length, 2);
+});
+// ─── T2: the glossary (site-terminology-audit-2026-10) ───────────────────
+
+test('REFUSE (T2): no word the portal retired appears anywhere on /domains', () => {
+  const strings = [...Object.values(DOMAIN_SEARCH_COPY), ...domainGuideStrings()];
+  assert.ok(strings.length >= 30, `expected to read the whole page, got ${strings.length} strings`);
+  for (const value of strings) {
+    assert.deepEqual(findRetiredTerms(value), [], value);
+  }
+});
+
+test('T2 control: the retired check catches the sentence /domains used to carry', () => {
+  const old =
+    'A web address, also called a domain name or a custom domain, is the name people type to find your business online.';
+  assert.deepEqual(findRetiredTerms(old), ['custom domain (use web address (domain), then web address)']);
+  const planted = { ...DOMAIN_GUIDE, cost: 'Manage it from your group dashboard.' };
+  const found = domainGuideStrings(planted as typeof DOMAIN_GUIDE).flatMap(findRetiredTerms);
+  assert.deepEqual(found, ['dashboard (use Home)', 'group (use Business)']);
+});
+
+test('ALLOW (T2): the page names the address the owner way, "web address (domain)" first', () => {
+  assert.match(DOMAIN_GUIDE.answer, /^A web address \(domain\) is /);
+  assert.ok(DOMAIN_GUIDE.faq.some((f) => /web address I already own/.test(f.question)));
 });
