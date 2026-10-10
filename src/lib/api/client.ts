@@ -9,7 +9,7 @@ import { cookies, draftMode, headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
-import { buildFetchFailureCapture } from './errorCapture';
+import { buildFetchFailureCapture, upstreamFallbackLine } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
 import { createFailureMemo, readWithFailureMemo } from './failureMemo';
@@ -183,6 +183,7 @@ export async function clientFetchSafe<T>(
       buildFetchFailureCapture({ source: 'clientFetchSafe', path, siteId: SITE_ID })
     );
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
+    console.error(upstreamFallbackLine({ source: 'clientFetchSafe', path, siteId: SITE_ID, err }));
     return fallback;
   }
 }
@@ -253,6 +254,7 @@ export async function clientFetchCached<T>(
       buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID })
     );
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
+    console.error(upstreamFallbackLine({ source: 'clientFetchCached', path, siteId: SITE_ID, err }));
     return fallback;
   });
 }

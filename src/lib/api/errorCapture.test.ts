@@ -254,3 +254,18 @@ test('an absent SITE_ID and an absent format both degrade to "unknown" rather th
   assert.equal(capture.tags.siteId, 'unknown');
   assert.equal(capture.tags.format, 'unknown');
 });
+
+test('site.upstream.fallback: one line, path without its query, the HTTP status when there was one', async () => {
+  const { upstreamFallbackLine } = await import('./errorCapture.ts');
+  assert.deepEqual(
+    JSON.parse(upstreamFallbackLine({ source: 'clientFetchCached', path: '/tenant/siteDetails?siteId=abc', siteId: 's1', err: { status: 503 } })),
+    { event: 'site.upstream.fallback', source: 'clientFetchCached', path: '/tenant/siteDetails', siteId: 's1', status: 503 },
+  );
+});
+
+test('site.upstream.fallback: a network failure (no status) and an unset site id are named, never blank', async () => {
+  const { upstreamFallbackLine } = await import('./errorCapture.ts');
+  const line = JSON.parse(upstreamFallbackLine({ source: 'clientFetchSafe', path: '/x', siteId: '', err: new TypeError('fetch failed') }));
+  assert.equal(line.status, 'network');
+  assert.equal(line.siteId, 'unknown');
+});
