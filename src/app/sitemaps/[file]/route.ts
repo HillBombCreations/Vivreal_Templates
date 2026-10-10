@@ -1,6 +1,6 @@
 import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
 import { loadSitemapEntries } from '@/lib/seo/loadSitemapEntries';
-import { partSitemapXml } from '@/lib/seo/sitemapXml';
+import { partNumber, partSitemapXml } from '@/lib/seo/sitemapXml';
 
 // One part of a page list past 1,000 addresses (v5 search R4), named by
 // /sitemap.xml's index as /sitemaps/<n>.xml. A part that does not exist is a
@@ -15,6 +15,8 @@ export async function GET(
 ): Promise<Response> {
   await enforceDynamicUnlessIsr();
   const { file } = await params;
+  // A name no part can have is a 404 without reading anything upstream.
+  if (partNumber(file) === null) return new Response('Not found', { status: 404 });
   const xml = partSitemapXml(await loadSitemapEntries(), file);
   if (xml === null) return new Response('Not found', { status: 404 });
   return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });

@@ -45,3 +45,9 @@ test('the urlset escapes addresses and writes dates only when the entry has one'
 test('an empty list (a prospect demo) is an empty urlset, as before', () => {
   assert.equal(rootSitemapXml([]), '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n</urlset>\n');
 });
+
+test('a part name no part can have is refused before any read', async () => {
+  const { partNumber } = await import('./sitemapXml.ts');
+  assert.equal(partNumber('2.xml'), 2);
+  for (const file of ['abc', '0.xml', '01.xml', '1.xml.gz', '../1.xml']) assert.equal(partNumber(file), null, file);
+});

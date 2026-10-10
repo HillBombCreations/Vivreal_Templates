@@ -76,11 +76,18 @@ export function rootSitemapXml(entries: readonly Entry[]): string {
   return renderSitemapIndex(new URL(entries[0].url).origin, parts);
 }
 
+const PART_FILE = /^([1-9][0-9]{0,5})\.xml$/;
+
+/** The part number a file name asks for, or `null` for a name no part has. Read before any upstream call. */
+export function partNumber(file: string): number | null {
+  const match = PART_FILE.exec(file);
+  return match ? Number(match[1]) : null;
+}
+
 /** `/sitemaps/<n>.xml` (1-based), or `null` for a part that does not exist. */
 export function partSitemapXml(entries: readonly Entry[], file: string): string | null {
-  const match = /^([1-9][0-9]{0,5})\.xml$/.exec(file);
-  if (!match) return null;
-  const n = Number(match[1]);
+  const n = partNumber(file);
+  if (n === null) return null;
   if (n > sitemapPartCount(entries.length)) return null;
   return renderUrlset(entries.slice((n - 1) * SITEMAP_PAGE_SIZE, n * SITEMAP_PAGE_SIZE));
 }
