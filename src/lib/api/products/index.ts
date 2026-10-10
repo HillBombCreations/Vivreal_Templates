@@ -13,6 +13,7 @@ import { transformProduct } from "./transformProduct.ts";
 // Same split, same reason: the query builder is pure so `node --test` can pin
 // the fetch window. See that module's docblock for why the limit is explicit.
 import { buildProductsQuery, PRODUCTS_FETCH_LIMIT } from "./productsQuery.ts";
+import { filterKey } from "./filterKey.ts";
 import { readAllPages } from "../readAllPages";
 import type { Product, Filter } from "@/types/Products";
 
@@ -209,7 +210,7 @@ export async function getFilters(collectionId: string): Promise<Filter[]> {
     const obj = (item.objectValue ?? item) as Record<string, unknown>;
     return {
       title: String(obj.title ?? ""),
-      key: String(obj.key ?? ""),
+      key: filterKey(obj),
       filters: Array.isArray(obj.filters) ? obj.filters.map(String) : [],
       type: obj.type ? String(obj.type) : undefined,
     };
