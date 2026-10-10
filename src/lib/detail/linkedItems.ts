@@ -35,14 +35,15 @@
  * barrel pulls `next/link`), so it runs under `node --test`; the parity test
  * calls the renderer's own `resolveDetailRouteSlug` from its `dist`.
  */
+import { withSystemValues } from '@hillbombcreations/site-renderer/bindings';
 import { pageDetailCollectionId } from './detailCollection.ts';
 import { servesCollectionDetail } from './detailFormats.ts';
 
-interface LinkBinding {
+export interface LinkBinding {
   collectionId?: string | null;
   integrationProvider?: string | null;
   title?: string | null;
-  sectionConfig?: { detailEligible?: unknown; scope?: unknown; menuRole?: unknown } | null;
+  sectionConfig?: { detailEligible?: unknown; scope?: unknown; menuRole?: unknown; fieldMap?: unknown } | null;
 }
 
 interface LinkBlock {
@@ -83,7 +84,7 @@ function isHomePage(page: LinkPage): boolean {
 }
 
 /** Top-level blocks and, recursively, group children. */
-function allBlocks(blocks: readonly LinkBlock[] | null | undefined): LinkBlock[] {
+export function allBlocks(blocks: readonly LinkBlock[] | null | undefined): LinkBlock[] {
   const out: LinkBlock[] = [];
   for (const block of blocks ?? []) {
     if (!block) continue;
@@ -138,7 +139,7 @@ function servesCollection(page: LinkPage, collectionId: string): boolean {
 }
 
 /** The binding a block draws its items from: a page template's first collection binding, a layout's first binding. */
-function itemBinding(block: LinkBlock): LinkBinding | undefined {
+export function itemBinding(block: LinkBlock): LinkBinding | undefined {
   const bindings = block.config?.bindings ?? [];
   if (block.type?.kind === 'page-template') return bindings.find((b) => b?.collectionId);
   const first = bindings[0];
@@ -188,14 +189,19 @@ export function linkedItemScopes(page: LinkPage, pages: readonly LinkPage[], col
  * `items` narrowed to the ones some link reaches: the union of `scopeFn(items,
  * scope)` over `scopes`, in `items` order. `null` returns `items` unchanged.
  * `scopeFn` is the renderer's `applyScope`, passed in so this stays pure.
+ *
+ * Scopes are matched with SYSTEM values readable (F-C16R, top-level first,
+ * then `_system`), as composition matches them: the help site scopes on
+ * `section`, a SYSTEM key. `applyScope` itself reads `raw` only.
  */
-export function restrictToLinked<T extends { id: string }>(
+export function restrictToLinked<T extends { id: string; raw?: Record<string, unknown> }>(
   items: T[],
   scopes: LinkScopes,
   scopeFn: (items: T[], scope: unknown) => readonly { id: string }[],
 ): T[] {
   if (scopes === null) return items;
   const linked = new Set<string>();
-  for (const scope of scopes) for (const it of scopeFn(items, scope)) linked.add(it.id);
+  const readable = items.map((it) => withSystemValues(it));
+  for (const scope of scopes) for (const it of scopeFn(readable, scope)) linked.add(it.id);
   return items.filter((it) => linked.has(it.id));
 }

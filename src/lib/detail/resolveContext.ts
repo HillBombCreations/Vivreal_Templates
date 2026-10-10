@@ -14,6 +14,7 @@
 import "server-only";
 import { getCollectionItems } from "@/lib/api/collections";
 import type { DetailContextConfig } from "@hillbombcreations/site-renderer";
+import { systemValue } from "@hillbombcreations/site-renderer/bindings";
 
 /**
  * Fetch `contextConfig.collectionId` and find the ONE object whose
@@ -34,6 +35,7 @@ export async function resolveDetailContext(
   // not thousands) by construction (§12 — the editable surface stays at 28
   // objects for a 9-location vertical).
   const { items } = await getCollectionItems(collectionId, { limit: 100 });
-  const hit = items.find((it) => (it.raw as Record<string, unknown> | undefined)?.[field] === value);
+  // F-C16R: a SYSTEM match field (`slug`, `key`) reads top-level first, then `_system`.
+  const hit = items.find((it) => systemValue(it.raw as Record<string, unknown> | undefined, field) === value);
   return hit?.raw as Record<string, unknown> | undefined;
 }

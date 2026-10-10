@@ -107,3 +107,16 @@ test('PARITY: a widget on a page that owns a route links to its own page, never 
   assert.equal(resolveDetailRouteSlug(ownsOther as never, [ownsOther, owner] as never, C), 'shop');
   assert.deepEqual(linkedItemScopes(owner, [ownsOther, owner], C), []);
 });
+
+// F-C16R: a scope on a SYSTEM key (`section`) matches a value kept only in `_system`.
+test('ALLOW (F-C16R): a scoped link reaches an item whose section lives only in _system', () => {
+  const p = list('connections', template({ scope: scope('connections') }));
+  const pool = [{ id: 'n1', raw: { _system: { section: 'connections' } } }];
+  assert.deepEqual(restrictToLinked(pool, linkedItemScopes(p, [p], C), scopeFn as never).map((i) => i.id), ['n1']);
+});
+
+test('REFUSE (F-C16R): a stored top-level section beats _system in the scope', () => {
+  const p = list('connections', template({ scope: scope('connections') }));
+  const pool = [{ id: 'n1', raw: { section: 'troubleshooting', _system: { section: 'connections' } } }];
+  assert.deepEqual(restrictToLinked(pool, linkedItemScopes(p, [p], C), scopeFn as never), []);
+});

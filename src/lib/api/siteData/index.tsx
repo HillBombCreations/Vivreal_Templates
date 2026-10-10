@@ -37,6 +37,7 @@ import { collectBindingTargets } from '@/lib/api/composition/bindings';
 import { isPaymentsProvider } from '@/lib/payments';
 import { sitemapDetailSource, type CollectionSource } from '@/lib/seo/sitemapDetailSources';
 import { restrictToLinked } from '@/lib/detail/linkedItems';
+import { detailFieldMap, enterDetailItems } from '@/lib/detail/detailItems';
 import type { SitemapItem } from '@/lib/seo/sitemap';
 import { logSitemapBuilt } from '@/lib/seo/sitemapSignals';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
@@ -491,8 +492,11 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
         const slug = (page.slug as string).replace(/^\/+/, '');
         const items: SitemapItem[] = [];
         const collectionItems = async (c: CollectionSource) => {
-          const { items: all, degraded } = await getAllCollectionItems(c.collectionId);
+          const { items: stored, degraded } = await getAllCollectionItems(c.collectionId);
           if (degraded) unknownItems();
+          // Entered as the detail route enters them (`lookupDetailItem`), so
+          // scope and address read the same `_system` values it does.
+          const all = enterDetailItems(stored, detailFieldMap(page, c.collectionId));
           // `applyScope` is typed with the renderer's item shape, which has no
           // `updatedAt`; it filters, never copies, so the date is read back by id.
           const changedAt = new Map(all.map((it) => [it.id, it.updatedAt]));

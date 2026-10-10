@@ -4,6 +4,7 @@ import { getAllCollectionItems, getCollectionItems } from '@/lib/api/collections
 import { getPageCollectionId } from '@/lib/api/siteData';
 import { resolveItem } from './resolveItem';
 import { linkedItemScopes, restrictToLinked } from './linkedItems';
+import { detailFieldMap, enterDetailItems } from './detailItems';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 
 type PoolItem = Awaited<ReturnType<typeof getCollectionItems>>['items'][number];
@@ -67,7 +68,12 @@ export async function lookupDetailItem(
   // API 502s on larger limits, and the list view already caps at 100.
   // Every item, not the first 100 (v5 search R4): the page list names every
   // item, so every item's address must resolve.
-  const { items: unscopedItems, degraded, richTextImageUrls } = await getAllCollectionItems(collectionId);
+  const read = await getAllCollectionItems(collectionId);
+  const { degraded, richTextImageUrls } = read;
+  // As composition enters a binding's items (renderer 1.85.1): `_system`
+  // values readable, then the page binding's field map, BEFORE scope, so the
+  // list and this page admit and title the same items. See `./detailItems.ts`.
+  const unscopedItems = enterDetailItems(read.items, detailFieldMap(pageConfig, collectionId));
 
   // `scope` restricts WHICH ITEMS ARE ADDRESSABLE here. Absent/malformed scope
   // ⇒ identity (applyScope's own contract), so an unscoped page is

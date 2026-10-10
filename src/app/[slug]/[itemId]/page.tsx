@@ -57,6 +57,7 @@ import {
 } from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import { detailFieldMap, enterDetailItems } from "@/lib/detail/detailItems";
 import RichTextImages from "@/components/RichTextImages";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
 import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
@@ -897,7 +898,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
       // Every item, not the first 100 (v5 search R4).
-      const { items, degraded, richTextImageUrls } = await getAllCollectionItems(itemsCollectionId);
+      const read = await getAllCollectionItems(itemsCollectionId);
+      const { degraded, richTextImageUrls } = read;
+      // `_system` readable, then the binding's field map (lib/detail/detailItems).
+      const items = enterDetailItems(read.items, detailFieldMap(pageConfig, itemsCollectionId));
       reads.push({ source: "menu-items", degraded });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
@@ -905,7 +909,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items, degraded, richTextImageUrls } = await getAllCollectionItems(cid);
+        const read = await getAllCollectionItems(cid);
+        const { degraded, richTextImageUrls } = read;
+        const items = enterDetailItems(read.items, detailFieldMap(pageConfig, cid));
         reads.push({ source: "menu-sibling", degraded });
         Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);
