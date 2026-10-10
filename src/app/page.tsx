@@ -14,6 +14,8 @@ import Footer from "@/components/Footer";
 import HomeLoading from "@/components/HomeLoading";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { homeMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
+import type { PageWithBlocks } from "@hillbombcreations/site-renderer/bindings";
+import { reportDisplayMismatches } from "@/lib/reportDisplayMismatch";
 
 // ISR migration Phase 3. `revalidate` must be a literal — Next 16 parses it
 // out of this file's source and hard-fails the build on any expression, so
@@ -42,6 +44,10 @@ async function Resolved() {
       </>
     );
   }
+
+  // F-C7: one event per render when a home block's displayAs and type disagree.
+  // Cast: see renderComposedPage.tsx, same reading.
+  reportDisplayMismatches(homePageConfig as unknown as PageWithBlocks, 'home');
 
   // Unified path (Plan 4, step 5): composePage dispatches showcase vs ecommerce
   // internally via isHome + the presence of a sibling 'shows' page — identical to
