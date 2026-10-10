@@ -237,7 +237,9 @@ export async function clientFetchCached<T>(
 
   // V2: a read that failed in the last 5 s answers its fallback without going
   // upstream again, so an outage costs one call per page request rather than
-  // two. Failures only; see ./failureMemo.ts.
+  // two. Failures only. F-C13: concurrent reads of one path share the one in
+  // flight, so the handler below (and its Sentry capture) runs once per failed
+  // call, not once per reader. See ./failureMemo.ts.
   return readWithFailureMemo(FAILED_READS, path, cached, fallback, (err) => {
     // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
     // never cache it, and never memoise it (a throw here records nothing).
