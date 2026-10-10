@@ -36,6 +36,7 @@ import { getTeamMembersRead } from '@/lib/api/team';
 import { collectBindingTargets } from '@/lib/api/composition/bindings';
 import { isPaymentsProvider } from '@/lib/payments';
 import { sitemapDetailSource, type CollectionSource } from '@/lib/seo/sitemapDetailSources';
+import { restrictToLinked } from '@/lib/detail/linkedItems';
 import type { SitemapItem } from '@/lib/seo/sitemap';
 import { logSitemapBuilt } from '@/lib/seo/sitemapSignals';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
@@ -484,6 +485,7 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
         const { integrationTypes } = collectBindingTargets(page);
         const source = sitemapDetailSource(page, {
           paymentsProvider: integrationTypes.find((type) => isPaymentsProvider(type)),
+          pages: raw.pages ?? [],
         });
         if (!source) return;
         const slug = (page.slug as string).replace(/^\/+/, '');
@@ -494,7 +496,8 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
           // `applyScope` is typed with the renderer's item shape, which has no
           // `updatedAt`; it filters, never copies, so the date is read back by id.
           const changedAt = new Map(all.map((it) => [it.id, it.updatedAt]));
-          for (const it of applyScope(all, c.scope)) {
+          // Only the items some link on the site reaches (B1, `linkedItems.ts`).
+          for (const it of restrictToLinked(applyScope(all, c.scope), c.linkScopes ?? null, applyScope)) {
             items.push({ segment: itemSegment(it, c.itemKeyField), lastModified: changedAt.get(it.id) });
           }
         };

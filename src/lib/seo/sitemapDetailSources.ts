@@ -21,6 +21,12 @@
  * The owner's `detailPage.sitemap: false` and a switched-off detail route
  * (`detailPage.enabled: false`) list nothing.
  *
+ * ONLY THE ITEMS THE SITE LINKS (review of #190, B1). A `collection` source
+ * carries `linkScopes` when links reach only some items (a list that opts out
+ * with `detailEligible: false`, or a scoped one); none reach any item ⇒ no
+ * source at all. See `../detail/linkedItems.ts`. The detail route narrows by
+ * the same rule, so an address left out here is a 404 there.
+ *
  * Pure, so it runs under `node --test`. The caller supplies the payments
  * provider (it comes from the server-only binding collector) and does the
  * reads.
@@ -29,12 +35,15 @@ import type { PageConfig } from '@/types/SiteData';
 import { servesCollectionDetail } from '../detail/detailFormats.ts';
 import { pageDetailCollectionId } from '../detail/detailCollection.ts';
 import { storefrontItemSources } from '../detail/storefrontSources.ts';
+import { linkedItemScopes, type LinkPage } from '../detail/linkedItems.ts';
 
 export interface CollectionSource {
   kind: 'collection';
   collectionId: string;
   itemKeyField?: string;
   scope?: NonNullable<PageConfig['detailPage']>['scope'];
+  /** Absent: every item is linked. Present: only items inside one of these binding scopes. */
+  linkScopes?: readonly unknown[];
 }
 
 export type SitemapDetailSource =
@@ -43,22 +52,26 @@ export type SitemapDetailSource =
   | { kind: 'products'; provider: string; collection: CollectionSource | null }
   | CollectionSource;
 
-type SourcePage = Pick<PageConfig, 'format' | 'detailPage' | 'blocks' | 'collectionId' | 'collections'>;
+type SourcePage = Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'blocks' | 'collectionId' | 'collections'>;
 
-function collectionSource(page: SourcePage): CollectionSource | null {
+function collectionSource(page: SourcePage, pages: readonly LinkPage[]): CollectionSource | null {
   const collectionId = page.detailPage?.itemCollectionId || pageDetailCollectionId(page);
   if (!collectionId) return null;
+  const linkScopes = linkedItemScopes(page, pages, collectionId);
+  if (linkScopes?.length === 0) return null;
   return {
     kind: 'collection',
     collectionId,
     ...(page.detailPage?.itemKeyField ? { itemKeyField: page.detailPage.itemKeyField } : {}),
     ...(page.detailPage?.scope ? { scope: page.detailPage.scope } : {}),
+    ...(linkScopes ? { linkScopes } : {}),
   };
 }
 
+/** `pages` is every page of the site, home included: a widget elsewhere can link into this page. */
 export function sitemapDetailSource(
   page: SourcePage,
-  { paymentsProvider }: { paymentsProvider: string | undefined },
+  { paymentsProvider, pages }: { paymentsProvider: string | undefined; pages: readonly LinkPage[] },
 ): SitemapDetailSource | null {
   const detail = page.detailPage;
   if (detail?.sitemap === false || detail?.enabled === false) return null;
@@ -72,14 +85,14 @@ export function sitemapDetailSource(
       kind: 'products',
       // The detail route reads `paymentsProvider ?? 'stripe'`; the list reads the same.
       provider: paymentsProvider ?? 'stripe',
-      collection: sources.includes('collection') ? collectionSource(page) : null,
+      collection: sources.includes('collection') ? collectionSource(page, pages) : null,
     };
   }
 
-  if (servesCollectionDetail(page)) return collectionSource(page);
+  if (servesCollectionDetail(page)) return collectionSource(page, pages);
 
   // The pre-v5 opt-in, kept for the formats the default does not reach (a menu).
-  if (detail?.sitemap === true && detail.itemCollectionId) return collectionSource(page);
+  if (detail?.sitemap === true && detail.itemCollectionId) return collectionSource(page, pages);
 
   return null;
 }

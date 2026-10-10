@@ -3,6 +3,7 @@ import { applyScope } from '@hillbombcreations/site-renderer';
 import { getAllCollectionItems, getCollectionItems } from '@/lib/api/collections';
 import { getPageCollectionId } from '@/lib/api/siteData';
 import { resolveItem } from './resolveItem';
+import { linkedItemScopes, restrictToLinked } from './linkedItems';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 
 type PoolItem = Awaited<ReturnType<typeof getCollectionItems>>['items'][number];
@@ -71,7 +72,20 @@ export async function lookupDetailItem(
   // `scope` restricts WHICH ITEMS ARE ADDRESSABLE here. Absent/malformed scope
   // ⇒ identity (applyScope's own contract), so an unscoped page is
   // byte-identical to before.
-  const scopedItems = applyScope(unscopedItems, detailPage?.scope);
+  //
+  // And only the items some link on the site reaches (review of #190, B1): a
+  // category list that opts out with `detailEligible: false`, or is scoped to
+  // one section, does not make every item of the collection an address of
+  // its own. Such an item answers 404 (the doorway guard below the caller),
+  // never a second canonical for an item that lives elsewhere. Pages with no
+  // block drawing the collection are unrestricted. See `./linkedItems.ts`;
+  // the page list applies the same rule, so the two cannot disagree.
+  const pages = [...(siteData.pageConfigs ?? []), ...(siteData.homePageConfig ? [siteData.homePageConfig] : [])];
+  const scopedItems = restrictToLinked(
+    applyScope(unscopedItems, detailPage?.scope),
+    linkedItemScopes(pageConfig, pages, collectionId),
+    applyScope,
+  );
 
   return {
     collectionId,
