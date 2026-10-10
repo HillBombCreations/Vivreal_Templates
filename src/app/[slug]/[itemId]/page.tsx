@@ -26,7 +26,7 @@ import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDe
 import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
 import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
-import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
+import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -896,9 +896,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // arm above via `resolveItem` so both arms agree on lookup semantics.
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
-      const { items, degraded, richTextImageUrls } = await getCollectionItems(itemsCollectionId, {
-        limit: 100,
-      });
+      // Every item, not the first 100 (v5 search R4).
+      const { items, degraded, richTextImageUrls } = await getAllCollectionItems(itemsCollectionId);
       reads.push({ source: "menu-items", degraded });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
@@ -906,7 +905,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items, degraded, richTextImageUrls } = await getCollectionItems(cid, { limit: 100 });
+        const { items, degraded, richTextImageUrls } = await getAllCollectionItems(cid);
         reads.push({ source: "menu-sibling", degraded });
         Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);

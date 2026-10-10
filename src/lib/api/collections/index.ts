@@ -11,6 +11,7 @@ import { collectionTags, integrationTags } from '../cacheTags';
 import { readOrDegrade } from '../degradedRead';
 import { readRichTextImageUrls } from '../richTextImageUrls';
 import { toContentItem } from './mapItem';
+import { readAllPages } from '../readAllPages';
 import { isSocialPostPlatform, toSocialPostItems } from './socialPost';
 import { canonicalIntegrationType } from './socialBand';
 import type { ContentItem } from '@/types/ContentItem';
@@ -173,6 +174,31 @@ export async function getCollectionItems(
     sourceCount: items.length,
     degraded,
     richTextImageUrls,
+  };
+}
+
+/**
+ * Every item of a collection, paged past VR_Client_API's 100-row read (v5
+ * search R4). The detail route and the page list both read through this, so
+ * an item the page list names is an item its address resolves, however long
+ * the list. See `../readAllPages.ts`.
+ */
+export async function getAllCollectionItems(collectionId: string): Promise<FetchResult & { truncated: boolean }> {
+  const richTextImageUrls: Record<string, string> = {};
+  let sourceCount = 0;
+  const all = await readAllPages<ContentItem>(async (skip, limit) => {
+    const page = await getCollectionItems(collectionId, { limit, skip });
+    Object.assign(richTextImageUrls, page.richTextImageUrls);
+    sourceCount += page.sourceCount;
+    return { items: page.items, totalCount: page.totalCount, degraded: page.degraded };
+  });
+  return {
+    items: all.items,
+    totalCount: all.totalCount,
+    sourceCount,
+    degraded: all.degraded,
+    richTextImageUrls,
+    truncated: all.truncated,
   };
 }
 

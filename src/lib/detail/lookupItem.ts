@@ -1,6 +1,6 @@
 import 'server-only';
 import { applyScope } from '@hillbombcreations/site-renderer';
-import { getCollectionItems } from '@/lib/api/collections';
+import { getAllCollectionItems, getCollectionItems } from '@/lib/api/collections';
 import { getPageCollectionId } from '@/lib/api/siteData';
 import { resolveItem } from './resolveItem';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -64,10 +64,9 @@ export async function lookupDetailItem(
 
   // limit 100 mirrors the grid's own fetch (buildPageContext.ts) — the Client
   // API 502s on larger limits, and the list view already caps at 100.
-  const { items: unscopedItems, degraded, richTextImageUrls } = await getCollectionItems(
-    collectionId,
-    { limit: 100 },
-  );
+  // Every item, not the first 100 (v5 search R4): the page list names every
+  // item, so every item's address must resolve.
+  const { items: unscopedItems, degraded, richTextImageUrls } = await getAllCollectionItems(collectionId);
 
   // `scope` restricts WHICH ITEMS ARE ADDRESSABLE here. Absent/malformed scope
   // ⇒ identity (applyScope's own contract), so an unscoped page is
