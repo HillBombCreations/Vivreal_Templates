@@ -187,3 +187,15 @@ test("REFUSE (R5): a missing or unreadable updatedAt claims no date", () => {
   assert.equal(toContentItem({ _id: "u3", updatedAt: "not a date", objectValue: {} }, "collection").updatedAt, undefined);
   assert.equal(toContentItem({ _id: "u4", updatedAt: 12, objectValue: {} }, "collection").updatedAt, undefined);
 });
+
+test("ALLOW (F-C28): a Reviews row that stores its text as `comment` gets it as the description", () => {
+  const item = toContentItem({ _id: "r1", objectValue: { name: "Ana", comment: "Lovely evening" } }, "collection");
+  assert.equal(item.description, "Lovely evening");
+});
+
+test("REFUSE (F-C28): `comment` never displaces description, bio or review", () => {
+  for (const key of ["description", "bio", "review"]) {
+    const item = toContentItem({ _id: "r1", objectValue: { [key]: "kept", comment: "not this" } }, "collection");
+    assert.equal(item.description, "kept", key);
+  }
+});

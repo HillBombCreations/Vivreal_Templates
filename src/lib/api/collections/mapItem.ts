@@ -141,7 +141,9 @@ export function toContentItem(
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
 
   const title = String(objectValue.title ?? objectValue.name ?? '');
-  const description = objectValue.description ?? objectValue.bio ?? objectValue.review;
+  // `comment` last (F-C28): the Reviews starter and every seeded Reviews list
+  // store the text there, and nothing read it ("No review text").
+  const description = objectValue.description ?? objectValue.bio ?? objectValue.review ?? objectValue.comment;
   const price = objectValue.price;
   const date = objectValue.date ?? raw.publishDate;
   const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
