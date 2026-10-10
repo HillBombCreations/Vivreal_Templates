@@ -24,6 +24,12 @@ export interface ContentItem {
   price?: string;
   /** Date (shows/events) */
   date?: string;
+  /**
+   * R5: when the item last changed (the record's own `updatedAt`, an ISO
+   * string). Feeds the page list's dates and Article `dateModified`; absent on
+   * a record with no timestamp, and then nothing claims a date.
+   */
+  updatedAt?: string;
   /** Link URL (external or detail page) */
   href?: string;
   /** Tags / categories */

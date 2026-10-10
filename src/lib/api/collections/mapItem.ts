@@ -120,6 +120,17 @@ function safeLinkHref(value: string): string {
 }
 
 /**
+ * A record timestamp as an ISO string, or `undefined` for anything that is not
+ * a real date. The page list and `dateModified` are claims a crawler acts on,
+ * so a value that does not parse is dropped, never passed through.
+ */
+function isoDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' && !(value instanceof Date)) return undefined;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+/**
  * Map a raw API object to the unified ContentItem shape.
  */
 export function toContentItem(
@@ -156,6 +167,7 @@ export function toContentItem(
     artDirectedSources: artDirectedSources.length ? artDirectedSources : undefined,
     price: price != null ? String(price) : undefined,
     date: date != null ? String(date) : undefined,
+    updatedAt: isoDate(raw.updatedAt),
     href,
     tags,
     source,

@@ -175,3 +175,15 @@ test("ALLOW (F-C24): a row with videoCaptionsDesktop passes it through signed, b
   assert.deepEqual(item.raw?.videoCaptions, media("https://media.vivreal.io/e-402.vtt?Signature=a"));
   assert.equal(item.imageUrl, "https://media.vivreal.io/e.jpg");
 });
+
+// R4/R5: the record's own last-changed time, for the page list and dateModified.
+test("ALLOW (R5): a record's updatedAt is carried as an ISO string", () => {
+  const item = toContentItem({ _id: "u1", updatedAt: "2026-10-01T12:00:00.000Z", objectValue: { title: "A" } }, "collection");
+  assert.equal(item.updatedAt, "2026-10-01T12:00:00.000Z");
+});
+
+test("REFUSE (R5): a missing or unreadable updatedAt claims no date", () => {
+  assert.equal(toContentItem({ _id: "u2", objectValue: {} }, "collection").updatedAt, undefined);
+  assert.equal(toContentItem({ _id: "u3", updatedAt: "not a date", objectValue: {} }, "collection").updatedAt, undefined);
+  assert.equal(toContentItem({ _id: "u4", updatedAt: 12, objectValue: {} }, "collection").updatedAt, undefined);
+});

@@ -17,56 +17,126 @@
  * from a client boundary someday).
  */
 import type { SiteData } from '@/types/SiteData';
+import type { HoursOverride, HoursRow, ReadSiteHours } from '@hillbombcreations/site-renderer';
 import { unsignMediaUrl } from './unsignMediaUrl.ts';
 import { isDemoSite } from '../../lib/seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
 
+const SCHEMA_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+
+/** Minute of day as schema.org wants it, "09:00". */
+function hhmm(minute: number): string {
+  const m = ((minute % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Open and close for one row or change; closed all day is "00:00" to "00:00" (Google's own rule). */
+function opensCloses(open: number | null, close: number | null): { opens: string; closes: string } | null {
+  if (open === null || close === null) return { opens: '00:00', closes: '00:00' };
+  return { opens: hhmm(open), closes: hhmm(close) };
+}
+
+/**
+ * F-C15: the business's hours as `openingHoursSpecification`, from the SAME
+ * parse every hours surface draws from (the renderer's `readSiteHours`, handed
+ * in by the caller because the renderer's entry point does not load under the
+ * plain-Node test runner).
+ *
+ * Only rows whose times were actually read (`timesKnown`) are claimed: a row
+ * nobody could parse is shown on the page as written, and must never become a
+ * machine-read fact. A dated change becomes its own entry with `validFrom` and
+ * `validThrough`, so a closed holiday is claimed for that date only; changes
+ * that ended before `today` are left out.
+ */
+export function openingHoursSpecification(
+  hours: ReadSiteHours | null | undefined,
+  today: string,
+): Array<Record<string, unknown>> {
+  if (!hours) return [];
+  const weekly = hours.rows
+    .map((row: HoursRow) => row.parsed)
+    .filter((parsed): parsed is NonNullable<HoursRow['parsed']> => !!parsed && parsed.timesKnown && parsed.days.length > 0)
+    .map((parsed) => ({
+      '@type': 'OpeningHoursSpecification',
+      dayOfWeek: parsed.days.map((d) => SCHEMA_DAYS[d]),
+      ...opensCloses(parsed.open, parsed.close),
+    }));
+  const changes = hours.overrides
+    .filter((o: HoursOverride) => o.timesKnown && o.to >= today)
+    .map((o: HoursOverride) => ({
+      '@type': 'OpeningHoursSpecification',
+      validFrom: o.from,
+      validThrough: o.to,
+      ...opensCloses(o.open, o.close),
+    }));
+  return [...weekly, ...changes];
+}
+
+/** An https link, or nothing: `sameAs` is a public claim of identity. */
+function httpsLink(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:' ? url.toString() : undefined;
+  } catch {
+    // Not a URL at all: there is nothing to link, which is the same answer.
+    return undefined;
+  }
+}
+
 /**
  * Build the site-level JSON-LD payload (Organization or LocalBusiness +
  * WebSite). Emitted from root layout so it appears on every page.
+ *
+ * v5 (search R4, F-C15): a LocalBusiness also when it has hours (a business
+ * with opening hours is a place people visit), with `openingHoursSpecification`,
+ * `areaServed` from the towns it serves, `sameAs` carrying the Google Maps
+ * listing, and the email only when the owner shows it (`showEmail`, absent
+ * means shown). `hours` is `readSiteHours(businessInfo.hours)`, parsed by the
+ * caller; `today` is the business's date, `YYYY-MM-DD`.
  */
-export function buildSiteJsonLd(siteData: SiteData): Array<Record<string, unknown>> {
+export function buildSiteJsonLd(
+  siteData: SiteData,
+  { hours, today }: { hours?: ReadSiteHours | null; today?: string } = {},
+): Array<Record<string, unknown>> {
   const siteName =
     siteData.businessInfo?.name || siteData.name || 'Website';
-  // SEO demo-safety: robots.txt and the sitemap already withhold themselves
-  // from a pre-cutover demo. JSON-LD `url` had no matching gate, so a demo
-  // emitted its own `<sub>.vivreal.io` origin here while the layout canonical
-  // simultaneously pointed at the prospect's real site: two contradictory
-  // ownership signals in one document. Gated the same way for symmetry.
-  //
-  // `durable`, not `deployed`: JSON-LD lives in crawler caches for days, so an
-  // Amplify build host is refused rather than published.
   const url = isDemoSite(siteData)
     ? undefined
     : resolveSiteOrigin(siteData, { surface: 'durable' }) || undefined;
   const description = siteData.businessInfo?.description;
-  // Strip CloudFront signing params before embedding in JSON-LD — the
-  // signed form expires after 300s but JSON-LD lives in crawler caches
-  // for days/weeks. See ./unsignMediaUrl.ts for the full rationale.
   const logoUrl = unsignMediaUrl(siteData.logo?.currentFile?.source);
-  const email = siteData.businessInfo?.contactInfo?.email;
+  const email =
+    siteData.businessInfo?.showEmail === false ? undefined : siteData.businessInfo?.contactInfo?.email;
   const phone = siteData.businessInfo?.contactInfo?.phoneNumber;
   const address = siteData.businessInfo?.address;
-  const socialLinks = (siteData.socialLinks ?? [])
-    .map((s) => s.link)
-    .filter((link): link is string => Boolean(link));
+  const googleListing = httpsLink(siteData.businessInfo?.googleBusinessUrl);
+  const socialLinks = [
+    ...(siteData.socialLinks ?? []).map((s) => s.link).filter((link): link is string => Boolean(link)),
+    ...(googleListing ? [googleListing] : []),
+  ];
+  const areaServed = (siteData.businessInfo?.serviceArea ?? [])
+    .map((town) => (typeof town === 'string' ? town.trim() : ''))
+    .filter(Boolean);
+  const hoursSpec = openingHoursSpecification(hours, today ?? new Date().toISOString().slice(0, 10));
 
-  // Promote to LocalBusiness if we have a physical address; otherwise
-  // Organization is the safer default (also valid for service businesses).
   const hasAddress = Boolean(
     address?.street1 || address?.city || address?.state || address?.zip
   );
+  const isLocal = hasAddress || hoursSpec.length > 0;
 
   const orgBase: Record<string, unknown> = {
     '@context': 'https://schema.org',
-    '@type': hasAddress ? 'LocalBusiness' : 'Organization',
+    '@type': isLocal ? 'LocalBusiness' : 'Organization',
     name: siteName,
     ...(url ? { url } : {}),
     ...(description ? { description } : {}),
     ...(logoUrl ? { logo: logoUrl, image: logoUrl } : {}),
     ...(email ? { email } : {}),
     ...(phone ? { telephone: phone } : {}),
-    ...(socialLinks.length ? { sameAs: socialLinks } : {}),
+    ...(socialLinks.length ? { sameAs: [...new Set(socialLinks)] } : {}),
+    ...(areaServed.length ? { areaServed } : {}),
+    ...(isLocal && hoursSpec.length ? { openingHoursSpecification: hoursSpec } : {}),
     ...(hasAddress
       ? {
           address: {
@@ -147,6 +217,8 @@ export interface DetailJsonLdInput {
   // Article-specific
   authorName?: string;
   datePublished?: string;
+  /** R4: when the item last changed (an ISO string); Article `dateModified`. */
+  dateModified?: string;
   // Recipe-specific. Ingredients and steps are the AUTHORED lines, verbatim:
   // `recipeIngredient` wants exactly "500g bread flour", not a parsed
   // {amount, unit, item} we would only have to re-join.
@@ -314,6 +386,7 @@ function buildArticleJsonLd(
       ? { author: { '@type': 'Person', name: input.authorName } }
       : {}),
     ...(input.datePublished ? { datePublished: input.datePublished } : {}),
+    ...(input.dateModified ? { dateModified: input.dateModified } : {}),
   };
 }
 

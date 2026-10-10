@@ -39,6 +39,7 @@ import type {
   PageCtaConfig as RendererPageCtaConfig,
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
+import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
@@ -408,7 +409,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={showJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: show.title })} />
         <Navbar />
         {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
             carry no CMS rich text, so the client boundary stays as small as it
@@ -486,7 +487,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={memberJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: member.name })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
@@ -648,7 +649,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={productJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(productJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: productName })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
@@ -789,6 +790,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
+      // R4: the Article carries when the item last changed (absent when the
+      // record has no timestamp; never the clock).
+      dateModified: effectiveItem.updatedAt,
       ...(recipe
         ? {
             durableImageUrl: recipeCardUrl,
@@ -814,7 +818,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       const collectionProduct = contentItemToProduct(effectiveItem, { specFields: storefrontConfig?.specFields });
       return (
         <>
-          <JsonLd schema={itemJsonLd} />
+          <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
           <Navbar />
           <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
@@ -839,7 +843,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
@@ -953,7 +957,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: item.title || undefined })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate

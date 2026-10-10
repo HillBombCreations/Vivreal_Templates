@@ -158,6 +158,11 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       // Utility strip (identity kits §5.3) — same in-header contract as the
       // announcement; stacks under an 'above'-placed announcement.
       utilityStrip={siteData?.utilityStrip ?? null}
+      // Renderer 1.85.0 (F-C15): with `utilityStrip.showHours` on, the strip's
+      // left slot shows today's line from the business's one set of hours,
+      // computed in the browser. Absent hours keep the authored text.
+      hours={siteData?.businessInfo?.hours ?? null}
+      timezone={siteData?.timezone}
     />
   );
 };
