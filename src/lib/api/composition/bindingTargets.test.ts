@@ -345,6 +345,36 @@ test('blocks-first path: nested group children, and page.collectionId is NOT add
   assert.deepEqual(integrationTypes, ['stripe']);
 });
 
+test('ALLOW (F-C8): a payments binding that also names its products list collects BOTH, as before pageBindings', () => {
+  const p = page({
+    blocks: [
+      { id: 'p', type: { kind: 'layout' }, config: { bindings: [{ integrationProvider: 'Square', collectionId: 'col_list' }] } },
+    ],
+  });
+  const { collectionIds, integrationTypes } = collectTargets(p, null);
+  assert.deepEqual(collectionIds, ['col_list']);
+  assert.deepEqual(integrationTypes, ['square']);
+});
+
+test('ALLOW (F-C8): a switched-off block is still prefetched (a superset costs a cached read, a subset an empty section)', () => {
+  const p = page({
+    blocks: [{ id: 'off', type: { kind: 'layout' }, enabled: false, config: { bindings: [{ collectionId: 'col_off' }] } }],
+  });
+  assert.deepEqual(collectTargets(p, null).collectionIds, ['col_off']);
+});
+
+test('REFUSE (F-C8): on a block page the mirror is never read, even when it disagrees with the blocks', () => {
+  const p = page({
+    collectionId: 'col_mirror_pointer',
+    collections: [{ collectionId: 'col_mirror', role: 'primary' }],
+    integrations: [{ type: 'Stripe', role: 'primary' }],
+    blocks: [{ id: 'b', type: { kind: 'layout' }, config: { bindings: [{ collectionId: 'col_block' }] } }],
+  });
+  const { collectionIds, integrationTypes } = collectTargets(p, null);
+  assert.deepEqual(collectionIds, ['col_block']);
+  assert.deepEqual(integrationTypes, []);
+});
+
 // ─── CHECK THE CALLER ────────────────────────────────────────────────────────
 
 const source = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
