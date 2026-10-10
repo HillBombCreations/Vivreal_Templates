@@ -9,10 +9,12 @@
  * draws); this turns its rows into one Sentry event per render, so the
  * disagreement is counted rather than guessed (ledger QA5-SIG-38).
  *
- * Volume: a render is an ISR regeneration (at most one per 300 s per page per
- * instance), not a visit, and DS-39 aligns the 7 known blocks before this
- * deploys, so the expected count is 0. Each event after that is a block a
- * writer stored inconsistently.
+ * Volume: the fleet renders per request (`SITE_RENDER_MODE` unset, every route
+ * dynamic), so a render IS a visit, and a crawler hit too. The call site
+ * therefore sends through `createReportThrottle`: one event per page and block
+ * set per instance per `DISPLAY_MISMATCH_THROTTLE_MS` (an hour). DS-39 aligns
+ * the 7 known blocks before this deploys, so the expected count is 0; each
+ * event after that is a block a writer stored inconsistently.
  *
  * Pure (the renderer's `/bindings` subpath imports nothing), so it runs under
  * `node --test`; the Sentry call lives at the call site.
@@ -55,4 +57,65 @@ export function displayMismatchReport(
       extra: { rows },
     },
   };
+}
+
+/** One report per key per instance inside this window (an hour). */
+export const DISPLAY_MISMATCH_THROTTLE_MS = 60 * 60 * 1000;
+
+/**
+ * Bound on remembered keys. A key is a site page plus its mismatched block ids,
+ * so the set is about the site's page count, but it is capped rather than
+ * trusted to stay small.
+ */
+export const DISPLAY_MISMATCH_THROTTLE_MAX_KEYS = 500;
+
+export interface ReportThrottle {
+  /** True when this key has not been sent inside the window; records the send. */
+  shouldSend(key: string): boolean;
+  readonly size: number;
+}
+
+/**
+ * An in-memory keyed throttle (the `failureMemo` pattern).
+ *
+ * ITS LIMITS, stated because they bound what the hour means: the memory is
+ * per server instance and lost on a cold start, so the real ceiling is one
+ * event per page per hour PER INSTANCE that serves it, plus one after each
+ * cold start. That is bounded by the instance count, not by traffic, which is
+ * the point. A full map drops expired keys first, then the oldest, so an
+ * evicted key can report again early, never more often than once per
+ * eviction.
+ */
+export function createReportThrottle({
+  ttlMs = DISPLAY_MISMATCH_THROTTLE_MS,
+  maxKeys = DISPLAY_MISMATCH_THROTTLE_MAX_KEYS,
+  now = Date.now,
+}: { ttlMs?: number; maxKeys?: number; now?: () => number } = {}): ReportThrottle {
+  const sentAt = new Map<string, number>();
+  return {
+    shouldSend(key) {
+      const t = now();
+      const at = sentAt.get(key);
+      if (at !== undefined && t - at < ttlMs) return false;
+      sentAt.delete(key);
+      if (sentAt.size >= maxKeys) {
+        for (const [k, v] of sentAt) if (t - v >= ttlMs) sentAt.delete(k);
+      }
+      if (sentAt.size >= maxKeys) {
+        const oldest = sentAt.keys().next().value;
+        if (oldest !== undefined) sentAt.delete(oldest);
+      }
+      sentAt.set(key, t);
+      return true;
+    },
+    get size() {
+      return sentAt.size;
+    },
+  };
+}
+
+/** The throttle key: the page and the exact blocks that disagree. */
+export function displayMismatchThrottleKey(report: DisplayMismatchReport): string {
+  const { siteId, slug, blockIds } = report.capture.tags;
+  return `${siteId}|${slug}|${blockIds}`;
 }
