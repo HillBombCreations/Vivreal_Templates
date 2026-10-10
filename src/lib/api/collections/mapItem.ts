@@ -24,10 +24,19 @@ const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thu
 /**
  * Media fields that are never a picture, so the type-based scan skips them.
  * Contract C12 (OW7): a help row carries `video`, `videoDesktop` and
- * `videoCaptions` (a WebVTT file). Without this, a row with a video and no
- * `image` would get the video's URL as its picture.
+ * `videoCaptions` (a WebVTT file); F-C24 (v5 item 26) adds
+ * `videoCaptionsDesktop`, the captions timed to the computer video. Without
+ * this, a row with a video and no `image` would get the video's (or a
+ * captions file's) URL as its picture. The fields themselves reach the
+ * renderer's `readRowVideo` untouched through `raw`, already signed by
+ * VR_Client_API.
  */
-const NON_IMAGE_MEDIA_FIELDS: ReadonlySet<string> = new Set(['video', 'videoDesktop', 'videoCaptions']);
+const NON_IMAGE_MEDIA_FIELDS: ReadonlySet<string> = new Set([
+  'video',
+  'videoDesktop',
+  'videoCaptions',
+  'videoCaptionsDesktop',
+]);
 
 /**
  * Resolve the signed image URL for an object by the field's TYPE, not its name.

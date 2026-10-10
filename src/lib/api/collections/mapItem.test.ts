@@ -139,3 +139,39 @@ test("ALLOW (C12): an image under any other field name is still found after a vi
   );
   assert.equal(item.imageUrl, "https://media.vivreal.io/c.jpg");
 });
+
+// F-C24 (v5 item 26): the computer video's own captions file.
+test("REFUSE (F-C24): a row whose only media besides video is videoCaptionsDesktop gets no imageUrl from it", () => {
+  const item = toContentItem(
+    {
+      _id: "row4",
+      objectValue: {
+        title: "Step 4",
+        video: media("https://media.vivreal.io/d-402.mp4"),
+        videoCaptionsDesktop: media("https://media.vivreal.io/d-1440.vtt"),
+      },
+    },
+    "collection",
+  );
+  assert.equal(item.imageUrl, undefined);
+});
+
+test("ALLOW (F-C24): a row with videoCaptionsDesktop passes it through signed, beside the phone track", () => {
+  const item = toContentItem(
+    {
+      _id: "row5",
+      objectValue: {
+        title: "Step 5",
+        video: media("https://media.vivreal.io/e-402.mp4"),
+        videoDesktop: media("https://media.vivreal.io/e-1440.mp4"),
+        videoCaptions: media("https://media.vivreal.io/e-402.vtt?Signature=a"),
+        videoCaptionsDesktop: media("https://media.vivreal.io/e-1440.vtt?Signature=b"),
+        image: media("https://media.vivreal.io/e.jpg"),
+      },
+    },
+    "collection",
+  );
+  assert.deepEqual(item.raw?.videoCaptionsDesktop, media("https://media.vivreal.io/e-1440.vtt?Signature=b"));
+  assert.deepEqual(item.raw?.videoCaptions, media("https://media.vivreal.io/e-402.vtt?Signature=a"));
+  assert.equal(item.imageUrl, "https://media.vivreal.io/e.jpg");
+});
