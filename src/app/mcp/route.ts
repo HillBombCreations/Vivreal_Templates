@@ -16,11 +16,22 @@
  * does exact-match.
  */
 import { NextRequest, NextResponse } from 'next/server';
+import { mcpGetAnswer } from '@/lib/mcpBrowserGet';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 // OPTIONS for CORS preflight from browser-side agent clients.
+/**
+ * A browser opening vivreal.io/mcp goes to the connect page; every other GET
+ * (any customer site, any MCP client) is the protocol's 405. See
+ * `src/lib/mcpBrowserGet.ts`.
+ */
+export function GET(request: NextRequest): NextResponse {
+  const answer = mcpGetAnswer(request.headers.get('accept'), process.env.SITE_ID);
+  return new NextResponse(null, { status: answer.status, headers: answer.headers });
+}
+
 export async function OPTIONS(): Promise<NextResponse> {
   return new NextResponse(null, {
     status: 204,

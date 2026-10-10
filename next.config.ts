@@ -34,6 +34,21 @@ const nextConfig: NextConfig = {
   // (`node_modules/next/dist/docs/.../expireTime.md`, "one hour in seconds").
   // Effect on a 300s route: `s-maxage=300, stale-while-revalidate=3300`.
   expireTime: 3600,
+  // v5 search R4: HSTS on every response. Every fleet host (custom domains,
+  // *.vivreal.io subdomains, vivreal.io) is already HTTPS-only behind a 301,
+  // so this only tells a browser to skip the plain-HTTP hop next time. One
+  // year, the conventional value. NO `includeSubDomains` and NO `preload`:
+  // vivreal.io itself is served by this app, and either directive there would
+  // bind every *.vivreal.io host, which this app does not own. A browser
+  // ignores the header over plain HTTP, so local dev is unaffected.
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }],
+      },
+    ];
+  },
   // NOTE: `experimental.viewTransition` was REMOVED here in the Next 16.3.0
   // bump. The flag did not disappear because the feature was dropped — it
   // GRADUATED: "View transitions work in the Next.js App Router with no
