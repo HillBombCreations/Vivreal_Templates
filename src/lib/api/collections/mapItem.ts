@@ -24,10 +24,19 @@ const PREFERRED_IMAGE_FIELDS = ['image', 'productImage', 'photo', 'avatar', 'thu
 /**
  * Media fields that are never a picture, so the type-based scan skips them.
  * Contract C12 (OW7): a help row carries `video`, `videoDesktop` and
- * `videoCaptions` (a WebVTT file). Without this, a row with a video and no
- * `image` would get the video's URL as its picture.
+ * `videoCaptions` (a WebVTT file); F-C24 (v5 item 26) adds
+ * `videoCaptionsDesktop`, the captions timed to the computer video. Without
+ * this, a row with a video and no `image` would get the video's (or a
+ * captions file's) URL as its picture. The fields themselves reach the
+ * renderer's `readRowVideo` untouched through `raw`, already signed by
+ * VR_Client_API.
  */
-const NON_IMAGE_MEDIA_FIELDS: ReadonlySet<string> = new Set(['video', 'videoDesktop', 'videoCaptions']);
+const NON_IMAGE_MEDIA_FIELDS: ReadonlySet<string> = new Set([
+  'video',
+  'videoDesktop',
+  'videoCaptions',
+  'videoCaptionsDesktop',
+]);
 
 /**
  * Resolve the signed image URL for an object by the field's TYPE, not its name.
@@ -111,6 +120,17 @@ function safeLinkHref(value: string): string {
 }
 
 /**
+ * A record timestamp as an ISO string, or `undefined` for anything that is not
+ * a real date. The page list and `dateModified` are claims a crawler acts on,
+ * so a value that does not parse is dropped, never passed through.
+ */
+function isoDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' && !(value instanceof Date)) return undefined;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+/**
  * Map a raw API object to the unified ContentItem shape.
  */
 export function toContentItem(
@@ -121,7 +141,9 @@ export function toContentItem(
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
 
   const title = String(objectValue.title ?? objectValue.name ?? '');
-  const description = objectValue.description ?? objectValue.bio ?? objectValue.review;
+  // `comment` last (F-C28): the Reviews starter and every seeded Reviews list
+  // store the text there, and nothing read it ("No review text").
+  const description = objectValue.description ?? objectValue.bio ?? objectValue.review ?? objectValue.comment;
   const price = objectValue.price;
   const date = objectValue.date ?? raw.publishDate;
   const tags = Array.isArray(objectValue.tags) ? objectValue.tags.map(String) : undefined;
@@ -147,6 +169,7 @@ export function toContentItem(
     artDirectedSources: artDirectedSources.length ? artDirectedSources : undefined,
     price: price != null ? String(price) : undefined,
     date: date != null ? String(date) : undefined,
+    updatedAt: isoDate(raw.updatedAt),
     href,
     tags,
     source,

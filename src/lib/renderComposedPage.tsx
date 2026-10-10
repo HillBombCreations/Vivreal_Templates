@@ -10,6 +10,8 @@ import {
   shouldRenderTitleBand,
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
+import type { PageWithBlocks } from '@hillbombcreations/site-renderer/bindings';
+import { reportDisplayMismatches } from '@/lib/reportDisplayMismatch';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import type { PageContextResult } from '@/lib/api/composition/buildPageContext';
 import { emptinessIsDecidable } from '@/lib/api/composition/pageEmptiness';
@@ -189,6 +191,11 @@ export async function renderComposedPage({
     if (context.emptinessUnknown) refuseUnknownEmptiness(composedPage.format);
     if (context.isEmpty) notFound();
   }
+
+  // F-C7: one event per render when a block's displayAs and type disagree.
+  // Cast: the Templates page mirror and the renderer's block page differ only
+  // in presentation fields the reading never touches.
+  reportDisplayMismatches(composedPage as unknown as PageWithBlocks, composedPage.slug);
 
   // SP-6 Task 5 Concern-3: transitional title band (B-wrapper fallback).
   //

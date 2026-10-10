@@ -11,10 +11,9 @@
  * `server-only`.
  *
  * Type-only imports are fine here: `--experimental-strip-types` erases them,
- * so neither specifier is resolved at runtime. The one VALUE import it does
- * take, `isSocialBandProvider`, is from a module with the same no-runtime-
- * dependency property and is imported with its `.ts` extension for the same
- * reason.
+ * so neither specifier is resolved at runtime. Its two VALUE imports both
+ * keep that property: `isSocialBandProvider` (imported with its `.ts`
+ * extension for the same reason) and the renderer's pure `/bindings` subpath.
  */
 import type { Block } from '@hillbombcreations/site-renderer';
 import type { PageConfig } from '@/types/SiteData';
@@ -22,6 +21,9 @@ import type { PageConfig } from '@/types/SiteData';
 // that READS the same ticks. Dependency-free and `.ts`-extension imported for
 // the same reason this module is pure: `node --test` resolves no extensions.
 import { isSocialBandProvider } from '../collections/socialBand.ts';
+// The renderer's pure `/bindings` subpath: no React, `next` or UI import, so
+// it loads under the plain-Node runner too.
+import { pageBindings } from '@hillbombcreations/site-renderer/bindings';
 
 /**
  * The distinct data targets a page needs, flattened across every binding role.
@@ -54,69 +56,49 @@ export interface PageBindingsByRole {
 }
 
 /**
- * Walk a flat list of blocks (including recursive `group` children — D-B) and
- * accumulate all unique collectionIds and integrationProviders referenced.
+ * Accumulate every unique collectionId and integration provider a block page
+ * binds, read through the renderer's `pageBindings` (F-C8, v5): the one
+ * reading of a page's bindings the whole fleet shares, so this prefetch asks
+ * for exactly the lists the renderer will draw. It walks group children (and
+ * any other block's children) in drawing order.
  *
- * This is O(n) over the total number of blocks + bindings — block arrays are
- * small (single digits per page) so no Map/Set optimisation beyond dedup needed.
+ * Disabled blocks are still collected. A prefetch that is a superset of what
+ * draws costs one cached read; one that is a subset renders an empty section.
+ *
+ * A binding can carry a `collectionId` beside an `integrationProvider` (a
+ * products list behind a payments provider); `pageBindings` files it under
+ * integrations but keeps the id, and both are collected, as before.
  */
 function collectFromBlocks(
   blocks: Block[],
   collectionIds: Set<string>,
   integrationTypes: Set<string>,
 ): void {
-  for (const block of blocks) {
-    // Live CMS block data can omit `config` even though the published Block type
-    // declares it required (e.g. coordinated-products group children authored
-    // without a binding). Skip such blocks defensively — they contribute no
-    // bindings and no children — rather than dereferencing `undefined.config`.
-    // Mirrors the optional-chaining block reads in `getPageCollectionId`.
-    const config = block?.config;
-    if (!config) continue;
-
-    // Recurse into group-kind children (D-B nesting: group blocks carry
-    // config.children[] which are full Block objects mapped recursively).
-    // Cast kind to string: 'group' is not in the published BlockKind union yet
-    // (ph.0 adds it in the renderer source; published ^1.11.0 lacks it). The
-    // cast is safe — unknown kinds are simply ignored by all other branches.
-    if ((block.type?.kind as string) === 'group' && Array.isArray(config.children)) {
-      collectFromBlocks(config.children as Block[], collectionIds, integrationTypes);
+  const { collections, integrations } = pageBindings({ blocks });
+  for (const binding of [...collections, ...integrations]) {
+    if (binding.collectionId) {
+      collectionIds.add(binding.collectionId);
     }
-
-    for (const binding of config.bindings ?? []) {
-      if (binding.collectionId) {
-        collectionIds.add(binding.collectionId);
-      }
-      if (binding.integrationProvider) {
-        const t = binding.integrationProvider.toLowerCase();
-        if (t) integrationTypes.add(t);
-      }
-      // B3.1 - a combined social band shows several platforms through ONE
-      // binding, and the prefetch has to fetch all of them or the band renders
-      // only the provider it happens to be bound to. The ticks live on the
-      // binding's own sectionConfig.
-      //
-      // FILTERED THROUGH THE SAME ALLOWLIST `socialBandConfigs` READS WITH,
-      // and that is not tidiness. This collector used to add any string on
-      // that key, while the reader refused everything outside the four social
-      // providers, so a `platforms: ['stripe']` tick put `stripe` into
-      // `integrationTypes` with no band that would ever consume it. Two
-      // consumers downstream resolve a provider by SEARCHING that list rather
-      // than by being handed one: `[slug]/[itemId]/page.tsx` picks a page's
-      // storefront with `integrationTypes.find(isPaymentsProvider)`, and
-      // `buildPageContext` routes a payments type through the product bridge.
-      // So a tick on a key no layout registers today was one authored string
-      // away from deciding which payments provider a detail page reads. The
-      // collision is not reachable right now (`platforms` is not a configKey
-      // on any registered layout), which is exactly why it is worth closing
-      // while it costs one predicate.
-      const ticked = (binding.sectionConfig as { platforms?: unknown } | undefined)?.platforms;
-      if (Array.isArray(ticked)) {
-        for (const platform of ticked) {
-          if (typeof platform !== 'string') continue;
-          const t = platform.trim().toLowerCase();
-          if (t && isSocialBandProvider(t)) integrationTypes.add(t);
-        }
+    if (binding.integrationProvider) {
+      const t = binding.integrationProvider.toLowerCase();
+      if (t) integrationTypes.add(t);
+    }
+    // B3.1 - a combined social band shows several platforms through ONE
+    // binding, and the prefetch has to fetch all of them or the band renders
+    // only the provider it happens to be bound to. The ticks live on the
+    // binding's own sectionConfig.
+    //
+    // FILTERED THROUGH THE SAME ALLOWLIST `socialBandConfigs` READS WITH: a
+    // `platforms: ['stripe']` tick must never put `stripe` into
+    // `integrationTypes`, because `[slug]/[itemId]/page.tsx` picks a page's
+    // storefront with `integrationTypes.find(isPaymentsProvider)` and
+    // `buildPageContext` routes a payments type through the product bridge.
+    const ticked = (binding.sectionConfig as { platforms?: unknown } | undefined)?.platforms;
+    if (Array.isArray(ticked)) {
+      for (const platform of ticked) {
+        if (typeof platform !== 'string') continue;
+        const t = platform.trim().toLowerCase();
+        if (t && isSocialBandProvider(t)) integrationTypes.add(t);
       }
     }
   }

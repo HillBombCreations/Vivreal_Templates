@@ -41,6 +41,8 @@ export interface ProductsQueryOptions {
   searchVal?: string;
   sortVal?: string;
   integrationType?: string;
+  /** Rows to skip, for reading a whole list page by page (`../readAllPages.ts`). */
+  skip?: number;
 }
 
 /**
@@ -61,5 +63,7 @@ export function buildProductsQuery(opts?: ProductsQueryOptions): URLSearchParams
   }
   if (opts?.searchVal) params.set("search", opts.searchVal);
   if (opts?.sortVal) params.set("sort", opts.sortVal);
+  // Only a later page sets it, so every first-page cache key is unchanged.
+  if (opts?.skip) params.set("skip", String(opts.skip));
   return params;
 }

@@ -31,6 +31,8 @@ import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
+import { ContactButtons, nowInZone, readSiteHours, type SiteData as RendererSiteData } from '@hillbombcreations/site-renderer';
+import { contactButtonsSiteData } from '@/lib/contactButtons';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
 import AttributionCapture from '@/components/AttributionCapture';
@@ -144,7 +146,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
     // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
     const templateType = siteData.siteInfo?.templateType;
-    const siteSchema = buildSiteJsonLd(siteData);
+    // F-C15: the hours go through the renderer's own parser (the one every
+    // hours surface draws from); `today` is the business's date, used only to
+    // leave passed holiday changes out of the description.
+    const contactSlice = contactButtonsSiteData(siteData);
+    const siteSchema = buildSiteJsonLd(siteData, {
+        hours: readSiteHours(siteData.businessInfo?.hours),
+        today: nowInZone(siteData.timezone).dateISO,
+    });
     // Per-site font theming — siteData.fontFamily is the migrator's captured
     // primary typeface (e.g. 'Geist' for vivreal.io). `null` when absent, in
     // which case NOTHING below renders (no className, no style, no <link>) —
@@ -219,6 +228,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   <ViewTransition>
                       {children}
                   </ViewTransition>
+                  {/* Search R3: Call and Directions on phones, when the
+                      business has a phone or an address and the owner has not
+                      switched them off. Not with an authored UtilityDock, which
+                      already is a bottom bar with the phone and address. */}
+                  {contactSlice && (
+                      // Cast: the slice carries every field `resolveContactButtons` reads.
+                      <ContactButtons siteData={contactSlice as RendererSiteData} />
+                  )}
                   {templateType === 'restaurant' && (
                       <FloatingCta
                           label="Reserve a Table"

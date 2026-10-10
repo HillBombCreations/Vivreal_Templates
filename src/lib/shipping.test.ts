@@ -231,11 +231,17 @@ test("that scan can actually fail (control)", () => {
 
 test("every shipping decision in the tree now goes through the helper", () => {
   // The other direction: the rule is not merely absent, it is CALLED.
-  const callers = sourceFiles(SRC).filter((f) =>
-    /from "@\/lib\/shipping"/.test(fs.readFileSync(f, "utf8")),
-  );
-  assert.ok(
-    callers.length >= 6,
-    `only ${callers.length} modules import the helper; there were 7 inline readings`,
-  );
+  // Named, not counted. Six modules imported the helper; three of them were
+  // unreachable from any route and went in the v5 dead-code pass
+  // (HomeSections/HeroSectionEcommerce, PageTemplates/ProductDetailClient and
+  // PageTemplates/ProductsClient), which a count would read as a lost caller.
+  const callers = sourceFiles(SRC)
+    .filter((f) => /from "@\/lib\/shipping"/.test(fs.readFileSync(f, "utf8")))
+    .map((f) => path.relative(SRC, f).split(path.sep).join("/"))
+    .sort();
+  assert.deepEqual(callers, [
+    "components/Navigation/CartDialog.tsx",
+    "components/PageTemplates/ProductDetailClient/FloatingCartDialog.tsx",
+    "lib/cartAdapter.ts",
+  ]);
 });

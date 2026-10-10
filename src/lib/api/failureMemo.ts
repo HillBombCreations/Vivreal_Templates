@@ -20,6 +20,13 @@
  *   as a throw) is never recorded, because the record happens only after the
  *   caller's handler RETURNED a fallback.
  *
+ * ONE READ PER KEY AT A TIME (F-C13, QA-W7-1b). Concurrent reads of one key
+ * in a single render (four `siteDetails` reads, measured) used to each miss
+ * the memo, because a failure is recorded only after its read settles, so one
+ * failed upstream call logged 4 fallbacks and sent 4 Sentry captures. A read
+ * of a key that is already running now joins it: one upstream call, one
+ * failure handler run (so one capture), and every joiner gets the same answer.
+ *
  * NO `server-only` IMPORT, so the policy runs under `node --test`; `client.ts`
  * is the thin call site.
  */
@@ -39,7 +46,16 @@ export interface FailureMemo {
   recordFailure(key: string): void;
   clear(key: string): void;
   readonly size: number;
+  /**
+   * Reads running right now, by key. An entry lives only while its read is in
+   * flight (removed when it settles), so this is bounded by concurrency, not
+   * by the key space.
+   */
+  readonly inFlight: Map<string, Promise<unknown>>;
 }
+
+/** What a shared read settled to: its value, or "failed, use your fallback". */
+type SharedOutcome<T> = { ok: true; value: T } | { ok: false };
 
 export function createFailureMemo({
   ttlMs = FAILURE_MEMO_MS,
@@ -47,6 +63,7 @@ export function createFailureMemo({
   now = Date.now,
 }: { ttlMs?: number; maxKeys?: number; now?: () => number } = {}): FailureMemo {
   const failedAt = new Map<string, number>();
+  const inFlight = new Map<string, Promise<unknown>>();
 
   const sweepExpired = () => {
     const t = now();
@@ -79,6 +96,7 @@ export function createFailureMemo({
     get size() {
       return failedAt.size;
     },
+    inFlight,
   };
 }
 
@@ -87,6 +105,10 @@ export function createFailureMemo({
  *
  * `handleFailure` decides what a failure means: return the fallback (the
  * failure is then recorded) or throw (it propagates and nothing is recorded).
+ * It runs once per upstream call, never once per caller: a caller that joins a
+ * running read gets that read's value, its own `fallback` when the read
+ * failed, or the same throw when the read's handler threw (a 402 is a 402 for
+ * every reader of the path).
  */
 export async function readWithFailureMemo<T>(
   memo: FailureMemo,
@@ -98,14 +120,32 @@ export async function readWithFailureMemo<T>(
   // Already reported by the read that failed inside this window, so the
   // fallback is returned without a second capture for the same outage.
   if (memo.hasRecentFailure(key)) return fallback;
-  let value: T;
-  try {
-    value = await read();
-  } catch (err) {
-    const result = handleFailure(err);
-    memo.recordFailure(key);
-    return result;
+
+  // Cast: a key is one request path, and every read of one path resolves the
+  // same payload type, so the running read's outcome is a SharedOutcome<T>.
+  const running = memo.inFlight.get(key) as Promise<SharedOutcome<T>> | undefined;
+  if (running) {
+    const outcome = await running;
+    return outcome.ok ? outcome.value : fallback;
   }
-  memo.clear(key);
-  return value;
+
+  let handled: T = fallback;
+  const shared = (async (): Promise<SharedOutcome<T>> => {
+    try {
+      return { ok: true, value: await read() };
+    } catch (err) {
+      handled = handleFailure(err);
+      memo.recordFailure(key);
+      return { ok: false };
+    }
+  })();
+  memo.inFlight.set(key, shared);
+  try {
+    const outcome = await shared;
+    if (!outcome.ok) return handled;
+    memo.clear(key);
+    return outcome.value;
+  } finally {
+    if (memo.inFlight.get(key) === shared) memo.inFlight.delete(key);
+  }
 }

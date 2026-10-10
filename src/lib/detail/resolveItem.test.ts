@@ -33,3 +33,20 @@ test('isDoorwayMiss: true when the item exists in the wider pool (a scope exclud
 test('isDoorwayMiss: false when the item does not exist anywhere (a genuine 404)', () => {
   assert.equal(isDoorwayMiss(items, 'laser-hair-removal', 'slug'), false);
 });
+
+// F-C16R: a SYSTEM key is read top-level first, then `objectValue._system`.
+test('ALLOW (F-C16R): an item whose slug lives only in _system resolves by it', () => {
+  const pool = [{ id: 'x1', raw: { title: 'New', _system: { slug: 'new-cut' } } }];
+  assert.equal(resolveItem(pool, 'new-cut', 'slug')?.id, 'x1');
+});
+
+test('REFUSE (F-C16R): a stored top-level slug beats _system, so no live address moves', () => {
+  const pool = [{ id: 'x1', raw: { slug: 'botox', _system: { slug: 'botox-2' } } }];
+  assert.equal(resolveItem(pool, 'botox', 'slug')?.id, 'x1');
+  assert.equal(resolveItem(pool, 'botox-2', 'slug'), undefined);
+});
+
+test('REFUSE (F-C16R): only SYSTEM keys are read from _system (an owner field is not)', () => {
+  const pool = [{ id: 'x1', raw: { _system: { title: 'hidden' } } }];
+  assert.equal(resolveItem(pool, 'hidden', 'title'), undefined);
+});

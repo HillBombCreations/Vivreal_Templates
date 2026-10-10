@@ -42,6 +42,9 @@
  *    standard reports a network error as a `TypeError`; an HTTP response of any
  *    status is a resolved `Response` and is returned untouched, so a 500, a 402
  *    quota answer or a frozen-group 400 is never repeated.
+ *  - Never a refused connection (`ECONNREFUSED`): the host answered that
+ *    nothing is listening, which is an outage, not a stale socket. See
+ *    `DOWN_UPSTREAM_CODES`.
  *  - Only `GET` and `HEAD`. A `POST` that died mid-flight may have reached the
  *    server, so it is never replayed here.
  *  - Never after the caller's own `signal` has aborted: an abort is the
@@ -160,10 +163,22 @@ export interface ReconnectOptions {
   readonly label?: string;
 }
 
+/**
+ * Socket codes that mean the far end is DOWN, not that a pooled socket went
+ * stale. A refused connection was answered, by the host, with "nothing is
+ * listening": a fresh connection a few hundred ms later meets the same answer.
+ * None of the 209 terminal post-thaw failures the research classified was one
+ * (`UND_ERR_SOCKET` 77, `ETIMEDOUT` 72, `ECONNRESET` 60), so this removes no
+ * recovery. What it removes is QA-W7-1a: with the Client API down, the
+ * middleware's cold lookup made 3 calls (1 plus 2 retries) instead of 1.
+ */
+const DOWN_UPSTREAM_CODES: ReadonlySet<string> = new Set(['ECONNREFUSED']);
+
 /** True when a `fetch()` rejection is a transport failure worth one more try. */
 export function isTransientNetworkError(err: unknown, signal?: AbortSignal | null): boolean {
   if (signal?.aborted) return false;
-  return err instanceof TypeError;
+  if (!(err instanceof TypeError)) return false;
+  return !DOWN_UPSTREAM_CODES.has(describeNetworkError(err));
 }
 
 /**

@@ -26,7 +26,7 @@ import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDe
 import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
 import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
-import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
+import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -39,6 +39,7 @@ import type {
   PageCtaConfig as RendererPageCtaConfig,
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
+import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
@@ -56,6 +57,7 @@ import {
 } from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import { detailFieldMap, enterDetailItems } from "@/lib/detail/detailItems";
 import RichTextImages from "@/components/RichTextImages";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
 import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
@@ -408,7 +410,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={showJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: show.title })} />
         <Navbar />
         {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
             carry no CMS rich text, so the client boundary stays as small as it
@@ -486,7 +488,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={memberJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: member.name })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
@@ -648,7 +650,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={productJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(productJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: productName })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
@@ -789,6 +791,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
+      // R4: the Article carries when the item last changed (absent when the
+      // record has no timestamp; never the clock).
+      dateModified: effectiveItem.updatedAt,
       ...(recipe
         ? {
             durableImageUrl: recipeCardUrl,
@@ -814,7 +819,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       const collectionProduct = contentItemToProduct(effectiveItem, { specFields: storefrontConfig?.specFields });
       return (
         <>
-          <JsonLd schema={itemJsonLd} />
+          <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
           <Navbar />
           <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
@@ -839,7 +844,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
@@ -892,9 +897,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // arm above via `resolveItem` so both arms agree on lookup semantics.
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
-      const { items, degraded, richTextImageUrls } = await getCollectionItems(itemsCollectionId, {
-        limit: 100,
-      });
+      // Every item, not the first 100 (v5 search R4).
+      const read = await getAllCollectionItems(itemsCollectionId);
+      const { degraded, richTextImageUrls } = read;
+      // `_system` readable, then the binding's field map (lib/detail/detailItems).
+      const items = enterDetailItems(read.items, detailFieldMap(pageConfig, itemsCollectionId));
       reads.push({ source: "menu-items", degraded });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
@@ -902,7 +909,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items, degraded, richTextImageUrls } = await getCollectionItems(cid, { limit: 100 });
+        const read = await getAllCollectionItems(cid);
+        const { degraded, richTextImageUrls } = read;
+        const items = enterDetailItems(read.items, detailFieldMap(pageConfig, cid));
         reads.push({ source: "menu-sibling", degraded });
         Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);
@@ -953,7 +962,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: item.title || undefined })} />
         <Navbar />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate

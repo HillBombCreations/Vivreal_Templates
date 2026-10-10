@@ -12,7 +12,9 @@ import { readRichTextImageUrls } from "../richTextImageUrls.ts";
 import { transformProduct } from "./transformProduct.ts";
 // Same split, same reason: the query builder is pure so `node --test` can pin
 // the fetch window. See that module's docblock for why the limit is explicit.
-import { buildProductsQuery } from "./productsQuery.ts";
+import { buildProductsQuery, PRODUCTS_FETCH_LIMIT } from "./productsQuery.ts";
+import { filterKey } from "./filterKey.ts";
+import { readAllPages } from "../readAllPages";
 import type { Product, Filter } from "@/types/Products";
 
 const SITE_ID = process.env.SITE_ID || "";
@@ -70,6 +72,8 @@ export interface ProductsOpts {
   searchVal?: string;
   sortVal?: string;
   integrationType?: string;
+  /** Rows to skip: a later page of `getAllProductsRead`. */
+  skip?: number;
 }
 
 /**
@@ -85,7 +89,7 @@ export interface ProductsOpts {
  */
 export async function getProductsRead(
   opts?: ProductsOpts,
-): Promise<{ products: Product[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ products: Product[]; totalCount: number; degraded: boolean; richTextImageUrls: Record<string, string> }> {
   const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
@@ -107,8 +111,10 @@ export async function getProductsRead(
         productTags(type)
       )
   );
+  const rows = unwrapItems(raw);
   return {
-    products: unwrapItems(raw).map(transformProduct),
+    products: rows.map(transformProduct),
+    totalCount: Array.isArray(raw) ? rows.length : (raw?.totalCount ?? rows.length),
     degraded,
     richTextImageUrls: unwrapRichTextImageUrls(raw),
   };
@@ -130,6 +136,25 @@ export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
 }
 
 /**
+ * Every product of the provider, paged past VR_Client_API's 100-row read (v5
+ * search R4). The detail route and the page list both read through this, so a
+ * shop's 101st product has a detail page and a line in the page list. Each
+ * page is the same cached read the shop listing makes (the first page's key
+ * is byte-identical to it). See `../readAllPages.ts`.
+ */
+export async function getAllProductsRead(
+  integrationType?: string,
+): Promise<{ products: Product[]; degraded: boolean; truncated: boolean; richTextImageUrls: Record<string, string> }> {
+  const richTextImageUrls: Record<string, string> = {};
+  const all = await readAllPages<Product>(async (skip) => {
+    const page = await getProductsRead({ integrationType, ...(skip ? { skip } : {}) });
+    Object.assign(richTextImageUrls, page.richTextImageUrls);
+    return { items: page.products, totalCount: page.totalCount, degraded: page.degraded };
+  }, { pageSize: PRODUCTS_FETCH_LIMIT });
+  return { products: all.items, degraded: all.degraded, truncated: all.truncated, richTextImageUrls };
+}
+
+/**
  * One product, WITH whether the list it was looked up in was actually read.
  *
  * The detail route's product arm is the caller that has a verdict to draw: on a
@@ -148,10 +173,10 @@ export async function getProductByIdRead(
   // There is no by-id read on VR_Client_API, so this detail page can only find
   // a product inside the window `getProductsRead` asks for. That window used to
   // be the server's 20-row default, which meant a merchant's 21st product had
-  // no detail page, its card linked to a 404 with no error anywhere. It is now
-  // PRODUCTS_FETCH_LIMIT (100, the server ceiling); past that a by-id route is
-  // required. See ./productsQuery.ts.
-  const { products, degraded, richTextImageUrls } = await getProductsRead({ integrationType });
+  // no detail page, its card linked to a 404 with no error anywhere. Then it
+  // was PRODUCTS_FETCH_LIMIT (100, the server ceiling), and the 101st had the
+  // same 404. v5 (search R4) reads every page instead: `getAllProductsRead`.
+  const { products, degraded, richTextImageUrls } = await getAllProductsRead(integrationType);
   return {
     product: products.find((p) => p._id === productId) ?? null,
     degraded,
@@ -185,7 +210,7 @@ export async function getFilters(collectionId: string): Promise<Filter[]> {
     const obj = (item.objectValue ?? item) as Record<string, unknown>;
     return {
       title: String(obj.title ?? ""),
-      key: String(obj.key ?? ""),
+      key: filterKey(obj),
       filters: Array.isArray(obj.filters) ? obj.filters.map(String) : [],
       type: obj.type ? String(obj.type) : undefined,
     };

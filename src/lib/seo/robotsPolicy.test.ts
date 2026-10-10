@@ -12,10 +12,9 @@ import { buildRobotsPolicy } from './robotsPolicy.ts';
 // onto them regardless.
 //
 // #123 moved llms.txt from `/.well-known/llms.txt` (now a 301) to `/llms.txt`.
-// The wildcard disallow kept naming only the old path, so generic crawlers
-// went from disallowed to allowed on the file without anyone deciding it.
-// The prior policy is restored at the new path; the old path stays listed
-// because it still exists as a redirect.
+// v5 (search R4, seo-visibility gap 24) then decided the file itself is
+// allowed: it was served with a 200 while the wildcard rule disallowed it.
+// The retired path stays disallowed, so the file is read at its one address.
 
 const LIVE_SITE = {
   lifecycleState: 'live' as const,
@@ -48,15 +47,18 @@ function ruleFor(userAgent: string): RobotsRule {
 const LIVE_ACTION_AGENTS = ['ChatGPT-User', 'OAI-SearchBot', 'PerplexityBot', 'Claude-User', 'Claude-Web'];
 const TRAINING_CRAWLERS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'CCBot', 'Google-Extended'];
 
-test('wildcard: /llms.txt is disallowed for generic crawlers, next to the retired /.well-known/llms.txt path', () => {
+test('ALLOW (v5 R4): /llms.txt is no longer disallowed for generic crawlers, so the file the site serves is not contradicted', () => {
   const wildcard = ruleFor('*');
   const disallow = toList(wildcard.disallow);
-  assert.ok(disallow.includes('/llms.txt'), '/llms.txt (the post-#123 path) must be in the wildcard disallow');
-  assert.ok(
-    disallow.includes('/.well-known/llms.txt'),
-    'the retired path is still a live 301 onto the file, so it stays disallowed too',
-  );
-  assert.deepEqual(toList(wildcard.allow), ['/'], 'public content stays indexable for the wildcard agent');
+  assert.ok(!disallow.includes('/llms.txt'), '/llms.txt must not be in the wildcard disallow');
+  assert.deepEqual(toList(wildcard.allow), ['/'], 'public content, /llms.txt included, stays reachable for the wildcard agent');
+});
+
+test('REFUSE (v5 R4): the agent tool endpoints and the retired llms path stay disallowed', () => {
+  const disallow = toList(ruleFor('*').disallow);
+  for (const path of ['/mcp', '/.well-known/mcp.json', '/.well-known/llms.txt']) {
+    assert.ok(disallow.includes(path), `${path} stays in the wildcard disallow`);
+  }
 });
 
 test('wildcard: the disallow list is exactly /private/ plus the agent endpoints (pinned so any change is deliberate)', () => {
@@ -65,7 +67,6 @@ test('wildcard: the disallow list is exactly /private/ plus the agent endpoints 
     '/mcp',
     '/.well-known/mcp.json',
     '/.well-known/llms.txt',
-    '/llms.txt',
   ]);
 });
 

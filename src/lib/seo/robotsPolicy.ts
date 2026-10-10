@@ -66,13 +66,15 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
 
   return {
     rules: [
-      // Default policy for every other crawler. `/llms.txt` is an agent
-      // endpoint in the same class as `/mcp`: generic search crawlers stay off
-      // it (a Markdown index of the site gains nothing from being indexed and
-      // must not compete with the real pages), while the live-action agents
-      // below are let onto it explicitly. `/.well-known/llms.txt` is the
-      // pre-#123 path, now a 301 onto `/llms.txt`; it stays listed so the
-      // retired path never becomes a side door into the same file.
+      // Default policy for every other crawler. `/llms.txt` is ALLOWED (v5,
+      // search R4, seo-visibility gap 24): the site served it with a 200 while
+      // this list told every crawler to stay off it, a contradiction. It is a
+      // plain index of the site's own public pages, written for AI tools, so
+      // there is nothing on it to keep from a crawler. `/mcp` and the MCP
+      // descriptor stay disallowed: they are a tool endpoint, not a document.
+      // `/.well-known/llms.txt` is the pre-#123 path, now a 301 onto
+      // `/llms.txt`; it stays listed so crawlers read the file at its one
+      // address.
       {
         userAgent: '*',
         allow: '/',
@@ -81,7 +83,6 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
           '/mcp',
           '/.well-known/mcp.json',
           '/.well-known/llms.txt',
-          '/llms.txt',
         ],
       },
 

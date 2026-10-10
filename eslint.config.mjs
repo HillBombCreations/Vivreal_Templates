@@ -32,9 +32,8 @@ const eslintConfig = [
     // learned that one the expensive way: its rule was first scoped to
     // components and app, and the four strings it had been written to catch
     // lived in `src/lib/`. A rule that cannot see the file it was written for
-    // is decoration. In this repo the same reasoning applies to
-    // `src/lib/contactErrorMessage.ts` and the `src/lib/api/**` empty-state
-    // strings, which are copy a visitor reads.
+    // is decoration. In this repo the same reasoning applies to the
+    // `src/lib/api/**` empty-state strings, which are copy a visitor reads.
     files: ["src/**/*.ts", "src/**/*.tsx"],
     plugins: { vivreal: { rules: { "owner-visible-copy": ownerVisibleCopy } } },
     rules: {

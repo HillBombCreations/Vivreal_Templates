@@ -13,6 +13,7 @@ import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
 import { resolvePageForSlug } from "@/lib/pages/builtInPages";
+import { pageMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
@@ -849,18 +850,17 @@ export async function generateMetadata({
     return buildEmptyPageMetadata(siteName);
   }
 
-  // Studio-authored SEO overrides take precedence over the label/name-derived
-  // defaults. `metaTitle` is the exact title (author owns the full string, so it
-  // is NOT suffixed with the site name); the derived title keeps the "| site"
-  // suffix for a sensible default.
-  const seo = pageConfig?.seo;
-  const derivedTitle =
-    pageConfig?.labels?.title || pageConfig?.name || STATIC_PAGE_TITLES[slug] || slug;
-  const title = seo?.metaTitle || `${derivedTitle} | ${siteName}`;
-  const description =
-    seo?.metaDescription ||
-    pageConfig?.labels?.subtitle ||
-    `${derivedTitle} | ${siteName}`;
+  // Studio-authored SEO overrides take precedence over the derived defaults.
+  // `metaTitle` is the exact title (author owns the full string, so it is NOT
+  // suffixed with the site name). Below the owner's words: the page format's
+  // own title (item 23: the checkout pages) and a summary built from the
+  // business facts (search R4). See `src/lib/seo/pageMetaText.ts`.
+  const { title, description } = pageMetaText({
+    page: pageConfig,
+    slug,
+    staticTitle: STATIC_PAGE_TITLES[slug],
+    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
+  });
 
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);

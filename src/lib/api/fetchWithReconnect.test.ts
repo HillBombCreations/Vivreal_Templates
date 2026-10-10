@@ -76,6 +76,22 @@ test('an error that is not a transport TypeError is not retried', async () => {
   assert.equal(state.calls, 1);
 });
 
+test('REFUSE (QA-W7-1a): a refused connection means the upstream is down, so it is tried once, not three times', async () => {
+  const state = scriptFetch([deadSocket('ECONNREFUSED'), new Response('ok')]);
+  await assert.rejects(fetchWithReconnect('https://client.vivreal.io/x'), (err: unknown) => {
+    assert.equal(describeNetworkError(err), 'ECONNREFUSED');
+    return true;
+  });
+  assert.equal(state.calls, 1);
+  assert.equal(isTransientNetworkError(deadSocket('ECONNREFUSED')), false);
+});
+
+test('ALLOW (QA-W7-1a control): every measured post-thaw code is still retried', () => {
+  for (const code of ['UND_ERR_SOCKET', 'ETIMEDOUT', 'ECONNRESET']) {
+    assert.equal(isTransientNetworkError(deadSocket(code)), true, code);
+  }
+});
+
 test("nothing is retried once the caller's own signal has aborted", async () => {
   const controller = new AbortController();
   controller.abort();
