@@ -26,6 +26,7 @@ import { toOriginSource } from './originSource';
 import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { readShowLowStock } from './showLowStock';
+import { readCommerce } from './commerce';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { refuseDegradedClaim } from './degraded';
 import { getCollectionItems } from '@/lib/api/collections';
@@ -99,6 +100,10 @@ interface SiteDetailsResponse {
   redirects?: SiteData['redirects'];
   tier?: string;
   paymentsProvider?: 'stripe' | 'square' | null;
+  /** F-C19 (VR_Client_API v5): which product lists are paused or moving. */
+  commerce?: SiteData['commerce'];
+  /** R5 (VR_Client_API v5): when the site document last changed. */
+  updatedAt?: string | null;
   /**
    * H177 - the shell's inline rich-text image map, key to signed media URL.
    * Present on every read from VR_Client_API v2.10.16 onward and always an
@@ -257,6 +262,9 @@ export const getSiteData = async (): Promise<SiteData> => {
     defaultOgImage: (raw.siteDetails.values as SiteData).defaultOgImage,
     tier: raw.tier,
     paymentsProvider: raw.paymentsProvider,
+    // F-C19 and R5 (VR_Client_API v5): top-level, never in siteDetails.values.
+    commerce: readCommerce(raw.commerce),
+    updatedAt: raw.updatedAt ?? null,
     // F2: the business wide low stock switch. Absent stays absent (contract C5),
     // so each template's own default decides. See ./showLowStock.ts.
     ...readShowLowStock(raw),

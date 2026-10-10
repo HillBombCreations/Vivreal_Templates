@@ -16,6 +16,7 @@ import { subscribeUser } from '@/lib/api/subscribe/client';
 import { requestDeliveryQuote } from '@/lib/delivery/quoteClient';
 import { trackLeadConversion } from '@/lib/analytics';
 import { pagesNeedCart, type CartGatePage } from '@/lib/payments';
+import { rendererCommerce } from '@/lib/rendererCommerce';
 
 const queryClient = new QueryClient();
 
@@ -112,7 +113,8 @@ const Providers = ({
         <NextProvider
             mapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
             // Storefront Phase 0.2: opts every storefront into the purchase rule.
-            commerce={{ paymentsProvider: siteData.paymentsProvider }}
+            // F-C19: plus the shop's paused or moving state (see lib/rendererCommerce.ts).
+            commerce={rendererCommerce(siteData)}
             onSubscribe={async (email: string, _source?: string, fields?: Record<string, string>) => {
                 const ok = await subscribeUser(email, subscribersCollectionId, fields);
                 // C5, the one conversion event. This comment used to say it
