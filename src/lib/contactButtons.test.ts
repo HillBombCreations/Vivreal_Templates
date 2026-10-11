@@ -45,3 +45,29 @@ test('ALLOW (R3): street and town give Directions', () => {
   );
   assert.match(resolveContactButtons(slice)?.directions?.href ?? '', /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=1%20Main%20St/);
 });
+
+// W25-6cb: the bar stands aside for any control fixed to the bottom of a phone.
+const STRIP = { enabled: true, links: [{ label: 'Order for pickup', href: '/order' }] } as unknown as SiteData['fulfillmentStrip'];
+
+test('REFUSE (W25-6cb): a fulfillment strip with links (Butter & Bloom) gets no bar', () => {
+  assert.equal(contactButtonsSiteData(site({ businessInfo: WITH_PHONE, fulfillmentStrip: STRIP })), null);
+});
+
+test('REFUSE (W25-6cb): a floating button, authored or the restaurant one, gets no bar', () => {
+  const fab = { label: 'Book a look', link: '/book' } as unknown as SiteData['floatingCta'];
+  assert.equal(contactButtonsSiteData(site({ businessInfo: WITH_PHONE, floatingCta: fab })), null);
+  // Cast: only templateType is read.
+  const restaurant = { templateType: 'restaurant' } as unknown as SiteData['siteInfo'];
+  assert.equal(contactButtonsSiteData(site({ businessInfo: WITH_PHONE, siteInfo: restaurant })), null);
+});
+
+test('ALLOW (W25-6cb): a switched-off or empty strip, a floating button with no link, and an EdgeDock (hidden on phones) keep the bar', () => {
+  const off = { ...STRIP, enabled: false } as unknown as SiteData['fulfillmentStrip'];
+  const empty = { enabled: true, links: [{ label: ' ', href: '/x' }] } as unknown as SiteData['fulfillmentStrip'];
+  const noLink = { label: 'Hi' } as unknown as SiteData['floatingCta'];
+  const edge = { items: [{ kind: 'call', href: 'tel:1' }] } as unknown as SiteData['edgeDock'];
+  for (const over of [{ fulfillmentStrip: off }, { fulfillmentStrip: empty }, { floatingCta: noLink }, { edgeDock: edge }]) {
+    const slice = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, ...over }));
+    assert.ok(resolveContactButtons(slice)?.call, JSON.stringify(over));
+  }
+});

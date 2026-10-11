@@ -230,8 +230,9 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   </ViewTransition>
                   {/* Search R3: Call and Directions on phones, when the
                       business has a phone or an address and the owner has not
-                      switched them off. Not with an authored UtilityDock, which
-                      already is a bottom bar with the phone and address. */}
+                      switched them off. Not with any other control fixed to the
+                      bottom of a phone (UtilityDock, FulfillmentStrip,
+                      FloatingCta): see contactButtonsSiteData. */}
                   {contactSlice && (
                       // Cast: the slice carries every field `resolveContactButtons` reads.
                       <ContactButtons siteData={contactSlice as RendererSiteData} />

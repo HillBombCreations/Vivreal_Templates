@@ -15,13 +15,37 @@ export interface ContactButtonsSiteData {
 }
 
 /**
- * The slice, or `null` when the bar must not mount at all: an authored
- * `utilityDock` already is a bottom bar with the phone and address, and two
- * bars would stack. Whether the bar then draws (a phone or an address, and the
- * owner's switch not off) is the renderer's `resolveContactButtons`.
+ * Does the site mount another control fixed to the bottom of a phone screen?
+ * Each clause is the mount condition `src/app/layout.tsx` uses for it:
+ *   - an authored `utilityDock` (`fixed bottom-0`), already a bar with the
+ *     phone and address;
+ *   - a `fulfillmentStrip` with content (`fixed bottom-4`, the renderer's
+ *     `fulfillmentStripHasContent`, mirrored because its entry point loads
+ *     React): on Butter & Bloom it covered Call and Directions on every page
+ *     (W25-6cb);
+ *   - a FloatingCta (`fixed bottom-4` on phones): an authored `floatingCta`
+ *     with a label and a link, or the restaurant template's own.
+ * NOT the EdgeDock: it is hidden on phones, so the bar is the only Call there.
+ */
+function hasFixedBottomControl(siteData: SiteData): boolean {
+  if (siteData.utilityDock) return true;
+  const strip = siteData.fulfillmentStrip;
+  if (strip && strip.enabled !== false && (strip.links ?? []).some((l) => l?.label?.trim() && l?.href?.trim())) {
+    return true;
+  }
+  if (siteData.floatingCta?.label && siteData.floatingCta?.link) return true;
+  return siteData.siteInfo?.templateType === 'restaurant';
+}
+
+/**
+ * The slice, or `null` when the bar must not mount at all: another control
+ * already sits at the bottom of the phone screen, and the bar would cover it
+ * or be covered (`hasFixedBottomControl`). Whether the bar then draws (a phone
+ * or an address, and the owner's switch not off) is the renderer's
+ * `resolveContactButtons`.
  */
 export function contactButtonsSiteData(siteData: SiteData): ContactButtonsSiteData | null {
-  if (siteData.utilityDock) return null;
+  if (hasFixedBottomControl(siteData)) return null;
   return {
     ...(siteData.contactButtons === undefined ? {} : { contactButtons: siteData.contactButtons }),
     ...(siteData.businessInfo
