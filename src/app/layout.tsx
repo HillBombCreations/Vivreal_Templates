@@ -26,7 +26,7 @@ import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { buildRootMetadata } from '@/lib/seo/rootMetadata';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
-import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
+import { themeVarStyle } from '@/lib/theme/themeVarStyle';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
@@ -78,56 +78,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-/**
- * Theme tokens SSR'd onto `<html>` so the FIRST paint — including route-level
- * `loading.tsx` skeletons — is palette-correct. Without this, the tokens only
- * arrive via the client-side Providers effect, so a dark-theme site (e.g.
- * surface #0a0a0a) flashed a WHITE skeleton on every hard navigation.
- * Whitelisted to the siteDetails theme schema's color tokens — NOT every
- * string key on siteData (favicon is a multi-KB data URI; name/domain are not
- * CSS values). The Providers effect remains the post-hydration authority and
- * sets the same custom properties, so the two never disagree.
- */
-const THEME_TOKEN_KEYS = [
-  'primary',
-  'secondary',
-  'hover',
-  'surface',
-  'surface-alt',
-  'text-primary',
-  'text-secondary',
-  'text-inverse',
-] as const;
-
-function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undefined {
-  const style: Record<string, string> = {};
-  for (const key of THEME_TOKEN_KEYS) {
-    const v = siteData[key];
-    if (typeof v === 'string' && v.trim() !== '') style[`--${key}`] = v;
-  }
-  // Derived token — the AA-on-white variant of the brand accent, consumed by
-  // the renderer's rich-text link rule (`.vr-rich a`) and any accent-as-text
-  // surface. Only emitted for parseable hex primaries; the CSS falls back to
-  // `--primary` otherwise (byte-identical for non-hex/absent primaries).
-  const readable = readableAccentOnWhite(style['--primary']);
-  if (readable) style['--accent-readable'] = readable;
-
-  // `text-secondary` is commonly left unauthored (optional in the theme schema).
-  // Leaving it unset here means every consuming component falls through to ITS
-  // OWN hardcoded fallback (`var(--text-secondary, #555)`, `#64748b`, `#6b7280`,
-  // ...) — all fixed mid-grays that go illegible on a dark/saturated brand
-  // surface (the "navy blue text on dark red" defect, 2026-07). Setting an
-  // actual `--text-secondary` here wins the CSS cascade over every component's
-  // per-call fallback, so derive one muted TOWARD the site's own surface instead
-  // of leaving the gap for a dozen different generic grays to fill in.
-  if (!style['--text-secondary']) {
-    const textPrimary = style['--text-primary'] ?? '#1c1c1c';
-    const surface = style['--surface'] ?? '#ffffff';
-    style['--text-secondary'] = `color-mix(in oklab, ${textPrimary} 55%, ${surface})`;
-  }
-
-  return Object.keys(style).length > 0 ? (style as CSSProperties) : undefined;
-}
+// The SSR theme variables: see src/lib/theme/themeVarStyle.ts.
 
 import { Suspense } from "react";
 import RouteProgress from "@/components/Navigation/RouteProgress";
@@ -167,7 +118,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // before (byte-identical for every existing site). Only meaningful when a
     // display font is also set (no body-only override).
     const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
-    // SSR the palette + density BEFORE hydration (see themeVarStyle above).
+    // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
     // Providers' effect re-stamps both on the client; values are identical so
     // hydration stays clean.
     const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
