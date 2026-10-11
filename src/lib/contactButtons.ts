@@ -41,13 +41,6 @@ function hasFixedBottomControl(siteData: SiteData): boolean {
 }
 
 /**
- * The slice, or `null` when the bar must not mount at all: another control
- * already sits at the bottom of the phone screen, and the bar would cover it
- * or be covered (`hasFixedBottomControl`). Whether the bar then draws (a phone
- * or an address, and the owner's switch not off) is the renderer's
- * `resolveContactButtons`.
- */
-/**
  * The Inquire switch and the one page it reads, only for a site that turned it
  * on, so every other slice is exactly what it was. The renderer takes the first
  * `inquiry` page; the slice carries that page's slug and format and nothing else.
@@ -59,6 +52,13 @@ function inquireSlice(siteData: SiteData): Pick<ContactButtonsSiteData, 'contact
   return { contactButtonsInquire: true, pageConfigs: [{ slug: page.slug, format: page.format }] };
 }
 
+/**
+ * The slice, or `null` when the bar must not mount at all: another control
+ * already sits at the bottom of the phone screen, and the bar would cover it
+ * or be covered (`hasFixedBottomControl`). Whether the bar then draws (a phone
+ * or an address, and the owner's switch not off) is the renderer's
+ * `resolveContactButtons`.
+ */
 export function contactButtonsSiteData(siteData: SiteData): ContactButtonsSiteData | null {
   if (hasFixedBottomControl(siteData)) return null;
   return {
