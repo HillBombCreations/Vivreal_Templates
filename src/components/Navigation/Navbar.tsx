@@ -24,8 +24,15 @@ import NavbarChrome from './NavbarChrome';
  * as `mastheadTone`, so a `transparent-on-hero` header lands on the solid
  * token set at scroll 0 over a LIGHT masthead (a media-less `statement`
  * hero) instead of painting white ink on white. Omitting `page` ⇒ `null` ⇒
- * the renderer's pre-1.54.0 behaviour, byte-identical — the detail-page
- * mounts and the welcome fallback pass nothing.
+ * the renderer's pre-1.54.0 behaviour, byte-identical. The welcome fallback
+ * passes nothing.
+ *
+ * FP2-27 (TC-r2): `hasMasthead`, passed `false` by every item-detail mount
+ * (`[slug]/[itemId]/page.tsx`). No detail hero draws a full-bleed image under
+ * the bar (every variant sits in a padded column below it), so a
+ * `transparent-on-hero` kit (Larkspur) must land on the solid token set at
+ * scroll 0, not white ink over a white item page. Absent ⇒ the renderer's
+ * default `true`, byte-identical for every other mount.
  *
  * GATE-1b (saas-1 kit, same renderer train) — the SAME `page` also decides
  * whether the header stays PINNED: `resolveHeaderPinned(page)` is `false`
@@ -37,7 +44,7 @@ import NavbarChrome from './NavbarChrome';
  * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
  * the same derivation.
  */
-const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
+const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null; hasMasthead?: boolean } = {}) => {
   const siteData = await getSiteData();
   const mastheadTone = resolveMastheadTone(page ?? null);
   const pinned = resolveHeaderPinned(page ?? null);
@@ -79,6 +86,7 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
       mastheadTone={mastheadTone}
+      hasMasthead={hasMasthead}
       pinned={pinned}
       // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
       // resolveMediaSrc reads a pre-signed URL string or an inlined

@@ -31,7 +31,7 @@ import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
-import { ContactButtons, nowInZone, readSiteHours, type SiteData as RendererSiteData } from '@hillbombcreations/site-renderer';
+import { nowInZone, readSiteHours } from '@hillbombcreations/site-renderer';
 import { contactButtonsSiteData } from '@/lib/contactButtons';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -82,6 +82,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 import { Suspense } from "react";
 import RouteProgress from "@/components/Navigation/RouteProgress";
+import ContactButtonsChrome from "@/components/ContactButtonsChrome";
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
   try {
@@ -183,11 +184,9 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       business has a phone or an address and the owner has not
                       switched them off. Not with any other control fixed to the
                       bottom of a phone (UtilityDock, FulfillmentStrip,
-                      FloatingCta): see contactButtonsSiteData. */}
-                  {contactSlice && (
-                      // Cast: the slice carries every field `resolveContactButtons` reads.
-                      <ContactButtons siteData={contactSlice as RendererSiteData} />
-                  )}
+                      FloatingCta): see contactButtonsSiteData. The bridge
+                      hands the bar the current path (FP2-55). */}
+                  {contactSlice && <ContactButtonsChrome siteData={contactSlice} />}
                   {templateType === 'restaurant' && (
                       <FloatingCta
                           label="Reserve a Table"

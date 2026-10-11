@@ -32,7 +32,34 @@ test('Navbar threads hours and timezone for the utility strip', () => {
 test('the root layout mounts ContactButtons from the gated slice and feeds the JSON-LD the parsed hours', () => {
   const code = source('../app/layout.tsx');
   assert.match(code, /const contactSlice = contactButtonsSiteData\(siteData\);/);
-  assert.match(code, /\{contactSlice && \(/);
-  assert.match(code, /<ContactButtons siteData=\{contactSlice as RendererSiteData\} \/>/);
+  assert.match(code, /\{contactSlice && <ContactButtonsChrome siteData=\{contactSlice\} \/>\}/);
   assert.match(code, /hours: readSiteHours\(siteData\.businessInfo\?\.hours\),/);
+});
+
+test('FP2-55: the contact bar bridge hands the renderer the current path', () => {
+  const code = source('./ContactButtonsChrome.tsx');
+  assert.match(code, /^'use client';/);
+  assert.match(code, /const pathname = usePathname\(\);/);
+  assert.match(code, /<ContactButtons siteData=\{siteData as RendererSiteData\} currentPath=\{pathname\} \/>/);
+});
+
+test('FP2-27: every item-detail mount tells the header there is no masthead, and the shell threads it', () => {
+  const detail = source('../app/[slug]/[itemId]/page.tsx');
+  const mounts = detail.match(/<Navbar\b[^>]*\/>/g) ?? [];
+  assert.ok(mounts.length >= 6, `found the detail mounts (${mounts.length})`);
+  for (const mount of mounts) assert.equal(mount, '<Navbar hasMasthead={false} />');
+  const shell = source('./Navigation/Navbar.tsx');
+  assert.match(shell, /hasMasthead=\{hasMasthead\}/);
+});
+
+test('FP2-27 ALLOW/REFUSE: with no masthead a transparent-on-hero header is solid at scroll 0; the default keeps the see-through bar', async () => {
+  const url = new URL('../../node_modules/@hillbombcreations/site-renderer/dist/chrome/resolveChrome.js', import.meta.url);
+  // Cast: a module imported by file URL is untyped; only this one export is read.
+  const { resolveTransparentHeroChrome } = (await import(url.href)) as {
+    resolveTransparentHeroChrome: (scrolled: boolean, hasMasthead?: boolean) => Record<string, unknown>;
+  };
+  assert.equal(typeof resolveTransparentHeroChrome, 'function', 'loaded the renderer module, not nothing');
+  const solid = resolveTransparentHeroChrome(true);
+  assert.deepEqual(resolveTransparentHeroChrome(false, false), solid, 'detail page: the solid token set at scroll 0');
+  assert.notDeepEqual(resolveTransparentHeroChrome(false), solid, 'a page with a hero keeps the see-through bar at scroll 0');
 });

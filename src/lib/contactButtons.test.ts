@@ -90,3 +90,25 @@ test('RT5-181 REFUSE: without the switch, or with no inquiry page, the slice is 
   const noPage = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, contactButtonsInquire: true, pageConfigs: PAGES.slice(0, 1) }));
   assert.deepEqual(Object.keys(noPage ?? {}).sort(), ['businessInfo']);
 });
+
+// FP2-55 (renderer 1.85.5 `currentPath`): the bar never links to the page you are on.
+// Cast: the slice is exactly what the bridge hands the renderer, plus the path.
+const gateAt = (slice: ContactButtonsSiteData | null, path: string) =>
+  rendererGate((slice ?? undefined) as unknown as Parameters<typeof rendererGate>[0], path);
+
+test('FP2-55 REFUSE: on the inquiry page itself the slice gets no Inquire, and Call stays', () => {
+  const slice = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, contactButtonsInquire: true, pageConfigs: PAGES }));
+  for (const path of ['/inquire', '/inquire/', '/Inquire']) {
+    const plan = gateAt(slice, path);
+    assert.equal(plan && 'inquire' in plan, false, path);
+    assert.ok(plan?.call, path);
+  }
+});
+
+test('FP2-55 ALLOW: on any other page Inquire stays, exactly as with no path', () => {
+  const slice = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, contactButtonsInquire: true, pageConfigs: PAGES }));
+  for (const path of ['/', '/weddings', '/inquire-now']) {
+    assert.deepEqual(gateAt(slice, path), resolveContactButtons(slice), path);
+    assert.deepEqual(gateAt(slice, path)?.inquire, { label: 'Inquire', href: '/inquire' }, path);
+  }
+});

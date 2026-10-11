@@ -413,7 +413,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: show.title })} />
-        <Navbar />
+        <Navbar hasMasthead={false} />
         {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
             carry no CMS rich text, so the client boundary stays as small as it
             can be. See src/components/RichTextImages. */}
@@ -491,7 +491,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: member.name })} />
-        <Navbar />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
@@ -653,7 +653,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(productJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: productName })} />
-        <Navbar />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
             item={templatesProductToRenderer(product, siteLogo)}
@@ -823,7 +823,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       return (
         <>
           <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
-          <Navbar />
+          <Navbar hasMasthead={false} />
           <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
             item={{ ...collectionProduct, imageUrl: collectionProduct.imageUrl || siteLogo }}
@@ -848,7 +848,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
-        <Navbar />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
@@ -966,7 +966,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: item.title || undefined })} />
-        <Navbar />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
