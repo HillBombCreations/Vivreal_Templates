@@ -770,6 +770,12 @@ export interface SiteData {
      */
     contactButtons?: boolean;
     /**
+     * RT5-181: an Inquire button beside Call and Directions, to the site's
+     * inquiry page (renderer 1.85.4). Stored flat in `siteDetails.values`.
+     * Only `true` turns it on.
+     */
+    contactButtonsInquire?: boolean;
+    /**
      * R5: when the site document last changed (VR_Client_API v5), an ISO
      * string. The page list's dates come from here and from each page's and
      * item's own `updatedAt`, never from the clock.

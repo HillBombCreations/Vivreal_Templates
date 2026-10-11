@@ -1079,6 +1079,28 @@ function resolveMenuDetailCollections(pageConfig: { blocks?: unknown }): {
   return { itemsCollectionId: itemsB?.collectionId, siblingCollectionIds };
 }
 
+/**
+ * The menu item a detail address names, for its metadata (RT5-166): the same
+ * pools in the same order as the render's menu arm (the items binding, then
+ * each sibling), the same `_system` and field-map entry, the same lookup. A
+ * degraded read or a miss is `undefined`, and the caller falls back to the
+ * page-level title it always used.
+ */
+async function findMenuItemForMeta(
+  pageConfig: SiteData['pageConfigs'][number],
+  itemId: string
+): Promise<{ title?: unknown; description?: unknown } | undefined> {
+  const { itemsCollectionId, siblingCollectionIds } = resolveMenuDetailCollections(pageConfig);
+  const keyField = pageConfig.detailPage?.itemKeyField;
+  for (const cid of [itemsCollectionId, ...siblingCollectionIds]) {
+    if (!cid) continue;
+    const read = await getAllCollectionItems(cid);
+    const hit = resolveItem(enterDetailItems(read.items, detailFieldMap(pageConfig, cid)), itemId, keyField);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 export async function generateMetadata({ params }: Props) {
   // Same gate as the page, for the same reason: a gate-off build must not make
   // a `siteDetails` read that `force-dynamic` used to skip.
@@ -1189,8 +1211,11 @@ export async function generateMetadata({ params }: Props) {
     const teamMembers = await getTeamMembers(collectionId);
     const member = teamMembers.find((m) => m.id === itemId);
     const name = member?.name;
+    // RT5-166: the member's own name wins. The page's `seo.metaTitle` is
+    // authored for the roster ("The barbers | Brightside") and titled every
+    // member with it; it stays the fallback for a member with no name.
     const title =
-      seo?.metaTitle || (name ? `${name} | ${siteName}` : `Team Member | ${siteName}`);
+      (name ? `${name} | ${siteName}` : undefined) || seo?.metaTitle || `Team Member | ${siteName}`;
     const description =
       seo?.metaDescription ||
       (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
@@ -1377,6 +1402,36 @@ export async function generateMetadata({ params }: Props) {
       // Item not found under this config (a doorway miss or a genuine 404) —
       // fall through to the default below rather than special-casing "not
       // found" text here; the page component is the source of truth for 404.
+    }
+  }
+
+  // RT5-166: a menu item is titled by its own name, not the menu's ("Menu |
+  // The Old Mill Bakehouse" on "Brown Sugar Oat Cookie"). Same item-first order
+  // as the collection arm above (`detailItemMetaText`). The card image stays the
+  // page's, exactly as before.
+  if (pageConfig.format === "menu") {
+    const menuItem = await findMenuItemForMeta(pageConfig, itemId);
+    const menuItemTitle =
+      typeof menuItem?.title === "string" && menuItem.title.trim() ? menuItem.title.trim() : undefined;
+    if (menuItem && menuItemTitle) {
+      const { title, description, cardTitle } = detailItemMetaText({
+        itemTitle: menuItemTitle,
+        itemDescription: menuItem.description,
+        siteName,
+        patternTitle: undefined,
+        patternDescription: undefined,
+        pageMetaTitle: seo?.metaTitle,
+        pageMetaDescription: seo?.metaDescription,
+        pageSubtitle: pageConfig.labels?.subtitle,
+        pageName: pageConfig.name,
+      });
+      return {
+        title,
+        description,
+        ...routeCanonicalMetadata,
+        openGraph: { title: cardTitle, description, url: itemUrl, type: "article", siteName, images: [ogImageUrl] },
+        twitter: { card: "summary_large_image", title: cardTitle, description, images: [ogImageUrl] },
+      };
     }
   }
 

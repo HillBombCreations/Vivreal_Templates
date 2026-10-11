@@ -98,6 +98,19 @@ const nextConfig: NextConfig = {
         hostname: 'client.vivreal.io',
         pathname: '/media',
       },
+      // RT5-164: kit demo content carries Unsplash photo URLs (Old Mill's
+      // menu items among them), which next/image answered with a 400 because
+      // the host was not listed. Both of Unsplash's image hosts, nothing wider.
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'plus.unsplash.com',
+        pathname: '/**',
+      },
     ],
   },
   webpack: (config) => {

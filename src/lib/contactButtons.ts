@@ -9,6 +9,9 @@ import type { SiteData } from '@/types/SiteData';
 
 export interface ContactButtonsSiteData {
   contactButtons?: boolean;
+  /** RT5-181: with `pageConfigs` holding the inquiry page Inquire links to (renderer 1.85.4). */
+  contactButtonsInquire?: true;
+  pageConfigs?: Pick<SiteData['pageConfigs'][number], 'slug' | 'format'>[];
   businessInfo?: Pick<NonNullable<SiteData['businessInfo']>, 'address' | 'contactInfo'>;
   primary?: string;
   'text-inverse'?: string;
@@ -44,10 +47,23 @@ function hasFixedBottomControl(siteData: SiteData): boolean {
  * or an address, and the owner's switch not off) is the renderer's
  * `resolveContactButtons`.
  */
+/**
+ * The Inquire switch and the one page it reads, only for a site that turned it
+ * on, so every other slice is exactly what it was. The renderer takes the first
+ * `inquiry` page; the slice carries that page's slug and format and nothing else.
+ */
+function inquireSlice(siteData: SiteData): Pick<ContactButtonsSiteData, 'contactButtonsInquire' | 'pageConfigs'> {
+  if (siteData.contactButtonsInquire !== true) return {};
+  const page = (siteData.pageConfigs ?? []).find((p) => p?.format === 'inquiry');
+  if (!page) return {};
+  return { contactButtonsInquire: true, pageConfigs: [{ slug: page.slug, format: page.format }] };
+}
+
 export function contactButtonsSiteData(siteData: SiteData): ContactButtonsSiteData | null {
   if (hasFixedBottomControl(siteData)) return null;
   return {
     ...(siteData.contactButtons === undefined ? {} : { contactButtons: siteData.contactButtons }),
+    ...inquireSlice(siteData),
     ...(siteData.businessInfo
       ? { businessInfo: { address: siteData.businessInfo.address, contactInfo: siteData.businessInfo.contactInfo } }
       : {}),

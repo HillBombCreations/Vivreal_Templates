@@ -71,3 +71,22 @@ test('ALLOW (W25-6cb): a switched-off or empty strip, a floating button with no 
     assert.ok(resolveContactButtons(slice)?.call, JSON.stringify(over));
   }
 });
+
+// RT5-181: Inquire (renderer 1.85.4 reads it; the slice only carries it).
+const PAGES = [
+  { name: 'Weddings', slug: 'weddings', format: 'standard' },
+  { name: 'Inquire', slug: 'inquire', format: 'inquiry' },
+] as unknown as SiteData['pageConfigs']; // a page here carries only what the slice reads
+
+test('RT5-181 ALLOW: a site that turned Inquire on hands the renderer the switch and its inquiry page', () => {
+  const slice = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, contactButtonsInquire: true, pageConfigs: PAGES }));
+  assert.equal(slice?.contactButtonsInquire, true);
+  assert.deepEqual(slice?.pageConfigs, [{ slug: 'inquire', format: 'inquiry' }]);
+});
+
+test('RT5-181 REFUSE: without the switch, or with no inquiry page, the slice is exactly what it was', () => {
+  const off = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, pageConfigs: PAGES }));
+  assert.deepEqual(Object.keys(off ?? {}).sort(), ['businessInfo']);
+  const noPage = contactButtonsSiteData(site({ businessInfo: WITH_PHONE, contactButtonsInquire: true, pageConfigs: PAGES.slice(0, 1) }));
+  assert.deepEqual(Object.keys(noPage ?? {}).sort(), ['businessInfo']);
+});
