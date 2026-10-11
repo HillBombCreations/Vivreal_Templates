@@ -30,6 +30,17 @@ export function storefrontItemSources(
   return sources;
 }
 
+/**
+ * Does this page read its items from the payments provider? The ONE gate the
+ * detail render and its `generateMetadata` both ask, so a product page cannot
+ * render a product and title itself as the shop (W25-10ca: Cobalt & Crumb's
+ * `catalog` shop, whose Stripe grid sits inside a group, rendered its products
+ * while metadata, gated on `format === 'products'`, fell to the shop's name).
+ */
+export function readsProviderProduct(page: SourcesPage, paymentsProvider: string | undefined): boolean {
+  return storefrontItemSources(page, paymentsProvider).includes('provider');
+}
+
 export function providerMissIsFinal(page: SourcesPage): boolean {
   return page.format === 'products' && !servesCollectionDetail(page);
 }

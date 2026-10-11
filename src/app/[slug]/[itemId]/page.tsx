@@ -23,7 +23,7 @@ import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
 import { contentItemToProduct, resolveStorefrontSectionConfig } from "@hillbombcreations/site-renderer";
 import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDetailRenderer/templatesProductToRenderer";
-import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
+import { providerMissIsFinal, readsProviderProduct } from "@/lib/detail/storefrontSources";
 import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
 import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
@@ -516,7 +516,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // undefined ⇒ getProducts' legacy stripe default.
   const { integrationTypes } = collectBindingTargets(pageConfig);
   const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
-  const productRead = storefrontItemSources(pageConfig, paymentsProvider).includes("provider")
+  const productRead = readsProviderProduct(pageConfig, paymentsProvider)
     ? await getProductByIdRead(itemId, paymentsProvider ?? "stripe")
     : null;
   const product = productRead?.product ?? null;
@@ -1219,7 +1219,10 @@ export async function generateMetadata({ params }: Props) {
   // provider or collection sourced, resolved in the page's own order. The
   // shop's `seo.metaTitle` is authored for the shop and is not applied to its
   // items, or every product would keep one title, which is the defect.
-  if (pageConfig.format === "products") {
+  // Gated exactly like the render arm (`readsProviderProduct`), never on the
+  // format: a `catalog` shop with a Stripe grid renders products too (W25-10ca).
+  const metaPaymentsProvider = collectBindingTargets(pageConfig).integrationTypes.find((t) => isPaymentsProvider(t));
+  if (readsProviderProduct(pageConfig, metaPaymentsProvider)) {
     const summary = await resolveStorefrontItemSummary(siteData, pageConfig, itemId);
     if (summary) {
       const patternData = { item: summary.raw, context: null, siteName };
