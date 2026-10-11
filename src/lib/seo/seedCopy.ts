@@ -22,8 +22,10 @@
  * `Place<span>holder</span>` is two words), drops script/style/comments with
  * their contents, and decodes numeric entities, and `plainMeta` does none of
  * those. `seedCopy.test.ts` carries the renderer's test vectors verbatim.
+ * 1.85.6 widened the entity decoding (named typographic, Latin-1 and the
+ * en/em/thin spaces, exact case first), so the mirror takes that table too.
  *
- * The rule (renderer 1.85.5): the text, HTML stripped, case-insensitive,
+ * The rule (renderer 1.85.5, decoding 1.85.6): the text, HTML stripped, case-insensitive,
  *  - BEGINS with "Placeholder" and CONTAINS "replace with" (1.85.4), or
  *  - BEGINS with one of `SEED_OPENERS` (1.85.5, W25r-2): "Placeholder text.",
  *    "Illustrative placeholder photography", "Template placeholder." and
@@ -46,7 +48,9 @@ const SEED_OPENERS = [
   /^this is example (?:policy )?text\. replace it with\b/i,
 ];
 
-// The renderer's `cardExcerpt.ts` entity table, verbatim.
+// The renderer's `cardExcerpt.ts` entity table (1.85.6), verbatim. The three
+// typographic spaces are written as escapes here so an editor cannot fold them
+// into a plain space; the values are the renderer's own code points.
 const ENTITIES: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -61,17 +65,57 @@ const ENTITIES: Record<string, string> = {
   lsquo: '‘',
   rdquo: '”',
   ldquo: '“',
+  sbquo: '‚',
+  bdquo: '„',
+  lsaquo: '‹',
+  rsaquo: '›',
+  bull: '•',
+  prime: '′',
+  Prime: '″',
+  dagger: '†',
+  Dagger: '‡',
+  permil: '‰',
+  trade: '™',
+  euro: '€',
+  minus: '−',
+  larr: '←',
+  rarr: '→',
+  harr: '↔',
+  OElig: 'Œ',
+  oelig: 'œ',
+  Scaron: 'Š',
+  scaron: 'š',
+  Yuml: 'Ÿ',
+  ensp: ' ',
+  emsp: ' ',
+  thinsp: ' ',
 };
 
-// The renderer's `decodeEntities`, verbatim: one pass, so `&amp;lt;` stays `&lt;`.
+// The renderer's HTML 4 Latin-1 names (1.85.6), verbatim, in code-point order from U+00A1.
+const LATIN1 = (
+  'iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr ' +
+  'deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest ' +
+  'Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ' +
+  'ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig ' +
+  'agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml ' +
+  'eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml'
+).split(' ');
+
+// A Map, as in the renderer, so `&constructor;` cannot resolve to a prototype member.
+const ENTITY_MAP = new Map<string, string>([
+  ...LATIN1.map((name, i) => [name, String.fromCodePoint(0xa1 + i)] as [string, string]),
+  ...Object.entries(ENTITIES),
+]);
+
+// The renderer's `decodeEntities` (1.85.6), verbatim: one pass, so `&amp;lt;`
+// stays `&lt;`; exact name first (`&Eacute;` is not `&eacute;`), then lower-cased.
 function decodeEntities(s: string): string {
-  return s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, code: string) => {
+  return s.replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]*);/gi, (m, code: string) => {
     if (code[0] === '#') {
       const n = code[1].toLowerCase() === 'x' ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
       return Number.isFinite(n) && n > 0 && n < 0x110000 ? String.fromCodePoint(n) : m;
     }
-    const v = ENTITIES[code.toLowerCase()];
-    return v ?? m;
+    return ENTITY_MAP.get(code) ?? ENTITY_MAP.get(code.toLowerCase()) ?? m;
   });
 }
 

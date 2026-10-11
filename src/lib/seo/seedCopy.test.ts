@@ -63,6 +63,26 @@ const EDGE_VECTORS: ReadonlyArray<readonly [string, boolean]> = [
   ['<p> </p>', false],
 ];
 
+/**
+ * Renderer 1.85.6 widened `decodeEntities` (named typographic and Latin-1
+ * names, the en/em/thin spaces, exact case first, a Map so prototype names
+ * stay literal). The space entities are the ones that change a seed verdict,
+ * because they decode to whitespace the collapse folds; the rest pin that the
+ * two rules still agree where the verdict does not move.
+ */
+const NAMED_ENTITY_VECTORS: ReadonlyArray<readonly [string, boolean]> = [
+  ['Placeholder&ensp;bio, replace&emsp;with yours.', true],
+  ['Placeholder&thinsp;bio, replace&thinsp;with yours.', true],
+  ['&ensp;Placeholder bio, replace with yours.', true],
+  ['Placeholder&ENSP;bio, replace&EMSP;with yours.', true],
+  ['Placeholder&rsquo;s bio. Replace&ensp;with yours.', true],
+  ['Placeholder caf&eacute; bio, replace with yours.', true],
+  ['&Eacute;clair placeholder, replace with yours.', false],
+  ['Placeholder bio, replace&sup2;with yours.', false],
+  ['&constructor; Placeholder bio, replace with yours.', false],
+  ['Placeholder bio, replace&amp;ensp;with yours.', false],
+];
+
 /*
  * W25r-2 (renderer 1.85.5, FP2-08): the four further kit openers and the real
  * copy that sits next to them, VERBATIM from vivreal-site-renderer
@@ -105,6 +125,10 @@ test('parity: every renderer seed shape is detected, every renderer real-copy sh
   for (const s of RENDERER_REAL) assert.equal(isUnfilledSeedCopy(s), false, s);
 });
 
+test('parity: the 1.85.6 named-entity vectors decode the same way', () => {
+  for (const [input, expected] of NAMED_ENTITY_VECTORS) assert.equal(isUnfilledSeedCopy(input), expected, input);
+});
+
 test('parity: the renderer edge vectors strip HTML the same way (tag is a space, numeric entities, script/style/comments)', () => {
   for (const [input, expected] of EDGE_VECTORS) assert.equal(isUnfilledSeedCopy(input), expected, input);
 });
@@ -120,6 +144,7 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
     ...RENDERER_NEW_SHAPE_SEEDS.map((s) => [s, true] as const),
     ...RENDERER_NEW_SHAPE_REAL.map((s) => [s, false] as const),
     ...EDGE_VECTORS,
+    ...NAMED_ENTITY_VECTORS,
     [undefined, false],
   ];
   assert.ok(vectors.length > 40, 'the vector set carries the 1.85.5 shapes');
