@@ -63,6 +63,43 @@ const EDGE_VECTORS: ReadonlyArray<readonly [string, boolean]> = [
   ['<p> </p>', false],
 ];
 
+/*
+ * W25r-2 (renderer 1.85.5, FP2-08): the four further kit openers and the real
+ * copy that sits next to them, VERBATIM from vivreal-site-renderer
+ * `src/lib/seedCopy.test.ts` at ddbb240 (`NEW_SHAPE_SEEDS`, `NEW_SHAPE_REAL`).
+ */
+const RENDERER_NEW_SHAPE_SEEDS = [
+  '<p>This is example policy text. Replace it with your own privacy policy before taking the site live.</p>',
+  'This is example text. Replace it with your own words.',
+  '<p>Placeholder text. Say where the accessible viewing spots are, whether a support worker comes in free.</p>',
+  'Placeholder text. Give one email address a visitor can write to about their own data.',
+  'Illustrative placeholder photography. Replace with your own consented before-and-after set.',
+  'Illustrative placeholder photography, not a patient result.',
+  '<p><em>Illustrative placeholder photography</em> — not a patient result.</p>',
+  '<p>Template placeholder. This page is intentionally not carrying the donor site’s verbatim terms.</p>',
+  '  TEMPLATE PLACEHOLDER.  This page is intentionally empty.',
+];
+
+const RENDERER_NEW_SHAPE_REAL = [
+  'Our placeholder fence is replaced with oak',
+  'Example: replace with your own words',
+  'Placeholder texture on the walls is hand-trowelled lime.',
+  'Template placeholders are what we avoid. Every page here is ours.',
+  'This is example text of the kind we never publish.',
+  'This is our policy text. Replace it with nothing, it is final.',
+  'We use illustrative photography from our own studio.',
+  '<p>Our gallery shows real results. No illustrative placeholder photography here.</p>',
+  'Placeholder text',
+];
+
+test('ALLOW (FP2-08): every 1.85.5 kit opener is hidden, text and HTML, any case', () => {
+  for (const s of RENDERER_NEW_SHAPE_SEEDS) assert.equal(isUnfilledSeedCopy(s), true, s);
+});
+
+test('REFUSE (FP2-08): real copy near the 1.85.5 openers, or the wording not at the start, is kept', () => {
+  for (const s of RENDERER_NEW_SHAPE_REAL) assert.equal(isUnfilledSeedCopy(s), false, s);
+});
+
 test('parity: every renderer seed shape is detected, every renderer real-copy shape is not', () => {
   for (const s of RENDERER_SEEDS) assert.equal(isUnfilledSeedCopy(s), true, s);
   for (const s of RENDERER_REAL) assert.equal(isUnfilledSeedCopy(s), false, s);
@@ -80,10 +117,12 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
   const vectors: Array<readonly [unknown, boolean]> = [
     ...RENDERER_SEEDS.map((s) => [s, true] as const),
     ...RENDERER_REAL.map((s) => [s, false] as const),
+    ...RENDERER_NEW_SHAPE_SEEDS.map((s) => [s, true] as const),
+    ...RENDERER_NEW_SHAPE_REAL.map((s) => [s, false] as const),
     ...EDGE_VECTORS,
     [undefined, false],
   ];
-  assert.ok(vectors.length > 20, 'the vector set is not empty');
+  assert.ok(vectors.length > 40, 'the vector set carries the 1.85.5 shapes');
   for (const [input, expected] of vectors) {
     assert.equal(rendererRule?.(input), expected, `renderer: ${String(input)}`);
     assert.equal(isUnfilledSeedCopy(input), expected, `mirror: ${String(input)}`);
