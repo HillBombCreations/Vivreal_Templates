@@ -70,7 +70,7 @@ import {
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
 import { withoutSeedCopy } from "@/lib/seo/seedCopy";
-import { detailItemMetaText } from "@/lib/seo/detailItemMetaText";
+import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -1340,9 +1340,10 @@ export async function generateMetadata({ params }: Props) {
         // trim-only. Sliced raw, the FIRST 160 characters of a recipe intro are
         // typically `<p>` and the opening words, which is what a pasted link
         // previewed with. `plainMeta` strips the tags and decodes the entities;
-        // see its header for why the decode is not optional.
+        // see its header for why the decode is not optional. RT5-176: the seed
+        // check runs on the whole summary before the cut (`recipeSummaryMeta`).
         const recipeSummary = isRecipe
-          ? plainMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary, 160)
+          ? recipeSummaryMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary)
           : undefined;
 
         // The title/description/card-title resolution, ITEM DATA WINS, a

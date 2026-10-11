@@ -11,8 +11,80 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { isUnfilledSeedCopy, withoutSeedCopy } from './seedCopy.ts';
-import { detailItemMetaText } from './detailItemMetaText.ts';
+import { detailItemMetaText, recipeSummaryMeta } from './detailItemMetaText.ts';
 import { productItemMetaText } from './productItemMeta.ts';
+import { plainMeta } from './plainMeta.ts';
+
+/*
+ * PARITY with the renderer. These three tables are copied VERBATIM from
+ * vivreal-site-renderer `src/lib/seedCopy.test.ts` (1.85.4, branch
+ * fix/renderer-1.85.4), where the same inputs run through the renderer's own
+ * `isUnfilledSeedCopy` with the same expected results. The renderer cannot be
+ * imported here: this repo is pinned to 1.85.3, which does not export it. If
+ * either side changes its stripping, its copy of these tables fails first.
+ */
+const RENDERER_SEEDS = [
+  "Placeholder biography, replace with Priya's training, specialties and the reason she got into this work.",
+  '<p>Placeholder policy text. Replace with your own before you go live.</p>',
+  'Placeholder journal entry, replace with your own writing.',
+  '  <p><strong>PLACEHOLDER</strong> answer, REPLACE WITH the real one.</p>  ',
+  '<p>Placeholder&nbsp;caption. Replace with a line about this look.</p>',
+];
+
+const RENDERER_REAL = [
+  'We never use placeholder ingredients; replace with nothing.',
+  'Replace with care: our tailors re-hem anything you buy here.',
+  'Placeholder tiles are hand-cut in our studio.',
+  'Placeholders, replace with confidence.',
+  '<p>A placeholder is fine until you replace with the real photo.</p>',
+  'Placeholder text',
+  '',
+];
+
+const EDGE_VECTORS: ReadonlyArray<readonly [string, boolean]> = [
+  ['Place<span>holder</span>, replace with your copy.', false],
+  ['Placeholder, re<em>place</em> with your copy.', false],
+  ['&#80;laceholder bio, replace with yours.', true],
+  ['&#x50;laceholder bio, replace with yours.', true],
+  ['<style>p{color:red}</style>Placeholder bio, replace with yours.', true],
+  ['<script>var a = 1;</script>Placeholder bio, replace with yours.', true],
+  ['<!-- kit note -->Placeholder bio, replace with yours.', true],
+  ['Placeholder&nbsp;bio, replace&nbsp;with yours.', true],
+  ['Placeholder bio, replace\n\twith yours.', true],
+  ['&lt;p&gt;Placeholder bio, replace with yours.', false],
+  ['Placeholder&mdash;replace with yours.', true],
+  ['Placeholders, replace with yours.', false],
+  ['<p>Placeholder</p><p>Replace with your own.</p>', true],
+  ['Placeholder &amp; replace with yours.', true],
+  ['<script>Placeholder, replace with yours.</script>Real copy here.', false],
+  [`<p>Placeholder intro. ${'Slow proved, hand shaped, baked in a stone deck oven. '.repeat(4)}Replace with your own.</p>`, true],
+  ['<p> </p>', false],
+];
+
+test('parity: every renderer seed shape is detected, every renderer real-copy shape is not', () => {
+  for (const s of RENDERER_SEEDS) assert.equal(isUnfilledSeedCopy(s), true, s);
+  for (const s of RENDERER_REAL) assert.equal(isUnfilledSeedCopy(s), false, s);
+});
+
+test('parity: the renderer edge vectors strip HTML the same way (tag is a space, numeric entities, script/style/comments)', () => {
+  for (const [input, expected] of EDGE_VECTORS) assert.equal(isUnfilledSeedCopy(input), expected, input);
+});
+
+test('REFUSE a long recipe seed whose "replace with" falls after character 160: checked before the cut', () => {
+  const longSeed = `<p>Placeholder recipe intro. ${'Slow proved for two days, hand shaped and baked in a stone deck oven. '.repeat(3)}Replace with your own.</p>`;
+  const plain = longSeed.replace(/<[^>]*>/g, '');
+  assert.ok(plain.toLowerCase().indexOf('replace with') > 160, 'the instruction really is past the cut (not vacuous)');
+  assert.equal(isUnfilledSeedCopy(plain.slice(0, 160)), false, 'cut first, the seed would read as real copy');
+  assert.equal(recipeSummaryMeta(longSeed), undefined);
+  const out = detailItemMetaText({ ...ITEM_META, recipeSummary: recipeSummaryMeta(longSeed), itemDescription: undefined });
+  assert.equal(out.description, 'Notes from the salon floor.');
+});
+
+test('ALLOW a real recipe summary: stripped and cut to 160 exactly as before', () => {
+  const real = `<p>${'Slow proved for two days, hand shaped and baked in a stone deck oven. '.repeat(3)}</p>`;
+  assert.equal(recipeSummaryMeta(real), plainMeta(real, 160));
+  assert.ok(recipeSummaryMeta(real)?.startsWith('Slow proved'));
+});
 
 const SEED = '<p>Placeholder journal entry. Replace with your own writing.</p>';
 const REAL = '<p>Our sourdough rests for two days before it is baked.</p>';

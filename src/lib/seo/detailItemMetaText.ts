@@ -70,6 +70,17 @@ export interface DetailItemMetaResult {
   cardTitle: string;
 }
 
+/**
+ * A recipe's `summary` as the meta description's `recipeSummary` input:
+ * stripped and cut to 160 characters, or undefined when it is a kit seed
+ * instruction. The seed check runs on the WHOLE summary, BEFORE the cut: a
+ * long seed whose "replace with" falls after character 160 reads as real copy
+ * once it is cut, which is how it used to reach the meta (RT5-176).
+ */
+export function recipeSummaryMeta(summary: unknown): string | undefined {
+  return plainMeta(withoutSeedCopy(summary), 160);
+}
+
 export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaResult {
   const itemTitle = input.itemTitle?.trim() || undefined;
   const fallbackTitle = `${input.pageName} | ${input.siteName}`;

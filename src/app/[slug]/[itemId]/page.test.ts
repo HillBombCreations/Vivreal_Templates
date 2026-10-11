@@ -222,10 +222,14 @@ test('the metadata item-fetch gate asks the same predicate the render path alrea
 
 test('title/description/card-title are resolved through the shared, tested resolver', () => {
   assert.match(source, /const \{ title, description, cardTitle \} = detailItemMetaText\(\{/);
+  // The import also names `recipeSummaryMeta` (RT5-176), so other names may follow.
   assert.match(
     source,
-    /import \{ detailItemMetaText \} from "@\/lib\/seo\/detailItemMetaText"/,
+    /import \{ detailItemMetaText(, [A-Za-z]+)* \} from "@\/lib\/seo\/detailItemMetaText"/,
   );
+  // RT5-176: the recipe summary is seed-checked whole, BEFORE the 160-character cut.
+  assert.match(source, /recipeSummaryMeta\(readRecipeFields\(/);
+  assert.doesNotMatch(source, /plainMeta\(readRecipeFields\(/);
   // The pre-fix form, recipes-only: every other format's title/card discarded
   // the item in hand. Must be gone, not just supplemented.
   assert.doesNotMatch(source, /isRecipe && itemTitle \? itemTitle : pageConfig\.name/);
