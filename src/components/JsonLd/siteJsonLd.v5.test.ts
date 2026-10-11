@@ -99,3 +99,23 @@ test('REFUSE (R4): no item date, no dateModified (never the clock)', async () =>
   const { buildDetailJsonLd } = await import('./schema.ts');
   assert.equal(buildDetailJsonLd({ format: 'article', title: 'Post' }).dateModified, undefined);
 });
+
+// FP2-21 (owner call O-7): the search-result week follows the footer rule.
+const roomsPage = { slug: 'rooms', blocks: [{ type: { dispatchId: 'locations' }, config: {} }] };
+const ownHoursBlock = { slug: 'visit', blocks: [{ type: { dispatchId: 'opening-hours' }, config: { labels: { hours: ['Taproom: 4pm - 10pm'] } } }] };
+const emptyHoursBlock = { slug: 'visit', blocks: [{ type: { dispatchId: 'opening-hours' }, config: { labels: { hours: [] } } }] };
+
+test('ALLOW (FP2-21): one hours set publishes the week, including an hours block that draws the business hours', () => {
+  assert.ok(Array.isArray(org(site({ hours: HOURS })).openingHoursSpecification));
+  assert.ok(Array.isArray(org(site({ hours: HOURS }, { pageConfigs: [emptyHoursBlock] })).openingHoursSpecification));
+});
+
+test('REFUSE (FP2-21): a site with rooms or an authored hours block publishes no week, and stays a LocalBusiness', () => {
+  for (const pageConfigs of [[roomsPage], [ownHoursBlock]]) {
+    const ld = org(site({ hours: HOURS }, { pageConfigs }));
+    assert.equal(ld.openingHoursSpecification, undefined, JSON.stringify(pageConfigs));
+    assert.equal(ld['@type'], 'LocalBusiness');
+  }
+  const homeRooms = org(site({ hours: HOURS }, { homePageConfig: roomsPage }));
+  assert.equal(homeRooms.openingHoursSpecification, undefined, 'the home page counts too');
+});

@@ -21,6 +21,7 @@ import type { HoursOverride, HoursRow, ReadSiteHours } from '@hillbombcreations/
 import { unsignMediaUrl } from './unsignMediaUrl.ts';
 import { isDemoSite } from '../../lib/seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
+import { footerHours } from '../../lib/footerHours.ts';
 
 const SCHEMA_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
@@ -119,6 +120,11 @@ export function buildSiteJsonLd(
     .map((town) => (typeof town === 'string' ? town.trim() : ''))
     .filter(Boolean);
   const hoursSpec = openingHoursSpecification(hours, today ?? new Date().toISOString().slice(0, 10));
+  // FP2-21 (owner call O-7): search results claim the business week only when
+  // the footer draws it, i.e. when it is the site's ONE hours set. A site with
+  // rooms or its own hours block would otherwise tell search one week and the
+  // page another. Still a LocalBusiness: it has hours, just not one week.
+  const claimsWeek = footerHours(siteData) !== null;
 
   const hasAddress = Boolean(
     address?.street1 || address?.city || address?.state || address?.zip
@@ -136,7 +142,7 @@ export function buildSiteJsonLd(
     ...(phone ? { telephone: phone } : {}),
     ...(socialLinks.length ? { sameAs: [...new Set(socialLinks)] } : {}),
     ...(areaServed.length ? { areaServed } : {}),
-    ...(isLocal && hoursSpec.length ? { openingHoursSpecification: hoursSpec } : {}),
+    ...(isLocal && claimsWeek && hoursSpec.length ? { openingHoursSpecification: hoursSpec } : {}),
     ...(hasAddress
       ? {
           address: {
