@@ -19,9 +19,11 @@ import { plainMeta } from './plainMeta.ts';
  * PARITY with the renderer. These three tables are copied VERBATIM from
  * vivreal-site-renderer `src/lib/seedCopy.test.ts` (1.85.4, branch
  * fix/renderer-1.85.4), where the same inputs run through the renderer's own
- * `isUnfilledSeedCopy` with the same expected results. The renderer cannot be
- * imported here: this repo is pinned to 1.85.3, which does not export it. If
- * either side changes its stripping, its copy of these tables fails first.
+ * `isUnfilledSeedCopy` with the same expected results. The renderer's package
+ * entry point cannot load under plain `node --test` (see `seedCopy.ts`), so the
+ * parity test below loads the INSTALLED renderer's `dist/lib/seedCopy.js` by
+ * file URL and runs every vector through both. A renderer change to its
+ * stripping fails that test on the next re-pin, not silently.
  */
 const RENDERER_SEEDS = [
   "Placeholder biography, replace with Priya's training, specialties and the reason she got into this work.",
@@ -68,6 +70,24 @@ test('parity: every renderer seed shape is detected, every renderer real-copy sh
 
 test('parity: the renderer edge vectors strip HTML the same way (tag is a space, numeric entities, script/style/comments)', () => {
   for (const [input, expected] of EDGE_VECTORS) assert.equal(isUnfilledSeedCopy(input), expected, input);
+});
+
+test('parity: the INSTALLED renderer agrees with the mirror on every vector', async () => {
+  const url = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/lib/seedCopy.js', import.meta.url);
+  const renderer = (await import(url.href)) as { isUnfilledSeedCopy?: (v: unknown) => boolean };
+  const rendererRule = renderer.isUnfilledSeedCopy;
+  assert.equal(typeof rendererRule, 'function', 'loaded the renderer module, not nothing');
+  const vectors: Array<readonly [unknown, boolean]> = [
+    ...RENDERER_SEEDS.map((s) => [s, true] as const),
+    ...RENDERER_REAL.map((s) => [s, false] as const),
+    ...EDGE_VECTORS,
+    [undefined, false],
+  ];
+  assert.ok(vectors.length > 20, 'the vector set is not empty');
+  for (const [input, expected] of vectors) {
+    assert.equal(rendererRule?.(input), expected, `renderer: ${String(input)}`);
+    assert.equal(isUnfilledSeedCopy(input), expected, `mirror: ${String(input)}`);
+  }
 });
 
 test('REFUSE a long recipe seed whose "replace with" falls after character 160: checked before the cut', () => {

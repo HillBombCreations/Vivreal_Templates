@@ -6,11 +6,18 @@
  * is the same rule for the item meta and JSON-LD descriptions this repo builds
  * itself, so a shared link never previews the instruction either.
  *
- * A LOCAL MIRROR, for now: renderer 1.85.4 exports `isUnfilledSeedCopy` from
- * its package entry point, but this repo stays pinned to 1.85.3 until the
- * consumer re-pin. At the re-pin, import it from `@hillbombcreations/site-renderer`
- * and delete the mirror below. Until then it must agree with the renderer
- * EXACTLY, HTML stripping included, which is why it does NOT reuse
+ * A LOCAL MIRROR, deliberately, on renderer 1.85.4 too. 1.85.4 exports
+ * `isUnfilledSeedCopy` from its package entry point, but that entry point
+ * cannot load under plain `node --test` (it pulls `next/link`, which Node's
+ * ESM resolver cannot find without Next's bundler), and the package `exports`
+ * map does not expose `dist/lib/seedCopy.js` on its own. This module and its
+ * two callers must stay import-free to stay testable, so the rule is mirrored,
+ * and `seedCopy.test.ts` loads the INSTALLED renderer's `dist/lib/seedCopy.js`
+ * by file URL and fails if the two ever disagree. The renderer's own
+ * `withoutSeedCopy` is item-level (`ContentItem -> ContentItem | null`); the
+ * one here is value-level, a different function under the same name.
+ * The mirror must agree with the renderer EXACTLY, HTML stripping included,
+ * which is why it does NOT reuse
  * `plainMeta`: the renderer's `plainExcerpt` turns EVERY tag into a space (so
  * `Place<span>holder</span>` is two words), drops script/style/comments with
  * their contents, and decodes numeric entities, and `plainMeta` does none of
