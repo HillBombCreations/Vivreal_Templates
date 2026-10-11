@@ -10,8 +10,8 @@ export const CHECKOUT_OUT_OF_STOCK = "out_of_stock";
 /**
  * VR_Client_API's two stock refusals (`createCheckoutSession.js`, the
  * `content.checkout.session.out_of_stock` branch): "This item is out of stock"
- * and "Not enough stock available", both a 409. The other 409 there is "not
- * purchasable", which is not about stock and keeps the generic sentence.
+ * and "Not enough stock available", both a 409. A 409 `not_for_sale` has its
+ * own sentences (below); any other 409 keeps the generic sentence.
  */
 const STOCK_REFUSAL = /\bout of stock\b|\bnot enough stock\b/i;
 
@@ -53,14 +53,49 @@ const isInsufficientStock = (body: unknown) =>
   typeof body === "object" && body !== null && (body as { errorCode?: unknown }).errorCode === "INSUFFICIENT_STOCK";
 
 /**
+ * VR_Client_API's 409 `not_for_sale` sentences (`listCommerce.js`), written
+ * for a shopper and marked `ownerSafe`. Only these exact strings are shown;
+ * any other text on a `not_for_sale` reads as the paused-list sentence, so an
+ * upstream wording change can never put unreviewed prose in the bag.
+ */
+const SHOP_NOT_READY = "This shop is not taking orders yet.";
+const ITEM_NOT_FOR_SALE = "This item is not for sale right now.";
+const OWNER_SAFE_NOT_FOR_SALE: ReadonlySet<string> = new Set([
+  ITEM_NOT_FOR_SALE,
+  "This item is not available right now. The shop has been told.",
+  SHOP_NOT_READY,
+]);
+
+/**
+ * FP2-06 and FP2-02: the sentence for a 409 `not_for_sale`, or `undefined` when
+ * the body is not one. `reason: 'not_ready'` (the shop's payment account cannot
+ * take orders) wins over the text. Never "refresh": refreshing cannot help.
+ */
+function notForSaleSentence(body: unknown): string | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const { errorCode, reason, ownerSafe, error } = body as {
+    errorCode?: unknown;
+    reason?: unknown;
+    ownerSafe?: unknown;
+    error?: unknown;
+  };
+  if (errorCode !== "not_for_sale") return undefined;
+  if (reason === "not_ready") return SHOP_NOT_READY;
+  if (ownerSafe === true && typeof error === "string" && OWNER_SAFE_NOT_FOR_SALE.has(error)) return error;
+  return ITEM_NOT_FOR_SALE;
+}
+
+/**
  * What the shopper is told when checkout will not start.
  *
  * Deliberately OUR words. The upstream refusal prose names payment companies
  * and internal group ids ("No active Stripe integration found for this group"),
  * and this string is rendered straight into the cart, so echoing it would put
  * the wrong company's name and our internal vocabulary in front of a customer.
- * The upstream text is only READ, to tell a stock refusal apart. Every branch
- * says what to DO, because a cart that only says no is a dead button.
+ * The upstream text is only READ, to tell a stock refusal apart, except a
+ * `not_for_sale` sentence on the closed list above, which VR_Client_API wrote
+ * for shoppers. Every other branch says what to DO, because a cart that only
+ * says no is a dead button.
  */
 export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown): CheckoutRefusal {
   const stockByText = typeof upstreamError === "string" && STOCK_REFUSAL.test(upstreamError);
@@ -73,6 +108,8 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
       ...(items ? { items } : {}),
     };
   }
+  const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
+  if (notForSale) return { error: notForSale };
   if (status === 404 || status === 409 || status === 422) {
     return { error: "Something in your bag is no longer available. Refresh the page, then try again." };
   }

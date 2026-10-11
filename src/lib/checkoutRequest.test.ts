@@ -19,6 +19,8 @@ test("REFUSE: checkout's two stock refusals map to the stock reason, never 'Refr
 });
 
 test("ALLOW: every other failure keeps its generic sentence and no stock reason", () => {
+  // A 409 with no `errorCode` (an older Client): nothing says why, so the bag
+  // keeps the generic sentence. A `not_for_sale` 409 never reaches it (below).
   assert.deepEqual(checkoutRefusal(409, "This item cannot be bought online"), {
     error: "Something in your bag is no longer available. Refresh the page, then try again.",
   });
@@ -84,4 +86,74 @@ test("REFUSE (review concern B): REQUEST_FAILED, and any unknown code, shows the
       String(errorCode),
     );
   }
+});
+
+// FP2-06 and FP2-02: VR_Client_API 37454c9's recorded `not_for_sale` refusals
+// (test/contracts/FP2-02/checkout-not-ready.json and
+// F-C19/checkout-not-for-sale.json), copied byte for byte, plus F-C26's
+// product-inactive sentence (`listCommerce.js` PRODUCT_INACTIVE_MESSAGE).
+const NOT_READY_409 = {
+  success: false,
+  data: null,
+  error: "This shop is not taking orders yet.",
+  errorCode: "not_for_sale",
+  ownerSafe: true,
+  reason: "not_ready",
+};
+const PAUSED_409 = {
+  success: false,
+  data: null,
+  error: "This item is not for sale right now.",
+  errorCode: "not_for_sale",
+  ownerSafe: true,
+};
+const INACTIVE_409 = { ...PAUSED_409, error: "This item is not available right now. The shop has been told." };
+
+test("ALLOW (FP2-02): a shop that cannot take orders yet says so", () => {
+  assert.deepEqual(checkoutRefusal(409, NOT_READY_409.error, NOT_READY_409), { error: "This shop is not taking orders yet." });
+});
+
+test("ALLOW (FP2-06): each not_for_sale sentence the server wrote for shoppers is shown as written", () => {
+  assert.deepEqual(checkoutRefusal(409, PAUSED_409.error, PAUSED_409), { error: "This item is not for sale right now." });
+  assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, INACTIVE_409), {
+    error: "This item is not available right now. The shop has been told.",
+  });
+});
+
+test("REFUSE (FP2-06): no not_for_sale 409 ever says Refresh, and none carries the stock reason", () => {
+  const bodies = [
+    NOT_READY_409,
+    PAUSED_409,
+    INACTIVE_409,
+    { errorCode: "not_for_sale" },
+    { errorCode: "not_for_sale", error: "No active Stripe integration found for this group", ownerSafe: true },
+    { errorCode: "not_for_sale", reason: "not_ready" },
+  ];
+  for (const body of bodies) {
+    // Cast: the union of literal bodies above does not all declare `error`.
+    const refusal = checkoutRefusal(409, (body as { error?: string }).error, body);
+    assert.doesNotMatch(refusal.error, /refresh/i, JSON.stringify(body));
+    assert.equal(refusal.reason, undefined, JSON.stringify(body));
+  }
+});
+
+test("REFUSE (FP2-06): upstream text off the closed list, or not marked ownerSafe, is never echoed", () => {
+  const leak = "No active Stripe integration found for this group";
+  assert.deepEqual(checkoutRefusal(409, leak, { errorCode: "not_for_sale", ownerSafe: true, error: leak }), {
+    error: "This item is not for sale right now.",
+  });
+  // A listed sentence without ownerSafe reads as the generic not_for_sale one.
+  assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, { ...INACTIVE_409, ownerSafe: undefined }), {
+    error: "This item is not for sale right now.",
+  });
+  // An unknown reason does not borrow the shop sentence.
+  assert.deepEqual(checkoutRefusal(409, "x", { ...PAUSED_409, reason: "something_else" }), {
+    error: "This item is not for sale right now.",
+  });
+});
+
+test("REFUSE (FP2-06): only a 409 reads not_for_sale; other statuses keep their own sentence", () => {
+  assert.match(checkoutRefusal(422, NOT_READY_409.error, NOT_READY_409).error, /Refresh the page/);
+  assert.match(checkoutRefusal(502, NOT_READY_409.error, NOT_READY_409).error, /just now/);
+  assert.equal(checkoutRefusal(409, "x", "not_for_sale").error.includes("Refresh"), true, "a non-object body is not a code");
 });
