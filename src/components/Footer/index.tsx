@@ -6,6 +6,7 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { footerHours } from '@/lib/footerHours';
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
@@ -114,14 +115,16 @@ const Footer = async () => {
       // `palette`: the light band's muted ink is pulled to AA against this
       // site's own tokens; a palette that already passes draws byte-identical.
       // `hours` + `timezone`: the column footer's compact week and the next
-      // 14 days' changes, computed in the browser. Absent hours draw as before.
+      // 14 days' changes, computed in the browser. Absent hours draw as before,
+      // and so does a site that keeps other hours sets (rooms, an authored
+      // opening-hours block): see lib/footerHours (W25-5ca).
       palette={{
         secondary: siteData?.secondary,
         surface: siteData?.surface,
         'text-primary': siteData?.['text-primary'],
         'text-secondary': siteData?.['text-secondary'],
       }}
-      hours={siteData?.businessInfo?.hours ?? null}
+      hours={footerHours(siteData)}
       timezone={siteData?.timezone}
       // Wave D + owner pass 2: these land in FooterProps on the next renderer
       // bump — drop this spread-cast then and pass them as plain props.
