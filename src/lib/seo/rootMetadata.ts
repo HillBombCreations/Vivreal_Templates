@@ -4,7 +4,7 @@ import type { SiteData } from '@/types/SiteData';
 // rootMetadata.test.ts under `node --experimental-strip-types --test`, which
 // has no tsconfig `paths` resolution — same convention routeMetadata.ts /
 // siteOrigin.ts already follow.
-import { isDemoSite, getDemoSourceUrl } from './demoSafety.ts';
+import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData } from '../api/siteData/degraded.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 
@@ -26,11 +26,17 @@ import { resolveSiteOrigin } from '../og/siteOrigin.ts';
  * present. Absent `favicon` ⇒ no `icons` key at all — byte-identical to
  * before this field existed.
  *
- * SEO demo-safety: a pre-cutover demo emits `noindex, nofollow` on every
- * page, and points its canonical at the prospect's ORIGINAL site so any
- * crawler that still reaches the demo attributes the content there. Absent a
- * known source URL, the noindex alone protects them. A non-demo (every
- * existing site) adds neither key and is byte-identical to before.
+ * SEO demo-safety: a pre-cutover demo (or prospect) emits `noindex, nofollow`
+ * on every page and NO canonical (owner decision 2026-10-10, W25-12a: no
+ * canonical to another host). It used to point the canonical at `sourceUrl`,
+ * meant to be the prospect's original site; on our own kit demos that field
+ * held `https://vivreal.io` (an old site-loader write of the kit blueprint's
+ * `meta.sourceUrl` placeholder, which the loader now nulls for a kit), so four
+ * demos named our home page as the canonical of their content. The noindex
+ * already withholds the demo, and a self canonical on a noindex page says
+ * nothing, so none is emitted: comparing hosts would trust the stored
+ * `canonicalUrl` the origin resolver reads first, which is the field a demo
+ * carries stale. A non-demo adds neither key and is byte-identical to before.
  */
 export function buildRootMetadata(siteData: SiteData): Metadata {
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
@@ -59,11 +65,9 @@ export function buildRootMetadata(siteData: SiteData): Metadata {
     };
   }
   const demo = isDemoSite(siteData);
-  const demoSource = demo ? getDemoSourceUrl(siteData) : '';
   return {
     ...(origin && { metadataBase: new URL(origin) }),
     ...(siteData.favicon && { icons: { icon: siteData.favicon } }),
     ...(demo && { robots: { index: false, follow: false } }),
-    ...(demo && demoSource && { alternates: { canonical: demoSource } }),
   };
 }

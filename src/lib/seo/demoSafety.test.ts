@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { SiteData } from '@/types/SiteData';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`
 // (see package.json "test"), which needs a resolvable specifier.
-import { isDemoSite, getDemoSourceUrl } from './demoSafety.ts';
+import { isDemoSite } from './demoSafety.ts';
 // The three (now four) demo gates, each in a plain JSX-free module so this
 // file can call the REAL function rather than assert on its source text.
 import { buildRobotsPolicy } from './robotsPolicy.ts';
@@ -18,14 +18,11 @@ import { FALLBACK_SITE_DATA } from '../api/siteData/fallback.ts';
 // existing live customer site is ever accidentally deindexed.
 
 const ENV_LIFECYCLE = process.env.SITE_LIFECYCLE;
-const ENV_SOURCE = process.env.SITE_SOURCE_URL;
 const ENV_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL;
 afterEach(() => {
   // Restore env after each case (tests mutate process.env to exercise fallbacks).
   if (ENV_LIFECYCLE === undefined) delete process.env.SITE_LIFECYCLE;
   else process.env.SITE_LIFECYCLE = ENV_LIFECYCLE;
-  if (ENV_SOURCE === undefined) delete process.env.SITE_SOURCE_URL;
-  else process.env.SITE_SOURCE_URL = ENV_SOURCE;
   if (ENV_SITE_URL === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
   else process.env.NEXT_PUBLIC_SITE_URL = ENV_SITE_URL;
 });
@@ -82,14 +79,6 @@ test('a non-"demo" env value does not trigger the gate', () => {
   assert.equal(isDemoSite(undefined), false);
 });
 
-test('getDemoSourceUrl: prefers the doc sourceUrl, falls back to env, else ""', () => {
-  delete process.env.SITE_SOURCE_URL;
-  assert.equal(getDemoSourceUrl({ sourceUrl: 'https://prospect.example' }), 'https://prospect.example');
-  assert.equal(getDemoSourceUrl(undefined), '', 'unknown source ⇒ empty (caller skips canonical)');
-  process.env.SITE_SOURCE_URL = 'https://env-source.example';
-  assert.equal(getDemoSourceUrl(undefined), 'https://env-source.example', 'env fallback used when doc lacks it');
-  assert.equal(getDemoSourceUrl({ sourceUrl: 'https://doc.example' }), 'https://doc.example', 'doc wins over env');
-});
 
 // ═══════════════════════════════════════════════════════════════════════════
 // design.md item 28: "extend src/lib/seo/demoSafety.test.ts ... Pin apex,
@@ -172,13 +161,14 @@ test('GATE 2 (sitemap): a demo emits an EMPTY sitemap even with pages and every 
   );
 });
 
-test('GATE 3 (layout): a demo emits noindex,nofollow and the ORIGINAL source canonical, never its own origin', () => {
+// W25-12a (owner decision 2026-10-10): a demo names no canonical at all. This
+// used to expect the source URL, the rule that let demos name https://vivreal.io.
+test('GATE 3 (layout): a demo emits noindex,nofollow and no canonical, neither its source nor its own origin', () => {
   delete process.env.SITE_LIFECYCLE;
   delete process.env.NEXT_PUBLIC_SITE_URL;
   const metadata = buildRootMetadata(DEMO_SITE);
   assert.deepEqual(metadata.robots, { index: false, follow: false });
-  assert.deepEqual(metadata.alternates, { canonical: 'https://prospect-original.example' });
-  assert.notEqual(metadata.alternates?.canonical, DEMO_SITE.canonicalUrl, 'the write-ahead canonicalUrl never leaks');
+  assert.equal(metadata.alternates, undefined, 'no canonical, and the write-ahead canonicalUrl never leaks');
   // The control: a live site adds neither key, so a deleted gate is visible.
   const liveMetadata = buildRootMetadata(LIVE_SITE);
   assert.equal(liveMetadata.robots, undefined);

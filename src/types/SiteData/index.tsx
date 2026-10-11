@@ -799,11 +799,9 @@ export interface SiteData {
     degraded?: true;
     /**
      * The prospect's ORIGINAL live URL, carried from the migration source
-     * (`inventory.meta.sourceUrl`). On a `demo` site the root-layout metadata
-     * emits `<link rel="canonical">` → this URL so even a crawler that reaches
-     * the demo attributes the content to the prospect's real site (SEO-signal
-     * preservation, per the plan's §4A canonical-to-source rule). Absent ⇒ no
-     * canonical override (the `noindex` alone still protects the prospect).
+     * (`inventory.meta.sourceUrl`). No longer read for the canonical: a demo
+     * or prospect names none (W25-12a, owner decision 2026-10-10; see
+     * `src/lib/seo/rootMetadata.ts`), and its `noindex` protects the prospect.
      */
     sourceUrl?: string;
     /**
