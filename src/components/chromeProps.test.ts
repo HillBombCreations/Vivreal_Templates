@@ -13,7 +13,9 @@ test('Footer threads palette, hours and timezone into the renderer footer', () =
   assert.match(code, /palette=\{\{\s*secondary: siteData\?\.secondary,\s*surface: siteData\?\.surface,/);
   assert.match(code, /'text-primary': siteData\?\.\['text-primary'\]/);
   assert.match(code, /'text-secondary': siteData\?\.\['text-secondary'\]/);
-  assert.match(code, /hours=\{siteData\?\.businessInfo\?\.hours \?\? null\}/);
+  // W25-5ca: the business hours through `footerHours`, which passes them on when
+  // they are the site's one hours set (lib/footerHours.test.ts).
+  assert.match(code, /hours=\{footerHours\(siteData\)\}/);
   assert.match(code, /timezone=\{siteData\?\.timezone\}/);
 });
 

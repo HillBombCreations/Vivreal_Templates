@@ -84,7 +84,9 @@ test('Phase 0.1: a products page misses to the collection arm when one serves it
 });
 
 test('Phase 0.1: the provider read asks the shared source order', () => {
-  assert.match(source, /storefrontItemSources\(pageConfig, paymentsProvider\)\.includes\("provider"\)/);
+  // W25-10ca: through `readsProviderProduct`, which is
+  // `storefrontItemSources(...).includes('provider')` (storefrontSources.test.ts).
+  assert.match(source, /const productRead = readsProviderProduct\(pageConfig, paymentsProvider\)/);
 });
 
 test('Phase 0.1: a collection-sourced products item renders through the product renderer', () => {
@@ -94,7 +96,8 @@ test('Phase 0.1: a collection-sourced products item renders through the product 
 });
 
 test('Phase 0.3: a product page describes its own product, with its own card', () => {
-  assert.match(source, /if \(pageConfig\.format === "products"\) \{\s*const summary = await resolveStorefrontItemSummary\(siteData, pageConfig, itemId\);/);
+  // W25-10ca: gated like the render arm, not on the format (a catalog shop with a Stripe grid).
+  assert.match(source, /if \(readsProviderProduct\(pageConfig, metaPaymentsProvider\)\) \{\s*const summary = await resolveStorefrontItemSummary\(siteData, pageConfig, itemId\);/);
   assert.match(source, /productItemMetaText\(\{/);
   assert.match(source, /const productCardUrl = buildOgItemImageUrl\(origin, slug, itemId\);/);
 });
