@@ -59,7 +59,7 @@ const isInsufficientStock = (body: unknown) =>
  * upstream wording change can never put unreviewed prose in the bag.
  */
 const SHOP_NOT_READY = "This shop is not taking orders yet.";
-const ITEM_NOT_FOR_SALE = "This item is not for sale right now.";
+const ITEM_NOT_FOR_SALE = "This item is not for sale right now. Take it out of your bag, then check out the rest.";
 const OWNER_SAFE_NOT_FOR_SALE: ReadonlySet<string> = new Set([
   ITEM_NOT_FOR_SALE,
   "This item is not available right now. The shop has been told.",

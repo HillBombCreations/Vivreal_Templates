@@ -103,7 +103,7 @@ const NOT_READY_409 = {
 const PAUSED_409 = {
   success: false,
   data: null,
-  error: "This item is not for sale right now.",
+  error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   errorCode: "not_for_sale",
   ownerSafe: true,
 };
@@ -114,7 +114,7 @@ test("ALLOW (FP2-02): a shop that cannot take orders yet says so", () => {
 });
 
 test("ALLOW (FP2-06): each not_for_sale sentence the server wrote for shoppers is shown as written", () => {
-  assert.deepEqual(checkoutRefusal(409, PAUSED_409.error, PAUSED_409), { error: "This item is not for sale right now." });
+  assert.deepEqual(checkoutRefusal(409, PAUSED_409.error, PAUSED_409), { error: "This item is not for sale right now. Take it out of your bag, then check out the rest." });
   assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, INACTIVE_409), {
     error: "This item is not available right now. The shop has been told.",
   });
@@ -140,15 +140,15 @@ test("REFUSE (FP2-06): no not_for_sale 409 ever says Refresh, and none carries t
 test("REFUSE (FP2-06): upstream text off the closed list, or not marked ownerSafe, is never echoed", () => {
   const leak = "No active Stripe integration found for this group";
   assert.deepEqual(checkoutRefusal(409, leak, { errorCode: "not_for_sale", ownerSafe: true, error: leak }), {
-    error: "This item is not for sale right now.",
+    error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   });
   // A listed sentence without ownerSafe reads as the generic not_for_sale one.
   assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, { ...INACTIVE_409, ownerSafe: undefined }), {
-    error: "This item is not for sale right now.",
+    error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   });
   // An unknown reason does not borrow the shop sentence.
   assert.deepEqual(checkoutRefusal(409, "x", { ...PAUSED_409, reason: "something_else" }), {
-    error: "This item is not for sale right now.",
+    error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   });
 });
 
