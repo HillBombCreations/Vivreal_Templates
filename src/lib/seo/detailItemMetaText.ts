@@ -33,6 +33,7 @@
  */
 
 import { plainMeta } from './plainMeta.ts';
+import { withoutSeedCopy } from './seedCopy.ts';
 
 export interface DetailItemMetaInput {
   /** The item's own title, already resolved (context overlay applied). */
@@ -79,10 +80,12 @@ export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaRe
     input.pageMetaTitle ||
     fallbackTitle;
 
+  // RT5-176: item text that is still a kit seed instruction counts as absent,
+  // so the page's own description is used instead (see ./seedCopy.ts).
   const description =
     input.patternDescription ||
-    input.recipeSummary ||
-    plainMeta(input.itemDescription, 160) ||
+    withoutSeedCopy(input.recipeSummary) ||
+    plainMeta(withoutSeedCopy(input.itemDescription), 160) ||
     input.pageMetaDescription ||
     plainMeta(input.pageSubtitle, 160) ||
     title;

@@ -14,6 +14,7 @@
  */
 
 import { plainMeta } from './plainMeta.ts';
+import { withoutSeedCopy } from './seedCopy.ts';
 
 export interface ProductItemMetaInput {
   itemTitle: string | undefined;
@@ -32,7 +33,8 @@ export function productItemMetaText(input: ProductItemMetaInput): { title: strin
     title: input.patternTitle || fallback,
     description:
       input.patternDescription ||
-      plainMeta(input.itemDescription, 160) ||
+      // RT5-176: a seed instruction counts as no description (./seedCopy.ts).
+      plainMeta(withoutSeedCopy(input.itemDescription), 160) ||
       plainMeta(input.pageSubtitle, 160) ||
       fallback,
   };

@@ -69,6 +69,7 @@ import {
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
+import { withoutSeedCopy } from "@/lib/seo/seedCopy";
 import { detailItemMetaText } from "@/lib/seo/detailItemMetaText";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
@@ -398,7 +399,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const showJsonLd = buildDetailJsonLd({
       format: 'shows',
       title: show.title,
-      description: show.description?.replace(/<[^>]*>/g, '').slice(0, 500),
+      // RT5-176: never a kit seed instruction in JSON-LD (lib/seo/seedCopy.ts).
+      description: withoutSeedCopy(show.description)?.replace(/<[^>]*>/g, '').slice(0, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // team branch already applies to member images.
@@ -469,7 +471,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       '@context': 'https://schema.org',
       '@type': 'Person',
       name: member.name,
-      ...(member.description
+      ...(member.description && withoutSeedCopy(member.description)
         ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
         : {}),
       ...(memberImage ? { image: memberImage } : {}),
@@ -578,7 +580,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // more wrong claims, not fewer.
     const productImage =
       typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
-    const productDescriptionRaw = offerFieldValue(product.description, offerVariant, variantValues);
+    const productDescriptionRaw = withoutSeedCopy(offerFieldValue(product.description, offerVariant, variantValues));
     const productDescription = productDescriptionRaw
       ? productDescriptionRaw.replace(/<[^>]*>/g, '').slice(0, 500)
       : undefined;
@@ -752,8 +754,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // ⇒ the item is returned untouched.
     const effectiveItem = applyContextOverrides(item, contextRaw, scopedDetailPage?.context?.overrides);
 
+    // RT5-176: a kit seed instruction is no description (lib/seo/seedCopy.ts).
     const cleanDesc =
-      typeof effectiveItem.description === "string"
+      typeof effectiveItem.description === "string" && withoutSeedCopy(effectiveItem.description)
         ? effectiveItem.description.replace(/<[^>]*>/g, "").slice(0, 500)
         : undefined;
     // A recipe's own fields: the authored ingredient and step lines verbatim,
@@ -783,7 +786,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // value is embedded in long-lived Recipe JSON-LD that crawler caches
       // outlive, so shipping markup here is worse than shipping it in a meta
       // tag. 500, not 160: JSON-LD has room and is not a preview card.
-      description: cleanDesc ?? plainMeta(recipe?.summary, 500),
+      description: cleanDesc ?? plainMeta(withoutSeedCopy(recipe?.summary), 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
@@ -947,7 +950,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     }));
 
     const cleanDesc =
-      typeof item.description === "string"
+      typeof item.description === "string" && withoutSeedCopy(item.description)
         ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
         : undefined;
     const itemJsonLd = buildDetailJsonLd({
@@ -1182,7 +1185,7 @@ export async function generateMetadata({ params }: Props) {
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
-    const cleanDesc = show.description?.replace(/<[^>]*>/g, "").slice(0, 160);
+    const cleanDesc = withoutSeedCopy(show.description)?.replace(/<[^>]*>/g, "").slice(0, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
     const description = seo?.metaDescription || cleanDesc || `${show.title} | ${siteName}`;
     return {
