@@ -267,19 +267,30 @@ test('W25f-1: a partly seeded value keeps its real paragraphs, lines and sentenc
   assert.equal(isUnfilledSeedCopy(JUNIPER_ABOUT), false, 'not seed as a whole');
 });
 
+// Measured as a RATIO inside one run, so a busy machine slows both sizes alike. A quadratic
+// shape (the 1.85.7 B1 review: 67 ms at 50 KB, 1,560 ms at 200 KB) is 16x or worse; linear is 4x.
+// The 2 ms floor keeps timer jitter on sub-millisecond runs from reading as growth.
+function bestMs(fn: (value: string) => unknown, value: string): number {
+  let ms = Number.POSITIVE_INFINITY;
+  for (let run = 0; run < 5; run++) {
+    const t0 = process.hrtime.bigint();
+    fn(value);
+    ms = Math.min(ms, Number(process.hrtime.bigint() - t0) / 1e6);
+  }
+  return ms;
+}
+
+/** The ratio check: 4x the input may cost at most 8x the time, plus the jitter floor. */
+function scalesLinearly(fn: (value: string) => unknown, shape: (n: number) => string): { ok: boolean; detail: string } {
+  const small = shape(3900);
+  const large = shape(15600);
+  assert.ok(large.length >= 180_000 && large.length >= 3.9 * small.length, `sizes ${small.length} / ${large.length}`);
+  const tSmall = bestMs(fn, small);
+  const tLarge = bestMs(fn, large);
+  return { ok: tLarge <= 8 * tSmall + 2, detail: `${small.slice(0, 24)}...: ${tSmall.toFixed(2)} ms at ${small.length}, ${tLarge.toFixed(2)} ms at ${large.length}` };
+}
+
 test('W25f-1: matching stays linear, 4x the input costs about 4x the time, not 16x', () => {
-  // Measured as a RATIO inside one run, so a busy machine slows both sizes alike. A quadratic
-  // shape (the 1.85.7 B1 review: 67 ms at 50 KB, 1,560 ms at 200 KB) is 16x or worse; linear is 4x.
-  // The 2 ms floor keeps timer jitter on sub-millisecond runs from reading as growth.
-  const best = (value: string): number => {
-    let ms = Number.POSITIVE_INFINITY;
-    for (let run = 0; run < 5; run++) {
-      const t0 = process.hrtime.bigint();
-      withoutSeedCopy(value);
-      ms = Math.min(ms, Number(process.hrtime.bigint() - t0) / 1e6);
-    }
-    return ms;
-  };
   const shapes: Array<(n: number) => string> = [
     (n) => 'Placeholder. '.repeat(n),
     (n) => `Real start. ${'Placeholder tiles go down first, and we replace with porcelain. '.repeat(n / 5)}`,
@@ -287,12 +298,20 @@ test('W25f-1: matching stays linear, 4x the input costs about 4x the time, not 1
     (n) => 'This is placeholder. '.repeat(n),
   ];
   for (const shape of shapes) {
-    const small = shape(3900);
-    const large = shape(15600);
-    assert.ok(large.length >= 180_000 && large.length >= 3.9 * small.length, `sizes ${small.length} / ${large.length}`);
-    const [tSmall, tLarge] = [best(small), best(large)];
-    assert.ok(tLarge <= 8 * tSmall + 2, `${small.slice(0, 24)}...: ${tSmall.toFixed(2)} ms at ${small.length}, ${tLarge.toFixed(2)} ms at ${large.length}`);
+    const { ok, detail } = scalesLinearly(withoutSeedCopy, shape);
+    assert.ok(ok, detail);
   }
+});
+
+test('CONTROL: the ratio check FAILS a deliberately quadratic scan, so the linearity test can go red', () => {
+  // One indexOf from every 13th position to the end of the value: O(n^2 / 13), the B1 shape of cost.
+  const quadratic = (value: string): number => {
+    let sum = 0;
+    for (let i = 0; i < value.length; i += 13) sum += value.indexOf('zzz', i);
+    return sum;
+  };
+  const { ok, detail } = scalesLinearly(quadratic, (n) => 'Placeholder. '.repeat(n));
+  assert.equal(ok, false, `a quadratic scan passed the ratio check: ${detail}`);
 });
 
 test('ALLOW (FP2-08): every 1.85.5 kit opener is hidden, text and HTML, any case', () => {
