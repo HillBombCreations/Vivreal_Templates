@@ -2,6 +2,7 @@ import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcr
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import NavbarChrome from './NavbarChrome';
 
 /**
@@ -78,6 +79,9 @@ const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null;
       siteName={siteName}
       logoUrl={logoUrl}
       logoScrolledUrl={logoScrolledUrl}
+      // W25 review C2 (renderer 1.85.8): seed-only pages answer 404, so their
+      // links go. Empty ⇒ the renderer's header, byte-identical.
+      hiddenPaths={await getSeedOnlyPaths()}
       navItems={navItems}
       accentColor={siteData?.primary}
       pageConfigs={pageConfigs}

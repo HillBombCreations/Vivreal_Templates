@@ -7,6 +7,7 @@ import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-r
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
 import { footerHours } from '@/lib/footerHours';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
@@ -98,6 +99,9 @@ const Footer = async () => {
       footerColumns={siteData?.footer?.columns ?? null}
       legal={siteData?.footer?.legal ?? null}
       footerPages={footerPages}
+      // W25 review C2 (renderer 1.85.8): seed-only pages answer 404, so their
+      // links go. Empty ⇒ the renderer's footer, byte-identical.
+      hiddenPaths={await getSeedOnlyPaths()}
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       newsletter={siteData?.footerNewsletter ?? null}

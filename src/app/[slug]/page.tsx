@@ -15,6 +15,8 @@ import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageI
 import { resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { pageMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
+import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
+import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
 // component file is retained until it is retired post-dogfood validation.
@@ -315,6 +317,14 @@ export default async function DynamicPage({
   // `buildSitemapEntries` drops the page through the SAME predicate, so the
   // file and the route can never disagree about which pages exist.
   if (isPageTurnedOff(pageConfig)) return notFound();
+
+  // W25 review C2 (owner decision): a page whose body is entirely kit seed is
+  // not served until the owner writes real text (see src/lib/seo/seedOnlyPaths.ts).
+  // HERE, in the un-suspended parent and before renderComposedPage and the
+  // composed arm's <Suspense>, so the 404 is a real status (see the GUARD NOTE
+  // below). After assertUpstreamHealthy, and a failed list read never counts,
+  // so an upstream wobble cannot 404 a live page.
+  if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();
 
   // Privacy and terms always render on every site, even if not in page config
   const STATIC_SLUGS: Record<string, string> = {
@@ -827,6 +837,10 @@ export async function generateMetadata({
   // titled, described and canonicalised as the retired page. Same answer this
   // function already gives for a slug with no page at all.
   if (isPageTurnedOff(pageConfig)) {
+    return { title: `Not Found | ${siteName}` };
+  }
+  // A seed-only page 404s in the render above; its head says so too.
+  if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) {
     return { title: `Not Found | ${siteName}` };
   }
 

@@ -17,6 +17,8 @@ import {
 import { getPageBySlug } from "@/lib/pages";
 import { NON_NESTABLE_FORMATS } from "@/lib/pages/nestedItemRoute";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
+import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
+import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 import { getShowById, getShowByIdRead } from "@/lib/api/shows";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getProductByIdRead } from "@/lib/api/products";
@@ -254,6 +256,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // lists these by their joined slug, so the file and the route agree here
     // too.
     if (isPageTurnedOff(nestedPage)) return notFound();
+    // W25 review C2: a nested page whose body is entirely kit seed 404s, as in
+    // `[slug]/page.tsx` (see src/lib/seo/seedOnlyPaths.ts).
+    if (isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) return notFound();
 
     // Defensive guard: formats needing runtime component overrides or their own
     // interactive arms never render via renderComposedPage. If one appears nested,
@@ -1115,7 +1120,7 @@ export async function generateMetadata({ params }: Props) {
   if (nestedPage) {
     // Off nested page: the render 404s it, and metadata resolves separately,
     // so without this the 404 would still be titled as the retired page.
-    if (isPageTurnedOff(nestedPage)) {
+    if (isPageTurnedOff(nestedPage) || isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) {
       return { title: `Not Found | ${siteName}` };
     }
     const seo = nestedPage.seo;
