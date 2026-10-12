@@ -15,6 +15,7 @@ import {
   buildDetailUrl,
 } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
+import { NON_NESTABLE_FORMATS } from "@/lib/pages/nestedItemRoute";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { getShowById, getShowByIdRead } from "@/lib/api/shows";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
@@ -266,18 +267,16 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // detail arm above, not caused by it). `team` needs no live component
     // override (unlike `products`' CartAdapter) and already composes fine as a
     // TOP-LEVEL page via the identical `renderComposedPage` → mapPageTemplate
-    // `'team'` dispatch (`[slug]/page.tsx`'s COMPOSE_FORMATS). The one real
-    // constraint — a nested team page's OWN member detail links would need a
-    // 3-segment route this file can't serve — degrades to today's existing
-    // 404 on click (same as any unreachable 3-segment URL), not a misrender;
-    // it does not block the roster PAGE itself from finally rendering.
+    // `'team'` dispatch (`[slug]/page.tsx`'s COMPOSE_FORMATS). A nested team
+    // page's OWN member detail links are 3-segment URLs; since W25f-2 the
+    // `[...segments]` catch-all hands them back to this component with the
+    // joined page slug, so they render here like any other member page.
     // `shows`/`products`/etc. are left untouched (no design-doc finding cites
     // them, and their detail arms carry real interactive/JSON-LD surface this
     // repo hasn't audited for the nested case).
-    const NON_NESTABLE_FORMATS = new Set([
-      "products", "schedule", "subscribe",
-      "checkout-success", "checkout-cancel", "home", "shows",
-    ]);
+    //
+    // The set lives in `@/lib/pages/nestedItemRoute`: the catch-all refuses a
+    // nested page's item URLs for exactly these formats.
     if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
     // Same live storefront overrides + controlled query as [slug]/page.tsx's
     // generic arm — a nested sub-page can compose a storefront group too, and

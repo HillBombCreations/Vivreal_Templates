@@ -2,6 +2,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
+import { nestedItemRoute } from "@/lib/pages/nestedItemRoute";
+import DynamicItemPage, { generateMetadata as itemMetadata } from "../[slug]/[itemId]/page";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -33,6 +35,11 @@ export const fetchCache = "force-no-store";
  *     structurally can NEVER shadow the 1- or 2-segment routes; it only ever
  *     receives requests of 3+ segments, which had no other candidate route
  *     at all before this file existed.
+ *   - W25f-2: ONE exception, an item under a nested page
+ *     (`/about/providers/<id>`, see `@/lib/pages/nestedItemRoute`) is handed
+ *     to the `[slug]/[itemId]` component with the joined page slug, which
+ *     renders it or answers a missing item with the redirect or a real 404.
+ *     Every other path is unchanged:
  *   - It does exactly one thing: consult `siteData.redirects` and either
  *     301 or 404. No page rendering, no upstream calls beyond the single
  *     `getSiteData()` fetch every route already makes per request (deduped
@@ -49,11 +56,12 @@ export const fetchCache = "force-no-store";
  * hand-rolled resolve so this call site cannot drift from the other three
  * that decide the same class of redirect.
  */
-export default async function DeepRedirectCatchAll({
-  params,
-}: {
+interface Props {
   params: Promise<{ segments: string[] }>;
-}) {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function DeepRedirectCatchAll({ params, searchParams }: Props) {
   const { segments } = await params;
   const siteData = await getSiteData();
   // This route's whole job is to answer "no such path", so a degraded read is
@@ -61,19 +69,24 @@ export default async function DeepRedirectCatchAll({
   // absent on that read, so every authored deep 301 would resolve to nothing
   // and 404 instead, losing the link equity the redirect map exists to keep.
   assertUpstreamHealthy(siteData);
+  const item = nestedItemRoute(siteData.pageConfigs, segments);
+  if (item) return DynamicItemPage({ params: Promise.resolve(item), searchParams });
   const path = `/${segments.join("/")}`;
   const redirectTarget = resolveMissingItemRedirect(siteData.redirects, path);
   if (redirectTarget) permanentRedirect(redirectTarget);
   return notFound();
 }
 
-export async function generateMetadata() {
+export async function generateMetadata({ params }: Props) {
+  const { segments } = await params;
   const siteData = await getSiteData();
   // RW4-7: on a degraded read the page list is empty because nothing was
   // read, so the branches below would title a 500 "Not Found". The render
   // refuses (assertUpstreamHealthy); metadata makes no claim at all, the
   // pattern rootMetadata.ts set for the same state.
   if (isDegradedSiteData(siteData)) return {};
+  const item = nestedItemRoute(siteData.pageConfigs, segments);
+  if (item) return itemMetadata({ params: Promise.resolve(item) });
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
   return { title: `Not Found | ${siteName}` };
 }
