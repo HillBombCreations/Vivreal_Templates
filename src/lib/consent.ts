@@ -44,6 +44,8 @@
  * Design: docs/projects/vivreal-io-relaunch/DESIGN-G12-G14-INSTRUMENTATION.md
  */
 
+import { acceptAttribution, rejectAttribution, withdrawAttribution } from './attributionCapture.ts';
+
 /** Same key the landing app writes, so a visitor's choice survives the swap. */
 export const COOKIE_CONSENT_KEY = 'cookie_consent_v1';
 
@@ -265,6 +267,8 @@ export function grantConsent(
   if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_ACCEPTED);
   applyConsentedState(vendors, ga);
+  // `vr_attr` is written only now, from the landing page held since the first visit.
+  acceptAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_accept', { event_category: 'Privacy' });
   }
@@ -275,6 +279,7 @@ export function grantConsent(
 export function denyConsent(vivrealOwnSite: boolean): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_REJECTED);
+  rejectAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_reject', { event_category: 'Privacy' });
   }
@@ -297,6 +302,7 @@ export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void): C
   if (!vivrealOwnSite) return DENIED_STATE;
   clearStoredConsentChoice();
   resetConsentApplied();
+  withdrawAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('consent', 'update', { analytics_storage: 'denied' });
     window.gtag?.('event', 'cookie_consent_withdraw', { event_category: 'Privacy' });

@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { runAttributionCapture } from '@/lib/attributionCapture';
-import { readStoredConsentChoice, COOKIE_CONSENT_REJECTED } from '@/lib/consent';
+import { readStoredConsentChoice, COOKIE_CONSENT_ACCEPTED, COOKIE_CONSENT_REJECTED } from '@/lib/consent';
 
 /**
  * Null-rendering mount for `vr_attr` attribution capture (G12 / C1).
@@ -34,15 +34,15 @@ export default function AttributionCapture({
   vivrealOwnSite: boolean;
 }) {
   useEffect(() => {
-    // An AFFIRMATIVE rejection blocks the write. "Undecided" deliberately does
-    // not: first touch only exists on the first page load, so gating it on a
-    // decision the visitor has not made yet destroys it permanently (Open
-    // Question 5 — today's contract, carried forward verbatim). `/privacy` must
-    // describe the asymmetry: `vr_attr` is first-party and written
-    // pre-decision; the third-party vendor tags never fire pre-decision.
+    // Consent first (owner decision 2026-10-12): `vr_attr` is written only
+    // after Accept. Undecided, the landing page is held in sessionStorage for
+    // the Accept to write; rejected, nothing is written or held. See
+    // lib/attributionCapture.ts.
+    const choice = readStoredConsentChoice();
     runAttributionCapture({
       vivrealOwnSite,
-      consentDenied: readStoredConsentChoice() === COOKIE_CONSENT_REJECTED,
+      consented: choice === COOKIE_CONSENT_ACCEPTED,
+      consentDenied: choice === COOKIE_CONSENT_REJECTED,
     });
     // `vivrealOwnSite` is resolved on the server and fixed for the page's
     // lifetime, so this effect is a true once-per-load mount.

@@ -14,6 +14,8 @@ import { installDom, type DomHarness } from '../../lib/__testing__/domHarness.ts
 import { denyConsent, grantConsent, resetConsentApplied, runConsentMount, withdrawConsent } from '../../lib/consent.ts';
 import { CLARITY_MASK_SNIPPET, resolveVendorScripts } from '../../lib/vendorTags.ts';
 import { resolveConsentGaScripts } from '../../lib/gaConsentLoad.ts';
+import { runAttributionCapture } from '../../lib/attributionCapture.ts';
+import { getAttribution } from '../../lib/attribution.ts';
 
 const BANNER_TEXT =
   'We use cookies to see how people use this site and to make it better. If you accept, we turn on Google Analytics, ' +
@@ -228,4 +230,64 @@ test('the masker runs before the Clarity loader, in the one snippet, and Clarity
   assert.equal(dom.scripts().some((s) => s.innerHTML.includes('clarity.ms')), false, 'not before a choice');
   grantConsent(true, VENDORS, GA);
   assert.equal(dom.scripts().some((s) => s.innerHTML.includes('clarity.ms')), true, 'after the accept');
+});
+
+/* ── vr_attr is set only after an Accept (owner decision, 2026-10-12) ── */
+
+/** One page load as the layout runs it: attribution capture, then the consent mount. */
+function loadAttributedPage(path: string): void {
+  dom.setUrl(path);
+  const stored = dom.storage.get('cookie_consent_v1') ?? null;
+  runAttributionCapture({ vivrealOwnSite: true, consented: stored === 'accepted', consentDenied: stored === 'rejected' });
+  runConsentMount(true, VENDORS, GA);
+}
+
+test('REFUSE: no vr_attr before a choice, on the landing page or the next one', () => {
+  dom.setReferrer('https://www.linkedin.com/feed/');
+  loadAttributedPage('/?utm_source=linkedin&utm_campaign=launch');
+  assert.equal(dom.cookie('vr_attr'), null);
+  nextPage();
+  loadAttributedPage('/pricing');
+  assert.equal(dom.cookie('vr_attr'), null);
+  assert.equal(document.cookie, '', 'no cookie of any kind');
+});
+
+test('REFUSE: no vr_attr after Reject, and the held landing page is dropped', () => {
+  loadAttributedPage('/?utm_source=linkedin&utm_campaign=launch');
+  assert.ok(dom.session.has('vr_attr_pending'), 'control: the landing page was held');
+  denyConsent(true);
+  assert.equal(dom.cookie('vr_attr'), null);
+  assert.equal(dom.session.has('vr_attr_pending'), false, 'dropped');
+  nextPage();
+  loadAttributedPage('/?utm_source=google');
+  assert.equal(dom.cookie('vr_attr'), null, 'a rejected visitor is never written, even with a new campaign');
+});
+
+test('ALLOW: vr_attr is set after Accept, carrying the landing source, even when the Accept is on a later page', () => {
+  dom.setReferrer('https://www.linkedin.com/feed/');
+  loadAttributedPage('/?utm_source=linkedin&utm_campaign=launch');
+  const session = new Map(dom.session);
+  nextPage();
+  for (const [k, v] of session) dom.session.set(k, v); // the same tab
+  dom.setReferrer('https://vivreal.io/');
+  loadAttributedPage('/pricing');
+  grantConsent(true, VENDORS, GA);
+  const attr = getAttribution();
+  assert.ok(attr, 'written on accept');
+  assert.equal(attr.first.utm_source, 'linkedin');
+  assert.equal(attr.first.utm_campaign, 'launch');
+  assert.equal(attr.first.landing_path, '/');
+  assert.equal(attr.first.source, 'linkedin');
+  assert.equal(dom.session.has('vr_attr_pending'), false, 'the held page is consumed');
+});
+
+test('ALLOW then REFUSE: a later withdrawal deletes vr_attr', () => {
+  loadAttributedPage('/?utm_source=linkedin');
+  grantConsent(true, VENDORS, GA);
+  assert.notEqual(dom.cookie('vr_attr'), null, 'control: it was written');
+  withdrawConsent(true, () => {});
+  assert.equal(dom.cookie('vr_attr'), null);
+  nextPage();
+  loadAttributedPage('/?utm_source=google');
+  assert.equal(dom.cookie('vr_attr'), null, 'and the next page, undecided again, writes none');
 });
