@@ -11,7 +11,9 @@ import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { installDom, type DomHarness } from '../../lib/__testing__/domHarness.ts';
-import { denyConsent, grantConsent, resetConsentApplied, runConsentMount, withdrawConsent } from '../../lib/consent.ts';
+import { COOKIE_CONSENT_KEY, denyConsent, grantConsent, resetConsentApplied, runConsentMount, withdrawConsent } from '../../lib/consent.ts';
+import { mergeAttributionCustomFields } from '../../lib/leadAttribution.ts';
+import { VIVREAL_MARKETING_SITE_ID } from '../../lib/vivrealApex.ts';
 import { CLARITY_MASK_SNIPPET, resolveVendorScripts } from '../../lib/vendorTags.ts';
 import { resolveConsentGaScripts } from '../../lib/gaConsentLoad.ts';
 import { runAttributionCapture } from '../../lib/attributionCapture.ts';
@@ -237,7 +239,7 @@ test('the masker runs before the Clarity loader, in the one snippet, and Clarity
 /** One page load as the layout runs it: attribution capture, then the consent mount. */
 function loadAttributedPage(path: string): void {
   dom.setUrl(path);
-  const stored = dom.storage.get('cookie_consent_v1') ?? null;
+  const stored = dom.storage.get(COOKIE_CONSENT_KEY) ?? null;
   runAttributionCapture({ vivrealOwnSite: true, consented: stored === 'accepted', consentDenied: stored === 'rejected' });
   runConsentMount(true, VENDORS, GA);
 }
@@ -290,4 +292,50 @@ test('ALLOW then REFUSE: a later withdrawal deletes vr_attr', () => {
   nextPage();
   loadAttributedPage('/?utm_source=google');
   assert.equal(dom.cookie('vr_attr'), null, 'and the next page, undecided again, writes none');
+});
+
+/* ── Review of f32b2f9: an old vr_attr does not survive Reject; old consent is not reused ── */
+
+/** A vr_attr exactly as the pre-2026-10-12 code left it (written before any choice). */
+function plantLegacyAttribution(): void {
+  const legacy = { v: 2, first: { utm_source: 'linkedin', utm_campaign: 'old', source: 'linkedin', landing_path: '/' }, last: { source: 'linkedin' } };
+  document.cookie = `vr_attr=${encodeURIComponent(JSON.stringify(legacy))}; Path=/; Max-Age=7776000; SameSite=Lax`;
+  assert.notEqual(dom.cookie('vr_attr'), null, 'control: the legacy cookie is planted');
+}
+
+test('REFUSE: an existing vr_attr is deleted on Reject, and the lead carries no attribution', () => {
+  plantLegacyAttribution();
+  loadAttributedPage('/contact');
+  denyConsent(true);
+  assert.equal(dom.cookie('vr_attr'), null, 'gone');
+  assert.equal(dom.cookie('vr_consent'), null, 'no accept mirror');
+  const custom = { budget: '10k' };
+  assert.equal(mergeAttributionCustomFields(custom, document.cookie, VIVREAL_MARKETING_SITE_ID), custom, 'the lead carries none');
+});
+
+test('REFUSE: an existing vr_attr is deleted on every page load where consent is denied', () => {
+  denyConsent(true);
+  plantLegacyAttribution(); // e.g. written by another vivreal.io property
+  nextPage();
+  dom.storage.set(COOKIE_CONSENT_KEY, 'rejected');
+  document.cookie = `vr_attr=${encodeURIComponent('{"v":2,"first":{},"last":{}}')}; Path=/`;
+  loadAttributedPage('/');
+  assert.equal(dom.cookie('vr_attr'), null);
+});
+
+test('ALLOW: after Accept the lead carries the attribution (the server sees the accept mirror)', () => {
+  loadAttributedPage('/?utm_source=linkedin&utm_campaign=launch');
+  grantConsent(true, VENDORS, GA);
+  assert.equal(dom.cookie('vr_consent'), 'accepted');
+  const merged = mergeAttributionCustomFields({ budget: '10k' }, document.cookie, VIVREAL_MARKETING_SITE_ID);
+  assert.equal(merged?.utm_campaign, 'launch');
+});
+
+test('REFUSE: an accept stored under the old v1 key alone loads neither GA nor Clarity, asks again, and is removed', () => {
+  dom.storage.set('cookie_consent_v1', 'accepted');
+  const state = runConsentMount(true, VENDORS, GA);
+  assert.equal(state.showBanner, true, 'asked again under the current wording');
+  assert.deepEqual(dom.scripts().map((s) => s.id).filter(Boolean), [], 'no GA, no Clarity');
+  assert.equal(dom.storage.has('cookie_consent_v1'), false, 'the old key is removed');
+  assert.equal(dom.cookie('vr_consent'), null);
 });

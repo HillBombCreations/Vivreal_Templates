@@ -338,6 +338,7 @@ export async function POST(request: NextRequest) {
     const customFields = mergeAttributionCustomFields(
       body.customFields,
       request.headers.get("cookie"),
+      process.env.SITE_ID,
     );
     const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
 

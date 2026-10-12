@@ -305,7 +305,7 @@ test('runAttributionCapture honours GPC on a Vivreal site', () => {
 test('REFUSE: undecided consent writes NO vr_attr; the landing page is held in sessionStorage only', () => {
   // Owner decision 2026-10-12 reversed the old "undecided still writes"
   // contract (Open Question 5): the banner says cookies follow an Accept.
-  assert.equal(localStorage.getItem('cookie_consent_v1'), null);
+  assert.equal(localStorage.getItem('cookie_consent_v2'), null);
   dom.setUrl('/?utm_source=linkedin&utm_campaign=undecided');
   runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
   assert.equal(dom.cookie(COOKIE_NAME), null);

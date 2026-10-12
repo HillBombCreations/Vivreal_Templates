@@ -62,7 +62,7 @@ export async function POST(req: Request) {
     // `vr_attr` (i.e. every customer site in the fleet, where the cookie does
     // not exist) produces a byte-identical payload to today's.
     const cookieHeader = req.headers.get("cookie");
-    const attributedFields = mergeAttributionFields(sanitizeFields(fields), cookieHeader);
+    const attributedFields = mergeAttributionFields(sanitizeFields(fields), cookieHeader, process.env.SITE_ID);
 
     const ok = await subscribeUser(address, collectionId, attributedFields);
     if (!ok) {

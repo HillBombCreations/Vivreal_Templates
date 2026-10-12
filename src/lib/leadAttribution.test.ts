@@ -22,10 +22,15 @@ import {
   mergeAttributionCustomFields,
 } from './leadAttribution.ts';
 import type { Attribution } from './attribution.ts';
+import { VIVREAL_MARKETING_SITE_ID } from './vivrealApex.ts';
 
+/** Vivreal's own marketing site: the only kind of site whose leads may carry attribution. */
+const OWN_SITE = VIVREAL_MARKETING_SITE_ID;
+
+/** A request from a visitor who ACCEPTED (the vr_consent mirror), carrying `attribution` as vr_attr. */
 function cookieHeader(attribution: unknown, extra = ''): string {
   const encoded = encodeURIComponent(JSON.stringify(attribution));
-  return `${extra}${extra ? '; ' : ''}${ATTRIBUTION_COOKIE_NAME}=${encoded}`;
+  return `${extra}${extra ? '; ' : ''}vr_consent=accepted; ${ATTRIBUTION_COOKIE_NAME}=${encoded}`;
 }
 
 const PROOF: Attribution = {
@@ -124,10 +129,10 @@ test('a null attribution flattens to nothing', () => {
 
 test('★ no cookie ⇒ the subscribe payload is UNCHANGED, by reference', () => {
   const fields = { location: 'Denver' };
-  assert.equal(mergeAttributionFields(fields, null), fields);
-  assert.equal(mergeAttributionFields(fields, ''), fields);
-  assert.equal(mergeAttributionFields(fields, 'other=1'), fields);
-  assert.equal(mergeAttributionFields(undefined, null), undefined);
+  assert.equal(mergeAttributionFields(fields, null, OWN_SITE), fields);
+  assert.equal(mergeAttributionFields(fields, '', OWN_SITE), fields);
+  assert.equal(mergeAttributionFields(fields, 'other=1', OWN_SITE), fields);
+  assert.equal(mergeAttributionFields(undefined, null, OWN_SITE), undefined);
 });
 
 test('★ a malformed cookie falls through to today’s payload, never throws', () => {
@@ -138,16 +143,16 @@ test('★ a malformed cookie falls through to today’s payload, never throws', 
     `${ATTRIBUTION_COOKIE_NAME}=${encodeURIComponent('[]')}`,
     `${ATTRIBUTION_COOKIE_NAME}=${encodeURIComponent('null')}`,
   ]) {
-    assert.equal(mergeAttributionFields(fields, header), fields, header);
+    assert.equal(mergeAttributionFields(fields, header, OWN_SITE), fields, header);
   }
 });
 
 test('★ no cookie ⇒ the contact payload is UNCHANGED, by reference', () => {
   const custom = { budget: '10k' };
-  assert.equal(mergeAttributionCustomFields(custom, null), custom);
-  assert.equal(mergeAttributionCustomFields(undefined, null), undefined);
+  assert.equal(mergeAttributionCustomFields(custom, null, OWN_SITE), custom);
+  assert.equal(mergeAttributionCustomFields(undefined, null, OWN_SITE), undefined);
   assert.equal(
-    mergeAttributionCustomFields(undefined, 'other=1'),
+    mergeAttributionCustomFields(undefined, 'other=1', OWN_SITE),
     undefined,
     'no cookie must not conjure an empty object where there was none',
   );
@@ -156,7 +161,7 @@ test('★ no cookie ⇒ the contact payload is UNCHANGED, by reference', () => {
 // ── the positive path ──────────────────────────────────────────────────────
 
 test('subscribe: attribution is folded into the field bag', () => {
-  const merged = mergeAttributionFields({ location: 'Denver' }, cookieHeader(PROOF));
+  const merged = mergeAttributionFields({ location: 'Denver' }, cookieHeader(PROOF), OWN_SITE);
   assert.deepEqual(merged, {
     location: 'Denver',
     utm_source: 'gate3',
@@ -168,12 +173,12 @@ test('subscribe: attribution is folded into the field bag', () => {
 });
 
 test('subscribe: attribution lands even when there were no submitted fields', () => {
-  const merged = mergeAttributionFields(undefined, cookieHeader(PROOF));
+  const merged = mergeAttributionFields(undefined, cookieHeader(PROOF), OWN_SITE);
   assert.equal((merged as Record<string, string>).utm_campaign, 'proof');
 });
 
 test('contact: attribution is folded into customFields', () => {
-  const merged = mergeAttributionCustomFields({ budget: '10k' }, cookieHeader(PROOF))!;
+  const merged = mergeAttributionCustomFields({ budget: '10k' }, cookieHeader(PROOF), OWN_SITE)!;
   assert.equal(merged.budget, '10k');
   assert.equal(merged.utm_campaign, 'proof');
 });
@@ -181,7 +186,7 @@ test('contact: attribution is folded into customFields', () => {
 test('contact: non-string customField values survive the merge untouched', () => {
   const merged = mergeAttributionCustomFields(
     { newsletter: true, interests: ['a', 'b'] },
-    cookieHeader(PROOF),
+    cookieHeader(PROOF), OWN_SITE
   )!;
   assert.equal(merged.newsletter, true);
   assert.deepEqual(merged.interests, ['a', 'b']);
@@ -196,7 +201,7 @@ test('★ a submitted field WINS over an attribution key of the same name', () =
   // be data loss in the one payload this feature exists to enrich.
   const merged = mergeAttributionFields(
     { source: 'A friend told me', utm_campaign: 'client-supplied' },
-    cookieHeader(PROOF),
+    cookieHeader(PROOF), OWN_SITE
   ) as Record<string, string>;
 
   assert.equal(merged.source, 'A friend told me');
@@ -207,7 +212,7 @@ test('★ a submitted field WINS over an attribution key of the same name', () =
 test('★ the same never-clobber rule holds for contact customFields', () => {
   const merged = mergeAttributionCustomFields(
     { source: 'Word of mouth' },
-    cookieHeader(PROOF),
+    cookieHeader(PROOF), OWN_SITE
   )!;
   assert.equal(merged.source, 'Word of mouth');
   assert.equal(merged.utm_source, 'gate3');
@@ -215,12 +220,32 @@ test('★ the same never-clobber rule holds for contact customFields', () => {
 
 test('the merge does not mutate the caller’s object', () => {
   const fields = { location: 'Denver' };
-  mergeAttributionFields(fields, cookieHeader(PROOF));
+  mergeAttributionFields(fields, cookieHeader(PROOF), OWN_SITE);
   assert.deepEqual(fields, { location: 'Denver' });
 });
 
 test('attribution is read even when other cookies share the header', () => {
   const header = cookieHeader(PROOF, '_ga=GA1.1.fake; cookie_consent_v1=accepted');
-  const merged = mergeAttributionFields(undefined, header) as Record<string, string>;
+  const merged = mergeAttributionFields(undefined, header, OWN_SITE) as Record<string, string>;
   assert.equal(merged.utm_campaign, 'proof');
+});
+
+// ── ★ consent and site gate (review of f32b2f9) ───────────────────────────
+
+test('★ REFUSE: a vr_attr with no accept (a pre-2026-10-12 cookie) attaches nothing', () => {
+  const legacy = `${ATTRIBUTION_COOKIE_NAME}=${encodeURIComponent(JSON.stringify(PROOF))}`;
+  const fields = { location: 'Denver' };
+  assert.equal(mergeAttributionFields(fields, legacy, OWN_SITE), fields, 'no vr_consent');
+  assert.equal(mergeAttributionFields(fields, `vr_consent=rejected; ${legacy}`, OWN_SITE), fields, 'rejected');
+  assert.equal(mergeAttributionCustomFields(undefined, `cookie_consent_v1=accepted; ${legacy}`, OWN_SITE), undefined, 'an old v1 accept is not consent');
+});
+
+test('★ REFUSE: on a customer site an existing vr_attr is never attached to a lead, even with an accept', () => {
+  const custom = { budget: '10k' };
+  for (const siteId of ['6abbccc32f8f56089eebf884', '', undefined]) {
+    assert.equal(mergeAttributionCustomFields(custom, cookieHeader(PROOF), siteId), custom, String(siteId));
+    assert.equal(mergeAttributionFields(undefined, cookieHeader(PROOF), siteId), undefined, String(siteId));
+  }
+  // CONTROL: the same header on Vivreal's own site does attach it.
+  assert.equal(mergeAttributionCustomFields(custom, cookieHeader(PROOF), OWN_SITE)!.utm_campaign, 'proof');
 });

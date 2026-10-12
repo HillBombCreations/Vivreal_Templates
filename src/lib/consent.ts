@@ -46,8 +46,49 @@
 
 import { acceptAttribution, rejectAttribution, withdrawAttribution } from './attributionCapture.ts';
 
-/** Same key the landing app writes, so a visitor's choice survives the swap. */
-export const COOKIE_CONSENT_KEY = 'cookie_consent_v1';
+/**
+ * The stored choice. v2 since 2026-10-12: an accept given under the old banner
+ * wording (which described a visitor-identification service) is not consent to
+ * the current one, so every visitor is asked again. The v1 key is ignored and
+ * removed on the first mount (`LEGACY_CONSENT_KEYS`).
+ */
+export const COOKIE_CONSENT_KEY = 'cookie_consent_v2';
+/** Earlier keys, never read as consent, removed on mount. */
+export const LEGACY_CONSENT_KEYS: readonly string[] = Object.freeze(['cookie_consent_v1']);
+
+/**
+ * A host-only mirror of an ACCEPT, so the server can tell (the choice itself
+ * lives in localStorage, which a request does not carry). Set only on accept,
+ * deleted on reject, withdrawal and any mount without a stored accept. The two
+ * lead routes attach `vr_attr` only when it reads `accepted`
+ * (`lib/leadAttribution.ts`). Recording a consent choice is strictly
+ * necessary, and this one exists only for a visitor who accepted.
+ */
+export const CONSENT_COOKIE_NAME = 'vr_consent';
+const CONSENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60;
+
+function writeConsentCookie(accepted: boolean): void {
+  if (typeof document === 'undefined') return;
+  try {
+    const secure = typeof window !== 'undefined' && window.location?.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = accepted
+      ? `${CONSENT_COOKIE_NAME}=${COOKIE_CONSENT_ACCEPTED}; Path=/; Max-Age=${CONSENT_COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+      : `${CONSENT_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
+  } catch {
+    // Cookies blocked: the server sees no accept, so no attribution is attached. Fail-closed.
+  }
+}
+
+function removeLegacyConsentKeys(): void {
+  if (typeof localStorage === 'undefined') return;
+  for (const key of LEGACY_CONSENT_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Storage blocked: the legacy key is never read anyway.
+    }
+  }
+}
 
 /**
  * The ONLY stored value that means "this visitor granted consent". Strict
@@ -126,6 +167,7 @@ export function readStoredConsentChoice(): ConsentChoice | null {
 }
 
 function writeStoredConsentChoice(choice: ConsentChoice): void {
+  writeConsentCookie(choice === COOKIE_CONSENT_ACCEPTED);
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(COOKIE_CONSENT_KEY, choice);
@@ -135,6 +177,7 @@ function writeStoredConsentChoice(choice: ConsentChoice): void {
 }
 
 function clearStoredConsentChoice(): void {
+  writeConsentCookie(false);
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.removeItem(COOKIE_CONSENT_KEY);
@@ -254,6 +297,9 @@ export function runConsentMount(
 ): ConsentState {
   const state = resolveConsentState(vivrealOwnSite);
   if (!state.gated) return state;
+  removeLegacyConsentKeys();
+  // Keep the server-side mirror in step with the stored choice on every page.
+  writeConsentCookie(state.choice === COOKIE_CONSENT_ACCEPTED);
   if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors, ga);
   return state;
 }

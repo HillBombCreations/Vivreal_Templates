@@ -136,7 +136,9 @@ function holdLandingPage(): void {
 export function runAttributionCapture(opts: AttributionCaptureOptions): void {
   if (!opts?.vivrealOwnSite) return;
   if (opts.consentDenied) {
-    dropPending();
+    // Review of f32b2f9 (BLOCK): a vr_attr written before this change (90-day
+    // life, pre-decision) must not outlive a reject.
+    deleteAttribution();
     return;
   }
   if (opts.consented) {
@@ -159,10 +161,10 @@ export function acceptAttribution(vivrealOwnSite: boolean): void {
   captureAttribution();
 }
 
-/** Banner Reject: drop the held landing page. Nothing was written. */
+/** Banner Reject: drop the held landing page and delete any `vr_attr` an earlier visit left. */
 export function rejectAttribution(vivrealOwnSite: boolean): void {
   if (!vivrealOwnSite) return;
-  dropPending();
+  deleteAttribution();
 }
 
 /**
@@ -172,6 +174,11 @@ export function rejectAttribution(vivrealOwnSite: boolean): void {
  */
 export function withdrawAttribution(vivrealOwnSite: boolean): void {
   if (!vivrealOwnSite) return;
+  deleteAttribution();
+}
+
+/** Delete `vr_attr` on the host and on `.vivreal.io`, and the held landing page. */
+function deleteAttribution(): void {
   dropPending();
   if (typeof document === 'undefined') return;
   const expired = `${ATTRIBUTION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
