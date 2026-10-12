@@ -169,27 +169,15 @@ test("generateMetadata's team arm scopes the roster via getPageCollectionId, lik
   );
 });
 
-test("RT5-166 ALLOW: a team member's own name titles their page; a nameless member keeps the page title, then the sensible fallback", () => {
-  // Pairs with the test above, which fixes WHICH roster is read. A member whose
-  // name really is blank (distinct from "wrong roster, so never found at all")
-  // still needs a sensible <title> rather than an empty one.
-  assert.match(
-    source,
-    /const title =\s*\(name \? `\$\{name\} \| \$\{siteName\}` : undefined\) \|\| seo\?\.metaTitle \|\| `Team Member \| \$\{siteName\}`;/,
-    'the member name must come before the page SEO title',
-  );
-});
-
-test("RT5-166 REFUSE: the roster page's SEO title outranks a member's own name", () => {
-  // The pre-fix order: "The barbers | Brightside" on every barber's page.
-  assert.doesNotMatch(source, /const title =\s*seo\?\.metaTitle \|\| \(name \?/);
-});
-
-test('RT5-166: a menu item is titled through the shared item-first resolver, from the pools the render reads', () => {
-  const arm = /if \(pageConfig\.format === "menu"\) \{\s*const menuItem = await findMenuItemForMeta\(pageConfig, itemId\);[\s\S]*?\r?\n {2}\}\r?\n/.exec(source)?.[0] ?? '';
-  assert.ok(arm, 'generateMetadata has no menu arm, so a menu item still takes the menu page title');
-  assert.match(arm, /detailItemMetaText\(\{\s*itemTitle: menuItemTitle,/);
-  assert.match(arm, /pageMetaTitle: seo\?\.metaTitle,/, 'the page title stays the fallback for an item with no name');
+test('RT5-166: the team, menu and default arms title through itemPageTitle, the menu lookup through the render\'s pools', () => {
+  // The title rules themselves are tested by calling them, in
+  // src/lib/seo/itemPageTitle.test.ts. This pins only that the route reaches them.
+  const calls = source.match(/itemPageTitle\(pageConfig, (member|menuItem|undefined), siteName\)/g) ?? [];
+  assert.deepEqual(calls, [
+    'itemPageTitle(pageConfig, member, siteName)',
+    'itemPageTitle(pageConfig, menuItem, siteName)',
+    'itemPageTitle(pageConfig, undefined, siteName)',
+  ]);
   // The lookup mirrors the render's menu arm: its pools, its `_system` entry, its resolver.
   const helper = /async function findMenuItemForMeta\([\s\S]*?\r?\n\}\r?\n/.exec(source)?.[0] ?? '';
   assert.match(helper, /resolveMenuDetailCollections\(pageConfig\)/);

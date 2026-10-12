@@ -71,6 +71,7 @@ import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
 import { withoutSeedCopy } from "@/lib/seo/seedCopy";
 import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
+import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -1214,11 +1215,8 @@ export async function generateMetadata({ params }: Props) {
     const teamMembers = await getTeamMembers(collectionId);
     const member = teamMembers.find((m) => m.id === itemId);
     const name = member?.name;
-    // RT5-166: the member's own name wins. The page's `seo.metaTitle` is
-    // authored for the roster ("The barbers | Brightside") and titled every
-    // member with it; it stays the fallback for a member with no name.
-    const title =
-      (name ? `${name} | ${siteName}` : undefined) || seo?.metaTitle || `Team Member | ${siteName}`;
+    // RT5-166: the member's own name wins over the roster's SEO title (itemPageTitle).
+    const title = itemPageTitle(pageConfig, member, siteName);
     const description =
       seo?.metaDescription ||
       (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
@@ -1415,10 +1413,10 @@ export async function generateMetadata({ params }: Props) {
   // page's, exactly as before.
   if (pageConfig.format === "menu") {
     const menuItem = await findMenuItemForMeta(pageConfig, itemId);
-    const menuItemTitle =
-      typeof menuItem?.title === "string" && menuItem.title.trim() ? menuItem.title.trim() : undefined;
+    const menuItemTitle = menuItemOwnTitle(menuItem);
     if (menuItem && menuItemTitle) {
-      const { title, description, cardTitle } = detailItemMetaText({
+      const title = itemPageTitle(pageConfig, menuItem, siteName);
+      const { description, cardTitle } = detailItemMetaText({
         itemTitle: menuItemTitle,
         itemDescription: menuItem.description,
         siteName,
@@ -1441,7 +1439,7 @@ export async function generateMetadata({ params }: Props) {
 
   // Products + any other item detail. Kept lightweight (no per-item fetch): the
   // section name is the sensible default title. `seo` still overrides.
-  const title = seo?.metaTitle || `${pageConfig.name} | ${siteName}`;
+  const title = itemPageTitle(pageConfig, undefined, siteName);
   const description =
     seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} | ${siteName}`;
   return {
