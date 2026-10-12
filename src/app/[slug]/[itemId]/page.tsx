@@ -71,6 +71,7 @@ import {
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
 import { withoutSeedCopy } from "@/lib/seo/seedCopy";
+import { seedFreeText } from "@/lib/seo/seedFreeText";
 import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
 import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
@@ -400,7 +401,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       format: 'shows',
       title: show.title,
       // RT5-176: never a kit seed instruction in JSON-LD (lib/seo/seedCopy.ts).
-      description: withoutSeedCopy(show.description)?.replace(/<[^>]*>/g, '').slice(0, 500),
+      description: seedFreeText(show.description, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // team branch already applies to member images.
@@ -467,13 +468,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
     const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
     const detailUrl = buildDetailUrl(siteData, slug, itemId);
+    const memberDescription = seedFreeText(member.description, 500);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Person',
       name: member.name,
-      ...(member.description && withoutSeedCopy(member.description)
-        ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
-        : {}),
+      ...(memberDescription ? { description: memberDescription } : {}),
       ...(memberImage ? { image: memberImage } : {}),
       ...(detailUrl
         ? { url: detailUrl }
@@ -580,10 +580,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // more wrong claims, not fewer.
     const productImage =
       typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
-    const productDescriptionRaw = withoutSeedCopy(offerFieldValue(product.description, offerVariant, variantValues));
-    const productDescription = productDescriptionRaw
-      ? productDescriptionRaw.replace(/<[^>]*>/g, '').slice(0, 500)
-      : undefined;
+    const productDescription = seedFreeText(offerFieldValue(product.description, offerVariant, variantValues), 500);
 
     // The claim and the button come from ONE function, evaluated at the SAME
     // variant. `resolveStock` + `computeStockState` is exactly the pair
@@ -755,10 +752,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const effectiveItem = applyContextOverrides(item, contextRaw, scopedDetailPage?.context?.overrides);
 
     // RT5-176: a kit seed instruction is no description (lib/seo/seedCopy.ts).
-    const cleanDesc =
-      typeof effectiveItem.description === "string" && withoutSeedCopy(effectiveItem.description)
-        ? effectiveItem.description.replace(/<[^>]*>/g, "").slice(0, 500)
-        : undefined;
+    const cleanDesc = seedFreeText(effectiveItem.description, 500);
     // A recipe's own fields: the authored ingredient and step lines verbatim,
     // and the three time scalars whose SUM is the total (derived here, never
     // authored, so it cannot contradict its parts).
@@ -949,10 +943,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       href: `/${slug}/${itemSegment(it, menuItemKeyField)}`,
     }));
 
-    const cleanDesc =
-      typeof item.description === "string" && withoutSeedCopy(item.description)
-        ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
-        : undefined;
+    const cleanDesc = seedFreeText(item.description, 500);
     const itemJsonLd = buildDetailJsonLd({
       format: "products",
       title: item.title || pageConfig.name,
@@ -1186,7 +1177,7 @@ export async function generateMetadata({ params }: Props) {
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
-    const cleanDesc = withoutSeedCopy(show.description)?.replace(/<[^>]*>/g, "").slice(0, 160);
+    const cleanDesc = seedFreeText(show.description, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
     const description = withoutSeedCopy(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
     return {

@@ -267,16 +267,31 @@ test('W25f-1: a partly seeded value keeps its real paragraphs, lines and sentenc
   assert.equal(isUnfilledSeedCopy(JUNIPER_ABOUT), false, 'not seed as a whole');
 });
 
-test('W25f-1: matching stays linear, a 200 KB value is judged inside the budget', () => {
-  const values = ['Placeholder. '.repeat(15400), `${'Real start. '.repeat(16_000)}Placeholder note. Replace with yours.`, 'a'.repeat(200_000)];
-  for (const value of values) {
-    let best = Number.POSITIVE_INFINITY;
+test('W25f-1: matching stays linear, 4x the input costs about 4x the time, not 16x', () => {
+  // Measured as a RATIO inside one run, so a busy machine slows both sizes alike. A quadratic
+  // shape (the 1.85.7 B1 review: 67 ms at 50 KB, 1,560 ms at 200 KB) is 16x or worse; linear is 4x.
+  // The 2 ms floor keeps timer jitter on sub-millisecond runs from reading as growth.
+  const best = (value: string): number => {
+    let ms = Number.POSITIVE_INFINITY;
     for (let run = 0; run < 5; run++) {
       const t0 = process.hrtime.bigint();
       withoutSeedCopy(value);
-      best = Math.min(best, Number(process.hrtime.bigint() - t0) / 1e6);
+      ms = Math.min(ms, Number(process.hrtime.bigint() - t0) / 1e6);
     }
-    assert.ok(best < 20, `${value.slice(0, 30)}... took ${best.toFixed(1)} ms`);
+    return ms;
+  };
+  const shapes: Array<(n: number) => string> = [
+    (n) => 'Placeholder. '.repeat(n),
+    (n) => `Real start. ${'Placeholder tiles go down first, and we replace with porcelain. '.repeat(n / 5)}`,
+    (n) => `${'Real start. '.repeat(n)}Placeholder note. Replace with yours.`,
+    (n) => 'This is placeholder. '.repeat(n),
+  ];
+  for (const shape of shapes) {
+    const small = shape(3900);
+    const large = shape(15600);
+    assert.ok(large.length >= 180_000 && large.length >= 3.9 * small.length, `sizes ${small.length} / ${large.length}`);
+    const [tSmall, tLarge] = [best(small), best(large)];
+    assert.ok(tLarge <= 8 * tSmall + 2, `${small.slice(0, 24)}...: ${tSmall.toFixed(2)} ms at ${small.length}, ${tLarge.toFixed(2)} ms at ${large.length}`);
   }
 });
 
