@@ -142,8 +142,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               <JsonLd schema={siteSchema} />
               {/* Per-site web-analytics tag (migration continuity + portal-
                   editable). Reads siteData.analytics; absent ⇒ nothing renders
-                  (byte-identical no-op for every existing site). */}
-              <SiteAnalytics analytics={siteData.analytics} />
+                  (byte-identical no-op for every existing site). NOT on
+                  Vivreal's own site: there GA loads only after the visitor
+                  accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
+              {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
               {siteFont?.googleFontsHref && (
                   <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
               )}
@@ -289,6 +291,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   <SiteConsent
                       vivrealOwnSite={vivrealOwnSite}
                       additional={siteData.analytics?.additional}
+                      analytics={siteData.analytics}
                   />
               </Providers>
           </body>

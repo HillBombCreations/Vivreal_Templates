@@ -11,6 +11,7 @@ import {
   type VendorScript,
 } from '@/lib/consent';
 import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorTags';
+import { resolveConsentGaScripts, type ConsentGaConfig } from '@/lib/gaConsentLoad';
 
 /**
  * The vivreal.io cookie-consent surface (G13 / C2) — banner + persistent
@@ -57,6 +58,7 @@ const INERT: ConsentState = {
 export default function SiteConsent({
   vivrealOwnSite,
   additional,
+  analytics,
 }: {
   /**
    * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Required, so
@@ -72,6 +74,12 @@ export default function SiteConsent({
    * nothing about whether a snippet may RUN; `vivrealOwnSite` decides that.
    */
   additional?: AdditionalVendorConfig[];
+  /**
+   * `siteData.analytics` (provider and tracking id). On Vivreal's own site the
+   * layout renders no GA tag; GA loads from here on accept only
+   * (`lib/gaConsentLoad.ts`).
+   */
+  analytics?: ConsentGaConfig | null;
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
   // Fail-closed inside: an unknown provider or a non-matching id yields
@@ -79,6 +87,7 @@ export default function SiteConsent({
   // customer site is `vivrealOwnSite`, threaded into every controller call
   // below, not anything this line does.
   const vendors: VendorScript[] = useMemo(() => resolveVendorScripts(additional), [additional]);
+  const ga: VendorScript[] = useMemo(() => resolveConsentGaScripts(analytics), [analytics]);
   // A visitor who dismisses with the X has not decided; hide the banner for
   // this page view without storing anything, so the next load asks again.
   const [dismissed, setDismissed] = useState(false);
@@ -87,7 +96,7 @@ export default function SiteConsent({
     // Restore-on-mount. This is the D3 fix: a returning visitor who accepted
     // previously never sees the banner, so the ONLY path that can upgrade GA4
     // and inject the registry vendors for them is right here.
-    setState(runConsentMount(vivrealOwnSite, vendors));
+    setState(runConsentMount(vivrealOwnSite, vendors, ga));
     // `vendors` and `vivrealOwnSite` are both derived from server-rendered
     // props and are stable for the page's lifetime; re-running this effect
     // would re-enter the grant path.
@@ -95,8 +104,8 @@ export default function SiteConsent({
   }, []);
 
   const onAccept = useCallback(
-    () => setState(grantConsent(vivrealOwnSite, vendors)),
-    [vivrealOwnSite, vendors],
+    () => setState(grantConsent(vivrealOwnSite, vendors, ga)),
+    [vivrealOwnSite, vendors, ga],
   );
   const onReject = useCallback(() => setState(denyConsent(vivrealOwnSite)), [vivrealOwnSite]);
   const onWithdraw = useCallback(

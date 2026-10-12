@@ -17,8 +17,9 @@
  *  3. WITHDRAW it. GDPR requires withdrawal to be as easy as giving consent,
  *     and `/privacy` cannot describe a control that does not exist.
  *  4. Be the ONLY injection point for the C9 registry vendors. GA4 has a
- *     consent API and can load denied then upgrade; Clarity has none, so "not
- *     loaded" is the only gate that exists for it.
+ *     consent API, but on Vivreal's own site it is no longer loaded denied
+ *     either (owner decision 2026-10-12): it is injected here on accept, like
+ *     Clarity, so "not loaded" is the gate for both (`lib/gaConsentLoad.ts`).
  *
  * React-free on purpose: Templates' test runner (`node --test` with type
  * stripping) cannot compile JSX, so all behaviour lives here and
@@ -69,6 +70,11 @@ export interface VendorScript {
   domId: string;
   /** The vendor's snippet body — hard-coded in Templates source, never config. */
   innerHTML: string;
+  /**
+   * An external loader URL, built in Templates source from a validated id
+   * (GA's `gtag.js`, `lib/gaConsentLoad.ts`). Absent for inline snippets.
+   */
+  src?: string;
 }
 
 export interface ConsentState {
@@ -199,7 +205,11 @@ export function injectVendorScript(vendor: VendorScript): void {
   const script = document.createElement('script');
   script.id = vendor.domId;
   script.type = 'text/javascript';
-  script.innerHTML = vendor.innerHTML;
+  if (vendor.src) {
+    script.async = true;
+    script.src = vendor.src;
+  }
+  if (vendor.innerHTML) script.innerHTML = vendor.innerHTML;
   document.head.appendChild(script);
 }
 
@@ -211,10 +221,14 @@ export function injectVendorScript(vendor: VendorScript): void {
  * choosing, which only happens on the click path. Firing it on every return
  * visit would inflate the accept count.
  */
-export function applyConsentedState(vendors: readonly VendorScript[] = []): void {
+export function applyConsentedState(vendors: readonly VendorScript[] = [], ga: readonly VendorScript[] = []): void {
   if (consentApplied) return;
   consentApplied = true;
 
+  // Google Analytics loads HERE and nowhere else on Vivreal's own site
+  // (`lib/gaConsentLoad.ts`): its init defines `gtag` default-denied, and the
+  // update below grants it. Before a choice, or after a reject, it never loads.
+  for (const script of ga) injectVendorScript(script);
   if (typeof window !== 'undefined') {
     window.gtag?.('consent', 'update', { analytics_storage: 'granted' });
   }
@@ -234,10 +248,11 @@ export function applyConsentedState(vendors: readonly VendorScript[] = []): void
 export function runConsentMount(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
+  ga: readonly VendorScript[] = [],
 ): ConsentState {
   const state = resolveConsentState(vivrealOwnSite);
   if (!state.gated) return state;
-  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors);
+  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors, ga);
   return state;
 }
 
@@ -245,10 +260,11 @@ export function runConsentMount(
 export function grantConsent(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
+  ga: readonly VendorScript[] = [],
 ): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_ACCEPTED);
-  applyConsentedState(vendors);
+  applyConsentedState(vendors, ga);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_accept', { event_category: 'Privacy' });
   }

@@ -25,8 +25,9 @@
  *
  * WHERE IT RENDERS. Not here, and never in <head>. These snippets are handed to
  * the consent controller (`lib/consent.ts`), which injects them on grant and on
- * restore and only then. GA4 can ship in <head> denied because it has a consent
- * API; Clarity has none, so NOT LOADING is the only gate that exists for it.
+ * restore and only then. Clarity has no consent API, so NOT LOADING is the only
+ * gate that exists for it (on Vivreal's own site GA4 is now gated the same way,
+ * `lib/gaConsentLoad.ts`).
  * The controller's gate is what keeps this registry off customer sites, and
  * that gate was WRONG until 2026-09-22. It matched the vivreal.io apex and
  * every subdomain of it, and a customer with no purchased domain is served from
@@ -99,8 +100,20 @@ interface VendorEntry {
  * one fewer difference to explain if the existing Clarity project's numbers
  * move at cutover.
  */
+/**
+ * Masks every form control for Clarity BEFORE its loader is inserted (owner
+ * decision, 2026-10-12: the banner says "with anything you type hidden").
+ * Clarity masks an element carrying `data-clarity-mask="True"`, its value
+ * included, whatever the project's dashboard masking mode says, so the
+ * promise holds in code rather than in a setting someone can change. Marks
+ * every input, textarea, select and contenteditable present now, and, through
+ * a MutationObserver registered before Clarity's own, every one added later
+ * (client-rendered forms, dialogs). Hard-coded, no input.
+ */
+export const CLARITY_MASK_SNIPPET = `(function(d){var S='input,textarea,select,[contenteditable]';function m(n){if(!n||n.nodeType!==1)return;if(n.matches&&n.matches(S))n.setAttribute('data-clarity-mask','True');var l=n.querySelectorAll?n.querySelectorAll(S):[];for(var i=0;i<l.length;i++)l[i].setAttribute('data-clarity-mask','True');}m(d.documentElement);if(typeof MutationObserver==='function')new MutationObserver(function(r){for(var i=0;i<r.length;i++){var a=r[i].addedNodes;for(var j=0;j<a.length;j++)m(a[j]);}}).observe(d.documentElement,{childList:true,subtree:true});})(document);`;
+
 function claritySnippet(id: string): string {
-  return `(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i+"?ref=bwt";y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${id}");`;
+  return `${CLARITY_MASK_SNIPPET}(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i+"?ref=bwt";y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${id}");`;
 }
 
 /** One entry per vendor. Adding the next one is adding a sibling here. */
