@@ -137,17 +137,16 @@ export default function SiteConsent({
             </h2>
             {/*
               Rev 2 requirement 3: the copy must match what Accept actually
-              turns on. With a business-visitor identification tag in the accept
-              bucket, "we analyse traffic" is no longer an accurate summary —
-              the identification clause below is load-bearing, not padding, and
-              must not be softened without changing what the tag does.
+              turns on (lib/consent.ts, lib/vendorTags.ts). Owner-approved
+              wording, pinned by consentCopy.test.ts: change it only together
+              with what the controller loads.
             */}
             <p className="text-sm" style={{ color: 'var(--text-primary, #111111)' }}>
-              We use cookies and similar technologies to analyse how this site is used, to
-              improve it, and for marketing. If you accept, we also use a business-visitor
-              identification service that may work out who you are (your name, work email
-              and employer) from your device and network, even if you never fill in a form,
-              and we may contact you about Vivreal. See our{' '}
+              We use cookies to see how people use this site and to make it better. If you
+              accept, we turn on Google Analytics, which counts visits, and Microsoft Clarity,
+              which shows us how people move around a page, with anything you type hidden.
+              Reject, and neither runs. You can change your mind any time under Cookie
+              settings at the bottom of the page. See our{' '}
               <Link
                 href="/privacy"
                 className="underline"
