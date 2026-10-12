@@ -1132,7 +1132,8 @@ export async function generateMetadata({ params }: Props) {
     const derived = nestedPage.labels?.title || nestedPage.name;
     const title = seo?.metaTitle || `${derived} | ${siteName}`;
     const description =
-      seo?.metaDescription || nestedPage.labels?.subtitle || `${derived} | ${siteName}`;
+      // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
+      withoutSeedCopy(seo?.metaDescription) || withoutSeedCopy(nestedPage.labels?.subtitle) || `${derived} | ${siteName}`;
     // OG route is a single dynamic segment; use the first URL segment so it
     // always resolves (nested pages fall back to the site card).
     const ogImageUrl = buildOgImageUrl(origin, slug);
@@ -1188,7 +1189,7 @@ export async function generateMetadata({ params }: Props) {
     }
     const cleanDesc = withoutSeedCopy(show.description)?.replace(/<[^>]*>/g, "").slice(0, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
-    const description = seo?.metaDescription || cleanDesc || `${show.title} | ${siteName}`;
+    const description = withoutSeedCopy(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
     return {
       title,
       description,
@@ -1218,7 +1219,7 @@ export async function generateMetadata({ params }: Props) {
     // RT5-166: the member's own name wins over the roster's SEO title (itemPageTitle).
     const title = itemPageTitle(pageConfig, member, siteName);
     const description =
-      seo?.metaDescription ||
+      withoutSeedCopy(seo?.metaDescription) ||
       (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
     return {
       title,
@@ -1441,7 +1442,8 @@ export async function generateMetadata({ params }: Props) {
   // section name is the sensible default title. `seo` still overrides.
   const title = itemPageTitle(pageConfig, undefined, siteName);
   const description =
-    seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} | ${siteName}`;
+    // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
+    withoutSeedCopy(seo?.metaDescription) || withoutSeedCopy(pageConfig.labels?.subtitle) || `${pageConfig.name} | ${siteName}`;
   return {
     title,
     description,

@@ -35,7 +35,7 @@ export function productItemMetaText(input: ProductItemMetaInput): { title: strin
       input.patternDescription ||
       // RT5-176: a seed instruction counts as no description (./seedCopy.ts).
       plainMeta(withoutSeedCopy(input.itemDescription), 160) ||
-      plainMeta(input.pageSubtitle, 160) ||
+      plainMeta(withoutSeedCopy(input.pageSubtitle), 160) ||
       fallback,
   };
 }

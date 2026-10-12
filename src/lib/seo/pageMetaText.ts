@@ -24,6 +24,7 @@
  */
 import type { Businessinfo, PageConfig } from '@/types/SiteData';
 import { plainMeta } from './plainMeta.ts';
+import { withoutSeedCopy } from './seedCopy.ts';
 
 /** Google shows roughly this much of a summary; longer is cut, so we cut first. */
 export const SUMMARY_MAX_CHARS = 160;
@@ -55,7 +56,8 @@ export function readBusinessFacts(
 ): BusinessFacts {
   return {
     name: nonEmpty(businessInfo?.name) ?? nonEmpty(fallbackName) ?? '',
-    description: plainMeta(businessInfo?.description, SUMMARY_MAX_CHARS),
+    // W25f-1: a kit seed instruction never reaches a search summary (./seedCopy.ts).
+    description: plainMeta(withoutSeedCopy(businessInfo?.description), SUMMARY_MAX_CHARS),
     city: nonEmpty(businessInfo?.address?.city),
     state: nonEmpty(businessInfo?.address?.state),
     serviceArea: (Array.isArray(businessInfo?.serviceArea) ? businessInfo.serviceArea : [])
@@ -114,8 +116,8 @@ export function pageMetaText({
   const suffixed = facts.name ? `${label} | ${facts.name}` : label;
   const title = nonEmpty(page?.seo?.metaTitle) ?? suffixed;
   const description =
-    nonEmpty(page?.seo?.metaDescription) ??
-    nonEmpty(page?.labels?.subtitle) ??
+    nonEmpty(withoutSeedCopy(page?.seo?.metaDescription)) ??
+    nonEmpty(withoutSeedCopy(page?.labels?.subtitle)) ??
     (formatTitle ? undefined : summaryFromFacts(label, facts)) ??
     suffixed;
   return { title, description };
@@ -139,7 +141,7 @@ export function homeMetaText({
       ? `${name}, ${whereWords}.`
       : undefined;
   const description =
-    nonEmpty(seo?.metaDescription) ??
+    nonEmpty(withoutSeedCopy(seo?.metaDescription)) ??
     fromFacts ??
     `Welcome to ${name}. Discover our latest content, events, and more.`;
   return { title, description };

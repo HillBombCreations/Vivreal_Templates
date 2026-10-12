@@ -80,3 +80,40 @@ test('REFUSE (R4): the home page keeps the owner\'s title and summary, and today
   assert.equal(bare.title, 'Cobalt & Crumb');
   assert.equal(bare.description, 'Welcome to Cobalt & Crumb. Discover our latest content, events, and more.');
 });
+
+// W25f-1: a kit seed instruction never reaches a search description.
+const PRESS_SEED = 'Placeholder press coverage for the demonstration template.';
+const BEFORE_AFTER =
+  'Baseline and review photographs are taken under fixed lighting so the comparison is a real one. The set below is illustrative placeholder photography.';
+
+test('REFUSE (W25f-1): a seed page subtitle is no summary; the business facts stand in', () => {
+  const page = { name: 'Press', format: 'standard', labels: { subtitle: PRESS_SEED } };
+  const { description } = pageMetaText({ page, slug: 'press', facts: COBALT });
+  assert.equal(description, 'Press at Cobalt & Crumb in Knoxville, TN. Small batch bread, baked daily.');
+  assert.doesNotMatch(description, /placeholder/i);
+});
+
+test('REFUSE (W25f-1): a seed meta description is no summary; the real subtitle stands in, partly seeded keeps its own words', () => {
+  const page = { name: 'Results', format: 'standard', labels: { subtitle: BEFORE_AFTER }, seo: { metaDescription: PRESS_SEED } };
+  assert.equal(
+    pageMetaText({ page, slug: 'before-after', facts: COBALT }).description,
+    'Baseline and review photographs are taken under fixed lighting so the comparison is a real one.',
+  );
+});
+
+test('REFUSE (W25f-1): a seed home meta description and a seed business description never reach the home summary', () => {
+  const seededFacts = readBusinessFacts(
+    { name: 'Juniper Row', description: `Skin studio in Los Angeles. ${PRESS_SEED}`, contactInfo: {} },
+    undefined,
+  );
+  assert.equal(seededFacts.description, 'Skin studio in Los Angeles.');
+  const { description } = homeMetaText({ seo: { metaDescription: PRESS_SEED }, facts: seededFacts });
+  assert.equal(description, 'Skin studio in Los Angeles.');
+});
+
+test('ALLOW (W25f-1): a real subtitle and a real meta description are used exactly as before', () => {
+  const page = { name: 'Press', format: 'standard', labels: { subtitle: 'Coverage from the editors.' } };
+  assert.equal(pageMetaText({ page, slug: 'press', facts: COBALT }).description, 'Coverage from the editors.');
+  assert.equal(homeMetaText({ seo: { metaDescription: 'Bread, daily.' }, facts: COBALT }).description, 'Bread, daily.');
+  assert.equal(COBALT.description, 'Small batch bread, baked daily.');
+});

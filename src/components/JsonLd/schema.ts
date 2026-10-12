@@ -22,6 +22,7 @@ import { unsignMediaUrl } from './unsignMediaUrl.ts';
 import { isDemoSite } from '../../lib/seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
 import { footerHours } from '../../lib/footerHours.ts';
+import { withoutSeedCopy } from '../../lib/seo/seedCopy.ts';
 
 const SCHEMA_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
@@ -105,7 +106,8 @@ export function buildSiteJsonLd(
   const url = isDemoSite(siteData)
     ? undefined
     : resolveSiteOrigin(siteData, { surface: 'durable' }) || undefined;
-  const description = siteData.businessInfo?.description;
+  // W25f-1: a kit seed instruction never reaches search as the business description.
+  const description = withoutSeedCopy(siteData.businessInfo?.description);
   const logoUrl = unsignMediaUrl(siteData.logo?.currentFile?.source);
   const email =
     siteData.businessInfo?.showEmail === false ? undefined : siteData.businessInfo?.contactInfo?.email;

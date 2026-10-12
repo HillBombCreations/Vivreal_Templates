@@ -97,8 +97,8 @@ export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaRe
     input.patternDescription ||
     withoutSeedCopy(input.recipeSummary) ||
     plainMeta(withoutSeedCopy(input.itemDescription), 160) ||
-    input.pageMetaDescription ||
-    plainMeta(input.pageSubtitle, 160) ||
+    withoutSeedCopy(input.pageMetaDescription) ||
+    plainMeta(withoutSeedCopy(input.pageSubtitle), 160) ||
     title;
 
   const cardTitle = itemTitle || title;

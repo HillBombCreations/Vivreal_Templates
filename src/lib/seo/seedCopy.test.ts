@@ -112,6 +112,174 @@ const RENDERER_NEW_SHAPE_REAL = [
   'Placeholder text',
 ];
 
+/*
+ * W25f-1 (renderer 1.85.7): the kit wordings are found at any sentence start,
+ * and only the seed is cut. These tables are copied VERBATIM from
+ * vivreal-site-renderer `src/composition/seedCopyMidSentence.test.tsx` at
+ * 99caa5b (`WALK_LINES`, `UNREPORTED_KIT_LINES`, `OWNER_SENTENCES`,
+ * `ADVERSARIAL_KEPT`, `JUNIPER_ABOUT`), where the same inputs run through the
+ * renderer's own `withoutSeedText` with the same expected results.
+ */
+const WALK_LINES: ReadonlyArray<readonly [string, string]> = [
+  ['blackbird /accessibility-statement', 'Example text. Describe your own step free routes, your door widths and your toilets, and be specific about what is not accessible.'],
+  ['blackbird /credits', 'The words on this page are example copy. Replace them with your own.'],
+  ['fernbrook /credits', 'The properties, pricing, vendors and photography on this site are example content. Replace them with your own before you go live.'],
+  ...[
+    'Texture and scarring, series of three.',
+    'Midface, two syringes across two visits.',
+    'Border definition, single visit.',
+    'Forehead and glabella, one session.',
+    'Pigment and tone, medium depth.',
+    'Full face, single session.',
+    'Jaw and chin, built across two visits.',
+    'Diffuse redness, series of three.',
+  ].flatMap((subject) => [
+    ['juniper /', `${subject} Illustrative placeholder photography, not a patient result.`] as const,
+    ['juniper /before-after', `${subject} Illustrative placeholder photography, not a patient result.`] as const,
+  ]),
+  ['juniper /before-after', 'Baseline and review photographs are taken under fixed lighting so the comparison is a real one. The set below is illustrative placeholder photography.'],
+  ['juniper /before-after', 'Baseline and review photographs are taken under fixed lighting so the comparison is a real one. The set below is illustrative placeholder photography.'],
+  ['juniper /about', 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.'],
+  ['juniper /press', 'Placeholder press coverage for the demonstration template.'],
+  ['juniper /press', 'Placeholder press coverage for the demonstration template.'],
+  ['juniper /testimonials', 'Placeholder testimonials for the demonstration template.'],
+  ['juniper /testimonials', 'Placeholder testimonials for the demonstration template.'],
+  ['larkspur /credits', 'The venue, business details, pricing, vendors and photography on this site are example content. Replace them with your own before you go live.'],
+  ['larkspur /credits', 'All photography is licensed from Unsplash and used here as placeholder art. Swap in your own before going live. Your rooms are the reason someone books.'],
+  ['windward /credits', 'The house, pricing, press notes and photography on this site are example content. Replace them with your own before you go live.'],
+];
+
+const UNREPORTED_KIT_LINES = [
+  'Every photograph here is a stock image. Swap them for your own before you go live.',
+  'All photography is licensed from Unsplash and stands in for your own. Swap it before going live. Your gardens are the reason someone books.',
+  'All photography is licensed from Unsplash and stands in for your own. Swap it before going live. Your shoreline is the reason someone books.',
+  'This is placeholder policy text supplied with the Vivreal template gallery. Replace it with your own privacy policy before taking the site live.',
+];
+
+const OWNER_SENTENCES = [
+  'Every photo on this page is a real patient result, shared with consent.',
+  'Results vary. The photos below show a patient result after three sessions, not a promise.',
+  'Not a patient result we are proud of? We redo it free.',
+  'We built this site from a template and made every page our own.',
+  'Our template for a good facial: cleanse, treat, protect.',
+  'The demonstration of our new template range is on Friday.',
+  'No illustrative placeholder photography here. Every image is a client.',
+  'Illustrative photography by Ana Ruiz.',
+  'Our placeholder sign went up in May. The real one is coming.',
+  'This is our placeholder menu until spring, ask us for the full one.',
+  'Placeholder Coffee is next door, and we share their beans.',
+  'Example text messages arrive the day before your visit.',
+  'These are example menus. Ask us for this week.',
+  'Our tasting flights are examples of what we pour. Swap in your own picks at the bar.',
+  'Swap it for oat milk at no charge.',
+  'Swap them before you leave if they do not fit.',
+  'Our policy text is plain English. Replace it with nothing, it is final.',
+  'The set below is our own photography, taken in the studio.',
+  'Go live with us on Friday: the doors open at six.',
+  'Stock images are never used here; every photograph is ours.',
+  '<p>We are a family bakery.</p><p>Our placeholder cakes in the window are real cakes.</p>',
+];
+
+const ADVERSARIAL_KEPT: ReadonlyArray<readonly [string, string]> = [
+  ['placeholder/replace', 'We use butter. Placeholder tiles go down first, and then we replace with porcelain.'],
+  ['placeholder/replace', 'Our crew lays the floor. Placeholder boards protect it. If one cracks we replace with oak.'],
+  ['placeholder/replace', 'Grout the joints. Placeholder: none. Out of milk? Replace with oat milk.'],
+  ['placeholder/replace', '<p>Our bakery opened in 2009.</p><p>Placeholder cakes sit in the window while the real ones chill.</p><p>No eggs? We replace with flax.</p>'],
+  ['placeholder/replace', 'Our studio is small. Placeholder frames hang while prints dry, and the team will replace with the final piece on Friday.'],
+  ['journal', 'We blog weekly. Placeholder body copy for the journal entry titled “Spring” is what we never publish.'],
+  ['placeholder text', 'Our signs never read placeholder text. Ask us for a custom one.'],
+  ['placeholder text', 'We print menus. Placeholder texts arrive by SMS.'],
+  ['illustrative', 'We shoot in house. Illustrative placeholder photography is something we never use.'],
+  ['illustrative', 'Results vary. This is not a patient result we would show; every photo is a real client.'],
+  ['template placeholder', 'Signs are lettered by hand. Template placeholder. Ours are not.'],
+  ['example text', 'This is example text. Replace it with nothing, it is final.'],
+  ['set below', 'Our gallery is real. The set below is illustrative placeholder photography? No, all real clients.'],
+  ['placeholder copy', 'Our menu changes weekly. This is placeholder copy until we finalise spring.'],
+  ['placeholder copy', 'This is placeholder copy for a demonstration template launch next week.'],
+  ['policy text', 'This is placeholder policy text supplied with the Vivreal template gallery? No, our lawyer wrote it.'],
+  ['press', 'We were the placeholder for the demonstration template launch.'],
+  ['press', 'Placeholder testimonials for the demonstration template are not something we write; every review is real.'],
+  ['describe', 'Kids love the menu. Example text. Describe your own favourite dish when you order.'],
+  ['example content', 'Our photos are example content. Replace them with your own eyes when you visit.'],
+  ['example copy', 'The words on this page are example copy? No, we wrote every one.'],
+  ['placeholder art', 'We used this frame as placeholder art. Swap in your own print at the counter.'],
+  ['stock image', 'Every photograph here is a stock image. Swap them for your own before you go live, said nobody.'],
+  ['swap it', 'Swap it before going live, our DJ says.'],
+  ['swap them', 'Mix the flour and sugar. Swap them for your own before you go live? Never.'],
+  ['stands in', 'Our cousin stands in for your own barber when he is away. Swap it before going live? No.'],
+];
+
+const JUNIPER_ABOUT =
+  '<p>Vesper is a single-suite aesthetics studio in Los Angeles. Four treatment rooms, one provider in each, and a quiet room at the back for infusions.</p>' +
+  '<p>The studio was built around three commitments: you stay with one provider, options are presented in order of least intervention first.</p>' +
+  '<p>This is placeholder copy for a demonstration template. Replace it with your own story before publishing.</p>';
+const ABOUT_KEPT = JUNIPER_ABOUT.slice(0, JUNIPER_ABOUT.lastIndexOf('<p>This is placeholder'));
+
+/** Partly seeded values and the exact text each keeps, from the renderer's own expectations at 99caa5b. */
+const CUT_VECTORS: ReadonlyArray<readonly [string, string | undefined]> = [
+  [WALK_LINES[3][1], 'Texture and scarring, series of three.'],
+  [`<p>${WALK_LINES[3][1]}</p>`, '<p>Texture and scarring, series of three.</p>'],
+  [WALK_LINES[19][1], 'Baseline and review photographs are taken under fixed lighting so the comparison is a real one.'],
+  [JUNIPER_ABOUT, ABOUT_KEPT],
+  [`<p>${WALK_LINES[1][1]}</p><p>${UNREPORTED_KIT_LINES[0]}</p>`, undefined],
+  [
+    "<p>Template placeholder. This page is intentionally not carrying the donor site's verbatim privacy policy.</p>" +
+      '<p>The page exists so the route, the footer link and the Studio editing surface are all in place from the first load.</p>',
+    undefined,
+  ],
+  ['We cut hair on Elm Street. Placeholder note. Replace with how long they have been cutting. Walk-ins welcome.', 'We cut hair on Elm Street. Walk-ins welcome.'],
+  [`${WALK_LINES[1][1]} ${UNREPORTED_KIT_LINES[0]}`, undefined],
+  ['Open daily from 7am.<br>The words on this page are example copy. Replace them with your own.<br/>Free parking behind the shop.', 'Open daily from 7am.<br>Free parking behind the shop.'],
+  ['Open daily from 7am.<br>Every photograph here is a stock image. Swap them for your own before you go live.', 'Open daily from 7am.'],
+  [`${WALK_LINES[0][1]}<br>${WALK_LINES[1][1]}`, undefined],
+  ['Open daily from 7am.<br><br>The words on this page are example copy. Replace them with your own.<br><br>Free parking behind the shop.', 'Open daily from 7am.<br><br>Free parking behind the shop.'],
+  ['<p>Real line.<br>Every photograph here is a stock image. Swap them for your own before you go live.</p>', '<p>Real line.</p>'],
+  // Known limit, as in the renderer: a seed after a line with no closing punctuation stays.
+  ['Open daily<br>Placeholder note. Replace with yours.', 'Open daily<br>Placeholder note. Replace with yours.'],
+];
+
+const KIT_WORDS = /placeholder|example (?:copy|content|text)|swap (?:it|them|in)|replace (?:it|them) with/i;
+
+test('W25f-1 ALLOW: every one of the 29 walk lines loses its kit instruction, as text and as HTML', () => {
+  assert.equal(WALK_LINES.length, 29, 'the walk counted 29 lines');
+  for (const [where, line] of WALK_LINES) {
+    for (const value of [line, `<p>${line}</p>`]) {
+      const out = withoutSeedCopy(value);
+      assert.ok(out === undefined || (typeof out === 'string' && !KIT_WORDS.test(out)), `${where}: ${String(out)}`);
+      assert.notEqual(out, value, `${where}: changed`);
+    }
+  }
+});
+
+test('W25f-1 ALLOW: the kit credits and policy lines the walk net missed are hidden too', () => {
+  for (const line of UNREPORTED_KIT_LINES) assert.equal(isUnfilledSeedCopy(line), true, line);
+});
+
+test('W25f-1 REFUSE: real owner sentences and adversarial look-alikes come back as the SAME value', () => {
+  for (const line of [...OWNER_SENTENCES, ...ADVERSARIAL_KEPT.map(([, l]) => l)]) {
+    assert.equal(isUnfilledSeedCopy(line), false, line);
+    assert.equal(withoutSeedCopy(line), line, `same value back: ${line}`);
+  }
+});
+
+test('W25f-1: a partly seeded value keeps its real paragraphs, lines and sentences; only the seed is cut', () => {
+  for (const [input, expected] of CUT_VECTORS) assert.equal(withoutSeedCopy(input), expected, input);
+  assert.equal(isUnfilledSeedCopy(JUNIPER_ABOUT), false, 'not seed as a whole');
+});
+
+test('W25f-1: matching stays linear, a 200 KB value is judged inside the budget', () => {
+  const values = ['Placeholder. '.repeat(15400), `${'Real start. '.repeat(16_000)}Placeholder note. Replace with yours.`, 'a'.repeat(200_000)];
+  for (const value of values) {
+    let best = Number.POSITIVE_INFINITY;
+    for (let run = 0; run < 5; run++) {
+      const t0 = process.hrtime.bigint();
+      withoutSeedCopy(value);
+      best = Math.min(best, Number(process.hrtime.bigint() - t0) / 1e6);
+    }
+    assert.ok(best < 20, `${value.slice(0, 30)}... took ${best.toFixed(1)} ms`);
+  }
+});
+
 test('ALLOW (FP2-08): every 1.85.5 kit opener is hidden, text and HTML, any case', () => {
   for (const s of RENDERER_NEW_SHAPE_SEEDS) assert.equal(isUnfilledSeedCopy(s), true, s);
 });
@@ -135,9 +303,27 @@ test('parity: the renderer edge vectors strip HTML the same way (tag is a space,
 
 test('parity: the INSTALLED renderer agrees with the mirror on every vector', async () => {
   const url = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/lib/seedCopy.js', import.meta.url);
-  const renderer = (await import(url.href)) as { isUnfilledSeedCopy?: (v: unknown) => boolean };
+  // Cast: a dynamic import of a plain-JS dist file has no types; these are its exported signatures.
+  const renderer = (await import(url.href)) as {
+    isUnfilledSeedCopy?: (v: unknown) => boolean;
+    withoutSeedText?: (v: unknown) => unknown;
+  };
   const rendererRule = renderer.isUnfilledSeedCopy;
+  const rendererCut = renderer.withoutSeedText;
   assert.equal(typeof rendererRule, 'function', 'loaded the renderer module, not nothing');
+  assert.equal(typeof rendererCut, 'function', 'the installed renderer carries the 1.85.7 cut rule');
+  // The cut text must match too, not only the verdict: every W25f-1 table through both.
+  const cutInputs = [
+    ...WALK_LINES.flatMap(([, l]) => [l, `<p>${l}</p>`]),
+    ...UNREPORTED_KIT_LINES,
+    ...OWNER_SENTENCES,
+    ...ADVERSARIAL_KEPT.map(([, l]) => l),
+    ...CUT_VECTORS.map(([input]) => input),
+    ...EDGE_VECTORS.map(([input]) => input),
+    ...NAMED_ENTITY_VECTORS.map(([input]) => input),
+  ];
+  assert.ok(cutInputs.length >= 150, `the cut set carries the 1.85.7 tables (${cutInputs.length})`);
+  for (const input of cutInputs) assert.equal(withoutSeedCopy(input), rendererCut?.(input), `cut parity: ${input}`);
   const vectors: Array<readonly [unknown, boolean]> = [
     ...RENDERER_SEEDS.map((s) => [s, true] as const),
     ...RENDERER_REAL.map((s) => [s, false] as const),
@@ -145,6 +331,8 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
     ...RENDERER_NEW_SHAPE_REAL.map((s) => [s, false] as const),
     ...EDGE_VECTORS,
     ...NAMED_ENTITY_VECTORS,
+    ...UNREPORTED_KIT_LINES.map((s) => [s, true] as const),
+    ...OWNER_SENTENCES.map((s) => [s, false] as const),
     [undefined, false],
   ];
   assert.ok(vectors.length > 40, 'the vector set carries the 1.85.5 shapes');
@@ -234,4 +422,14 @@ test('ALLOW a real product description, exactly as before', () => {
     productItemMetaText({ ...PRODUCT_META, itemDescription: REAL }).description,
     'Our sourdough rests for two days before it is baked.',
   );
+});
+
+test('REFUSE (W25f-1): a seed page subtitle or meta description never becomes the item or product meta', () => {
+  const seededPage = { ...ITEM_META, pageMetaDescription: 'Placeholder testimonials for the demonstration template.', pageSubtitle: 'Placeholder testimonials for the demonstration template.' };
+  assert.equal(detailItemMetaText({ ...seededPage, itemDescription: undefined }).description, 'What a trial is for | Marquee');
+  assert.equal(
+    productItemMetaText({ ...PRODUCT_META, itemDescription: undefined, pageSubtitle: 'Placeholder press coverage for the demonstration template.' }).description,
+    'Country loaf | Marquee',
+  );
+  assert.equal(detailItemMetaText({ ...ITEM_META, itemDescription: undefined }).description, 'Notes from the salon floor.', 'a real page description still stands in');
 });
