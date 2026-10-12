@@ -16,9 +16,14 @@ import fs from 'node:fs';
 import type { PageConfig } from '@/types/SiteData';
 import { findSeedOnlyPaths, isSeedOnlySlug, withoutSeedOnlyEntries, type SeedOnlyPageRead, type SeedOnlyRules } from './seedOnlyPaths.ts';
 
-const url = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/composition/seedOnlyPage.js', import.meta.url);
+const DIST = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/', import.meta.url);
 // Cast: a dynamic import of a plain-JS dist file has no types; these are its exported signatures.
-const RULES = (await import(url.href)) as SeedOnlyRules;
+const RULES = (await import(new URL('composition/seedOnlyPage.js', DIST).href)) as SeedOnlyRules;
+
+/** Any reported error fails the test: these inputs must never throw. */
+const failOnError = (err: unknown, slug: string | undefined): void => {
+  assert.fail(`unexpected seed-only error on ${slug ?? 'all'}: ${String(err)}`);
+};
 
 type Item = { id: string; title: string; source: 'collection'; description: string; imageUrl?: string; raw: Record<string, unknown> };
 const policyItem = (id: string, heading: string, body: string): Item => ({ id, title: heading, source: 'collection', description: body, raw: { _id: id, heading, body, mediaKeys: [] } });
@@ -61,7 +66,7 @@ test('the installed renderer carries the seed-only rule (1.85.8)', () => {
 test('REFUSE: a seed-only privacy page answers 404 and is not in the page list', async () => {
   const pages = [standardPage('privacy-policy', 'p'), standardPage('services', 's')];
   const { readPage } = site({ p: [policyItem('a', 'What we keep', SEED_POLICY)], s: [policyItem('b', 'Cuts', REAL_POLICY)] });
-  const paths = await findSeedOnlyPaths(pages, RULES, readPage);
+  const paths = await findSeedOnlyPaths(pages, RULES, readPage, failOnError);
   assert.deepEqual(paths, ['/privacy-policy']);
   assert.equal(isSeedOnlySlug(paths, 'privacy-policy'), true, 'the route answers notFound()');
   assert.equal(isSeedOnlySlug(paths, 'Privacy-Policy'), true, 'any case');
@@ -75,13 +80,13 @@ test('REFUSE: a seed-only privacy page answers 404 and is not in the page list',
 
 test('ALLOW: a policy page with real text renders and stays in the page list', async () => {
   const { readPage } = site({ p: [policyItem('a', 'Your data', REAL_POLICY)] });
-  const paths = await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, readPage);
+  const paths = await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, readPage, failOnError);
   assert.deepEqual(paths, []);
   assert.equal(isSeedOnlySlug(paths, 'privacy-policy'), false);
   assert.equal(withoutSeedOnlyEntries(SITEMAP, paths), SITEMAP, 'the same list back');
   // One real section among seed ones is real content.
   const mixed = site({ p: [policyItem('a', 'Your data', SEED_POLICY), policyItem('b', 'Cookies', REAL_POLICY)] });
-  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, mixed.readPage), []);
+  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, mixed.readPage, failOnError), []);
 });
 
 test('ALLOW: a page with a real hero subtitle, an image-only page and a page with a form all render', async () => {
@@ -101,28 +106,113 @@ test('ALLOW: a page with a real hero subtitle, an image-only page and a page wit
   } as unknown as PageConfig; // as above
   const imageItem = site({ p: [{ ...policyItem('a', 'What we keep', SEED_POLICY), imageUrl: 'https://cdn.example/a.jpg' }] });
   const { readPage, reads } = site({ ...lists, g: [{ ...policyItem('g1', 'Cut', ''), imageUrl: 'https://cdn.example/g.jpg' }] });
-  assert.deepEqual(await findSeedOnlyPaths([realSubtitle, photoHero, imageOnly, withForm], RULES, readPage), []);
+  assert.deepEqual(await findSeedOnlyPaths([realSubtitle, photoHero, imageOnly, withForm], RULES, readPage, failOnError), []);
   assert.deepEqual(reads, [], 'the pre-check rules all four out with no list read');
-  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, imageItem.readPage), [], 'an item with an image');
+  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, imageItem.readPage, failOnError), [], 'an item with an image');
 });
 
 test('REFUSE: a failed list read never produces a 404 or a hidden link', async () => {
   const { readPage } = site({}, new Set(['privacy-policy']));
-  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, readPage), []);
+  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, readPage, failOnError), []);
   const unknown = async (): Promise<SeedOnlyPageRead> => ({ getItems: () => [policyItem('a', 'x', SEED_POLICY)], listReadFailed: false, emptinessUnknown: true });
-  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, unknown), [], 'emptiness unknown');
+  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, unknown, failOnError), [], 'emptiness unknown');
   // CONTROL: the same page with a healthy read IS seed-only, so the two refusals above are not vacuous.
   const healthy = site({ p: [policyItem('a', 'x', SEED_POLICY)] });
-  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, healthy.readPage), ['/privacy-policy']);
+  assert.deepEqual(await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, healthy.readPage, failOnError), ['/privacy-policy']);
 });
 
 test('the pre-check limits list reads to candidate pages', async () => {
   const lists = { p: [policyItem('a', 'x', SEED_POLICY)], t: [policyItem('b', 'y', SEED_POLICY)] };
   const realHome = { name: 'Home', slug: 'about', format: 'about', labels: { title: 'About', subtitle: 'Since 2009.' }, blocks: [block('about', 'static', 'about', { labels: { body: '<p>Real.</p>' } })] } as unknown as PageConfig; // as stored
   const { readPage, reads } = site(lists);
-  const paths = await findSeedOnlyPaths([realHome, standardPage('privacy-policy', 'p'), standardPage('terms-of-use', 't')], RULES, readPage);
+  const paths = await findSeedOnlyPaths([realHome, standardPage('privacy-policy', 'p'), standardPage('terms-of-use', 't')], RULES, readPage, failOnError);
   assert.deepEqual(paths, ['/privacy-policy', '/terms-of-use']);
   assert.deepEqual(reads.sort(), ['privacy-policy', 'terms-of-use'], 'the real page is never read');
+});
+
+test('REFUSE (fails open): a throwing list read or rule hides nothing, the rest are still judged, and the error is reported', async () => {
+  const errors: Array<string | undefined> = [];
+  const report = (_err: unknown, slug: string | undefined): void => {
+    errors.push(slug);
+  };
+  const lists = { p: [policyItem('a', 'x', SEED_POLICY)], t: [policyItem('b', 'y', SEED_POLICY)] };
+  const throwsOnPrivacy = async (page: PageConfig): Promise<SeedOnlyPageRead> => {
+    if (page.slug === 'privacy-policy') throw new Error('upstream exploded');
+    return { getItems: (id) => lists[id as keyof typeof lists] ?? [], listReadFailed: false, emptinessUnknown: false };
+  };
+  const pages = [standardPage('privacy-policy', 'p'), standardPage('terms-of-use', 't')];
+  assert.deepEqual(await findSeedOnlyPaths(pages, RULES, throwsOnPrivacy, report), ['/terms-of-use'], 'only the healthy page is judged seed-only');
+  assert.deepEqual(errors, ['privacy-policy']);
+
+  const ruleThrows: SeedOnlyRules = { mayBeSeedOnlyPage: () => true, isSeedOnlyPage: () => { throw new TypeError('bad stored shape'); } };
+  assert.deepEqual(await findSeedOnlyPaths(pages, ruleThrows, site(lists).readPage, report), []);
+  const precheckThrows: SeedOnlyRules = { mayBeSeedOnlyPage: () => { throw new TypeError('bad stored shape'); }, isSeedOnlyPage: RULES.isSeedOnlyPage };
+  assert.deepEqual(await findSeedOnlyPaths(pages, precheckThrows, site(lists).readPage, report), []);
+  // The pages list itself is unreadable: the whole call answers [].
+  const hostile = { filter: () => { throw new Error('not a list'); } } as unknown as PageConfig[]; // a value no caller should pass
+  assert.deepEqual(await findSeedOnlyPaths(hostile, RULES, site(lists).readPage, report), []);
+  assert.equal(errors.at(-1), undefined, 'the whole-call failure is reported without a page');
+});
+
+test('the reporter can rethrow (the server wrapper rethrows Next control flow), and that escapes', async () => {
+  const signal = new Error('NEXT_NOT_FOUND');
+  const rethrow = (err: unknown): void => {
+    throw err;
+  };
+  const throwsSignal = async (): Promise<SeedOnlyPageRead> => {
+    throw signal;
+  };
+  await assert.rejects(findSeedOnlyPaths([standardPage('privacy-policy', 'p')], RULES, throwsSignal, rethrow), (e) => e === signal);
+});
+
+/* ── Rendered header and footer: the renderer's own Navbar and Footer, given what Templates passes ── */
+
+type El = unknown;
+const NM = new URL('../../../node_modules/', import.meta.url);
+// Casts: plain-JS modules loaded by file URL have no types; these are the signatures used.
+const { createElement } = (await import(new URL('react/index.js', NM).href)) as { createElement: (type: unknown, props: Record<string, unknown> | null) => El };
+const { renderToStaticMarkup } = (await import(new URL('react-dom/server.node.js', NM).href)) as { renderToStaticMarkup: (el: El) => string };
+const Footer = ((await import(new URL('chrome/Footer.js', DIST).href)) as { default: unknown }).default;
+const Navbar = ((await import(new URL('chrome/Navbar.js', DIST).href)) as { default: unknown }).default;
+const { SiteRendererProvider } = (await import(new URL('context/SiteRendererContext.js', DIST).href)) as { SiteRendererProvider: unknown };
+
+const NAV_ITEMS = ['services', 'privacy-policy', 'accessibility'].map((slug) => ({ name: slug, label: slug, slug, path: `/${slug}` }));
+const COLUMNS = [
+  { id: 'c0', heading: 'Looks', links: [{ id: 'l0', label: 'Services', href: '/services' }] },
+  { id: 'c1', heading: 'Legal', links: [{ id: 'l1', label: 'Privacy Policy', href: '/privacy-policy' }, { id: 'l2', label: 'Accessibility', href: '/accessibility' }] },
+];
+const wrap = (el: El): string => renderToStaticMarkup(createElement(SiteRendererProvider, { children: el }));
+const header = (hiddenPaths: readonly string[]): string => wrap(createElement(Navbar, { siteName: 'Halo', navItems: NAV_ITEMS, hiddenPaths }));
+const footer = (hiddenPaths: readonly string[]): string => wrap(createElement(Footer, { siteName: 'Halo', navItems: [], footerColumns: COLUMNS, hiddenPaths }));
+const hasLink = (html: string, path: string): boolean => html.includes(`href="${path}"`);
+
+test('ALLOW (rendered): with no seed-only paths the header and the footer draw every link', () => {
+  const nav = header([]);
+  const foot = footer([]);
+  for (const p of ['/services', '/privacy-policy', '/accessibility']) {
+    assert.ok(hasLink(nav, p), `header: ${p}`);
+    assert.ok(hasLink(foot, p), `footer: ${p}`);
+  }
+});
+
+test('REFUSE (rendered): a seed-only path loses its header and footer link; the others stay', () => {
+  const nav = header(['/privacy-policy']);
+  const foot = footer(['/privacy-policy']);
+  assert.ok(!hasLink(nav, '/privacy-policy'), 'header: no privacy link');
+  assert.ok(!hasLink(foot, '/privacy-policy'), 'footer: no privacy link');
+  for (const p of ['/services', '/accessibility']) {
+    assert.ok(hasLink(nav, p), `header keeps ${p}`);
+    assert.ok(hasLink(foot, p), `footer keeps ${p}`);
+  }
+  assert.ok(foot.includes('>Legal<'), 'the column keeps its heading while it has a link');
+});
+
+test('REFUSE (fails open, rendered): when the check throws, the result is [] and every link still renders', async () => {
+  const throwing: SeedOnlyRules = { mayBeSeedOnlyPage: () => true, isSeedOnlyPage: () => { throw new Error('boom'); } };
+  const paths = await findSeedOnlyPaths([standardPage('privacy-policy', 'p')], throwing, site({ p: [policyItem('a', 'x', SEED_POLICY)] }).readPage, () => {});
+  assert.deepEqual(paths, []);
+  assert.equal(isSeedOnlySlug(paths, 'privacy-policy'), false, 'the page renders');
+  assert.ok(hasLink(header(paths), '/privacy-policy') && hasLink(footer(paths), '/privacy-policy'), 'the links show');
 });
 
 const read = (rel: string): string => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');

@@ -41,26 +41,54 @@ export function seedOnlyPathKey(path: string): string {
   return (trimmed.startsWith('/') ? trimmed : `/${trimmed}`).toLowerCase();
 }
 
+/** Called with what threw when a check fails open; the caller logs it. */
+export type SeedOnlyErrorReport = (err: unknown, slug: string | undefined) => void;
+
 /**
  * The `/<slug>` path of every page in `pages` that is seed-only. Lists are
  * read (through `readPage`) only for pages the pre-check cannot rule out, all
  * in parallel.
+ *
+ * Never throws. Every caller (the header, the footer, the page list, every
+ * page route) would otherwise fail with it, so a throw from a list read or
+ * from the renderer's rule fails OPEN: that page is not seed-only, and a throw
+ * outside the per-page check hides nothing at all. Each failure is reported
+ * through `onError`.
  */
 export async function findSeedOnlyPaths(
   pages: readonly PageConfig[],
   rules: SeedOnlyRules,
   readPage: (page: PageConfig) => Promise<SeedOnlyPageRead>,
+  onError: SeedOnlyErrorReport,
 ): Promise<string[]> {
-  const candidates = pages.filter((page) => typeof page?.slug === 'string' && page.slug !== '' && rules.mayBeSeedOnlyPage(page));
-  if (candidates.length === 0) return [];
-  const verdicts = await Promise.all(
-    candidates.map(async (page) => {
-      const read = await readPage(page);
-      if (read.listReadFailed || read.emptinessUnknown) return false;
-      return rules.isSeedOnlyPage(page, { getItems: read.getItems });
-    }),
-  );
-  return candidates.filter((_, i) => verdicts[i]).map((page) => seedOnlyPathKey(`/${page.slug}`));
+  try {
+    const candidates = pages.filter((page) => {
+      if (typeof page?.slug !== 'string' || page.slug === '') return false;
+      try {
+        return rules.mayBeSeedOnlyPage(page);
+      } catch (err) {
+        onError(err, page.slug);
+        return false;
+      }
+    });
+    if (candidates.length === 0) return [];
+    const verdicts = await Promise.all(
+      candidates.map(async (page) => {
+        try {
+          const read = await readPage(page);
+          if (read.listReadFailed || read.emptinessUnknown) return false;
+          return rules.isSeedOnlyPage(page, { getItems: read.getItems });
+        } catch (err) {
+          onError(err, page.slug);
+          return false;
+        }
+      }),
+    );
+    return candidates.filter((_, i) => verdicts[i]).map((page) => seedOnlyPathKey(`/${page.slug}`));
+  } catch (err) {
+    onError(err, undefined);
+    return [];
+  }
 }
 
 /** True when `slug` (a route's own slug, or a nested `a/b`) is one of `seedOnlyPaths`. */
