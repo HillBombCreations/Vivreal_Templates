@@ -121,9 +121,12 @@ test('REFUSE (FP2-21): a site with rooms or an authored hours block publishes no
 });
 
 test('REFUSE (W25f-1): a seed business description never reaches the site JSON-LD; a partly seeded one keeps its own words', () => {
-  const seed = 'Placeholder press coverage for the demonstration template.';
+  // W25tc-1 (1.85.8): the press line is a kept disclosure now, so the seed is Juniper's about instruction.
+  const seed = 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.';
   assert.equal(org(site({ description: seed })).description, undefined);
   assert.equal(org(site({ description: `Skin studio in Los Angeles. ${seed}` })).description, 'Skin studio in Los Angeles.');
+  const disclosure = 'Placeholder press coverage for the demonstration template.';
+  assert.equal(org(site({ description: disclosure })).description, disclosure, 'W25tc-1: a disclosure is not seed');
 });
 
 test('ALLOW (W25f-1): a real business description is emitted exactly as authored', () => {

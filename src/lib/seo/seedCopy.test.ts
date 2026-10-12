@@ -26,7 +26,8 @@ import { plainMeta } from './plainMeta.ts';
  * stripping fails that test on the next re-pin, not silently.
  */
 const RENDERER_SEEDS = [
-  "Placeholder biography, replace with Priya's training, specialties and the reason she got into this work.",
+  // W25tc-1 (1.85.8): a bio seed now keeps "Placeholder biography." (a disclaimer about a person), so the generic seed here is a caption, as in the renderer.
+  "Placeholder caption, replace with Priya's training, specialties and the reason she got into this work.",
   '<p>Placeholder policy text. Replace with your own before you go live.</p>',
   'Placeholder journal entry, replace with your own writing.',
   '  <p><strong>PLACEHOLDER</strong> answer, REPLACE WITH the real one.</p>  ',
@@ -93,9 +94,6 @@ const RENDERER_NEW_SHAPE_SEEDS = [
   'This is example text. Replace it with your own words.',
   '<p>Placeholder text. Say where the accessible viewing spots are, whether a support worker comes in free.</p>',
   'Placeholder text. Give one email address a visitor can write to about their own data.',
-  'Illustrative placeholder photography. Replace with your own consented before-and-after set.',
-  'Illustrative placeholder photography, not a patient result.',
-  '<p><em>Illustrative placeholder photography</em> — not a patient result.</p>',
   '<p>Template placeholder. This page is intentionally not carrying the donor site’s verbatim terms.</p>',
   '  TEMPLATE PLACEHOLDER.  This page is intentionally empty.',
 ];
@@ -110,14 +108,23 @@ const RENDERER_NEW_SHAPE_REAL = [
   'We use illustrative photography from our own studio.',
   '<p>Our gallery shows real results. No illustrative placeholder photography here.</p>',
   'Placeholder text',
+  // W25tc-1 (1.85.8): photography disclaimers are honest labelling, not seed. The Results subtitle
+  // keeps its disclaimer sentence (cut, not hidden whole), so it is not unfilled seed either.
+  'Illustrative placeholder photography. Replace with your own consented before-and-after set.',
+  'Illustrative placeholder photography, not a patient result.',
+  '<p><em>Illustrative placeholder photography</em> — not a patient result.</p>',
 ];
 
 /*
  * W25f-1 (renderer 1.85.7): the kit wordings are found at any sentence start,
- * and only the seed is cut. These tables are copied VERBATIM from
- * vivreal-site-renderer `src/composition/seedCopyMidSentence.test.tsx` at
- * 99caa5b (`WALK_LINES`, `UNREPORTED_KIT_LINES`, `OWNER_SENTENCES`,
- * `ADVERSARIAL_KEPT`, `JUNIPER_ABOUT`), where the same inputs run through the
+ * and only the seed is cut. W25tc-1 (1.85.8): only INSTRUCTIONS to the owner
+ * are seed; a visitor DISCLAIMER stays, and a mixed line keeps its disclaimer.
+ * These tables are copied VERBATIM from vivreal-site-renderer at 8caec57,
+ * `src/composition/seedCopyMidSentence.test.tsx` (`WALK_LINES`,
+ * `UNREPORTED_KIT_LINES`, `OWNER_SENTENCES`, `ADVERSARIAL_KEPT`,
+ * `JUNIPER_ABOUT`, `DISCLAIMER_ONLY`, `INSTRUCTION_WORDS`) and
+ * `src/composition/w25tcSeedDisclaimer.test.tsx` (the person, press,
+ * testimonials and review C1 vectors), where the same inputs run through the
  * renderer's own `withoutSeedText` with the same expected results.
  */
 const WALK_LINES: ReadonlyArray<readonly [string, string]> = [
@@ -215,44 +222,130 @@ const JUNIPER_ABOUT =
   '<p>This is placeholder copy for a demonstration template. Replace it with your own story before publishing.</p>';
 const ABOUT_KEPT = JUNIPER_ABOUT.slice(0, JUNIPER_ABOUT.lastIndexOf('<p>This is placeholder'));
 
-/** Partly seeded values and the exact text each keeps, from the renderer's own expectations at 99caa5b. */
+/** An instruction to the OWNER. None may reach a visitor. */
+const INSTRUCTION_WORDS = /swap (?:it|them|in)|replace (?:it|them|with)|describe your own|demonstration template|template placeholder/i;
+
+/**
+ * W25tc-1 (1.85.8): walk lines that are a visitor DISCLAIMER and carry no
+ * instruction: the 16 Juniper result captions, the 2 /before-after subtitles
+ * and the 4 /press and /testimonials subtitles. They stay exactly as authored.
+ */
+const DISCLAIMER_ONLY = new Set(
+  WALK_LINES.filter(([, line]) => /not a patient result\.$|^Baseline and review|^Placeholder (?:press coverage|testimonials) for the demonstration template\.$/.test(line)).map(
+    ([, line]) => line,
+  ),
+);
+
+/** Juniper /before-after `labels.subtitle` and `hero.subtitle`, verbatim from production, and its disclosure sentence. */
+const BEFORE_AFTER_SUBTITLE = WALK_LINES[19][1];
+const BEFORE_AFTER_DISCLOSURE = 'The set below is illustrative placeholder photography.';
+const PRESS_DISCLOSURE = 'Placeholder press coverage for the demonstration template.';
+const TESTIMONIALS_DISCLOSURE = 'Placeholder testimonials for the demonstration template.';
+
+/** Values and the exact text each keeps (undefined: hidden whole), from the renderer's own expectations at 8caec57. */
 const CUT_VECTORS: ReadonlyArray<readonly [string, string | undefined]> = [
-  [WALK_LINES[3][1], 'Texture and scarring, series of three.'],
-  [`<p>${WALK_LINES[3][1]}</p>`, '<p>Texture and scarring, series of three.</p>'],
-  [WALK_LINES[19][1], 'Baseline and review photographs are taken under fixed lighting so the comparison is a real one.'],
+  // Mixed lines keep the disclaimer sentence and lose the instruction.
+  [WALK_LINES[1][1], 'The words on this page are example copy.'],
+  [WALK_LINES[2][1], 'The properties, pricing, vendors and photography on this site are example content.'],
+  [WALK_LINES[27][1], 'All photography is licensed from Unsplash and used here as placeholder art.'],
+  [WALK_LINES[28][1], 'The house, pricing, press notes and photography on this site are example content.'],
+  [`<p>${WALK_LINES[1][1]}</p>`, '<p>The words on this page are example copy.</p>'],
+  [UNREPORTED_KIT_LINES[0], 'Every photograph here is a stock image.'],
+  [UNREPORTED_KIT_LINES[1], 'All photography is licensed from Unsplash and stands in for your own.'],
+  [UNREPORTED_KIT_LINES[2], 'All photography is licensed from Unsplash and stands in for your own.'],
+  [
+    'All photography is licensed from Unsplash and used here as placeholder art. Swap in your own before going live, your rooms are the reason someone books.',
+    'All photography is licensed from Unsplash and used here as placeholder art.',
+  ],
+  [
+    '<p>All photography is licensed from Unsplash and stands in for your own. Swap it before going live, your gardens are the reason someone books.</p>',
+    '<p>All photography is licensed from Unsplash and stands in for your own.</p>',
+  ],
+  // The Juniper Results subtitle and the Halo look book keep their photography disclaimer.
+  ['Illustrative placeholder photography. Replace with your own consented before-and-after set.', 'Illustrative placeholder photography.'],
+  ['Placeholder photography. Replace with your own before and after set.', 'Placeholder photography.'],
+  ['<p>Placeholder photography. Replace with your own before and after set.</p>', '<p>Placeholder photography.</p>'],
+  ['Placeholder photography. Replace with something of yours.', undefined],
+  ['Replace with your own before and after set.', 'Replace with your own before and after set.'],
+  // A disclosure about a person keeps "Placeholder biography." / "Placeholder note." and loses the instruction.
+  ['Placeholder biography, replace with Priya’s training, credentials and the treatments they take primary responsibility for.', 'Placeholder biography.'],
+  ['Placeholder biography. Replace with credentials, board certifications and the oversight this role carries.', 'Placeholder biography.'],
+  ['Placeholder note. Replace with how long they have been cutting and what they are asked for most.', 'Placeholder note.'],
+  ['<p>Placeholder note. Replace with why the shop opened and what it is for.</p>', '<p>Placeholder note.</p>'],
+  ['We cut hair. Placeholder note, replace with yours.', 'We cut hair. Placeholder note.'],
+  // An instruction-only seed that merely starts like a person line still goes whole.
+  ['Placeholder bio, replace with yours.', undefined],
+  ['Placeholder notes, replace with yours.', undefined],
+  ['Placeholder journal entry, replace with your own writing.', undefined],
+  // Press and testimonials: the disclosure stays, its own instruction sentence goes (review C1).
+  [`${TESTIMONIALS_DISCLOSURE} Swap these for real quotes.`, TESTIMONIALS_DISCLOSURE],
+  [`<p>${PRESS_DISCLOSURE} Replace these with your own coverage.</p>`, `<p>${PRESS_DISCLOSURE}</p>`],
+  // Review C1: any words after a disclaimer-led instruction hide the whole line.
+  ...[
+    'Placeholder note. Replace with how long they have been cutting. Mention their best fade.',
+    'Placeholder photography. Replace with your own before and after set. Use consented photos only.',
+    'All photography is licensed from Unsplash and used here as placeholder art. Swap in your own before going live. Pick your best three.',
+    `${TESTIMONIALS_DISCLOSURE} Swap these for real quotes. Ask your regulars first.`,
+    'We cut hair. Placeholder note, replace with yours. Walk-ins welcome.',
+  ].flatMap((v) => [[v, undefined] as const, [`<p>${v}</p>`, undefined] as const]),
+  // ... but a real paragraph after a disclosure paragraph stays: only the same segment is judged.
+  ['<p>Placeholder note. Replace with how long they have been cutting.</p><p>Mention their best fade.</p>', '<p>Placeholder note.</p><p>Mention their best fade.</p>'],
+  // Instruction-only lines, bodies and <br> bodies (W25f-1, unchanged).
+  [WALK_LINES[0][1], undefined],
+  [WALK_LINES[21][1], undefined],
   [JUNIPER_ABOUT, ABOUT_KEPT],
-  [`<p>${WALK_LINES[1][1]}</p><p>${UNREPORTED_KIT_LINES[0]}</p>`, undefined],
+  [`<p>${WALK_LINES[0][1]}</p><p>${UNREPORTED_KIT_LINES[3]}</p>`, undefined],
   [
     "<p>Template placeholder. This page is intentionally not carrying the donor site's verbatim privacy policy.</p>" +
       '<p>The page exists so the route, the footer link and the Studio editing surface are all in place from the first load.</p>',
     undefined,
   ],
-  ['We cut hair on Elm Street. Placeholder note. Replace with how long they have been cutting. Walk-ins welcome.', 'We cut hair on Elm Street. Walk-ins welcome.'],
-  [`${WALK_LINES[1][1]} ${UNREPORTED_KIT_LINES[0]}`, undefined],
-  ['Open daily from 7am.<br>The words on this page are example copy. Replace them with your own.<br/>Free parking behind the shop.', 'Open daily from 7am.<br>Free parking behind the shop.'],
-  ['Open daily from 7am.<br>Every photograph here is a stock image. Swap them for your own before you go live.', 'Open daily from 7am.'],
+  ['We cut hair on Elm Street. Placeholder journal entry. Replace with your own writing. Walk-ins welcome.', 'We cut hair on Elm Street. Walk-ins welcome.'],
+  [`${WALK_LINES[0][1]} ${UNREPORTED_KIT_LINES[3]}`, undefined],
+  ['Open daily from 7am.<br>Placeholder journal entry. Replace with your own writing.<br/>Free parking behind the shop.', 'Open daily from 7am.<br>Free parking behind the shop.'],
+  ['Open daily from 7am.<br>Placeholder journal entry. Replace with your own writing.', 'Open daily from 7am.'],
   [`${WALK_LINES[0][1]}<br>${WALK_LINES[1][1]}`, undefined],
-  ['Open daily from 7am.<br><br>The words on this page are example copy. Replace them with your own.<br><br>Free parking behind the shop.', 'Open daily from 7am.<br><br>Free parking behind the shop.'],
-  ['<p>Real line.<br>Every photograph here is a stock image. Swap them for your own before you go live.</p>', '<p>Real line.</p>'],
+  ['Open daily from 7am.<br><br>Placeholder journal entry. Replace with your own writing.<br><br>Free parking behind the shop.', 'Open daily from 7am.<br><br>Free parking behind the shop.'],
+  ['<p>Real line.<br>Placeholder journal entry. Replace with your own writing.</p>', '<p>Real line.</p>'],
   // Known limit, as in the renderer: a seed after a line with no closing punctuation stays.
-  ['Open daily<br>Placeholder note. Replace with yours.', 'Open daily<br>Placeholder note. Replace with yours.'],
+  ['Open daily<br>Placeholder journal entry. Replace with yours.', 'Open daily<br>Placeholder journal entry. Replace with yours.'],
 ];
 
-const KIT_WORDS = /placeholder|example (?:copy|content|text)|swap (?:it|them|in)|replace (?:it|them) with/i;
-
-test('W25f-1 ALLOW: every one of the 29 walk lines loses its kit instruction, as text and as HTML', () => {
+test('W25f-1 ALLOW: every walk line that carries an instruction loses it, as text and as HTML', () => {
   assert.equal(WALK_LINES.length, 29, 'the walk counted 29 lines');
+  assert.equal(
+    WALK_LINES.filter(([, line]) => DISCLAIMER_ONLY.has(line)).length,
+    22,
+    '16 captions, the 2 /before-after and the 4 /press and /testimonials subtitles are disclaimers only',
+  );
   for (const [where, line] of WALK_LINES) {
+    if (DISCLAIMER_ONLY.has(line)) continue;
     for (const value of [line, `<p>${line}</p>`]) {
       const out = withoutSeedCopy(value);
-      assert.ok(out === undefined || (typeof out === 'string' && !KIT_WORDS.test(out)), `${where}: ${String(out)}`);
+      assert.ok(out === undefined || (typeof out === 'string' && !INSTRUCTION_WORDS.test(out)), `${where}: ${String(out)}`);
       assert.notEqual(out, value, `${where}: changed`);
     }
   }
 });
 
-test('W25f-1 ALLOW: the kit credits and policy lines the walk net missed are hidden too', () => {
-  for (const line of UNREPORTED_KIT_LINES) assert.equal(isUnfilledSeedCopy(line), true, line);
+test('W25tc-1 REFUSE: a walk line that is only a visitor disclaimer is kept as authored, as text and as HTML', () => {
+  for (const line of DISCLAIMER_ONLY) {
+    for (const value of [line, `<p>${line}</p>`]) {
+      assert.equal(withoutSeedCopy(value), value, value);
+      assert.equal(isUnfilledSeedCopy(value), false, value);
+    }
+  }
+});
+
+test('W25tc-1 REFUSE: Juniper /before-after keeps its disclosure sentence in the meta description', () => {
+  assert.ok(BEFORE_AFTER_SUBTITLE.endsWith(BEFORE_AFTER_DISCLOSURE), 'the vector is the production subtitle');
+  assert.equal(withoutSeedCopy(BEFORE_AFTER_SUBTITLE), BEFORE_AFTER_SUBTITLE, 'same value back, disclosure included');
+  assert.equal(withoutSeedCopy(`<p>${BEFORE_AFTER_SUBTITLE}</p>`), `<p>${BEFORE_AFTER_SUBTITLE}</p>`);
+  for (const caption of DISCLAIMER_ONLY) if (/not a patient result/.test(caption)) assert.equal(withoutSeedCopy(caption), caption, caption);
+});
+
+test('W25tc-1: the policy line the walk net missed is still hidden whole', () => {
+  assert.equal(isUnfilledSeedCopy(UNREPORTED_KIT_LINES[3]), true);
 });
 
 test('W25f-1 REFUSE: real owner sentences and adversarial look-alikes come back as the SAME value', () => {
@@ -262,7 +355,7 @@ test('W25f-1 REFUSE: real owner sentences and adversarial look-alikes come back 
   }
 });
 
-test('W25f-1: a partly seeded value keeps its real paragraphs, lines and sentences; only the seed is cut', () => {
+test('W25tc-1: a mixed line keeps only its disclaimer; words after an instruction hide the line; instruction-only goes whole', () => {
   for (const [input, expected] of CUT_VECTORS) assert.equal(withoutSeedCopy(input), expected, input);
   assert.equal(isUnfilledSeedCopy(JUNIPER_ABOUT), false, 'not seed as a whole');
 });
@@ -294,7 +387,7 @@ test('W25f-1: matching stays linear, 4x the input costs about 4x the time, not 1
   const shapes: Array<(n: number) => string> = [
     (n) => 'Placeholder. '.repeat(n),
     (n) => `Real start. ${'Placeholder tiles go down first, and we replace with porcelain. '.repeat(n / 5)}`,
-    (n) => `${'Real start. '.repeat(n)}Placeholder note. Replace with yours.`,
+    (n) => `${'Real start. '.repeat(n)}Placeholder journal entry. Replace with yours.`,
     (n) => 'This is placeholder. '.repeat(n),
   ];
   for (const shape of shapes) {
@@ -345,8 +438,8 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
   const rendererRule = renderer.isUnfilledSeedCopy;
   const rendererCut = renderer.withoutSeedText;
   assert.equal(typeof rendererRule, 'function', 'loaded the renderer module, not nothing');
-  assert.equal(typeof rendererCut, 'function', 'the installed renderer carries the 1.85.7 cut rule');
-  // The cut text must match too, not only the verdict: every W25f-1 table through both.
+  assert.equal(typeof rendererCut, 'function', 'the installed renderer carries the cut rule');
+  // The cut text must match too, not only the verdict: every W25f-1 and W25tc-1 table through both.
   const cutInputs = [
     ...WALK_LINES.flatMap(([, l]) => [l, `<p>${l}</p>`]),
     ...UNREPORTED_KIT_LINES,
@@ -356,7 +449,7 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
     ...EDGE_VECTORS.map(([input]) => input),
     ...NAMED_ENTITY_VECTORS.map(([input]) => input),
   ];
-  assert.ok(cutInputs.length >= 150, `the cut set carries the 1.85.7 tables (${cutInputs.length})`);
+  assert.ok(cutInputs.length >= 180, `the cut set carries the 1.85.8 tables (${cutInputs.length})`);
   for (const input of cutInputs) assert.equal(withoutSeedCopy(input), rendererCut?.(input), `cut parity: ${input}`);
   const vectors: Array<readonly [unknown, boolean]> = [
     ...RENDERER_SEEDS.map((s) => [s, true] as const),
@@ -365,7 +458,9 @@ test('parity: the INSTALLED renderer agrees with the mirror on every vector', as
     ...RENDERER_NEW_SHAPE_REAL.map((s) => [s, false] as const),
     ...EDGE_VECTORS,
     ...NAMED_ENTITY_VECTORS,
-    ...UNREPORTED_KIT_LINES.map((s) => [s, true] as const),
+    [UNREPORTED_KIT_LINES[3], true],
+    ...UNREPORTED_KIT_LINES.slice(0, 3).map((s) => [s, false] as const),
+    ...[...DISCLAIMER_ONLY].map((s) => [s, false] as const),
     ...OWNER_SENTENCES.map((s) => [s, false] as const),
     [undefined, false],
   ];
@@ -458,11 +553,14 @@ test('ALLOW a real product description, exactly as before', () => {
   );
 });
 
+// W25tc-1: the testimonials and press subtitles are kept disclosures now, so the seed page subtitle is Juniper's about instruction.
+const PAGE_SEED = 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.';
+
 test('REFUSE (W25f-1): a seed page subtitle or meta description never becomes the item or product meta', () => {
-  const seededPage = { ...ITEM_META, pageMetaDescription: 'Placeholder testimonials for the demonstration template.', pageSubtitle: 'Placeholder testimonials for the demonstration template.' };
+  const seededPage = { ...ITEM_META, pageMetaDescription: PAGE_SEED, pageSubtitle: PAGE_SEED };
   assert.equal(detailItemMetaText({ ...seededPage, itemDescription: undefined }).description, 'What a trial is for | Marquee');
   assert.equal(
-    productItemMetaText({ ...PRODUCT_META, itemDescription: undefined, pageSubtitle: 'Placeholder press coverage for the demonstration template.' }).description,
+    productItemMetaText({ ...PRODUCT_META, itemDescription: undefined, pageSubtitle: PAGE_SEED }).description,
     'Country loaf | Marquee',
   );
   assert.equal(detailItemMetaText({ ...ITEM_META, itemDescription: undefined }).description, 'Notes from the salon floor.', 'a real page description still stands in');

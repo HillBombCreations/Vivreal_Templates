@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { seedFreeText } from './seedFreeText.ts';
 
-const PARTLY_SEEDED = 'Three sessions over six weeks. Illustrative placeholder photography, not a patient result.';
+const PARTLY_SEEDED = 'Three sessions over six weeks. Placeholder journal entry. Replace with your own writing.';
 const KEPT = 'Three sessions over six weeks.';
 
 test('REFUSE (W25f-1): a partly seeded description publishes only its real sentence, as text and as HTML', () => {
@@ -20,8 +20,14 @@ test('REFUSE (W25f-1): a partly seeded description publishes only its real sente
 });
 
 test('REFUSE (W25f-1): a description that is seed as a whole publishes nothing', () => {
-  assert.equal(seedFreeText('Illustrative placeholder photography, not a patient result.', 500), undefined);
-  assert.equal(seedFreeText('<p>Placeholder biography, replace with your story.</p>', 500), undefined);
+  assert.equal(seedFreeText('This is placeholder copy for a demonstration template. Replace it with your own story.', 500), undefined);
+  assert.equal(seedFreeText('<p>Placeholder bio, replace with your story.</p>', 500), undefined);
+});
+
+test('ALLOW (W25tc-1): a visitor disclaimer is published, a person line keeps only its disclaimer', () => {
+  const caption = 'Three sessions over six weeks. Illustrative placeholder photography, not a patient result.';
+  assert.equal(seedFreeText(caption, 500), caption);
+  assert.equal(seedFreeText('<p>Placeholder biography, replace with your story.</p>', 500), 'Placeholder biography.');
 });
 
 test('ALLOW (W25f-1): a real description is stripped and cut exactly as before', () => {

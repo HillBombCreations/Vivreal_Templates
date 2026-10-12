@@ -27,19 +27,22 @@
  * drops script/style/comments with their contents, and decodes numeric and
  * named entities (1.85.6 table), and `plainMeta` does none of those.
  *
- * The rule (renderer 1.85.7, W25f-1), case-insensitive, on the text with HTML
+ * The rule (renderer 1.85.8, W25tc-1), case-insensitive, on the text with HTML
  * stripped:
  *  - LEGACY (1.85.4): the WHOLE value begins with "Placeholder" and contains
- *    "replace with";
- *  - `SEED_WORDINGS` (1.85.7): a CLOSED list of the exact kit wordings, with
- *    only bounded gaps, matched at the start of a sentence (`SB`) wherever that
- *    sentence sits, so "<subject>. Illustrative placeholder photography, not a
- *    patient result." is found mid-value and "No illustrative placeholder
- *    photography here." is not.
+ *    "replace with", unless it opens with a disclaimer ("Placeholder
+ *    photography.", "Placeholder biography,"), which takes the cut instead;
+ *  - `SEED_WORDINGS`: a CLOSED list of the exact kit INSTRUCTIONS to the owner,
+ *    with only bounded gaps, matched at the start of a sentence (`SB`) wherever
+ *    that sentence sits. A DISCLAIMER telling a visitor an image or the site's
+ *    content is not real ("Illustrative placeholder photography, not a patient
+ *    result.") is never seed and stays.
  *
  * WHAT IS HIDDEN (`withoutSeedCopy`):
  *  - a value whose seed starts in its FIRST sentence, or that the legacy rule
  *    takes, is hidden whole (`undefined`), so the caller's own fallback runs;
+ *  - a mixed line keeps its disclaimer and loses the instruction after it, but
+ *    any words after that instruction hide the whole line;
  *  - otherwise only the seed is cut: whole `<p>` paragraphs or `<br>` lines
  *    that are seed, and inside a tagless paragraph, line or plain value, just
  *    the seed sentences. The owner's real paragraphs and sentences are kept;
@@ -133,53 +136,115 @@ function visibleText(html: string): string {
     .trim();
 }
 
-/* ── From here to the end, the renderer's `src/lib/seedCopy.ts` at 99caa5b (1.85.7), verbatim in logic. ── */
+/* ── From here to the end, the renderer's `src/lib/seedCopy.ts` at 8caec57 (1.85.8), verbatim in logic. ── */
 
+/** What may precede a sentence: the start of the text, or closing punctuation, any closing quote or bracket, then space. */
+const SENTENCE_GAP = String.raw`(?:^|[.!?…]["'’”)\]]{0,3}\s{1,8})`;
 /** Sentence start, as a bounded lookbehind so a match's index is the phrase itself. */
-const SB = String.raw`(?<=^|[.!?…]["'’”)\]]{0,3}\s{1,8})`;
+const SB = `(?<=${SENTENCE_GAP})`;
 // The leading word goes first as a lookahead, so the engine rejects most
 // positions on one character before it evaluates the lookbehind.
 const atSentenceStart = (shape: string): RegExp => new RegExp(`(?=${/^[a-z]+/.exec(shape)?.[0] ?? ''})${SB}${shape}`, 'i');
-const anywhere = (shape: string): RegExp => new RegExp(String.raw`\b` + shape, 'i');
+/** Sources of the `afterDisclaimer` shapes: a match there never makes a value "seed from its first sentence". */
+const DISCLAIMER_LED = new Set<string>();
+/**
+ * W25tc-1 (1.85.8): the INSTRUCTION half of a kit line whose first half is a
+ * visitor DISCLAIMER. Only the instruction is the match (the disclaimer is a
+ * lookbehind), so the cut keeps the disclaimer sentence and drops the
+ * instruction. The disclaimer is a fixed phrase, so the lookbehind is bounded.
+ */
+const afterDisclaimer = (disclaimer: string, instruction: string): RegExp => {
+  const shape = new RegExp(String.raw`(?<=${disclaimer}\s{1,8})${instruction}`, 'i');
+  DISCLAIMER_LED.add(shape.source);
+  return shape;
+};
+/** "Swap in your own before going live", with the kit's closing clause or sentence about why, so it goes too. */
+const goingLive = (swap: string): string =>
+  String.raw`${swap} before going live(?:[,.]\s{1,8}your [a-z]{1,24} (?:is|are) the reason someone books\.|\b)`;
 
-/** The kit seed wordings, each named after the kit line it was taken from (see the renderer for the sources). */
+/**
+ * The kit seed wordings, each named after the kit line it was taken from.
+ * Every gap is bounded and every phrase ends where the kit line does, so a
+ * reviewer can check the list is closed and each match is linear.
+ *
+ * INSTRUCTIONS ONLY (W25tc-1, 1.85.8). A wording here is an instruction to
+ * the OWNER ("Replace with ...", "Swap them for your own before you go
+ * live."). A DISCLAIMER that tells a VISITOR an image or the site's content is
+ * not real ("Illustrative placeholder photography, not a patient result.",
+ * "Every photograph here is a stock image.", "... on this site are example
+ * content.") is honest labelling, not seed, and is never hidden: removing
+ * Juniper's left two different stock people as a before-and-after under a line
+ * calling the comparison real. A kit line that is both keeps its disclaimer
+ * sentence and loses the instruction (`afterDisclaimer`).
+ */
 const SEED_WORDINGS: ReadonlyArray<readonly [lead: string, shape: RegExp]> = [
-  // "Placeholder biography, replace with ...", "Placeholder policy text. Replace with ...".
-  ['placeholder', atSentenceStart(String.raw`placeholder(?:\s+[a-z’'-]{1,24}){0,4}\s*[,.]\s{1,8}replace with\b`)],
-  // "Placeholder body copy for the journal entry titled “...”. Replace with your own writing ..."
+  // Bios, notes, journal entries, policy, terms and captions:
+  // "Placeholder biography, replace with ...", "Placeholder note. Replace with ...",
+  // "Placeholder policy text. Replace with your own before you go live.",
+  // "Placeholder text message terms. Replace with ...". At most four words
+  // between, then a comma or a full stop, then "replace with" straight away.
+  // Not "Placeholder photography.", "Placeholder biography" or "Placeholder
+  // note": each is a disclaimer about photos or a person (below).
+  ['placeholder', atSentenceStart(String.raw`placeholder(?!\s+photography\.|\s+(?:biography|note)[,.])(?:\s+[a-z’'-]{1,24}){0,4}\s*[,.]\s{1,8}replace with\b`)],
+  // Journal bodies: "Placeholder body copy for the journal entry titled “...”.
+  // Replace with your own writing before publishing."
   ['placeholder', atSentenceStart(String.raw`placeholder body copy for the journal entry titled “[^”]{1,120}”\.\s{1,8}replace with your own writing\b`)],
-  // "Placeholder text. Most venues collect ..."
+  // Venue policy and accessibility: "Placeholder text. Most venues collect ...".
   ['placeholder', atSentenceStart(String.raw`placeholder text\.(?=\s|$)`)],
-  // Juniper captions and Results subtitle.
-  // eslint-disable-next-line vivreal/owner-visible-copy -- a regex matching the kit caption's own dash, never drawn as copy.
-  ['illustrative', atSentenceStart(String.raw`illustrative placeholder photography(?:\.\s{1,8}replace with your own consented before-and-after set\.|\s{0,3}[,\u2014\u2013-]\s{0,3}not a patient result\.|\.(?=\s|$))`)],
-  // "Template placeholder. This page is intentionally ..."
+  // Juniper Results subtitle: "Illustrative placeholder photography. Replace
+  // with your own consented before-and-after set." keeps its first sentence.
+  // Its captions ("..., not a patient result.") and the /before-after line
+  // ("The set below is illustrative placeholder photography.") are
+  // disclaimers with no instruction, so no wording names them.
+  ['replace with', afterDisclaimer(`${SENTENCE_GAP}illustrative placeholder photography\\.`, String.raw`replace with your own consented before-and-after set\.`)],
+  // Halo look book: "Placeholder photography. Replace with your own before and after set."
+  ['replace with', afterDisclaimer(`${SENTENCE_GAP}placeholder photography\\.`, String.raw`replace with your own before and after set\.`)],
+  // Med-spa legal pages: "Template placeholder. This page is intentionally ...".
   ['template', atSentenceStart(String.raw`template placeholder\.\s{1,8}this page is\b`)],
-  // "This is example (policy) text. Replace it with your own ..."
+  // Venue policy: "This is example (policy) text. Replace it with your own privacy policy ...".
   ['this is', atSentenceStart(String.raw`this is example (?:policy )?text\.\s{1,8}replace it with your own\b`)],
-  // "The set below is illustrative placeholder photography."
-  ['the set', atSentenceStart(String.raw`the set below is illustrative placeholder photography\.`)],
-  // "This is placeholder copy for a demonstration template. Replace it with your own story ..."
+  // Juniper /about: "This is placeholder copy for a demonstration template.
+  // Replace it with your own story before publishing."
   ['this is', atSentenceStart(String.raw`this is placeholder copy for a demonstration template\.\s{1,8}replace it with your own\b`)],
-  // "This is placeholder policy text supplied with the Vivreal template gallery. Replace it with ..."
+  // Demo policy: "This is placeholder policy text supplied with the Vivreal
+  // template gallery. Replace it with your own privacy policy ..."
   ['this is', atSentenceStart(String.raw`this is placeholder policy text supplied with the vivreal template gallery\.\s{1,8}replace it with your own\b`)],
-  // "Placeholder press coverage (testimonials) for the demonstration template."
-  ['placeholder', atSentenceStart(String.raw`placeholder (?:press coverage|testimonials) for the demonstration template\.`)],
-  // "Example text. Describe your own step free routes, ..."
+  // People: "Placeholder biography, replace with Priya's training ..." (or a
+  // full stop) and "Placeholder note. Replace with how long they have been
+  // cutting ...". The disclaimer stays ("Placeholder biography."); after a
+  // comma only the clause from "replace with" goes (`withoutSeedSentences`).
+  // Juniper /press and /testimonials ("Placeholder press coverage
+  // (testimonials) for the demonstration template.") are disclaimers with no
+  // instruction and stay whole. Any sentence after one is kit text (review
+  // C1: "... Swap these for real quotes."): it goes, and with more after it
+  // the whole line goes. The disclaimer is the `keep` group, never cut.
+  ['placeholder', atSentenceStart(String.raw`(?<keep>placeholder (?:press coverage|testimonials) for the demonstration template\.\s{1,8})[^\s.!?][^.!?]{0,199}[.!?]`)],
+  ['replace with', afterDisclaimer(`${SENTENCE_GAP}placeholder (?:biography|note)[.,]`, String.raw`replace with\b`)],
+  // Blackbird accessibility: "Example text. Describe your own step free routes, ..."
   ['example text', atSentenceStart(String.raw`example text\.\s{1,8}describe your own step free routes\b`)],
-  // Credits: "... on this site are example content. Replace them ..." and "The words on this page are example copy. ..."
-  ['on this', anywhere(String.raw`on this site are example content\.\s{1,8}replace them with your own before you go live\.`)],
-  ['the words', atSentenceStart(String.raw`the words on this page are example copy\.\s{1,8}replace them with your own\.`)],
-  // "... used here as placeholder art. Swap in your own before going live."
-  ['used here', anywhere(String.raw`used here as placeholder art\.\s{1,8}swap in your own before going live\b`)],
-  // "Every photograph here is a stock image. Swap them for your own before you go live."
-  ['every photograph', atSentenceStart(String.raw`every photograph here is a stock image\.\s{1,8}swap them for your own before you go live\.`)],
-  // "... stands in for your own. Swap it before going live."
-  ['stands in', anywhere(String.raw`stands in for your own\.\s{1,8}swap it before going live\b`)],
+  // Credits, each keeping its disclaimer sentence and losing the instruction:
+  // "The properties, pricing, ... on this site are example content. Replace
+  // them with your own before you go live." and "The words on this page are
+  // example copy. Replace them with your own."
+  ['replace them', afterDisclaimer(String.raw`\bon this site are example content\.`, String.raw`replace them with your own before you go live\.`)],
+  ['replace them', afterDisclaimer(`${SENTENCE_GAP}the words on this page are example copy\\.`, String.raw`replace them with your own\.`)],
+  // Larkspur credits: "... used here as placeholder art. Swap in your own before going live(, or .) Your rooms are the reason someone books."
+  ['swap in', afterDisclaimer(String.raw`\bused here as placeholder art\.`, goingLive('swap in your own'))],
+  // Blackbird credits: "Every photograph here is a stock image. Swap them for
+  // your own before you go live."
+  ['swap them', afterDisclaimer(`${SENTENCE_GAP}every photograph here is a stock image\\.`, String.raw`swap them for your own before you go live\.`)],
+  // Fernbrook and Windward credits: "... stands in for your own. Swap it before going live(, or .) Your gardens are ..."
+  ['swap it', afterDisclaimer(String.raw`\bstands in for your own\.`, goingLive('swap it'))],
 ];
 
 const LEGACY_START = /^placeholder\b/i;
 const LEGACY_INSTRUCTION = /replace with/i;
+/**
+ * A value opening with a disclaimer sentence that the legacy rule would
+ * otherwise hide whole (Halo: "Placeholder photography. Replace with ...").
+ * It takes the cut instead, which keeps the disclaimer.
+ */
+const DISCLAIMER_OPENING = /^placeholder (?:photography\.(?=\s|$)|biography[,.]|note[,.])/i;
 
 /**
  * Each wording is filed under its opening words. One literal scan of those
@@ -192,17 +257,14 @@ for (const [lead, shape] of SEED_WORDINGS) SEED_AT.set(lead, [...(SEED_AT.get(le
 const SEED_LEAD = new RegExp(String.raw`\b(?:${[...SEED_AT.keys()].map((lead) => lead.replace(/ /g, String.raw`\s+`)).join('|')})\b`, 'gi');
 const shapesAt = (lead: string): readonly RegExp[] => SEED_AT.get(lead.toLowerCase().replace(/\s+/g, ' ')) ?? [];
 
-/** Index of the earliest kit wording in `text`, or -1. */
-function seedStart(text: string): number {
-  SEED_LEAD.lastIndex = 0;
-  for (let lead = SEED_LEAD.exec(text); lead; lead = SEED_LEAD.exec(text)) {
-    for (const shape of shapesAt(lead[0])) {
-      shape.lastIndex = lead.index;
-      if (shape.test(text)) return lead.index;
-    }
-  }
-  return -1;
+/** The earliest kit wording in `text`: its index, and whether it follows a disclaimer. Null when there is none. */
+function seedMatch(text: string): { index: number; disclaimerLed: boolean } | null {
+  const span = seedSpans(text, true)[0];
+  return span ? { index: span[0], disclaimerLed: span[2] } : null;
 }
+
+/** Index of the earliest kit wording in `text`, or -1. */
+const seedStart = (text: string): number => seedMatch(text)?.index ?? -1;
 
 const isSeedText = (text: string): boolean => text !== '' && seedStart(text) >= 0;
 const isLegacySeed = (text: string): boolean => LEGACY_START.test(text) && LEGACY_INSTRUCTION.test(text);
@@ -220,14 +282,18 @@ const WRAPPED = /^(\s*<p\b[^>]*>)([\s\S]*)(<\/p>\s*)$/i;
 const SENTENCE = /[^.!?…]*(?:[.!?…]+["'’”)\]]{0,3})?\s*/g;
 
 /** Every kit wording in `text` as [start, end) spans: one lead scan, the shapes tried only at each lead. */
-function seedSpans(text: string): Array<[number, number]> {
-  const spans: Array<[number, number]> = [];
+function seedSpans(text: string, firstOnly = false): Array<[start: number, end: number, disclaimerLed: boolean]> {
+  const spans: Array<[number, number, boolean]> = [];
   SEED_LEAD.lastIndex = 0;
   for (let lead = SEED_LEAD.exec(text); lead; lead = SEED_LEAD.exec(text)) {
     for (const shape of shapesAt(lead[0])) {
       shape.lastIndex = lead.index;
-      if (shape.test(text)) {
-        spans.push([lead.index, shape.lastIndex]);
+      const m = shape.exec(text);
+      if (m) {
+        // A `keep` group is a disclaimer the shape had to read first; the span starts after it.
+        const keep = m.groups?.keep?.length ?? 0;
+        spans.push([lead.index + keep, shape.lastIndex, keep > 0 || DISCLAIMER_LED.has(shape.source)]);
+        if (firstOnly) return spans;
         SEED_LEAD.lastIndex = Math.max(SEED_LEAD.lastIndex, shape.lastIndex);
         break;
       }
@@ -237,9 +303,10 @@ function seedSpans(text: string): Array<[number, number]> {
 }
 
 /**
- * Tagless text with every sentence a kit wording touches cut out. When the
- * wording only reads as one after entity decoding, no span is found and the
- * whole text is cut, which errs towards hiding.
+ * Tagless text with every sentence a kit wording touches cut out. The spans
+ * are found on the raw text; when the wording only reads as one after entity
+ * decoding (`Placeholder&nbsp;note.`), no span is found and the whole text is
+ * cut, which errs towards hiding.
  */
 function withoutSeedSentences(text: string): string {
   const spans = seedSpans(text);
@@ -247,17 +314,35 @@ function withoutSeedSentences(text: string): string {
   const out: string[] = [];
   let at = 0;
   let s = 0;
+  // Review C1: a disclaimer is kept only when EVERYTHING after it is the
+  // instruction. Any words after a disclaimer-led instruction ("Placeholder
+  // note. Replace with ... Mention their best fade.") are more kit text no
+  // wording names, so the whole segment goes, as 1.85.7 had it.
+  let afterLedInstruction = false;
   for (const chunk of text.match(SENTENCE) ?? []) {
     const end = at + chunk.length;
     while (s < spans.length && spans[s][1] <= at) s++;
     const touched = s < spans.length && spans[s][0] < end;
-    if (!touched) out.push(chunk);
+    if (!touched) {
+      if (afterLedInstruction && /\S/.test(chunk)) return '';
+      out.push(chunk);
+    } else {
+      if (spans[s][2]) afterLedInstruction = true;
+      // A disclaimer clause before a comma ("Placeholder biography, replace
+      // with ...") is kept and closed with a full stop; any other touched
+      // sentence goes whole.
+      const lead = text.slice(at, Math.max(at, spans[s][0]));
+      if (/\S,\s*$/.test(lead)) out.push(`${lead.replace(/,\s*$/, '.')}${/\s*$/.exec(chunk)?.[0] ?? ''}`);
+    }
     at = end;
   }
   return out.join('').trimEnd();
 }
 
-/** One paragraph, line or plain value with its seed cut: the same string when it holds none, '' when nothing of it should stand. */
+/**
+ * One paragraph, line or plain value with its seed cut: the same string when
+ * it holds none, '' when nothing of it should stand.
+ */
 function withoutSeedSegment(segment: string): string {
   if (!isSeedText(visibleText(segment))) return segment;
   const wrapped = WRAPPED.exec(segment);
@@ -277,8 +362,9 @@ const breaksIn = (run: string): string[] => run.match(BREAK_TAG) ?? [];
 /**
  * `value` split on `<br>`, each line cut, a line emptied by the cut removed
  * with its break. A `<p>` wrapping the whole value is taken off first and put
- * back after; a run of breaks the cut leaves behind is shortened to the
- * longest run the value had, so no new gap appears.
+ * back after, so a cut last line never takes the closing `</p>` with it. A run
+ * of breaks the cut leaves behind (a seed line between blank lines) is
+ * shortened to the longest run the value had, so no new gap appears.
  */
 function withoutSeedLines(value: string): string {
   const wrapped = WRAPPED.exec(value);
@@ -310,10 +396,13 @@ function withoutSeedLines(value: string): string {
 export function withoutSeedCopy<T>(value: T): T | string | undefined {
   if (typeof value !== 'string' || value === '') return value;
   const text = visibleText(value);
-  if (isLegacySeed(text)) return undefined;
-  const start = seedStart(text);
-  if (start < 0) return value;
-  if (start < firstSentenceEnd(text)) return undefined;
+  const legacy = isLegacySeed(text);
+  if (legacy && !DISCLAIMER_OPENING.test(text)) return undefined;
+  const match = seedMatch(text);
+  // A disclaimer opening whose instruction no wording names still goes whole, as the legacy rule had it.
+  if (!match) return legacy ? undefined : value;
+  // An instruction after a disclaimer is cut, even inside the first sentence (a comma clause).
+  if (!match.disclaimerLed && match.index < firstSentenceEnd(text)) return undefined;
   const paragraphs = value.match(PARAGRAPH);
   const cut =
     paragraphs && paragraphs.length >= 2

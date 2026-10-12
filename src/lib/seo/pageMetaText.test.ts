@@ -81,8 +81,9 @@ test('REFUSE (R4): the home page keeps the owner\'s title and summary, and today
   assert.equal(bare.description, 'Welcome to Cobalt & Crumb. Discover our latest content, events, and more.');
 });
 
-// W25f-1: a kit seed instruction never reaches a search description.
-const PRESS_SEED = 'Placeholder press coverage for the demonstration template.';
+// W25f-1: a kit seed instruction never reaches a search description. W25tc-1 (1.85.8): the press line is a
+// kept disclosure now, so the seed here is Juniper's about instruction.
+const PRESS_SEED = 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.';
 const BEFORE_AFTER =
   'Baseline and review photographs are taken under fixed lighting so the comparison is a real one. The set below is illustrative placeholder photography.';
 
@@ -93,12 +94,10 @@ test('REFUSE (W25f-1): a seed page subtitle is no summary; the business facts st
   assert.doesNotMatch(description, /placeholder/i);
 });
 
-test('REFUSE (W25f-1): a seed meta description is no summary; the real subtitle stands in, partly seeded keeps its own words', () => {
+test('REFUSE (W25f-1, W25tc-1): a seed meta description is no summary; the Juniper /before-after subtitle stands in with its disclosure', () => {
   const page = { name: 'Results', format: 'standard', labels: { subtitle: BEFORE_AFTER }, seo: { metaDescription: PRESS_SEED } };
-  assert.equal(
-    pageMetaText({ page, slug: 'before-after', facts: COBALT }).description,
-    'Baseline and review photographs are taken under fixed lighting so the comparison is a real one.',
-  );
+  assert.equal(pageMetaText({ page, slug: 'before-after', facts: COBALT }).description, BEFORE_AFTER);
+  assert.match(BEFORE_AFTER, /The set below is illustrative placeholder photography.$/);
 });
 
 test('REFUSE (W25f-1): a seed home meta description and a seed business description never reach the home summary', () => {
