@@ -115,7 +115,7 @@ src/
 │   └── renderComposedPage.tsx      # composePage output → JSX + skeletonPropsFor()
 ├── types/, contexts/, hooks/
 ├── data/mockData.ts                # Fallback mock data (used only if API unavailable)
-└── styles/globals.css              # Tailwind base + CSS variables + font preset @import
+└── styles/globals.css              # Tailwind base + CSS variables (fonts load from a layout <link>, not @import)
 ```
 
 ---
@@ -183,7 +183,7 @@ All env vars are injected by the EventHandler during Amplify deployment — they
 ### All Branding is Data-Driven
 
 - **Colors**: theme tokens (`primary`, `secondary`, `hover`, `surface`, `surface-alt`, `text-*`) are SSR'd as CSS vars on `<html>` (`themeVarStyle` in layout.tsx) so first paint + skeletons are palette-correct; the Providers client effect re-stamps the same values post-hydration
-- **Fonts**: `siteData.fontFamily` → `resolveSiteFont()` — curated families map to the existing globals.css Google Fonts @import; only Geist loads via `next/font/google`; arbitrary families get a best-effort runtime `<link>`. Absent ⇒ no font wiring at all (Outfit default)
+- **Fonts**: `siteData.fontFamily` → `resolveSiteFont()` — curated families map to the renderer's `siteFontsHref()` sheet, linked in `layout.tsx` via `siteFontStylesheets()` (a globals.css `@import` is dropped by the Turbopack build, so never put fonts there); only Geist loads via `next/font/google`; arbitrary families get a best-effort runtime `<link>`. Absent ⇒ no font wiring at all (Outfit default)
 - **Favicon**: `siteData.favicon` sets metadata `icons` only when present
 - **Style variant**: `siteData.styleVariant` → `data-style-variant` attribute on `<html>`
 - **Logo / name / social / contact**: from siteData as before, via `getSignedUrl` for media

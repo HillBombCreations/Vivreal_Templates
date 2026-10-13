@@ -26,12 +26,13 @@ import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { buildRootMetadata } from '@/lib/seo/rootMetadata';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
+import { siteFontStylesheets } from '@/lib/fonts/siteFontStylesheets';
 import { themeVarStyle } from '@/lib/theme/themeVarStyle';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
-import { nowInZone, readSiteHours } from '@hillbombcreations/site-renderer';
+import { nowInZone, readSiteHours, siteFontsHref, SITE_FONT_LITERAL_FAMILIES } from '@hillbombcreations/site-renderer';
 import { contactButtonsSiteData } from '@/lib/contactButtons';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -119,6 +120,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // before (byte-identical for every existing site). Only meaningful when a
     // display font is also set (no body-only override).
     const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
+    const fontStylesheets = siteFontStylesheets(
+        [siteFont?.googleFontsHref, siteFontBody?.googleFontsHref],
+        { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
+    );
     // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
     // Providers' effect re-stamps both on the client; values are identical so
     // hydration stays clean.
@@ -146,12 +151,13 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   Vivreal's own site: there GA loads only after the visitor
                   accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
               {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
-              {siteFont?.googleFontsHref && (
-                  <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
-              )}
-              {siteFontBody?.googleFontsHref && (
-                  <link rel="stylesheet" href={siteFontBody.googleFontsHref} precedence="default" />
-              )}
+              {/* C1: the literal families (Inter, Outfit, ...) load from this
+                  <link>, not from a globals.css @import, which the Turbopack
+                  build drops. Per-site sheets the base already covers are
+                  filtered out. See src/lib/fonts/siteFontStylesheets.ts. */}
+              {fontStylesheets.map((href) => (
+                  <link key={href} rel="stylesheet" href={href} precedence="default" />
+              ))}
           </head>
           <body
               style={
