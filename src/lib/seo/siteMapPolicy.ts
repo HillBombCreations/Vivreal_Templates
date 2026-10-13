@@ -6,7 +6,7 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 // resolution.
 import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData, refuseDegradedClaim } from '../api/siteData/degraded.ts';
-import { buildSitemapEntries } from './sitemap.ts';
+import { buildSitemapEntries, type SitemapItem } from './sitemap.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 
 type SiteMapSiteData = Pick<
@@ -34,8 +34,9 @@ type SiteMapSiteData = Pick<
  */
 export function buildSiteMapForSite(
   siteData: SiteMapSiteData,
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled'>[] | undefined,
-  detailItemSegmentsByPage?: Record<string, string[]>,
+  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled' | 'updatedAt'>[] | undefined,
+  detailItemsByPage?: Record<string, ReadonlyArray<string | SitemapItem>>,
+  dates: { siteUpdatedAt?: string | null } = {},
 ): MetadataRoute.Sitemap {
   // DEGRADED READ ⇒ REFUSE, and checked before the demo gate for the same
   // reason robots.txt is. An empty sitemap is the most deceptive artifact in
@@ -57,6 +58,7 @@ export function buildSiteMapForSite(
   return buildSitemapEntries(
     pages,
     resolveSiteOrigin(siteData, { surface: 'durable' }),
-    detailItemSegmentsByPage,
+    detailItemsByPage,
+    dates,
   );
 }

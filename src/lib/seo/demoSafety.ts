@@ -72,14 +72,3 @@ export const isDemoSite = (
   // dedicated branch.
   return docState !== 'live';
 };
-
-/**
- * The prospect's original URL for a demo site's `<link rel="canonical">`, from
- * the site doc's `sourceUrl` (carried from the migration source) or the
- * `SITE_SOURCE_URL` env fallback. Returns `''` when unknown — callers must skip
- * the canonical entirely in that case (the `noindex` still protects the
- * prospect). Only meaningful for a demo site; callers gate on {@link isDemoSite}.
- */
-export const getDemoSourceUrl = (
-  siteData?: Pick<SiteData, 'sourceUrl'> | null,
-): string => siteData?.sourceUrl ?? process.env.SITE_SOURCE_URL ?? '';

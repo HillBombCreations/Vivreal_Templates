@@ -107,6 +107,34 @@ export function stripQueryString(path: string): string {
 }
 
 /**
+ * `site.upstream.fallback` (v5 Templates sheet signal): one structured line per
+ * failed upstream read that a page answered with its fallback, beside the
+ * Sentry capture. Path without its query (same reason as the fingerprint), the
+ * HTTP status when there was one, `network` when there was none. With F-C13 a
+ * failed call logs this once, however many readers shared it.
+ */
+export function upstreamFallbackLine({
+  source,
+  path,
+  siteId,
+  err,
+}: {
+  source: FetchFailureSource;
+  path: string;
+  siteId: string | undefined;
+  err: unknown;
+}): string {
+  const status = (err as { status?: unknown } | null)?.status;
+  return JSON.stringify({
+    event: 'site.upstream.fallback',
+    source,
+    path: stripQueryString(path),
+    siteId: siteId || UNKNOWN_SITE_ID,
+    status: typeof status === 'number' ? status : 'network',
+  });
+}
+
+/**
  * Capture context for a swallowed VR_Client_API read failure.
  *
  * 402 (quota exceeded / frozen account) never reaches this helper: both catch

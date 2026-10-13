@@ -281,7 +281,7 @@ test("Vivreal's own sites DO capture, on the same hosts, in the same run", () =>
     dom = installDom({ hostname: host, protocol: 'https:' });
     dom.setUrl('/?utm_source=linkedin&utm_campaign=alpha');
 
-    runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
+    runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE, consented: true });
 
     const attr = getAttribution();
     assert.notEqual(attr, null, `${host} must capture when the site is Vivreal's`);
@@ -298,15 +298,17 @@ test('runAttributionCapture honours consentDenied on a Vivreal site', () => {
 test('runAttributionCapture honours GPC on a Vivreal site', () => {
   dom.setGpc(true);
   dom.setUrl('/?utm_source=linkedin');
-  runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
+  runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE, consented: true });
   assert.equal(dom.cookie(COOKIE_NAME), null);
 });
 
-test('undecided consent still writes (Open Question 5, first touch is not deferrable)', () => {
-  // Pins today's deliberate semantic so a future change to it is a CONSCIOUS
-  // one: no stored banner choice at all, and the cookie is still written.
-  assert.equal(localStorage.getItem('cookie_consent_v1'), null);
+test('REFUSE: undecided consent writes NO vr_attr; the landing page is held in sessionStorage only', () => {
+  // Owner decision 2026-10-12 reversed the old "undecided still writes"
+  // contract (Open Question 5): the banner says cookies follow an Accept.
+  assert.equal(localStorage.getItem('cookie_consent_v2'), null);
   dom.setUrl('/?utm_source=linkedin&utm_campaign=undecided');
   runAttributionCapture({ vivrealOwnSite: VIVREAL_SITE });
-  assert.equal(getAttribution()!.first.utm_campaign, 'undecided');
+  assert.equal(dom.cookie(COOKIE_NAME), null);
+  assert.equal(document.cookie, '');
+  assert.match(dom.session.get('vr_attr_pending') ?? '', /utm_campaign=undecided/);
 });

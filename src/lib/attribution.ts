@@ -20,6 +20,10 @@
  *   - Honors Global Privacy Control: never writes when GPC is on.
  *   - Optional consent gate: pass { consentDenied: true } to skip writing
  *     (used on properties with a consent-mode signal, e.g. the landing site).
+ *   - Optional `page`: build the touch from a page snapshot taken earlier
+ *     (Vivreal_Templates holds the landing page until the visitor accepts,
+ *     owner decision 2026-10-12). Absent: the current page, as before.
+ *     Additive and backward compatible; the other copies need not change.
  */
 
 const COOKIE_NAME = 'vr_attr';
@@ -43,6 +47,15 @@ export interface AttributionTouch {
   landing_path?: string;
   source?: string;
   first_seen_at?: number; // epoch ms
+}
+
+/** The page a touch is built from: the current page, or one held until consent. */
+export interface AttributionPage {
+  search: string;
+  referrer: string;
+  pathname: string;
+  /** Epoch ms of the visit. */
+  at: number;
 }
 
 export interface Attribution {
@@ -123,8 +136,8 @@ function writeCookie(attr: Attribution): void {
   document.cookie = parts.join('; ');
 }
 
-function buildTouch(): { touch: AttributionTouch; hasSignal: boolean } {
-  const params = new URLSearchParams(window.location.search);
+function buildTouch(page?: AttributionPage): { touch: AttributionTouch; hasSignal: boolean } {
+  const params = new URLSearchParams(page ? page.search : window.location.search);
   const touch: AttributionTouch = {};
 
   const utmKeys = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'] as const;
@@ -144,7 +157,7 @@ function buildTouch(): { touch: AttributionTouch; hasSignal: boolean } {
 
   let referrerHost: string | null = null;
   let externalReferrer = false;
-  const referrer = document.referrer;
+  const referrer = page ? page.referrer : document.referrer;
   if (referrer) {
     try {
       const url = new URL(referrer);
@@ -158,9 +171,9 @@ function buildTouch(): { touch: AttributionTouch; hasSignal: boolean } {
     }
   }
 
-  touch.landing_path = truncate(window.location.pathname, LONG_MAX);
+  touch.landing_path = truncate(page ? page.pathname : window.location.pathname, LONG_MAX);
   touch.source = deriveSource(touch.utm_source, referrerHost);
-  touch.first_seen_at = Date.now();
+  touch.first_seen_at = page ? page.at : Date.now();
 
   const hasSignal = hasUtm || Boolean(touch.gclid) || Boolean(touch.fbclid) || externalReferrer;
   return { touch, hasSignal };
@@ -170,7 +183,7 @@ function buildTouch(): { touch: AttributionTouch; hasSignal: boolean } {
  * Capture attribution on page entry. Call once per page load from a client
  * component mounted in the root/public layout. Safe to call repeatedly.
  */
-export function captureAttribution(opts?: { consentDenied?: boolean }): void {
+export function captureAttribution(opts?: { consentDenied?: boolean; page?: AttributionPage }): void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   // Honor Global Privacy Control (CCPA/CPRA universal opt-out).
   if ((navigator as { globalPrivacyControl?: boolean }).globalPrivacyControl === true) return;
@@ -178,7 +191,7 @@ export function captureAttribution(opts?: { consentDenied?: boolean }): void {
 
   try {
     const existing = readCookie();
-    const { touch, hasSignal } = buildTouch();
+    const { touch, hasSignal } = buildTouch(opts?.page);
 
     if (!existing) {
       writeCookie({ v: VERSION, first: touch, last: touch });

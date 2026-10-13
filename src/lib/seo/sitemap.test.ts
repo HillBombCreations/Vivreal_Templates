@@ -184,8 +184,14 @@ test('detailPage.sitemap === true + resolved segments ⇒ detail item URLs appen
   assert.ok(urls.includes('https://acme.test/santa-monica/juvederm'));
 });
 
-test('detailPage.sitemap absent/false ⇒ no detail items added even if segments are supplied', () => {
+test('ALLOW (v5 R4): detailPage.sitemap ABSENT now lists the resolved items (default on)', () => {
   const scopedPages = [{ slug: 'santa-monica', format: 'collection-list', detailPage: { itemKeyField: 'slug' } }];
+  const urls = buildSitemapEntries(scopedPages, 'https://acme.test', { 'santa-monica': ['botox'] }).map((e) => e.url);
+  assert.ok(urls.includes('https://acme.test/santa-monica/botox'));
+});
+
+test('REFUSE (v5 R4): detailPage.sitemap === false is the owner opt-out, items supplied or not', () => {
+  const scopedPages = [{ slug: 'santa-monica', format: 'collection-list', detailPage: { sitemap: false, itemKeyField: 'slug' } }];
   const urls = buildSitemapEntries(scopedPages, 'https://acme.test', { 'santa-monica': ['botox'] }).map((e) => e.url);
   assert.ok(!urls.includes('https://acme.test/santa-monica/botox'));
 });
@@ -457,4 +463,44 @@ test('turning the HOME page off does NOT remove the sitemap root entry', () => {
   ];
   const urls = buildSitemapEntries(pages, 'https://acme.test').map((e) => e.url);
   assert.deepStrictEqual(urls, ['https://acme.test', 'https://acme.test/about']);
+});
+
+// ── v5 R4: real dates, never the clock ──
+
+test('ALLOW (R4): last-changed equals the recorded updatedAt, per page and per item', () => {
+  const datedPages = [
+    { slug: 'home', format: 'home', updatedAt: '2026-09-01T10:00:00.000Z' },
+    { slug: 'shop', format: 'catalog', updatedAt: '2026-09-02T10:00:00.000Z' },
+    { slug: 'about', format: 'about' },
+  ];
+  const entries = buildSitemapEntries(
+    datedPages,
+    'https://acme.test',
+    { shop: [{ segment: 'p1', lastModified: '2026-09-03T10:00:00.000Z' }, { segment: 'p2' }] },
+    { siteUpdatedAt: '2026-08-31T10:00:00.000Z' },
+  );
+  const byUrl = Object.fromEntries(entries.map((e) => [e.url, e.lastModified]));
+  assert.equal(byUrl['https://acme.test'], '2026-09-01T10:00:00.000Z');
+  assert.equal(byUrl['https://acme.test/shop'], '2026-09-02T10:00:00.000Z');
+  assert.equal(byUrl['https://acme.test/about'], '2026-08-31T10:00:00.000Z', 'a page with no date of its own takes the site date');
+  assert.equal(byUrl['https://acme.test/shop/p1'], '2026-09-03T10:00:00.000Z');
+  assert.equal(byUrl['https://acme.test/shop/p2'], undefined, 'an item with no date claims none');
+});
+
+test('REFUSE (R4): two regenerations give the same dates, and nothing is stamped with the clock', async () => {
+  const datedPages = [{ slug: 'shop', format: 'catalog', updatedAt: '2026-09-02T10:00:00.000Z' }];
+  const first = buildSitemapEntries(datedPages, 'https://acme.test', { shop: ['p1'] });
+  await new Promise((r) => setTimeout(r, 5));
+  const second = buildSitemapEntries(datedPages, 'https://acme.test', { shop: ['p1'] });
+  assert.deepStrictEqual(first, second);
+  for (const entry of buildSitemapEntries(pages, 'https://acme.test')) {
+    assert.equal(entry.lastModified, undefined, `${entry.url} must not claim a date it does not have`);
+  }
+});
+
+test('REFUSE (R4): an unreadable date is dropped, not passed through', () => {
+  const entries = buildSitemapEntries([{ slug: 'shop', format: 'catalog', updatedAt: 'yesterday' }], 'https://acme.test', undefined, {
+    siteUpdatedAt: 'nope',
+  });
+  assert.equal(entries.find((e) => e.url.endsWith('/shop'))?.lastModified, undefined);
 });

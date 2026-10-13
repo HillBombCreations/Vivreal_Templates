@@ -6,6 +6,8 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { footerHours } from '@/lib/footerHours';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
@@ -32,7 +34,12 @@ const Footer = async () => {
   // '/logo.png' does not exist in public/ — the old fallback rendered a broken
   // image on every logo-less site.
   const businessLogoUrl = getSignedUrl(siteData?.logo) || '';
-  const businessEmail = siteData?.businessInfo?.contactInfo?.email;
+  // OD-9 (F-C15): the owner's "Show this email on your site". Absent means
+  // shown (VR_Client_API resolves it); `false` hides the inherited email. A
+  // footer brand email the owner typed in the footer itself is their explicit
+  // choice and still shows.
+  const businessEmail =
+    siteData?.businessInfo?.showEmail === false ? undefined : siteData?.businessInfo?.contactInfo?.email;
 
   // Per-field inherit/override. A key being PRESENT on `brand` (even "") is an
   // override; ABSENT inherits the businessInfo value. `Object.prototype
@@ -92,6 +99,9 @@ const Footer = async () => {
       footerColumns={siteData?.footer?.columns ?? null}
       legal={siteData?.footer?.legal ?? null}
       footerPages={footerPages}
+      // W25 review C2 (renderer 1.85.8): seed-only pages answer 404, so their
+      // links go. Empty ⇒ the renderer's footer, byte-identical.
+      hiddenPaths={await getSeedOnlyPaths()}
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
       newsletter={siteData?.footerNewsletter ?? null}
@@ -105,6 +115,21 @@ const Footer = async () => {
       // (renderer 1.65.0), so it rides as a plain prop. Absent ⇒ null ⇒ today's
       // span-2 grid, byte-identical for every site that has not set it.
       brandSpan={siteData?.footer?.brandSpan ?? null}
+      // Renderer 1.85.0 (B2 and F-C15). Without these the fixes ship inert.
+      // `palette`: the light band's muted ink is pulled to AA against this
+      // site's own tokens; a palette that already passes draws byte-identical.
+      // `hours` + `timezone`: the column footer's compact week and the next
+      // 14 days' changes, computed in the browser. Absent hours draw as before,
+      // and so does a site that keeps other hours sets (rooms, an authored
+      // opening-hours block): see lib/footerHours (W25-5ca).
+      palette={{
+        secondary: siteData?.secondary,
+        surface: siteData?.surface,
+        'text-primary': siteData?.['text-primary'],
+        'text-secondary': siteData?.['text-secondary'],
+      }}
+      hours={footerHours(siteData)}
+      timezone={siteData?.timezone}
       // Wave D + owner pass 2: these land in FooterProps on the next renderer
       // bump — drop this spread-cast then and pass them as plain props.
       {...({

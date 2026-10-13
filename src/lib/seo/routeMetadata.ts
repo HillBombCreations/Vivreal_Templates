@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { isDemoSite } from './demoSafety.ts';
-import { resolveCanonicalUrl } from '../og/siteOrigin.ts';
+import { resolveCanonicalUrl, resolveSiteOrigin } from '../og/siteOrigin.ts';
 // One shared shape, exported by the resolver that consumes it, so this file
 // cannot drift from what resolveCanonicalUrl actually reads.
 import type { OriginSiteData } from '../og/siteOrigin.ts';
@@ -12,12 +12,14 @@ export function resolveRouteCanonical(
 ): string | undefined {
   if (isDemoSite(siteData)) return undefined;
   if (explicitCanonical) return explicitCanonical;
-  // Deliberately the narrow canonicalUrl-ONLY resolver, not the general
-  // resolveSiteOrigin (env/live_url/domainName) chain — every existing fleet
-  // site already has a domainName, so falling back to it here would emit a
-  // brand-new canonical tag on every page of every site that never had one.
-  // Default-absent: no authored canonicalUrl ⇒ no tag, byte-identical to today.
-  const origin = resolveCanonicalUrl(siteData);
+  // The stored canonicalUrl first. v5 (search R4, seo-visibility gap 2): when
+  // it is absent, the site's resolved DURABLE origin (env, then live_url,
+  // then the domain; an amplifyapp host is refused), so every live page names
+  // one address. This used to answer nothing, deliberately, to keep the fleet
+  // byte-identical; without a canonical, `www`, the vivreal.io subdomain and
+  // the custom domain split one page's signals three ways. A demo still names
+  // none (the guard above).
+  const origin = resolveCanonicalUrl(siteData) || resolveSiteOrigin(siteData, { surface: 'durable' });
   if (!origin) return undefined;
   const normalizedPath = routePath === '/' ? '' : `/${routePath.replace(/^\/+|\/+$/g, '')}`;
   return `${origin}${normalizedPath}`;

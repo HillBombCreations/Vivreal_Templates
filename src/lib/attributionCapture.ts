@@ -48,7 +48,7 @@
  * harness under `node --test`; <AttributionCapture> is a null-rendering shell.
  */
 
-import { captureAttribution } from './attribution.ts';
+import { captureAttribution, type AttributionPage } from './attribution.ts';
 
 export interface AttributionCaptureOptions {
   /**
@@ -57,25 +57,132 @@ export interface AttributionCaptureOptions {
    * false whenever `SITE_ID` is unset or unrecognised.
    */
   vivrealOwnSite: boolean;
-  /**
-   * True only when the visitor has AFFIRMATIVELY REJECTED in the consent
-   * banner. "Undecided" is deliberately NOT a denial: first touch exists only
-   * on the first page load, so gating it on a decision the visitor has not made
-   * yet destroys it permanently (design Open Question 5, today's contract,
-   * carried forward unchanged from Vivreal_SSR_Landing's UTMCapture). The
-   * asymmetry is deliberate and `/privacy` must describe it: `vr_attr` is
-   * first-party and written pre-decision; the third-party vendor tags are not,
-   * and never fire pre-decision.
-   */
+  /** True when the visitor has ACCEPTED in the consent banner (stored choice). */
+  consented?: boolean;
+  /** True when the visitor has REJECTED in the consent banner (stored choice). */
   consentDenied?: boolean;
 }
 
 /**
- * Capture attribution, on Vivreal's own sites only. A no-op everywhere else,
- * including on the server. Never throws: `captureAttribution` swallows its own
- * failures, and the gate itself cannot throw.
+ * CONSENT FIRST (owner decision, 2026-10-12). The banner says cookies are used
+ * once the visitor accepts, so `vr_attr` is written only after Accept. This
+ * replaces the earlier "undecided still writes" contract (Open Question 5).
+ *
+ * First touch is still kept: before a choice, the landing page (query,
+ * referrer, path, time) is held in `sessionStorage` under this key, which is
+ * not a cookie, never leaves the browser and ends with the tab. Accept writes
+ * `vr_attr` from it; Reject drops it. Only the FIRST undecided page is held.
+ */
+export const PENDING_ATTRIBUTION_KEY = 'vr_attr_pending';
+/** The cookie `attribution.ts` writes (its name is not exported there). */
+const ATTRIBUTION_COOKIE = 'vr_attr';
+
+function session(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    // Storage can throw in sandboxed or partitioned contexts: hold nothing.
+    return null;
+  }
+}
+
+function readPending(): AttributionPage | undefined {
+  try {
+    const raw = session()?.getItem(PENDING_ATTRIBUTION_KEY);
+    if (!raw) return undefined;
+    const page = JSON.parse(raw) as Partial<AttributionPage>; // checked field by field below
+    if (typeof page.search !== 'string' || typeof page.referrer !== 'string' || typeof page.pathname !== 'string' || typeof page.at !== 'number') {
+      return undefined;
+    }
+    return { search: page.search, referrer: page.referrer, pathname: page.pathname, at: page.at };
+  } catch {
+    // A corrupt entry is no entry.
+    return undefined;
+  }
+}
+
+function dropPending(): void {
+  try {
+    session()?.removeItem(PENDING_ATTRIBUTION_KEY);
+  } catch {
+    // Nothing held is the state we want anyway.
+  }
+}
+
+function holdLandingPage(): void {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  const store = session();
+  if (!store || store.getItem(PENDING_ATTRIBUTION_KEY)) return;
+  const page: AttributionPage = {
+    search: window.location.search,
+    referrer: document.referrer,
+    pathname: window.location.pathname,
+    at: Date.now(),
+  };
+  try {
+    store.setItem(PENDING_ATTRIBUTION_KEY, JSON.stringify(page));
+  } catch {
+    // Quota or a disabled store: the first touch is lost, nothing is written.
+  }
+}
+
+/**
+ * Page-load capture, on Vivreal's own sites only. A no-op everywhere else,
+ * including on the server. Never throws.
+ *  - accepted: write or refresh `vr_attr` from this page, as before;
+ *  - rejected: write nothing, and drop any held landing page;
+ *  - undecided: write nothing; hold the landing page for an Accept.
  */
 export function runAttributionCapture(opts: AttributionCaptureOptions): void {
   if (!opts?.vivrealOwnSite) return;
-  captureAttribution({ consentDenied: opts.consentDenied });
+  if (opts.consentDenied) {
+    // Review of f32b2f9 (BLOCK): a vr_attr written before this change (90-day
+    // life, pre-decision) must not outlive a reject.
+    deleteAttribution();
+    return;
+  }
+  if (opts.consented) {
+    captureAttribution();
+    return;
+  }
+  holdLandingPage();
+}
+
+/**
+ * Banner Accept: write `vr_attr` from the held landing page (its first touch),
+ * then from the current page (a later page with its own campaign signal
+ * refreshes `last`, as on any accepted visit). GPC still blocks it outright.
+ */
+export function acceptAttribution(vivrealOwnSite: boolean): void {
+  if (!vivrealOwnSite) return;
+  const landing = readPending();
+  dropPending();
+  if (landing) captureAttribution({ page: landing });
+  captureAttribution();
+}
+
+/** Banner Reject: drop the held landing page and delete any `vr_attr` an earlier visit left. */
+export function rejectAttribution(vivrealOwnSite: boolean): void {
+  if (!vivrealOwnSite) return;
+  deleteAttribution();
+}
+
+/**
+ * Withdrawal under Cookie settings: delete `vr_attr` (both the apex-scoped
+ * cookie `attribution.ts` writes on vivreal.io and a host-only one) and any
+ * held landing page.
+ */
+export function withdrawAttribution(vivrealOwnSite: boolean): void {
+  if (!vivrealOwnSite) return;
+  deleteAttribution();
+}
+
+/** Delete `vr_attr` on the host and on `.vivreal.io`, and the held landing page. */
+function deleteAttribution(): void {
+  dropPending();
+  if (typeof document === 'undefined') return;
+  const expired = `${ATTRIBUTION_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+  document.cookie = expired;
+  const host = typeof window === 'undefined' ? '' : window.location.hostname.toLowerCase();
+  if (host === 'vivreal.io' || host.endsWith('.vivreal.io')) document.cookie = `${expired}; Domain=.vivreal.io`;
 }

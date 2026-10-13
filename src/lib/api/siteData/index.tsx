@@ -26,9 +26,20 @@ import { toOriginSource } from './originSource';
 import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { readShowLowStock } from './showLowStock';
+import { readCommerce } from './commerce';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { refuseDegradedClaim } from './degraded';
-import { getCollectionItems } from '@/lib/api/collections';
+import { getAllCollectionItems } from '@/lib/api/collections';
+import { getAllProductsRead } from '@/lib/api/products';
+import { getShowsRead } from '@/lib/api/shows';
+import { getTeamMembersRead } from '@/lib/api/team';
+import { collectBindingTargets } from '@/lib/api/composition/bindings';
+import { isPaymentsProvider } from '@/lib/payments';
+import { sitemapDetailSource, type CollectionSource } from '@/lib/seo/sitemapDetailSources';
+import { restrictToLinked } from '@/lib/detail/linkedItems';
+import { detailFieldMap, enterDetailItems } from '@/lib/detail/detailItems';
+import type { SitemapItem } from '@/lib/seo/sitemap';
+import { logSitemapBuilt } from '@/lib/seo/sitemapSignals';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -99,6 +110,10 @@ interface SiteDetailsResponse {
   redirects?: SiteData['redirects'];
   tier?: string;
   paymentsProvider?: 'stripe' | 'square' | null;
+  /** F-C19 (VR_Client_API v5): which product lists are paused or moving. */
+  commerce?: SiteData['commerce'];
+  /** R5 (VR_Client_API v5): when the site document last changed. */
+  updatedAt?: string | null;
   /**
    * H177 - the shell's inline rich-text image map, key to signed media URL.
    * Present on every read from VR_Client_API v2.10.16 onward and always an
@@ -257,6 +272,9 @@ export const getSiteData = async (): Promise<SiteData> => {
     defaultOgImage: (raw.siteDetails.values as SiteData).defaultOgImage,
     tier: raw.tier,
     paymentsProvider: raw.paymentsProvider,
+    // F-C19 and R5 (VR_Client_API v5): top-level, never in siteDetails.values.
+    commerce: readCommerce(raw.commerce),
+    updatedAt: raw.updatedAt ?? null,
     // F2: the business wide low stock switch. Absent stays absent (contract C5),
     // so each template's own default decides. See ./showLowStock.ts.
     ...readShowLowStock(raw),
@@ -446,71 +464,75 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // test; deleting this line changes nothing but the number of upstream reads.
   if (isDemoSite(siteData)) return [];
 
-  // Two-axis detail-route design, Phase 3 (§7.1/T4) — resolve detail-item URL
-  // segments for pages that opted into `detailPage.sitemap === true`. Narrowed
-  // to pages with an explicit `itemCollectionId` (rather than replaying the
-  // full per-format primary-binding resolution `getPageCollectionId` needs,
-  // which requires a SECOND `getSiteData()`-shaped fetch this lightweight
-  // `siteDetails` read doesn't have) — every scoped detail-route page this
-  // arc produces authors `itemCollectionId` explicitly, so this covers the
-  // real feature without doubling upstream calls. Absent/false `sitemap` on
-  // every page (the fleet default) ⇒ zero extra fetches.
+  // R4 (v5): detail items are listed BY DEFAULT for every page with a detail
+  // route, read through the SAME reader that route uses (so every listed
+  // address answers 200), every page of it (no 100 cap). See
+  // `src/lib/seo/sitemapDetailSources.ts` for which pages and why.
   //
-  // The `isPageTurnedOff` clause is a perf short-circuit of the same kind as
-  // the demo gate above, not a second gate: a page the owner switched off is
-  // dropped, with its items, by `buildSitemapEntries`, which is where that
-  // rule is pinned by a test. Skipping it HERE only avoids reading a
-  // collection whose URLs cannot be listed, and it keeps a failed read of that
-  // collection from refusing the whole sitemap below over a page nobody was
-  // going to see.
-  const sitemapPages = (raw.pages ?? []).filter(
-    (p) => p?.detailPage?.sitemap === true && !!p.detailPage.itemCollectionId && !isPageTurnedOff(p),
-  );
-  const detailItemSegmentsByPage: Record<string, string[]> = {};
-  if (sitemapPages.length > 0) {
-    await Promise.all(
-      sitemapPages.map(async (page) => {
-        const detailPage = page.detailPage!;
-        const { items, degraded } = await getCollectionItems(detailPage.itemCollectionId!, {
-          limit: 100,
-        });
-        // The SAME refusal the branch forty lines up makes, for the same
-        // reason, one layer down. Up there an unreadable `siteDetails` would
-        // have emitted a sitemap claiming the site has zero URLs; here a
-        // readable site with an unreadable detail COLLECTION emits one claiming
-        // the site has exactly the URLs that happened to come back. Both are
-        // positive claims manufactured from a failed read, and this one is the
-        // harder of the two to notice: a short sitemap is a perfectly
-        // successful render of a legitimately short list, so nothing
-        // downstream can tell it apart from the real thing. `getSiteMap`'s own
-        // comment already warns about exactly this shape for the build-time
-        // case.
-        //
-        // #149 made the sitemap refuse on degraded SITE data; this slips past
-        // that guard because `siteDetails` came back perfectly healthy.
-        //
-        // Blast radius is bounded by the filter above: only pages that author
-        // `detailPage.sitemap === true` are read at all, so a fleet default
-        // (zero such pages, zero fetches) cannot reach this line.
-        if (degraded) {
-          refuseDegradedClaim(
-            'sitemap.xml',
-            'the detail items for at least one page are UNKNOWN (siteDetails itself is healthy)',
-          );
-        }
-        const scoped = applyScope(items, detailPage.scope);
-        const slug = (page.slug as string).replace(/^\/+/, '');
-        detailItemSegmentsByPage[slug] = scoped.map((it) => itemSegment(it, detailPage.itemKeyField));
-      }),
+  // A degraded read REFUSES the whole file (#149), exactly as before: a short
+  // page list is a perfectly valid-looking file that tells every crawler
+  // those items are gone.
+  const startedAt = Date.now();
+  const detailItemsByPage: Record<string, SitemapItem[]> = {};
+  const unknownItems = (): never =>
+    refuseDegradedClaim(
+      'sitemap.xml',
+      'the detail items for at least one page are UNKNOWN (siteDetails itself is healthy)',
     );
-  }
-
-  // Build from the AUTHORITATIVE top-level page list (raw.pages — what getSiteData
-  // uses), not siteDetails.values.pages (which the migrator never populates, so
-  // the sitemap was homepage-only). See src/lib/seo/sitemap.ts.
-  return buildSiteMapForSite(
-    siteData,
-    raw.pages,
-    sitemapPages.length > 0 ? detailItemSegmentsByPage : undefined,
+  await Promise.all(
+    (raw.pages ?? [])
+      .filter((p) => p?.slug && !isPageTurnedOff(p))
+      .map(async (page) => {
+        const { integrationTypes } = collectBindingTargets(page);
+        const source = sitemapDetailSource(page, {
+          paymentsProvider: integrationTypes.find((type) => isPaymentsProvider(type)),
+          pages: raw.pages ?? [],
+        });
+        if (!source) return;
+        const slug = (page.slug as string).replace(/^\/+/, '');
+        const items: SitemapItem[] = [];
+        const collectionItems = async (c: CollectionSource) => {
+          const { items: stored, degraded } = await getAllCollectionItems(c.collectionId);
+          if (degraded) unknownItems();
+          // Entered as the detail route enters them (`lookupDetailItem`), so
+          // scope and address read the same `_system` values it does.
+          const all = enterDetailItems(stored, detailFieldMap(page, c.collectionId));
+          // `applyScope` is typed with the renderer's item shape, which has no
+          // `updatedAt`; it filters, never copies, so the date is read back by id.
+          const changedAt = new Map(all.map((it) => [it.id, it.updatedAt]));
+          // Only the items some link on the site reaches (B1, `linkedItems.ts`).
+          for (const it of restrictToLinked(applyScope(all, c.scope), c.linkScopes ?? null, applyScope)) {
+            items.push({ segment: itemSegment(it, c.itemKeyField), lastModified: changedAt.get(it.id) });
+          }
+        };
+        if (source.kind === 'shows') {
+          const { shows, degraded } = await getShowsRead(source.collectionId);
+          if (degraded) unknownItems();
+          for (const show of shows) if (show.id) items.push({ segment: show.id });
+        } else if (source.kind === 'team') {
+          const { members, degraded } = await getTeamMembersRead(source.collectionId);
+          if (degraded) unknownItems();
+          for (const member of members) if (member.id) items.push({ segment: member.id });
+        } else if (source.kind === 'products') {
+          const { products, degraded } = await getAllProductsRead(source.provider);
+          if (degraded) unknownItems();
+          for (const product of products) if (product._id) items.push({ segment: product._id });
+          if (source.collection) await collectionItems(source.collection);
+        } else {
+          await collectionItems(source);
+        }
+        // One address per item even when two lists hold it (a product that is
+        // both a provider product and a collection row).
+        const seen = new Set<string>();
+        detailItemsByPage[slug] = items.filter((it) => !seen.has(it.segment) && !!seen.add(it.segment));
+      }),
   );
+
+  const entries = buildSiteMapForSite(siteData, raw.pages, detailItemsByPage, {
+    siteUpdatedAt: raw.updatedAt ?? null,
+  });
+  const itemCount = Object.values(detailItemsByPage).reduce((n, list) => n + list.length, 0);
+  logSitemapBuilt({ siteId: SITE_ID, urls: entries.length, items: itemCount, ms: Date.now() - startedAt });
+  return entries;
+
 };

@@ -160,24 +160,41 @@ test('clause 1 — a page-template block still wins over everything else', () =>
   );
 });
 
-test('clauses 2 and 3 — the legacy mirrors still win over a content block', () => {
-  // This ordering is the safety argument, not an accident: clause 4 is
-  // reachable ONLY where the shipped rule already answered `undefined`, so it
-  // can never re-point a page that resolves today.
+test('REFUSE (F-C8, PR-12): on a page with blocks the legacy mirror never wins over a content block', () => {
+  // Cobalt & Crumb /shop: the mirror names a collection no block references,
+  // so its items were looked up in the wrong list and every product page took
+  // the shop's title.
   assert.equal(
     pageDetailCollectionId({
       blocks: [cardsBlock('from-cards')],
       collectionId: 'legacy-pointer',
     }),
-    'legacy-pointer',
+    'from-cards',
   );
   assert.equal(
     pageDetailCollectionId({
       blocks: [cardsBlock('from-cards')],
       collections: [{ collectionId: 'legacy-mirror' }],
     }),
-    'legacy-mirror',
+    'from-cards',
   );
+});
+
+test('REFUSE (F-C8): a page with blocks and no bound content block resolves nothing, never the mirror', () => {
+  assert.equal(
+    pageDetailCollectionId({
+      blocks: [{ type: { kind: 'layout' }, config: { bindings: [] } }],
+      collectionId: 'legacy-pointer',
+      collections: [{ collectionId: 'legacy-mirror' }],
+    }),
+    undefined,
+  );
+});
+
+test('ALLOW (F-C8): a page with NO blocks still resolves through the mirror (the compat path the renderer keeps)', () => {
+  assert.equal(pageDetailCollectionId({ collectionId: 'legacy-pointer' }), 'legacy-pointer');
+  assert.equal(pageDetailCollectionId({ blocks: [], collections: [{ collectionId: 'legacy-mirror' }] }), 'legacy-mirror');
+  assert.equal(pageDetailCollectionId({ blocks: null }), undefined);
 });
 
 test('clause 4 reads bindings[0] only, so a products filter collection is never the item source', () => {

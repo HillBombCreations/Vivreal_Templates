@@ -124,7 +124,7 @@ test('CUTOVER SHAPE: canonical, Sitemap:, every <loc> and the schedule feed reso
   assert.deepEqual([...everyOrigin], ['https://vivreal.io'], 'exactly one origin across every surface');
 });
 
-test('FLEET SHAPE (subdomain-only, no canonicalUrl): Sitemap:, <loc> and the schedule feed agree, and the canonical stays absent', () => {
+test('FLEET SHAPE (subdomain-only, no canonicalUrl): Sitemap:, <loc>, the schedule feed AND the canonical agree (v5 R4)', () => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   delete process.env.SITE_LIFECYCLE;
   // dougs-kitchen.com's shape: no domainName, no canonicalUrl. This is the
@@ -148,12 +148,12 @@ test('FLEET SHAPE (subdomain-only, no canonicalUrl): Sitemap:, <loc> and the sch
   );
   assert.equal(
     resolveRouteCanonical(siteData, '/'),
-    undefined,
-    'no canonicalUrl authored ⇒ no canonical tag, byte-identical to before the field existed',
+    'https://dougs-kitchen.vivreal.io',
+    'v5 R4: no canonicalUrl authored ⇒ the canonical is the same resolved origin every other surface names',
   );
 });
 
-test('FLEET SHAPE (legacy custom apex, no canonicalUrl): unchanged from today', () => {
+test('FLEET SHAPE (legacy custom apex, no canonicalUrl): every surface, the canonical included (v5 R4), names the apex', () => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   delete process.env.SITE_LIFECYCLE;
   // comedycollectivechi.com's shape: domainName and live_url agree.
@@ -174,7 +174,8 @@ test('FLEET SHAPE (legacy custom apex, no canonicalUrl): unchanged from today', 
     'https://comedycollectivechi.com/feeds/schedule.ics',
     'byte-identical to the raw-domainName string this site already served',
   );
-  assert.equal(resolveRouteCanonical(siteData, '/'), undefined);
+  // v5 R4: the canonical now names the same origin, instead of being absent.
+  assert.equal(resolveRouteCanonical(siteData, '/'), 'https://comedycollectivechi.com');
 });
 
 test('FEED: domainName-ONLY (no live_url) still resolves, byte-identical to the pre-resolver string', () => {

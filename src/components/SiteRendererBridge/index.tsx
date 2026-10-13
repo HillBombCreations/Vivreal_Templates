@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { NextSiteRendererProvider } from "@hillbombcreations/site-renderer";
 import { useCartAdapter } from "@/lib/cartAdapter";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { rendererCommerce } from "@/lib/rendererCommerce";
 
 /**
  * Bridges server components into the renderer's client context with the live
@@ -21,7 +22,7 @@ export default function SiteRendererBridge({ children }: { children: ReactNode }
   return (
     <NextSiteRendererProvider
       CartAdapter={cartAdapter}
-      commerce={{ paymentsProvider: siteData?.paymentsProvider }}
+      commerce={rendererCommerce(siteData)}
     >
       {children}
     </NextSiteRendererProvider>

@@ -48,6 +48,8 @@ export interface DomHarness {
   setReferrer(value: string): void;
   setGpc(value: boolean | undefined): void;
   storage: Map<string, string>;
+  /** The backing map of the fake `sessionStorage` (per tab; cleared by a fresh install). */
+  session: Map<string, string>;
   /** Every `gtag(...)` call recorded in order. */
   gtagCalls(): unknown[][];
   reloads(): number;
@@ -59,6 +61,7 @@ type Globals = typeof globalThis & {
   document?: unknown;
   navigator?: unknown;
   localStorage?: unknown;
+  sessionStorage?: unknown;
 };
 
 function makeElement(tagName: string): FakeElement {
@@ -94,7 +97,7 @@ export function installDom(opts?: {
   const g = globalThis as Globals;
   // `globalThis.navigator` is an accessor (getter-only) on Node 22, so a plain
   // assignment throws. Save the real descriptors and swap them out properly.
-  const GLOBAL_KEYS = ['window', 'document', 'navigator', 'localStorage'] as const;
+  const GLOBAL_KEYS = ['window', 'document', 'navigator', 'localStorage', 'sessionStorage'] as const;
   const saved = new Map<string, PropertyDescriptor | undefined>(
     GLOBAL_KEYS.map((k) => [k, Object.getOwnPropertyDescriptor(globalThis, k)]),
   );
@@ -109,6 +112,7 @@ export function installDom(opts?: {
   const jar = new Map<string, string>();
   const appended: FakeElement[] = [];
   const storage = new Map<string, string>();
+  const session = new Map<string, string>();
   const gtagCalls: unknown[][] = [];
   let reloadCount = 0;
   let referrer = '';
@@ -209,6 +213,13 @@ export function installDom(opts?: {
     clear: () => storage.clear(),
   };
 
+  const sessionStorage = {
+    getItem: (k: string) => (session.has(k) ? (session.get(k) as string) : null),
+    setItem: (k: string, v: string) => void session.set(k, String(v)),
+    removeItem: (k: string) => void session.delete(k),
+    clear: () => session.clear(),
+  };
+
   const navigator = {
     get globalPrivacyControl() {
       return gpc;
@@ -219,6 +230,7 @@ export function installDom(opts?: {
   const windowObj = {
     location,
     localStorage,
+    sessionStorage,
     navigator,
     document,
     gtag: (...args: unknown[]) => void gtagCalls.push(args),
@@ -229,6 +241,7 @@ export function installDom(opts?: {
   define('document', document);
   define('navigator', navigator);
   define('localStorage', localStorage);
+  define('sessionStorage', sessionStorage);
 
   return {
     scripts: () => appended.slice(),
@@ -250,6 +263,7 @@ export function installDom(opts?: {
       gpc = value;
     },
     storage,
+    session,
     gtagCalls: () => gtagCalls.slice(),
     reloads: () => reloadCount,
     restore() {

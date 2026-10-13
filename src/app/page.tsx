@@ -13,6 +13,9 @@ import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import HomeLoading from "@/components/HomeLoading";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
+import { homeMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
+import type { PageWithBlocks } from "@hillbombcreations/site-renderer/bindings";
+import { reportDisplayMismatches } from "@/lib/reportDisplayMismatch";
 
 // ISR migration Phase 3. `revalidate` must be a literal — Next 16 parses it
 // out of this file's source and hard-fails the build on any expression, so
@@ -41,6 +44,10 @@ async function Resolved() {
       </>
     );
   }
+
+  // F-C7: one event per render when a home block's displayAs and type disagree.
+  // Cast: see renderComposedPage.tsx, same reading.
+  reportDisplayMismatches(homePageConfig as unknown as PageWithBlocks, 'home');
 
   // Unified path (Plan 4, step 5): composePage dispatches showcase vs ecommerce
   // internally via isHome + the presence of a sibling 'shows' page — identical to
@@ -130,10 +137,13 @@ export const generateMetadata = async () => {
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, "home");
 
-  const title = seo?.metaTitle || siteName;
-  const description =
-    seo?.metaDescription ||
-    `Welcome to ${siteName}. Discover our latest content, events, and more.`;
+  // The owner's own title and summary win; below them, the business facts
+  // (search R4: what and where), then today's welcome line. See
+  // `src/lib/seo/pageMetaText.ts`.
+  const { title, description } = homeMetaText({
+    seo,
+    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
+  });
 
   return {
     title,

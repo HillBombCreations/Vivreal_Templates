@@ -76,3 +76,24 @@ test("resolveDetailCanonical: 'primary' with no itemCollectionId at all ⇒ degr
   });
   assert.equal(out, 'https://example.com/santa-monica/botox');
 });
+
+// F-C16R: the primary page's address segment reads `slug` top-level first, then `_system`.
+const primaryCanonical = (raw: Record<string, unknown>) =>
+  resolveDetailCanonical({
+    origin: 'https://example.com',
+    pageConfigs: [
+      { name: 'T', slug: 'treatments', format: 'collection-list', collectionId: null, labels: {}, detailPage: { itemCollectionId: 'tc', itemKeyField: 'slug' } },
+    ],
+    currentPage: { name: 'SM', slug: 'santa-monica', format: 'collection-list', collectionId: null, labels: {}, detailPage: { itemCollectionId: 'tc', scope: { field: 'locations', value: 'SM' } } },
+    currentUrl: 'https://example.com/santa-monica/x1',
+    item: { id: 'x1', raw },
+    canonicalFrom: 'primary',
+  });
+
+test('ALLOW (F-C16R): a slug only in _system names the canonical address', () => {
+  assert.equal(primaryCanonical({ _system: { slug: 'new-cut' } }), 'https://example.com/treatments/new-cut');
+});
+
+test('REFUSE (F-C16R): a stored top-level slug beats _system in the canonical', () => {
+  assert.equal(primaryCanonical({ slug: 'botox', _system: { slug: 'botox-2' } }), 'https://example.com/treatments/botox');
+});

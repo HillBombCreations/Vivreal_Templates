@@ -58,16 +58,23 @@ export interface DetailPageLike {
  *   1. The first PAGE-TEMPLATE block's first binding carrying a `collectionId`.
  *      Unchanged, and first, because that is what every backfilled fleet page
  *      resolves through today.
- *   2. Legacy `page.collectionId`.
- *   3. Legacy `page.collections[0].collectionId`.
+ *   2, 3. RETIRED for a page with blocks (v5, F-C8): the legacy
+ *      `page.collectionId` / `page.collections[0].collectionId` mirror. It is
+ *      read only for a page with NO blocks, which is the one shape that still
+ *      draws from it.
  *   4. The first CONTENT block whose FIRST binding carries a `collectionId`
  *      and no `integrationProvider`.
  *
- * CLAUSE 4 IS THE FIX, and its POSITION is the safety argument. Clauses 1-3 are
- * byte-identical to what shipped, and they run first, so every page that
- * resolved to a non-empty answer before resolves to the SAME answer now. This
- * is an additive superset: it can only turn `undefined` into a collection id,
- * never one id into another.
+ * WHY THE MIRROR WENT (F-C8, PR-12). The page document carries its bindings
+ * twice and the two disagree on live pages (DS-19 census). The mirror
+ * outranked the blocks, so Cobalt & Crumb `/shop`, whose mirror names a
+ * collection no block on the site references, looked its items up in the
+ * wrong list: every product page there was titled with the shop's name. The
+ * renderer dropped the mirror in 1.85.0, so this keeps the two in step.
+ * DS-20 aligns the stored mirrors before this deploys.
+ *
+ * CLAUSE 4's history: it was added as an additive fallback behind the mirror,
+ * to resolve Recipes pages whose collection is bound to a cards block.
  *
  * WHY IT WAS NEEDED. `Vivreal_Portal_Mobile#346`'s Recipes preset seeds
  * `section-header` + `layout:cards` and deliberately NO `recipes` page-template
@@ -103,9 +110,13 @@ export function pageDetailCollectionId(page: DetailPageLike): string | undefined
     ?.config?.bindings?.find((bd) => bd.collectionId)?.collectionId;
   if (fromPageTemplate) return fromPageTemplate;
 
-  if (page.collectionId) return page.collectionId;
-  const fromLegacyMirror = page.collections?.[0]?.collectionId;
-  if (fromLegacyMirror) return fromLegacyMirror;
+  // F-C8 (v5): a page WITH blocks answers from its blocks only, as the
+  // renderer's own `pageDetailCollectionId` does from 1.85.0. The mirror is
+  // read for a page with NO blocks, the compatibility path the renderer keeps
+  // too (`defaultBlocksForFormat` turns that same mirror into blocks).
+  if (blocks.length === 0) {
+    return page.collectionId || page.collections?.[0]?.collectionId || undefined;
+  }
 
   for (const block of blocks) {
     // A block can legitimately carry no config at all (a masthead hero block's

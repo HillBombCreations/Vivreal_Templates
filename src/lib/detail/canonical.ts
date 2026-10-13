@@ -13,6 +13,7 @@
  * Pure (no fetch) — the caller already has `pageConfigs` from `siteData`.
  */
 import type { PageConfig } from "@/types/SiteData";
+import { systemValue } from "@hillbombcreations/site-renderer/bindings";
 
 /**
  * Deliberately NOT importing the renderer's `itemSegment` here: this file is
@@ -20,11 +21,13 @@ import type { PageConfig } from "@/types/SiteData";
  * (`index.ts`) pulls in client components that import `next/link` — the
  * exact "server-only lesson" this repo has hit before (`mapItem.ts`'s header
  * comment). A 4-line duplicate is cheaper than a module-resolution failure.
- * Semantics MUST stay identical to `vivreal-site-renderer/src/lib/itemSegment.ts`.
+ * Semantics MUST stay identical to `vivreal-site-renderer/src/lib/itemSegment.ts`,
+ * which from 1.85.1 reads the key through `systemValue` (F-C16R: top-level
+ * first, then `_system`). The React-free `/bindings` subpath exports it.
  */
 function itemSegment(item: { id?: string; raw?: Record<string, unknown> }, itemKeyField?: string): string {
   if (itemKeyField) {
-    const v = item.raw?.[itemKeyField];
+    const v = systemValue(item.raw, itemKeyField);
     if (typeof v === "string" && v.trim()) return v.trim();
   }
   return item.id ?? "";

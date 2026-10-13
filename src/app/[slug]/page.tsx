@@ -13,7 +13,10 @@ import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
 import { resolvePageForSlug } from "@/lib/pages/builtInPages";
+import { pageMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
+import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
+import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
 // renderer FormLayout/ConfigurableForm via composePage). Import removed; the
 // component file is retained until it is retired post-dogfood validation.
@@ -314,6 +317,14 @@ export default async function DynamicPage({
   // `buildSitemapEntries` drops the page through the SAME predicate, so the
   // file and the route can never disagree about which pages exist.
   if (isPageTurnedOff(pageConfig)) return notFound();
+
+  // W25 review C2 (owner decision): a page whose body is entirely kit seed is
+  // not served until the owner writes real text (see src/lib/seo/seedOnlyPaths.ts).
+  // HERE, in the un-suspended parent and before renderComposedPage and the
+  // composed arm's <Suspense>, so the 404 is a real status (see the GUARD NOTE
+  // below). After assertUpstreamHealthy, and a failed list read never counts,
+  // so an upstream wobble cannot 404 a live page.
+  if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();
 
   // Privacy and terms always render on every site, even if not in page config
   const STATIC_SLUGS: Record<string, string> = {
@@ -828,6 +839,10 @@ export async function generateMetadata({
   if (isPageTurnedOff(pageConfig)) {
     return { title: `Not Found | ${siteName}` };
   }
+  // A seed-only page 404s in the render above; its head says so too.
+  if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) {
+    return { title: `Not Found | ${siteName}` };
+  }
 
   // QA-G1-2: a composed page with nothing to show answers 404 in the render
   // (`renderComposedPage`); its head says Not Found and noindex to match. Same
@@ -849,18 +864,17 @@ export async function generateMetadata({
     return buildEmptyPageMetadata(siteName);
   }
 
-  // Studio-authored SEO overrides take precedence over the label/name-derived
-  // defaults. `metaTitle` is the exact title (author owns the full string, so it
-  // is NOT suffixed with the site name); the derived title keeps the "| site"
-  // suffix for a sensible default.
-  const seo = pageConfig?.seo;
-  const derivedTitle =
-    pageConfig?.labels?.title || pageConfig?.name || STATIC_PAGE_TITLES[slug] || slug;
-  const title = seo?.metaTitle || `${derivedTitle} | ${siteName}`;
-  const description =
-    seo?.metaDescription ||
-    pageConfig?.labels?.subtitle ||
-    `${derivedTitle} | ${siteName}`;
+  // Studio-authored SEO overrides take precedence over the derived defaults.
+  // `metaTitle` is the exact title (author owns the full string, so it is NOT
+  // suffixed with the site name). Below the owner's words: the page format's
+  // own title (item 23: the checkout pages) and a summary built from the
+  // business facts (search R4). See `src/lib/seo/pageMetaText.ts`.
+  const { title, description } = pageMetaText({
+    page: pageConfig,
+    slug,
+    staticTitle: STATIC_PAGE_TITLES[slug],
+    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
+  });
 
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);

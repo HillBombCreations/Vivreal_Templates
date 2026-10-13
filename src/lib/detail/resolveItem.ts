@@ -12,6 +12,7 @@
  * Pure, dependency-free (no `server-only`, no `next/*`) so it runs under
  * plain `node --test`.
  */
+import { systemValue } from '@hillbombcreations/site-renderer/bindings';
 /**
  * Find `itemId` in `items`: exact `id === itemId` first, else
  * `raw[itemKeyField] === itemId` (string-exact, no fuzzy normalization — the
@@ -27,7 +28,8 @@ export function resolveItem<T extends { id: string; raw?: Record<string, unknown
   if (byId) return byId;
   if (!itemKeyField) return undefined;
   return items.find((it) => {
-    const v = it.raw?.[itemKeyField];
+    // F-C16R: the stored top-level key first, then `_system` (renderer `systemValue`).
+    const v = systemValue(it.raw, itemKeyField);
     return typeof v === "string" && v === itemId;
   });
 }

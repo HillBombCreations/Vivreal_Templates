@@ -9,7 +9,7 @@ import { cookies, draftMode, headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
-import { buildFetchFailureCapture } from './errorCapture';
+import { buildFetchFailureCapture, upstreamFallbackLine } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
 import { createFailureMemo, readWithFailureMemo } from './failureMemo';
@@ -183,6 +183,7 @@ export async function clientFetchSafe<T>(
       buildFetchFailureCapture({ source: 'clientFetchSafe', path, siteId: SITE_ID })
     );
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
+    console.error(upstreamFallbackLine({ source: 'clientFetchSafe', path, siteId: SITE_ID, err }));
     return fallback;
   }
 }
@@ -237,7 +238,9 @@ export async function clientFetchCached<T>(
 
   // V2: a read that failed in the last 5 s answers its fallback without going
   // upstream again, so an outage costs one call per page request rather than
-  // two. Failures only; see ./failureMemo.ts.
+  // two. Failures only. F-C13: concurrent reads of one path share the one in
+  // flight, so the handler below (and its Sentry capture) runs once per failed
+  // call, not once per reader. See ./failureMemo.ts.
   return readWithFailureMemo(FAILED_READS, path, cached, fallback, (err) => {
     // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
     // never cache it, and never memoise it (a throw here records nothing).
@@ -251,6 +254,7 @@ export async function clientFetchCached<T>(
       buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID })
     );
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
+    console.error(upstreamFallbackLine({ source: 'clientFetchCached', path, siteId: SITE_ID, err }));
     return fallback;
   });
 }

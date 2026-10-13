@@ -15,7 +15,10 @@ import {
   buildDetailUrl,
 } from "@/lib/og/ogImage";
 import { getPageBySlug } from "@/lib/pages";
+import { NON_NESTABLE_FORMATS } from "@/lib/pages/nestedItemRoute";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
+import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
+import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 import { getShowById, getShowByIdRead } from "@/lib/api/shows";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getProductByIdRead } from "@/lib/api/products";
@@ -23,10 +26,10 @@ import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { isPaymentsProvider } from "@/lib/payments";
 import { contentItemToProduct, resolveStorefrontSectionConfig } from "@hillbombcreations/site-renderer";
 import { templatesProductToRenderer } from "@/components/PageTemplates/ProductDetailRenderer/templatesProductToRenderer";
-import { providerMissIsFinal, storefrontItemSources } from "@/lib/detail/storefrontSources";
+import { providerMissIsFinal, readsProviderProduct } from "@/lib/detail/storefrontSources";
 import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
-import { getIntegrationItems, getCollectionItems } from "@/lib/api/collections";
+import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import { parseProductQuery } from "@/lib/composition/productQuery";
@@ -39,6 +42,7 @@ import type {
   PageCtaConfig as RendererPageCtaConfig,
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
+import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
@@ -56,6 +60,7 @@ import {
 } from "@hillbombcreations/site-renderer";
 import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
+import { detailFieldMap, enterDetailItems } from "@/lib/detail/detailItems";
 import RichTextImages from "@/components/RichTextImages";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
 import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
@@ -67,7 +72,9 @@ import {
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
-import { detailItemMetaText } from "@/lib/seo/detailItemMetaText";
+import { seedFreeMeta, seedFreeText } from "@/lib/seo/seedFreeText";
+import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
+import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
@@ -248,6 +255,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // lists these by their joined slug, so the file and the route agree here
     // too.
     if (isPageTurnedOff(nestedPage)) return notFound();
+    // W25 review C2: a nested page whose body is entirely kit seed 404s, as in
+    // `[slug]/page.tsx` (see src/lib/seo/seedOnlyPaths.ts).
+    if (isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) return notFound();
 
     // Defensive guard: formats needing runtime component overrides or their own
     // interactive arms never render via renderComposedPage. If one appears nested,
@@ -262,18 +272,16 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // detail arm above, not caused by it). `team` needs no live component
     // override (unlike `products`' CartAdapter) and already composes fine as a
     // TOP-LEVEL page via the identical `renderComposedPage` → mapPageTemplate
-    // `'team'` dispatch (`[slug]/page.tsx`'s COMPOSE_FORMATS). The one real
-    // constraint — a nested team page's OWN member detail links would need a
-    // 3-segment route this file can't serve — degrades to today's existing
-    // 404 on click (same as any unreachable 3-segment URL), not a misrender;
-    // it does not block the roster PAGE itself from finally rendering.
+    // `'team'` dispatch (`[slug]/page.tsx`'s COMPOSE_FORMATS). A nested team
+    // page's OWN member detail links are 3-segment URLs; since W25f-2 the
+    // `[...segments]` catch-all hands them back to this component with the
+    // joined page slug, so they render here like any other member page.
     // `shows`/`products`/etc. are left untouched (no design-doc finding cites
     // them, and their detail arms carry real interactive/JSON-LD surface this
     // repo hasn't audited for the nested case).
-    const NON_NESTABLE_FORMATS = new Set([
-      "products", "schedule", "subscribe",
-      "checkout-success", "checkout-cancel", "home", "shows",
-    ]);
+    //
+    // The set lives in `@/lib/pages/nestedItemRoute`: the catch-all refuses a
+    // nested page's item URLs for exactly these formats.
     if (NON_NESTABLE_FORMATS.has(nestedPage.format)) return notFound();
     // Same live storefront overrides + controlled query as [slug]/page.tsx's
     // generic arm — a nested sub-page can compose a storefront group too, and
@@ -396,7 +404,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const showJsonLd = buildDetailJsonLd({
       format: 'shows',
       title: show.title,
-      description: show.description?.replace(/<[^>]*>/g, '').slice(0, 500),
+      // RT5-176: never a kit seed instruction in JSON-LD (lib/seo/seedCopy.ts).
+      description: seedFreeText(show.description, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
       // team branch already applies to member images.
@@ -408,8 +417,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={showJsonLd} />
-        <Navbar />
+        <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: show.title })} />
+        <Navbar hasMasthead={false} />
         {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
             carry no CMS rich text, so the client boundary stays as small as it
             can be. See src/components/RichTextImages. */}
@@ -463,13 +472,12 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
     const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
     const detailUrl = buildDetailUrl(siteData, slug, itemId);
+    const memberDescription = seedFreeText(member.description, 500);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
       '@type': 'Person',
       name: member.name,
-      ...(member.description
-        ? { description: member.description.replace(/<[^>]*>/g, '').slice(0, 500) }
-        : {}),
+      ...(memberDescription ? { description: memberDescription } : {}),
       ...(memberImage ? { image: memberImage } : {}),
       ...(detailUrl
         ? { url: detailUrl }
@@ -486,8 +494,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={memberJsonLd} />
-        <Navbar />
+        <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: member.name })} />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
@@ -514,7 +522,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // undefined ⇒ getProducts' legacy stripe default.
   const { integrationTypes } = collectBindingTargets(pageConfig);
   const paymentsProvider = integrationTypes.find((t) => isPaymentsProvider(t));
-  const productRead = storefrontItemSources(pageConfig, paymentsProvider).includes("provider")
+  const productRead = readsProviderProduct(pageConfig, paymentsProvider)
     ? await getProductByIdRead(itemId, paymentsProvider ?? "stripe")
     : null;
   const product = productRead?.product ?? null;
@@ -576,10 +584,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // more wrong claims, not fewer.
     const productImage =
       typeof product.imageUrl === 'string' ? product.imageUrl : undefined;
-    const productDescriptionRaw = offerFieldValue(product.description, offerVariant, variantValues);
-    const productDescription = productDescriptionRaw
-      ? productDescriptionRaw.replace(/<[^>]*>/g, '').slice(0, 500)
-      : undefined;
+    const productDescription = seedFreeText(offerFieldValue(product.description, offerVariant, variantValues), 500);
 
     // The claim and the button come from ONE function, evaluated at the SAME
     // variant. `resolveStock` + `computeStockState` is exactly the pair
@@ -648,8 +653,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={productJsonLd} />
-        <Navbar />
+        <JsonLd schema={withDetailBreadcrumbs(productJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: productName })} />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
             item={templatesProductToRenderer(product, siteLogo)}
@@ -750,10 +755,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // ⇒ the item is returned untouched.
     const effectiveItem = applyContextOverrides(item, contextRaw, scopedDetailPage?.context?.overrides);
 
-    const cleanDesc =
-      typeof effectiveItem.description === "string"
-        ? effectiveItem.description.replace(/<[^>]*>/g, "").slice(0, 500)
-        : undefined;
+    // RT5-176: a kit seed instruction is no description (lib/seo/seedCopy.ts).
+    const cleanDesc = seedFreeText(effectiveItem.description, 500);
     // A recipe's own fields: the authored ingredient and step lines verbatim,
     // and the three time scalars whose SUM is the total (derived here, never
     // authored, so it cannot contradict its parts).
@@ -781,7 +784,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // value is embedded in long-lived Recipe JSON-LD that crawler caches
       // outlive, so shipping markup here is worse than shipping it in a meta
       // tag. 500, not 160: JSON-LD has room and is not a preview card.
-      description: cleanDesc ?? plainMeta(recipe?.summary, 500),
+      description: cleanDesc ?? plainMeta(seedFreeMeta(recipe?.summary), 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
@@ -789,6 +792,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
+      // R4: the Article carries when the item last changed (absent when the
+      // record has no timestamp; never the clock).
+      dateModified: effectiveItem.updatedAt,
       ...(recipe
         ? {
             durableImageUrl: recipeCardUrl,
@@ -814,8 +820,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       const collectionProduct = contentItemToProduct(effectiveItem, { specFields: storefrontConfig?.specFields });
       return (
         <>
-          <JsonLd schema={itemJsonLd} />
-          <Navbar />
+          <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
+          <Navbar hasMasthead={false} />
           <RichTextImages map={richTextImages}>
           <ProductDetailRenderer
             item={{ ...collectionProduct, imageUrl: collectionProduct.imageUrl || siteLogo }}
@@ -839,8 +845,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
-        <Navbar />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
@@ -892,9 +898,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // arm above via `resolveItem` so both arms agree on lookup semantics.
     const menuItemKeyField = pageConfig.detailPage?.itemKeyField;
     if (itemsCollectionId) {
-      const { items, degraded, richTextImageUrls } = await getCollectionItems(itemsCollectionId, {
-        limit: 100,
-      });
+      // Every item, not the first 100 (v5 search R4).
+      const read = await getAllCollectionItems(itemsCollectionId);
+      const { degraded, richTextImageUrls } = read;
+      // `_system` readable, then the binding's field map (lib/detail/detailItems).
+      const items = enterDetailItems(read.items, detailFieldMap(pageConfig, itemsCollectionId));
       reads.push({ source: "menu-items", degraded });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
@@ -902,7 +910,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
-        const { items, degraded, richTextImageUrls } = await getCollectionItems(cid, { limit: 100 });
+        const read = await getAllCollectionItems(cid);
+        const { degraded, richTextImageUrls } = read;
+        const items = enterDetailItems(read.items, detailFieldMap(pageConfig, cid));
         reads.push({ source: "menu-sibling", degraded });
         Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);
@@ -937,10 +947,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       href: `/${slug}/${itemSegment(it, menuItemKeyField)}`,
     }));
 
-    const cleanDesc =
-      typeof item.description === "string"
-        ? item.description.replace(/<[^>]*>/g, "").slice(0, 500)
-        : undefined;
+    const cleanDesc = seedFreeText(item.description, 500);
     const itemJsonLd = buildDetailJsonLd({
       format: "products",
       title: item.title || pageConfig.name,
@@ -953,8 +960,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={itemJsonLd} />
-        <Navbar />
+        <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: item.title || undefined })} />
+        <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
             slug={slug}
@@ -1070,6 +1077,28 @@ function resolveMenuDetailCollections(pageConfig: { blocks?: unknown }): {
   return { itemsCollectionId: itemsB?.collectionId, siblingCollectionIds };
 }
 
+/**
+ * The menu item a detail address names, for its metadata (RT5-166): the same
+ * pools in the same order as the render's menu arm (the items binding, then
+ * each sibling), the same `_system` and field-map entry, the same lookup. A
+ * degraded read or a miss is `undefined`, and the caller falls back to the
+ * page-level title it always used.
+ */
+async function findMenuItemForMeta(
+  pageConfig: SiteData['pageConfigs'][number],
+  itemId: string
+): Promise<{ title?: unknown; description?: unknown } | undefined> {
+  const { itemsCollectionId, siblingCollectionIds } = resolveMenuDetailCollections(pageConfig);
+  const keyField = pageConfig.detailPage?.itemKeyField;
+  for (const cid of [itemsCollectionId, ...siblingCollectionIds]) {
+    if (!cid) continue;
+    const read = await getAllCollectionItems(cid);
+    const hit = resolveItem(enterDetailItems(read.items, detailFieldMap(pageConfig, cid)), itemId, keyField);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 export async function generateMetadata({ params }: Props) {
   // Same gate as the page, for the same reason: a gate-off build must not make
   // a `siteDetails` read that `force-dynamic` used to skip.
@@ -1090,14 +1119,15 @@ export async function generateMetadata({ params }: Props) {
   if (nestedPage) {
     // Off nested page: the render 404s it, and metadata resolves separately,
     // so without this the 404 would still be titled as the retired page.
-    if (isPageTurnedOff(nestedPage)) {
+    if (isPageTurnedOff(nestedPage) || isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) {
       return { title: `Not Found | ${siteName}` };
     }
     const seo = nestedPage.seo;
     const derived = nestedPage.labels?.title || nestedPage.name;
     const title = seo?.metaTitle || `${derived} | ${siteName}`;
     const description =
-      seo?.metaDescription || nestedPage.labels?.subtitle || `${derived} | ${siteName}`;
+      // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
+      seedFreeMeta(seo?.metaDescription) || seedFreeMeta(nestedPage.labels?.subtitle) || `${derived} | ${siteName}`;
     // OG route is a single dynamic segment; use the first URL segment so it
     // always resolves (nested pages fall back to the site card).
     const ogImageUrl = buildOgImageUrl(origin, slug);
@@ -1151,9 +1181,9 @@ export async function generateMetadata({ params }: Props) {
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
-    const cleanDesc = show.description?.replace(/<[^>]*>/g, "").slice(0, 160);
+    const cleanDesc = seedFreeText(show.description, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
-    const description = seo?.metaDescription || cleanDesc || `${show.title} | ${siteName}`;
+    const description = seedFreeMeta(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
     return {
       title,
       description,
@@ -1180,10 +1210,10 @@ export async function generateMetadata({ params }: Props) {
     const teamMembers = await getTeamMembers(collectionId);
     const member = teamMembers.find((m) => m.id === itemId);
     const name = member?.name;
-    const title =
-      seo?.metaTitle || (name ? `${name} | ${siteName}` : `Team Member | ${siteName}`);
+    // RT5-166: the member's own name wins over the roster's SEO title (itemPageTitle).
+    const title = itemPageTitle(pageConfig, member, siteName);
     const description =
-      seo?.metaDescription ||
+      seedFreeMeta(seo?.metaDescription) ||
       (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
     return {
       title,
@@ -1210,7 +1240,10 @@ export async function generateMetadata({ params }: Props) {
   // provider or collection sourced, resolved in the page's own order. The
   // shop's `seo.metaTitle` is authored for the shop and is not applied to its
   // items, or every product would keep one title, which is the defect.
-  if (pageConfig.format === "products") {
+  // Gated exactly like the render arm (`readsProviderProduct`), never on the
+  // format: a `catalog` shop with a Stripe grid renders products too (W25-10ca).
+  const metaPaymentsProvider = collectBindingTargets(pageConfig).integrationTypes.find((t) => isPaymentsProvider(t));
+  if (readsProviderProduct(pageConfig, metaPaymentsProvider)) {
     const summary = await resolveStorefrontItemSummary(siteData, pageConfig, itemId);
     if (summary) {
       const patternData = { item: summary.raw, context: null, siteName };
@@ -1300,9 +1333,10 @@ export async function generateMetadata({ params }: Props) {
         // trim-only. Sliced raw, the FIRST 160 characters of a recipe intro are
         // typically `<p>` and the opening words, which is what a pasted link
         // previewed with. `plainMeta` strips the tags and decodes the entities;
-        // see its header for why the decode is not optional.
+        // see its header for why the decode is not optional. RT5-176: the seed
+        // check runs on the whole summary before the cut (`recipeSummaryMeta`).
         const recipeSummary = isRecipe
-          ? plainMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary, 160)
+          ? recipeSummaryMeta(readRecipeFields(effectiveItem.raw as Record<string, unknown> | undefined).summary)
           : undefined;
 
         // The title/description/card-title resolution, ITEM DATA WINS, a
@@ -1368,11 +1402,42 @@ export async function generateMetadata({ params }: Props) {
     }
   }
 
+  // RT5-166: a menu item is titled by its own name, not the menu's ("Menu |
+  // The Old Mill Bakehouse" on "Brown Sugar Oat Cookie"). Same item-first order
+  // as the collection arm above (`detailItemMetaText`). The card image stays the
+  // page's, exactly as before.
+  if (pageConfig.format === "menu") {
+    const menuItem = await findMenuItemForMeta(pageConfig, itemId);
+    const menuItemTitle = menuItemOwnTitle(menuItem);
+    if (menuItem && menuItemTitle) {
+      const title = itemPageTitle(pageConfig, menuItem, siteName);
+      const { description, cardTitle } = detailItemMetaText({
+        itemTitle: menuItemTitle,
+        itemDescription: menuItem.description,
+        siteName,
+        patternTitle: undefined,
+        patternDescription: undefined,
+        pageMetaTitle: seo?.metaTitle,
+        pageMetaDescription: seo?.metaDescription,
+        pageSubtitle: pageConfig.labels?.subtitle,
+        pageName: pageConfig.name,
+      });
+      return {
+        title,
+        description,
+        ...routeCanonicalMetadata,
+        openGraph: { title: cardTitle, description, url: itemUrl, type: "article", siteName, images: [ogImageUrl] },
+        twitter: { card: "summary_large_image", title: cardTitle, description, images: [ogImageUrl] },
+      };
+    }
+  }
+
   // Products + any other item detail. Kept lightweight (no per-item fetch): the
   // section name is the sensible default title. `seo` still overrides.
-  const title = seo?.metaTitle || `${pageConfig.name} | ${siteName}`;
+  const title = itemPageTitle(pageConfig, undefined, siteName);
   const description =
-    seo?.metaDescription || pageConfig.labels?.subtitle || `${pageConfig.name} | ${siteName}`;
+    // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
+    seedFreeMeta(seo?.metaDescription) || seedFreeMeta(pageConfig.labels?.subtitle) || `${pageConfig.name} | ${siteName}`;
   return {
     title,
     description,

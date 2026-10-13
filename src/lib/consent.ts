@@ -17,8 +17,9 @@
  *  3. WITHDRAW it. GDPR requires withdrawal to be as easy as giving consent,
  *     and `/privacy` cannot describe a control that does not exist.
  *  4. Be the ONLY injection point for the C9 registry vendors. GA4 has a
- *     consent API and can load denied then upgrade; Clarity has none, so "not
- *     loaded" is the only gate that exists for it.
+ *     consent API, but on Vivreal's own site it is no longer loaded denied
+ *     either (owner decision 2026-10-12): it is injected here on accept, like
+ *     Clarity, so "not loaded" is the gate for both (`lib/gaConsentLoad.ts`).
  *
  * React-free on purpose: Templates' test runner (`node --test` with type
  * stripping) cannot compile JSX, so all behaviour lives here and
@@ -43,8 +44,51 @@
  * Design: docs/projects/vivreal-io-relaunch/DESIGN-G12-G14-INSTRUMENTATION.md
  */
 
-/** Same key the landing app writes, so a visitor's choice survives the swap. */
-export const COOKIE_CONSENT_KEY = 'cookie_consent_v1';
+import { acceptAttribution, rejectAttribution, withdrawAttribution } from './attributionCapture.ts';
+
+/**
+ * The stored choice. v2 since 2026-10-12: an accept given under the old banner
+ * wording (which described a visitor-identification service) is not consent to
+ * the current one, so every visitor is asked again. The v1 key is ignored and
+ * removed on the first mount (`LEGACY_CONSENT_KEYS`).
+ */
+export const COOKIE_CONSENT_KEY = 'cookie_consent_v2';
+/** Earlier keys, never read as consent, removed on mount. */
+export const LEGACY_CONSENT_KEYS: readonly string[] = Object.freeze(['cookie_consent_v1']);
+
+/**
+ * A host-only mirror of an ACCEPT, so the server can tell (the choice itself
+ * lives in localStorage, which a request does not carry). Set only on accept,
+ * deleted on reject, withdrawal and any mount without a stored accept. The two
+ * lead routes attach `vr_attr` only when it reads `accepted`
+ * (`lib/leadAttribution.ts`). Recording a consent choice is strictly
+ * necessary, and this one exists only for a visitor who accepted.
+ */
+export const CONSENT_COOKIE_NAME = 'vr_consent';
+const CONSENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60;
+
+function writeConsentCookie(accepted: boolean): void {
+  if (typeof document === 'undefined') return;
+  try {
+    const secure = typeof window !== 'undefined' && window.location?.protocol === 'https:' ? '; Secure' : '';
+    document.cookie = accepted
+      ? `${CONSENT_COOKIE_NAME}=${COOKIE_CONSENT_ACCEPTED}; Path=/; Max-Age=${CONSENT_COOKIE_MAX_AGE}; SameSite=Lax${secure}`
+      : `${CONSENT_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax`;
+  } catch {
+    // Cookies blocked: the server sees no accept, so no attribution is attached. Fail-closed.
+  }
+}
+
+function removeLegacyConsentKeys(): void {
+  if (typeof localStorage === 'undefined') return;
+  for (const key of LEGACY_CONSENT_KEYS) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Storage blocked: the legacy key is never read anyway.
+    }
+  }
+}
 
 /**
  * The ONLY stored value that means "this visitor granted consent". Strict
@@ -69,6 +113,11 @@ export interface VendorScript {
   domId: string;
   /** The vendor's snippet body — hard-coded in Templates source, never config. */
   innerHTML: string;
+  /**
+   * An external loader URL, built in Templates source from a validated id
+   * (GA's `gtag.js`, `lib/gaConsentLoad.ts`). Absent for inline snippets.
+   */
+  src?: string;
 }
 
 export interface ConsentState {
@@ -118,6 +167,7 @@ export function readStoredConsentChoice(): ConsentChoice | null {
 }
 
 function writeStoredConsentChoice(choice: ConsentChoice): void {
+  writeConsentCookie(choice === COOKIE_CONSENT_ACCEPTED);
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(COOKIE_CONSENT_KEY, choice);
@@ -127,6 +177,7 @@ function writeStoredConsentChoice(choice: ConsentChoice): void {
 }
 
 function clearStoredConsentChoice(): void {
+  writeConsentCookie(false);
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.removeItem(COOKIE_CONSENT_KEY);
@@ -199,7 +250,11 @@ export function injectVendorScript(vendor: VendorScript): void {
   const script = document.createElement('script');
   script.id = vendor.domId;
   script.type = 'text/javascript';
-  script.innerHTML = vendor.innerHTML;
+  if (vendor.src) {
+    script.async = true;
+    script.src = vendor.src;
+  }
+  if (vendor.innerHTML) script.innerHTML = vendor.innerHTML;
   document.head.appendChild(script);
 }
 
@@ -211,10 +266,14 @@ export function injectVendorScript(vendor: VendorScript): void {
  * choosing, which only happens on the click path. Firing it on every return
  * visit would inflate the accept count.
  */
-export function applyConsentedState(vendors: readonly VendorScript[] = []): void {
+export function applyConsentedState(vendors: readonly VendorScript[] = [], ga: readonly VendorScript[] = []): void {
   if (consentApplied) return;
   consentApplied = true;
 
+  // Google Analytics loads HERE and nowhere else on Vivreal's own site
+  // (`lib/gaConsentLoad.ts`): its init defines `gtag` default-denied, and the
+  // update below grants it. Before a choice, or after a reject, it never loads.
+  for (const script of ga) injectVendorScript(script);
   if (typeof window !== 'undefined') {
     window.gtag?.('consent', 'update', { analytics_storage: 'granted' });
   }
@@ -234,10 +293,14 @@ export function applyConsentedState(vendors: readonly VendorScript[] = []): void
 export function runConsentMount(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
+  ga: readonly VendorScript[] = [],
 ): ConsentState {
   const state = resolveConsentState(vivrealOwnSite);
   if (!state.gated) return state;
-  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors);
+  removeLegacyConsentKeys();
+  // Keep the server-side mirror in step with the stored choice on every page.
+  writeConsentCookie(state.choice === COOKIE_CONSENT_ACCEPTED);
+  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors, ga);
   return state;
 }
 
@@ -245,10 +308,13 @@ export function runConsentMount(
 export function grantConsent(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
+  ga: readonly VendorScript[] = [],
 ): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_ACCEPTED);
-  applyConsentedState(vendors);
+  applyConsentedState(vendors, ga);
+  // `vr_attr` is written only now, from the landing page held since the first visit.
+  acceptAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_accept', { event_category: 'Privacy' });
   }
@@ -259,6 +325,7 @@ export function grantConsent(
 export function denyConsent(vivrealOwnSite: boolean): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
   writeStoredConsentChoice(COOKIE_CONSENT_REJECTED);
+  rejectAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_reject', { event_category: 'Privacy' });
   }
@@ -281,6 +348,7 @@ export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void): C
   if (!vivrealOwnSite) return DENIED_STATE;
   clearStoredConsentChoice();
   resetConsentApplied();
+  withdrawAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     window.gtag?.('consent', 'update', { analytics_storage: 'denied' });
     window.gtag?.('event', 'cookie_consent_withdraw', { event_category: 'Privacy' });

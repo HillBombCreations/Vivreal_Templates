@@ -21,7 +21,10 @@ test('demo site with a populated (stale, prod-pointing) canonicalUrl and no know
   assert.equal(metadata.alternates, undefined, 'no canonical link at all — the persisted canonicalUrl never leaks');
 });
 
-test('demo site with a populated canonicalUrl AND a known prospect source: canonical points at the source, never at canonicalUrl', () => {
+// W25-12a (owner decision 2026-10-10): a demo or prospect names NO canonical,
+// including a source URL on another host. This used to expect the source as
+// the canonical; that is the rule that let four demos name https://vivreal.io.
+test('REFUSE (W25-12a): a demo with a known source URL on another host emits no canonical, and never canonicalUrl', () => {
   const siteData = {
     lifecycleState: 'demo',
     canonicalUrl: 'https://vivreal.io',
@@ -29,12 +32,24 @@ test('demo site with a populated canonicalUrl AND a known prospect source: canon
   } as SiteData;
   const metadata = buildRootMetadata(siteData);
   assert.deepEqual(metadata.robots, { index: false, follow: false }, 'noindex still fires for the demo');
-  assert.deepEqual(metadata.alternates, { canonical: 'https://prospect-original.example' });
-  assert.notEqual(
-    metadata.alternates?.canonical,
-    siteData.canonicalUrl,
-    'the persisted (pre-cutover, possibly stale) canonicalUrl never becomes the emitted canonical',
-  );
+  assert.equal(metadata.alternates, undefined, 'no canonical: neither the source nor the persisted canonicalUrl');
+});
+
+test('REFUSE (W25-12a): Meridian shape, a demo whose source field holds our own home page, names no canonical', () => {
+  const siteData = {
+    lifecycleState: 'demo',
+    sourceUrl: 'https://vivreal.io',
+    domainInformation: { live_url: 'https://meridian-aesthetics.vivreal.io' },
+  } as unknown as SiteData;
+  const metadata = buildRootMetadata(siteData);
+  assert.deepEqual(metadata.robots, { index: false, follow: false });
+  assert.equal(metadata.alternates, undefined);
+});
+
+test('REFUSE (W25-12a): a prospect is treated as a demo: noindex and no canonical', () => {
+  const metadata = buildRootMetadata({ lifecycleState: 'prospect', sourceUrl: 'https://prospect-original.example' } as unknown as SiteData);
+  assert.deepEqual(metadata.robots, { index: false, follow: false });
+  assert.equal(metadata.alternates, undefined);
 });
 
 test('control: an affirmatively live site emits no noindex and no root-level alternates (the home canonical is page.tsx\'s job, not the layout\'s)', () => {
@@ -52,7 +67,7 @@ test('control: an affirmatively live site emits no noindex and no root-level alt
 // before the demoSafety.ts fix.
 
 for (const lifecycleState of ['', 'pending', 'Demo', 'DEMO', ' live']) {
-  test(`ambiguous doc lifecycleState ${JSON.stringify(lifecycleState)} fails safe toward demo: noindex fires, source canonical wins`, () => {
+  test(`ambiguous doc lifecycleState ${JSON.stringify(lifecycleState)} fails safe toward demo: noindex fires, no canonical`, () => {
     const siteData = {
       lifecycleState,
       canonicalUrl: 'https://prod-apex.example',
@@ -60,7 +75,8 @@ for (const lifecycleState of ['', 'pending', 'Demo', 'DEMO', ' live']) {
     } as unknown as SiteData;
     const metadata = buildRootMetadata(siteData);
     assert.deepEqual(metadata.robots, { index: false, follow: false });
-    assert.deepEqual(metadata.alternates, { canonical: 'https://prospect-original.example' });
+    // W25-12a: a demo names no canonical (this used to expect the source URL).
+    assert.equal(metadata.alternates, undefined);
   });
 }
 

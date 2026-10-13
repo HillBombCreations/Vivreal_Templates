@@ -84,7 +84,9 @@ test('Phase 0.1: a products page misses to the collection arm when one serves it
 });
 
 test('Phase 0.1: the provider read asks the shared source order', () => {
-  assert.match(source, /storefrontItemSources\(pageConfig, paymentsProvider\)\.includes\("provider"\)/);
+  // W25-10ca: through `readsProviderProduct`, which is
+  // `storefrontItemSources(...).includes('provider')` (storefrontSources.test.ts).
+  assert.match(source, /const productRead = readsProviderProduct\(pageConfig, paymentsProvider\)/);
 });
 
 test('Phase 0.1: a collection-sourced products item renders through the product renderer', () => {
@@ -94,7 +96,8 @@ test('Phase 0.1: a collection-sourced products item renders through the product 
 });
 
 test('Phase 0.3: a product page describes its own product, with its own card', () => {
-  assert.match(source, /if \(pageConfig\.format === "products"\) \{\s*const summary = await resolveStorefrontItemSummary\(siteData, pageConfig, itemId\);/);
+  // W25-10ca: gated like the render arm, not on the format (a catalog shop with a Stripe grid).
+  assert.match(source, /if \(readsProviderProduct\(pageConfig, metaPaymentsProvider\)\) \{\s*const summary = await resolveStorefrontItemSummary\(siteData, pageConfig, itemId\);/);
   assert.match(source, /productItemMetaText\(\{/);
   assert.match(source, /const productCardUrl = buildOgItemImageUrl\(origin, slug, itemId\);/);
 });
@@ -166,16 +169,19 @@ test("generateMetadata's team arm scopes the roster via getPageCollectionId, lik
   );
 });
 
-test('control: a genuinely nameless team member still gets the sensible title fallback', () => {
-  // Pairs with the test above, which fixes WHICH roster is read. It must not
-  // touch the fallback text itself: a member whose name really is blank
-  // (distinct from "wrong roster, so never found at all") still needs a
-  // sensible <title> rather than an empty one.
-  assert.match(
-    source,
-    /const name = member\?\.name;\s*const title =\s*seo\?\.metaTitle \|\| \(name \? `\$\{name\} \| \$\{siteName\}` : `Team Member \| \$\{siteName\}`\);/,
-    'the name-present/name-absent title fallback must still be in place',
-  );
+test('RT5-166: the team, menu and default arms title through itemPageTitle, the menu lookup through the render\'s pools', () => {
+  // The title rules themselves are tested by calling them, in
+  // src/lib/seo/itemPageTitle.test.ts. This pins only that the route reaches them.
+  const calls = source.match(/itemPageTitle\(pageConfig, (member|menuItem|undefined), siteName\)/g) ?? [];
+  assert.deepEqual(calls, [
+    'itemPageTitle(pageConfig, member, siteName)',
+    'itemPageTitle(pageConfig, menuItem, siteName)',
+    'itemPageTitle(pageConfig, undefined, siteName)',
+  ]);
+  // The lookup mirrors the render's menu arm: its pools, its `_system` entry, its resolver.
+  const helper = /async function findMenuItemForMeta\([\s\S]*?\r?\n\}\r?\n/.exec(source)?.[0] ?? '';
+  assert.match(helper, /resolveMenuDetailCollections\(pageConfig\)/);
+  assert.match(helper, /resolveItem\(enterDetailItems\(read\.items, detailFieldMap\(pageConfig, cid\)\), itemId, keyField\)/);
 });
 
 // ── generateMetadata's generic collection item arm must actually fetch and
@@ -204,10 +210,14 @@ test('the metadata item-fetch gate asks the same predicate the render path alrea
 
 test('title/description/card-title are resolved through the shared, tested resolver', () => {
   assert.match(source, /const \{ title, description, cardTitle \} = detailItemMetaText\(\{/);
+  // The import also names `recipeSummaryMeta` (RT5-176), so other names may follow.
   assert.match(
     source,
-    /import \{ detailItemMetaText \} from "@\/lib\/seo\/detailItemMetaText"/,
+    /import \{ detailItemMetaText(, [A-Za-z]+)* \} from "@\/lib\/seo\/detailItemMetaText"/,
   );
+  // RT5-176: the recipe summary is seed-checked whole, BEFORE the 160-character cut.
+  assert.match(source, /recipeSummaryMeta\(readRecipeFields\(/);
+  assert.doesNotMatch(source, /plainMeta\(readRecipeFields\(/);
   // The pre-fix form, recipes-only: every other format's title/card discarded
   // the item in hand. Must be gone, not just supplemented.
   assert.doesNotMatch(source, /isRecipe && itemTitle \? itemTitle : pageConfig\.name/);

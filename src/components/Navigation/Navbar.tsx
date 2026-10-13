@@ -2,6 +2,7 @@ import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcr
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import NavbarChrome from './NavbarChrome';
 
 /**
@@ -24,8 +25,15 @@ import NavbarChrome from './NavbarChrome';
  * as `mastheadTone`, so a `transparent-on-hero` header lands on the solid
  * token set at scroll 0 over a LIGHT masthead (a media-less `statement`
  * hero) instead of painting white ink on white. Omitting `page` ⇒ `null` ⇒
- * the renderer's pre-1.54.0 behaviour, byte-identical — the detail-page
- * mounts and the welcome fallback pass nothing.
+ * the renderer's pre-1.54.0 behaviour, byte-identical. The welcome fallback
+ * passes nothing.
+ *
+ * FP2-27 (TC-r2): `hasMasthead`, passed `false` by every item-detail mount
+ * (`[slug]/[itemId]/page.tsx`). No detail hero draws a full-bleed image under
+ * the bar (every variant sits in a padded column below it), so a
+ * `transparent-on-hero` kit (Larkspur) must land on the solid token set at
+ * scroll 0, not white ink over a white item page. Absent ⇒ the renderer's
+ * default `true`, byte-identical for every other mount.
  *
  * GATE-1b (saas-1 kit, same renderer train) — the SAME `page` also decides
  * whether the header stays PINNED: `resolveHeaderPinned(page)` is `false`
@@ -37,7 +45,7 @@ import NavbarChrome from './NavbarChrome';
  * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
  * the same derivation.
  */
-const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
+const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null; hasMasthead?: boolean } = {}) => {
   const siteData = await getSiteData();
   const mastheadTone = resolveMastheadTone(page ?? null);
   const pinned = resolveHeaderPinned(page ?? null);
@@ -71,6 +79,9 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       siteName={siteName}
       logoUrl={logoUrl}
       logoScrolledUrl={logoScrolledUrl}
+      // W25 review C2 (renderer 1.85.8): seed-only pages answer 404, so their
+      // links go. Empty ⇒ the renderer's header, byte-identical.
+      hiddenPaths={await getSeedOnlyPaths()}
       navItems={navItems}
       accentColor={siteData?.primary}
       pageConfigs={pageConfigs}
@@ -79,6 +90,7 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       secondaryCta={siteData?.navigation?.secondaryCta ?? null}
       headerStyle={siteData?.navigation?.headerStyle ?? null}
       mastheadTone={mastheadTone}
+      hasMasthead={hasMasthead}
       pinned={pinned}
       // Gate-2 §7 — overlay menu opt-in. Pass-through only: the renderer's
       // resolveMediaSrc reads a pre-signed URL string or an inlined
@@ -158,6 +170,11 @@ const Navbar = async ({ page }: { page?: RendererPageConfig | null } = {}) => {
       // Utility strip (identity kits §5.3) — same in-header contract as the
       // announcement; stacks under an 'above'-placed announcement.
       utilityStrip={siteData?.utilityStrip ?? null}
+      // Renderer 1.85.0 (F-C15): with `utilityStrip.showHours` on, the strip's
+      // left slot shows today's line from the business's one set of hours,
+      // computed in the browser. Absent hours keep the authored text.
+      hours={siteData?.businessInfo?.hours ?? null}
+      timezone={siteData?.timezone}
     />
   );
 };

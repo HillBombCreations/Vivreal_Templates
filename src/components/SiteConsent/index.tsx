@@ -11,6 +11,7 @@ import {
   type VendorScript,
 } from '@/lib/consent';
 import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorTags';
+import { resolveConsentGaScripts, type ConsentGaConfig } from '@/lib/gaConsentLoad';
 
 /**
  * The vivreal.io cookie-consent surface (G13 / C2) — banner + persistent
@@ -57,6 +58,7 @@ const INERT: ConsentState = {
 export default function SiteConsent({
   vivrealOwnSite,
   additional,
+  analytics,
 }: {
   /**
    * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Required, so
@@ -72,6 +74,12 @@ export default function SiteConsent({
    * nothing about whether a snippet may RUN; `vivrealOwnSite` decides that.
    */
   additional?: AdditionalVendorConfig[];
+  /**
+   * `siteData.analytics` (provider and tracking id). On Vivreal's own site the
+   * layout renders no GA tag; GA loads from here on accept only
+   * (`lib/gaConsentLoad.ts`).
+   */
+  analytics?: ConsentGaConfig | null;
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
   // Fail-closed inside: an unknown provider or a non-matching id yields
@@ -79,6 +87,7 @@ export default function SiteConsent({
   // customer site is `vivrealOwnSite`, threaded into every controller call
   // below, not anything this line does.
   const vendors: VendorScript[] = useMemo(() => resolveVendorScripts(additional), [additional]);
+  const ga: VendorScript[] = useMemo(() => resolveConsentGaScripts(analytics), [analytics]);
   // A visitor who dismisses with the X has not decided; hide the banner for
   // this page view without storing anything, so the next load asks again.
   const [dismissed, setDismissed] = useState(false);
@@ -87,7 +96,7 @@ export default function SiteConsent({
     // Restore-on-mount. This is the D3 fix: a returning visitor who accepted
     // previously never sees the banner, so the ONLY path that can upgrade GA4
     // and inject the registry vendors for them is right here.
-    setState(runConsentMount(vivrealOwnSite, vendors));
+    setState(runConsentMount(vivrealOwnSite, vendors, ga));
     // `vendors` and `vivrealOwnSite` are both derived from server-rendered
     // props and are stable for the page's lifetime; re-running this effect
     // would re-enter the grant path.
@@ -95,8 +104,8 @@ export default function SiteConsent({
   }, []);
 
   const onAccept = useCallback(
-    () => setState(grantConsent(vivrealOwnSite, vendors)),
-    [vivrealOwnSite, vendors],
+    () => setState(grantConsent(vivrealOwnSite, vendors, ga)),
+    [vivrealOwnSite, vendors, ga],
   );
   const onReject = useCallback(() => setState(denyConsent(vivrealOwnSite)), [vivrealOwnSite]);
   const onWithdraw = useCallback(
@@ -137,17 +146,16 @@ export default function SiteConsent({
             </h2>
             {/*
               Rev 2 requirement 3: the copy must match what Accept actually
-              turns on. With a business-visitor identification tag in the accept
-              bucket, "we analyse traffic" is no longer an accurate summary —
-              the identification clause below is load-bearing, not padding, and
-              must not be softened without changing what the tag does.
+              turns on (lib/consent.ts, lib/vendorTags.ts). Owner-approved
+              wording, pinned by consentCopy.test.ts: change it only together
+              with what the controller loads.
             */}
             <p className="text-sm" style={{ color: 'var(--text-primary, #111111)' }}>
-              We use cookies and similar technologies to analyse how this site is used, to
-              improve it, and for marketing. If you accept, we also use a business-visitor
-              identification service that may work out who you are (your name, work email
-              and employer) from your device and network, even if you never fill in a form,
-              and we may contact you about Vivreal. See our{' '}
+              We use cookies to see how people use this site and to make it better. If you
+              accept, we turn on Google Analytics, which counts visits, and Microsoft Clarity,
+              which shows us how people move around a page, with anything you type hidden.
+              Reject, and neither runs. You can change your mind any time under Cookie
+              settings at the bottom of the page. See our{' '}
               <Link
                 href="/privacy"
                 className="underline"

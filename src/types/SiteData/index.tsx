@@ -18,6 +18,7 @@ import type {
   UtilityStripConfig,
   FulfillmentStripConfig,
   DetailPageConfig,
+  SiteHours,
 } from '@hillbombcreations/site-renderer';
 
 /**
@@ -94,7 +95,25 @@ export interface Businessinfo {
     },
     name?: string,
     description?: string,
-    shipping?: boolean
+    shipping?: boolean,
+    /** The owner's Google Maps listing, emitted as JSON-LD `sameAs`. */
+    googleBusinessUrl?: string | null,
+    /**
+     * F-C15 (Schemas 1.59.0): the business's one set of hours, in the
+     * renderer's hours grammar. Absent on every site saved before it, and then
+     * every hours surface draws exactly as before.
+     */
+    hours?: SiteHours,
+    /** F-C15: the towns the business serves (JSON-LD `areaServed`). */
+    serviceArea?: string[],
+    /** F-C15: where customers leave a review (https only, Schemas-validated). */
+    reviewLink?: string,
+    /**
+     * F-C15 (OD-9): show the email on the site. VR_Client_API resolves an
+     * absent value to `true` (v5 `withResolvedShowEmail`); only an explicit
+     * `false` hides it.
+     */
+    showEmail?: boolean
 }
 
 export interface SocialLink {
@@ -176,6 +195,8 @@ export interface PageConfig {
      * search engines.
      */
     enabled?: boolean;
+    /** R5: when this page last changed (VR_Client_API v5; the site's date when the page has none). */
+    updatedAt?: string | null;
     cta?: PageCtaConfig;
     /**
      * References the renderer's `DetailPageConfig` directly (two-axis
@@ -737,6 +758,40 @@ export interface SiteData {
      */
     lifecycleState?: 'demo' | 'live';
     /**
+     * IANA time zone of the business (`siteDetails.values.timezone`), for the
+     * hours lines computed in the browser and the JSON-LD hours. Absent means
+     * the renderer's own default.
+     */
+    timezone?: string;
+    /**
+     * Search R3: Call and Directions buttons on phones. Stored flat in
+     * `siteDetails.values`. Absent or `true` shows them whenever there is a
+     * phone or an address; `false` never.
+     */
+    contactButtons?: boolean;
+    /**
+     * RT5-181: an Inquire button beside Call and Directions, to the site's
+     * inquiry page (renderer 1.85.4). Stored flat in `siteDetails.values`.
+     * Only `true` turns it on.
+     */
+    contactButtonsInquire?: boolean;
+    /**
+     * R5: when the site document last changed (VR_Client_API v5), an ISO
+     * string. The page list's dates come from here and from each page's and
+     * item's own `updatedAt`, never from the clock.
+     */
+    updatedAt?: string | null;
+    /**
+     * F-C19: which product lists cannot sell right now. `state` is the
+     * strongest over every list, `lists` maps a collection id to `'paused'`
+     * or `'moving'`; a list absent from it is selling. Always present from
+     * VR_Client_API v5; absent on an older payload, which means selling.
+     */
+    commerce?: {
+        state: 'selling' | 'paused' | 'moving';
+        lists: Record<string, 'paused' | 'moving'>;
+    };
+    /**
      * Set ONLY by `FALLBACK_SITE_DATA`. This object is not a site, it is the
      * placeholder returned when VR_Client_API could not be read at all.
      *
@@ -750,11 +805,9 @@ export interface SiteData {
     degraded?: true;
     /**
      * The prospect's ORIGINAL live URL, carried from the migration source
-     * (`inventory.meta.sourceUrl`). On a `demo` site the root-layout metadata
-     * emits `<link rel="canonical">` → this URL so even a crawler that reaches
-     * the demo attributes the content to the prospect's real site (SEO-signal
-     * preservation, per the plan's §4A canonical-to-source rule). Absent ⇒ no
-     * canonical override (the `noindex` alone still protects the prospect).
+     * (`inventory.meta.sourceUrl`). No longer read for the canonical: a demo
+     * or prospect names none (W25-12a, owner decision 2026-10-10; see
+     * `src/lib/seo/rootMetadata.ts`), and its `noindex` protects the prospect.
      */
     sourceUrl?: string;
     /**

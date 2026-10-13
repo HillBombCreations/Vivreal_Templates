@@ -30,6 +30,8 @@
  */
 
 import type { Attribution, AttributionTouch } from './attribution.ts';
+import { COOKIE_CONSENT_ACCEPTED, CONSENT_COOKIE_NAME } from './consent.ts';
+import { isVivrealOwnSite } from './vivrealApex.ts';
 
 export const ATTRIBUTION_COOKIE_NAME = 'vr_attr';
 
@@ -102,6 +104,26 @@ export function parseAttributionCookie(
 }
 
 /**
+ * The attribution a lead may carry: `vr_attr`, but ONLY on Vivreal's own
+ * sites (by `SITE_ID`) and ONLY when the visitor accepted (the `vr_consent`
+ * mirror cookie). Review of f32b2f9:
+ *  - the cookie is scoped to `.vivreal.io`, so it reaches customer sites on a
+ *    vivreal.io subdomain, whose contact forms must never fold Vivreal's
+ *    attribution into the customer's lead;
+ *  - a `vr_attr` written before 2026-10-12 (pre-decision, 90-day life) can
+ *    still be on a visitor who has not accepted, or who rejected.
+ * Anything else is null, so the lead carries no attribution.
+ */
+export function consentedAttribution(
+  cookieHeader: string | null | undefined,
+  siteId: string | undefined,
+): Attribution | null {
+  if (!isVivrealOwnSite(siteId)) return null;
+  if (readCookieFromHeader(cookieHeader, CONSENT_COOKIE_NAME) !== COOKIE_CONSENT_ACCEPTED) return null;
+  return parseAttributionCookie(cookieHeader);
+}
+
+/**
  * Flatten the FIRST touch into string lead fields.
  *
  * First touch, not last: it is the campaign that actually earned the visit, it
@@ -140,9 +162,10 @@ export function attributionLeadFields(
 export function mergeAttributionFields<T extends Record<string, string> | undefined>(
   fields: T,
   cookieHeader: string | null | undefined,
+  siteId: string | undefined,
 ): T | Record<string, string> {
   try {
-    const attribution = attributionLeadFields(parseAttributionCookie(cookieHeader));
+    const attribution = attributionLeadFields(consentedAttribution(cookieHeader, siteId));
     const keys = Object.keys(attribution);
     if (keys.length === 0) return fields;
 
@@ -173,9 +196,10 @@ export function mergeAttributionFields<T extends Record<string, string> | undefi
 export function mergeAttributionCustomFields(
   customFields: Record<string, unknown> | undefined,
   cookieHeader: string | null | undefined,
+  siteId: string | undefined,
 ): Record<string, unknown> | undefined {
   try {
-    const attribution = attributionLeadFields(parseAttributionCookie(cookieHeader));
+    const attribution = attributionLeadFields(consentedAttribution(cookieHeader, siteId));
     const keys = Object.keys(attribution);
     if (keys.length === 0) return customFields;
 

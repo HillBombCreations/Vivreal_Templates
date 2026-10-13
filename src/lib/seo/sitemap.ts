@@ -76,15 +76,40 @@ import { isPageTurnedOff } from '../pages/pageEnabled.ts';
  * items added for it — byte-identical to today's output when the map is
  * omitted entirely.
  */
+/** One detail item for the page list: its address segment and, when the record has one, its last change. */
+export interface SitemapItem {
+  segment: string;
+  lastModified?: string;
+}
+
+/**
+ * A recorded last-changed time, or `undefined`. R4: the page list claims a
+ * date only when the record has one. It used to stamp `new Date()` on every
+ * entry at every regeneration, so every URL on every site claimed it changed
+ * every five minutes, and search engines learn to ignore a date like that.
+ */
+export function sitemapDate(value: unknown): string | undefined {
+  if (typeof value !== 'string' && !(value instanceof Date)) return undefined;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
+}
+
+const asItem = (item: string | SitemapItem): SitemapItem => (typeof item === 'string' ? { segment: item } : item);
+
 export function buildSitemapEntries(
-  pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled'>[] | undefined,
+  pages:
+    | Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled' | 'updatedAt'>[]
+    | undefined,
   siteOrigin: string,
-  detailItemSegmentsByPage?: Record<string, string[]>,
+  detailItemsByPage?: Record<string, ReadonlyArray<string | SitemapItem>>,
+  { siteUpdatedAt }: { siteUpdatedAt?: string | null } = {},
 ): MetadataRoute.Sitemap {
   if (!siteOrigin) return [];
   const origin = siteOrigin.replace(/\/+$/, '');
 
   const allPages = pages ?? [];
+  const siteDate = sitemapDate(siteUpdatedAt);
+  const dated = (date: string | undefined) => (date ? { lastModified: date } : {});
 
   const eligiblePages = allPages.filter(
     (p) =>
@@ -98,51 +123,46 @@ export function buildSitemapEntries(
       pageIndexingBlock(p) === null,
   );
   const slugs = [...new Set(eligiblePages.map((p) => (p.slug as string).replace(/^\/+/, '')).filter(Boolean))];
+  const pageBySlug = new Map(eligiblePages.map((p) => [(p.slug as string).replace(/^\/+/, ''), p]));
 
-  // The root entry IS the home page, so the author rule has to reach it too.
-  // Without this, turning the Studio toggle off on home left `/` submitted in
-  // the sitemap while `app/page.tsx` served it `noindex`, the same Search
-  // Console contradiction, on the one URL that matters most.
-  //
-  // `isAuthorHiddenPage`, not `pageIndexingBlock`: only a human can remove the
-  // root entry. The format rule must never be able to, because a sitemap that
-  // lost its root over a fleet-wide type rule would be a silent, site-wide
-  // regression nobody authored. Same home-page identity test getSiteData()
-  // uses for `homePageConfig` (siteData/index.tsx), so the page whose metadata
-  // emits the `noindex` is exactly the page consulted here.
   const homePage = allPages.find((p) => p && (p.format === 'home' || p.slug === 'home'));
 
   const entries: MetadataRoute.Sitemap = [];
   if (!isAuthorHiddenPage(homePage)) {
-    entries.push({ url: origin, lastModified: new Date(), changeFrequency: 'monthly', priority: 1.0 });
+    entries.push({
+      url: origin,
+      ...dated(sitemapDate(homePage?.updatedAt) ?? siteDate),
+      changeFrequency: 'monthly',
+      priority: 1.0,
+    });
   }
-  // Slug priorities are derived from each slug's own position, never from the
-  // entries array, so dropping the root above cannot renumber anything.
   slugs.forEach((slug, idx) => {
     const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / slugs.length));
     entries.push({
       url: `${origin}/${slug}`,
-      lastModified: new Date(),
+      ...dated(sitemapDate(pageBySlug.get(slug)?.updatedAt) ?? siteDate),
       changeFrequency: 'monthly',
       priority: Number(priority.toFixed(2)),
     });
   });
 
-  // Detail items — only for pages that opted in (`detailPage.sitemap === true`)
-  // AND have resolved segments handed in. A page without `detailItemSegmentsByPage`
-  // at all (the fleet default: the param itself is omitted) adds nothing here,
-  // so `buildSitemapEntries(pages, origin)` (the 2-arg call every existing
-  // caller/test makes) is byte-identical output.
-  if (detailItemSegmentsByPage) {
+  // R4: detail items are listed BY DEFAULT for every eligible page the caller
+  // resolved items for (getSiteMap resolves them for every page with a detail
+  // route, through the same reader the route uses). The owner's
+  // `detailPage.sitemap: false` is the one opt-out; it used to be an opt-in.
+  if (detailItemsByPage) {
+    const seen = new Set<string>();
     for (const page of eligiblePages) {
-      if (page.detailPage?.sitemap !== true) continue;
+      if (page.detailPage?.sitemap === false) continue;
       const slug = (page.slug as string).replace(/^\/+/, '');
-      const segments = detailItemSegmentsByPage[slug];
-      if (!segments || segments.length === 0) continue;
-      for (const segment of segments) {
+      if (seen.has(slug)) continue;
+      seen.add(slug);
+      for (const item of detailItemsByPage[slug] ?? []) {
+        const { segment, lastModified } = asItem(item);
+        if (!segment) continue;
         entries.push({
           url: `${origin}/${slug}/${segment}`,
-          lastModified: new Date(),
+          ...dated(sitemapDate(lastModified)),
           changeFrequency: 'monthly',
           priority: 0.5,
         });

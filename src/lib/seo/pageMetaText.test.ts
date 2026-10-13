@@ -1,0 +1,145 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { homeMetaText, pageMetaText, readBusinessFacts, summaryCut, summaryFromFacts, SUMMARY_MAX_CHARS } from './pageMetaText.ts';
+import { resolvePageForSlug } from '../pages/builtInPages.ts';
+
+const COBALT = readBusinessFacts(
+  {
+    name: 'Cobalt & Crumb',
+    description: '<p>Small batch bread, baked daily.</p>',
+    address: { city: 'Knoxville', state: 'TN' },
+    contactInfo: {},
+  },
+  undefined,
+);
+const BARE = readBusinessFacts({ name: 'Cobalt & Crumb', contactInfo: {} }, undefined);
+
+// Item 23 (PR-6, ledger QA-W18-4).
+test('ALLOW (item 23): the checkout pages are titled by their format, not their raw slug', () => {
+  const success = pageMetaText({ page: resolvePageForSlug([], 'checkoutsuccess'), slug: 'checkoutsuccess', facts: COBALT });
+  const cancel = pageMetaText({ page: resolvePageForSlug([], 'checkoutcancel'), slug: 'checkoutcancel', facts: COBALT });
+  assert.equal(success.title, 'Thanks for your order | Cobalt & Crumb');
+  assert.equal(cancel.title, 'Checkout cancelled | Cobalt & Crumb');
+});
+
+test('ALLOW (item 23): a STORED checkout page whose name is the raw slug still gets the format title', () => {
+  const stored = { name: 'checkoutsuccess', slug: 'checkoutsuccess', format: 'checkout-success', labels: {} };
+  const { title } = pageMetaText({ page: stored, slug: 'checkoutsuccess', facts: COBALT });
+  assert.equal(title, 'Thanks for your order | Cobalt & Crumb');
+  assert.doesNotMatch(title, /checkoutsuccess/);
+});
+
+test('REFUSE (item 23): an owner-set title still wins over the format default', () => {
+  const metaTitle = { name: 'checkoutsuccess', format: 'checkout-success', labels: {}, seo: { metaTitle: 'Order received, thank you!' } };
+  const labelTitle = { name: 'checkoutsuccess', format: 'checkout-success', labels: { title: 'All done' } };
+  assert.equal(pageMetaText({ page: metaTitle, slug: 'checkoutsuccess', facts: COBALT }).title, 'Order received, thank you!');
+  assert.equal(pageMetaText({ page: labelTitle, slug: 'checkoutsuccess', facts: COBALT }).title, 'All done | Cobalt & Crumb');
+});
+
+// R4: default summaries from business facts.
+test('ALLOW (R4): a page with no summary of its own gets one from the business facts', () => {
+  const { description } = pageMetaText({ page: { name: 'Menu', format: 'menu', labels: {} }, slug: 'menu', facts: COBALT });
+  assert.equal(description, 'Menu at Cobalt & Crumb in Knoxville, TN. Small batch bread, baked daily.');
+});
+
+test('REFUSE (R4): the owner summary and subtitle still win over the facts', () => {
+  const owned = { name: 'Menu', format: 'menu', labels: { subtitle: 'What we bake' }, seo: { metaDescription: 'Our bread.' } };
+  assert.equal(pageMetaText({ page: owned, slug: 'menu', facts: COBALT }).description, 'Our bread.');
+  const subtitled = { name: 'Menu', format: 'menu', labels: { subtitle: 'What we bake' } };
+  assert.equal(pageMetaText({ page: subtitled, slug: 'menu', facts: COBALT }).description, 'What we bake');
+});
+
+test('REFUSE (R4): with no description and no town, nothing is invented and today\'s line stays', () => {
+  const { description } = pageMetaText({ page: { name: 'Menu', format: 'menu', labels: {} }, slug: 'menu', facts: BARE });
+  assert.equal(description, 'Menu | Cobalt & Crumb');
+});
+
+test('R4: the towns served stand in for an address, three at most, in words', () => {
+  const facts = readBusinessFacts(
+    { name: 'Clipper Lane', serviceArea: ['Alcoa', ' ', 'Maryville', 'Knoxville', 'Oak Ridge'], contactInfo: {} },
+    undefined,
+  );
+  assert.equal(summaryFromFacts('Haircuts', facts), 'Haircuts at Clipper Lane serving Alcoa, Maryville and Knoxville.');
+});
+
+test('R4: a long description is cut to the summary length', () => {
+  const facts = readBusinessFacts({ name: 'X', description: 'word '.repeat(80), contactInfo: {} }, undefined);
+  assert.ok((summaryFromFacts('Menu', facts) ?? '').length <= SUMMARY_MAX_CHARS);
+});
+
+test('ALLOW (R4): the home page title and summary name the town when the owner wrote neither', () => {
+  const { title, description } = homeMetaText({ seo: undefined, facts: COBALT });
+  assert.equal(title, 'Cobalt & Crumb | Knoxville, TN');
+  assert.equal(description, 'Cobalt & Crumb, in Knoxville, TN. Small batch bread, baked daily.');
+});
+
+test('REFUSE (R4): the home page keeps the owner\'s title and summary, and today\'s lines with no facts', () => {
+  assert.equal(homeMetaText({ seo: { metaTitle: 'Bread!', metaDescription: 'Ours.' }, facts: COBALT }).title, 'Bread!');
+  assert.equal(homeMetaText({ seo: { metaTitle: 'Bread!', metaDescription: 'Ours.' }, facts: COBALT }).description, 'Ours.');
+  const bare = homeMetaText({ seo: undefined, facts: BARE });
+  assert.equal(bare.title, 'Cobalt & Crumb');
+  assert.equal(bare.description, 'Welcome to Cobalt & Crumb. Discover our latest content, events, and more.');
+});
+
+// W25f-1: a kit seed instruction never reaches a search description. W25tc-1 (1.85.8): the press line is a
+// kept disclosure now, so the seed here is Juniper's about instruction.
+const PRESS_SEED = 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.';
+const BEFORE_AFTER =
+  'Baseline and review photographs are taken under fixed lighting so the comparison is a real one. The set below is illustrative placeholder photography.';
+
+test('REFUSE (W25f-1): a seed page subtitle is no summary; the business facts stand in', () => {
+  const page = { name: 'Press', format: 'standard', labels: { subtitle: PRESS_SEED } };
+  const { description } = pageMetaText({ page, slug: 'press', facts: COBALT });
+  assert.equal(description, 'Press at Cobalt & Crumb in Knoxville, TN. Small batch bread, baked daily.');
+  assert.doesNotMatch(description, /placeholder/i);
+});
+
+test('REFUSE (W25f-1, W25tc-1): a seed meta description is no summary; the Juniper /before-after subtitle stands in with its disclosure', () => {
+  const page = { name: 'Results', format: 'standard', labels: { subtitle: BEFORE_AFTER }, seo: { metaDescription: PRESS_SEED } };
+  assert.equal(pageMetaText({ page, slug: 'before-after', facts: COBALT }).description, BEFORE_AFTER);
+  assert.match(BEFORE_AFTER, /The set below is illustrative placeholder photography.$/);
+});
+
+test('REFUSE (W25f-1): a seed home meta description and a seed business description never reach the home summary', () => {
+  const seededFacts = readBusinessFacts(
+    { name: 'Juniper Row', description: `Skin studio in Los Angeles. ${PRESS_SEED}`, contactInfo: {} },
+    undefined,
+  );
+  assert.equal(seededFacts.description, 'Skin studio in Los Angeles.');
+  const { description } = homeMetaText({ seo: { metaDescription: PRESS_SEED }, facts: seededFacts });
+  assert.equal(description, 'Skin studio in Los Angeles.');
+});
+
+test('ALLOW (W25f-1): a real subtitle and a real meta description are used exactly as before', () => {
+  const page = { name: 'Press', format: 'standard', labels: { subtitle: 'Coverage from the editors.' } };
+  assert.equal(pageMetaText({ page, slug: 'press', facts: COBALT }).description, 'Coverage from the editors.');
+  assert.equal(homeMetaText({ seo: { metaDescription: 'Bread, daily.' }, facts: COBALT }).description, 'Bread, daily.');
+  assert.equal(COBALT.description, 'Small batch bread, baked daily.');
+});
+
+// F-1 review: Juniper /press fell back to "Written about at Juniper Row ... with results that", led by its
+// heading and cut mid-word. It now leads with the page name and ends on a sentence.
+const JUNIPER = readBusinessFacts(
+  {
+    name: 'Juniper Row Skin Studio',
+    description:
+      'A single-suite aesthetics studio in Los Angeles. Considered, unhurried treatment with results that look like you on a good day, never like a procedure.',
+    address: { city: 'Los Angeles', state: 'CA' },
+    contactInfo: {},
+  },
+  undefined,
+);
+
+test('REFUSE (F-1 review): a disclosure-only press page falls back to a summary led by its name, ending on a sentence', () => {
+  const disclosure = 'Placeholder press coverage for the demonstration template.';
+  const page = { name: 'Press', format: 'standard', labels: { title: 'Written about', subtitle: disclosure }, seo: { metaDescription: disclosure } };
+  const { description } = pageMetaText({ page, slug: 'press', facts: JUNIPER });
+  assert.equal(description, 'Press at Juniper Row Skin Studio in Los Angeles, CA. A single-suite aesthetics studio in Los Angeles.');
+});
+
+test('ALLOW (F-1 review): a summary that fits is kept whole; one with no sentence end is cut at a word', () => {
+  assert.equal(summaryCut('Short and whole.'), 'Short and whole.');
+  const long = summaryCut('word '.repeat(60).trim()) ?? '';
+  assert.ok(long.length <= SUMMARY_MAX_CHARS, 'within the budget');
+  assert.match(long, /word…$/, 'ends on a whole word and an ellipsis');
+});

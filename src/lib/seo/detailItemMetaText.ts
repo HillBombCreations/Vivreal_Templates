@@ -33,6 +33,7 @@
  */
 
 import { plainMeta } from './plainMeta.ts';
+import { seedFreeMeta } from './seedFreeText.ts';
 
 export interface DetailItemMetaInput {
   /** The item's own title, already resolved (context overlay applied). */
@@ -69,6 +70,17 @@ export interface DetailItemMetaResult {
   cardTitle: string;
 }
 
+/**
+ * A recipe's `summary` as the meta description's `recipeSummary` input:
+ * stripped and cut to 160 characters, or undefined when it is a kit seed
+ * instruction. The seed check runs on the WHOLE summary, BEFORE the cut: a
+ * long seed whose "replace with" falls after character 160 reads as real copy
+ * once it is cut, which is how it used to reach the meta (RT5-176).
+ */
+export function recipeSummaryMeta(summary: unknown): string | undefined {
+  return plainMeta(seedFreeMeta(summary), 160);
+}
+
 export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaResult {
   const itemTitle = input.itemTitle?.trim() || undefined;
   const fallbackTitle = `${input.pageName} | ${input.siteName}`;
@@ -79,12 +91,14 @@ export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaRe
     input.pageMetaTitle ||
     fallbackTitle;
 
+  // RT5-176: item text that is still a kit seed instruction counts as absent,
+  // so the page's own description is used instead (see ./seedCopy.ts).
   const description =
-    input.patternDescription ||
-    input.recipeSummary ||
-    plainMeta(input.itemDescription, 160) ||
-    input.pageMetaDescription ||
-    plainMeta(input.pageSubtitle, 160) ||
+    seedFreeMeta(input.patternDescription) ||
+    seedFreeMeta(input.recipeSummary) ||
+    plainMeta(seedFreeMeta(input.itemDescription), 160) ||
+    seedFreeMeta(input.pageMetaDescription) ||
+    plainMeta(seedFreeMeta(input.pageSubtitle), 160) ||
     title;
 
   const cardTitle = itemTitle || title;

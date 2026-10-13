@@ -411,7 +411,8 @@ const GATED_ROUTES = [
   '../app/[slug]/page.tsx',
   '../app/[slug]/[itemId]/page.tsx',
   '../app/robots.tsx',
-  '../app/sitemap.tsx',
+  '../app/sitemap.xml/route.ts',
+  '../app/sitemaps/[file]/route.ts',
   '../app/icon.tsx',
   '../app/apple-icon.tsx',
 ] as const;

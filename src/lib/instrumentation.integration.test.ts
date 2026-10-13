@@ -76,7 +76,7 @@ const CUSTOMER_SITE = false;
 function loadPage(vivrealOwnSite: boolean = VIVREAL_SITE) {
   const vendors = resolveVendorScripts(SITE_ANALYTICS_ADDITIONAL);
   const state = runConsentMount(vivrealOwnSite, vendors);
-  runAttributionCapture({ vivrealOwnSite, consentDenied: state.choice === 'rejected' });
+  runAttributionCapture({ vivrealOwnSite, consented: state.choice === 'accepted', consentDenied: state.choice === 'rejected' });
   return { vendors, state };
 }
 
@@ -129,9 +129,9 @@ test('(a1) first visit: the banner renders and NOTHING third-party fires yet', (
   assert.deepEqual(vendorIds(), [], 'no vendor may fire before a decision');
   assert.equal(grantedUpdates(), 0, 'GA4 stays in the denied default');
 
-  // vr_attr IS written pre-decision — deliberate, Open Question 5. The
-  // asymmetry `/privacy` must describe: first-party cookie yes, vendors no.
-  assert.equal(getAttribution()!.first.utm_campaign, 'proof');
+  // Owner decision 2026-10-12: no cookie before a choice, vr_attr included
+  // (it used to be written here, Open Question 5).
+  assert.equal(getAttribution(), null, 'no vr_attr before a decision');
 });
 
 test('(a2) DECLINE ⇒ no vendor tags, no consent upgrade, and no re-prompt', () => {
@@ -332,9 +332,9 @@ test('(b) the must-fail control: the same walk on a Vivreal site does everything
 
   assert.equal(state.gated, true, 'a Vivreal site IS under Vivreal consent');
   assert.equal(state.showBanner, true, 'and its visitor is asked');
-  assert.equal(getAttribution()!.first.utm_campaign, 'proof', 'and vr_attr is captured');
 
   grantConsent(VIVREAL_SITE, vendors);
+  assert.equal(getAttribution()!.first.utm_campaign, 'proof', 'and vr_attr is captured on accept');
   assert.deepEqual(vendorIds(), ['vr-vendor-clarity'], 'and the vendor injects on accept');
   trackLeadConversion({ vivrealOwnSite: VIVREAL_SITE, method: 'inline' });
   assert.equal(

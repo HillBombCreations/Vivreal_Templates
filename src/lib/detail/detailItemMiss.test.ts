@@ -301,7 +301,8 @@ test('SOURCE PIN: every read on the route reports whether it happened', () => {
     'await getTeamMembersRead(',
     'await getProductByIdRead(',
     'await lookupDetailItem(',
-    'await getCollectionItems(',
+    // v5 R4: the menu arms read every page of their lists, not the first 100.
+    'await getAllCollectionItems(',
   ]) {
     assert.ok(code.includes(call), `the route must read through ${call}...) to see a failed read`);
   }
@@ -368,16 +369,16 @@ test('SOURCE PIN: the sitemap refuses a short detail-item list rather than publi
   // drops those URLs from the sitemap as a perfectly successful render of a
   // legitimately short list, on site data that is completely healthy, so
   // #149's degraded-siteData guard never sees it.
+  // v5 R4: every page with a detail route now lists its items, through four
+  // readers. Each must see whether its read happened and refuse when it did not.
   const code = source('../api/siteData/index.tsx');
-  const at = code.indexOf('sitemapPages.map(async (page)');
+  const at = code.indexOf('const unknownItems = (): never =>');
   assert.ok(at > 0, 'sanity: the detail-item sitemap read was not found, this pin read nothing');
   const body = code.slice(at, code.indexOf('buildSiteMapForSite(', at));
-  assert.ok(
-    body.includes('await getCollectionItems(') && body.includes('degraded'),
-    'the sitemap read must see whether it happened',
-  );
-  assert.ok(
-    body.includes('refuseDegradedClaim('),
-    'and must refuse rather than emit a silently short sitemap',
-  );
+  assert.ok(body.includes('refuseDegradedClaim('), 'and must refuse rather than emit a silently short sitemap');
+  for (const read of ['await getAllCollectionItems(', 'await getShowsRead(', 'await getTeamMembersRead(', 'await getAllProductsRead(']) {
+    const i = body.indexOf(read);
+    assert.ok(i > 0, `the sitemap must read through ${read}...)`);
+    assert.ok(body.slice(i, i + 200).includes('if (degraded) unknownItems();'), `${read}...) must refuse on a degraded read`);
+  }
 });
