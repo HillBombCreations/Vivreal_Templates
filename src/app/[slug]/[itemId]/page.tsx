@@ -72,8 +72,7 @@ import {
 } from "@/lib/detail/detailFormats";
 import { readRecipeFields } from "@/lib/recipes/recipeFields";
 import { plainMeta } from "@/lib/seo/plainMeta";
-import { withoutSeedCopy } from "@/lib/seo/seedCopy";
-import { seedFreeText } from "@/lib/seo/seedFreeText";
+import { seedFreeMeta, seedFreeText } from "@/lib/seo/seedFreeText";
 import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
 import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
@@ -785,7 +784,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // value is embedded in long-lived Recipe JSON-LD that crawler caches
       // outlive, so shipping markup here is worse than shipping it in a meta
       // tag. 500, not 160: JSON-LD has room and is not a preview card.
-      description: cleanDesc ?? plainMeta(withoutSeedCopy(recipe?.summary), 500),
+      description: cleanDesc ?? plainMeta(seedFreeMeta(recipe?.summary), 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
@@ -1128,7 +1127,7 @@ export async function generateMetadata({ params }: Props) {
     const title = seo?.metaTitle || `${derived} | ${siteName}`;
     const description =
       // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
-      withoutSeedCopy(seo?.metaDescription) || withoutSeedCopy(nestedPage.labels?.subtitle) || `${derived} | ${siteName}`;
+      seedFreeMeta(seo?.metaDescription) || seedFreeMeta(nestedPage.labels?.subtitle) || `${derived} | ${siteName}`;
     // OG route is a single dynamic segment; use the first URL segment so it
     // always resolves (nested pages fall back to the site card).
     const ogImageUrl = buildOgImageUrl(origin, slug);
@@ -1184,7 +1183,7 @@ export async function generateMetadata({ params }: Props) {
     }
     const cleanDesc = seedFreeText(show.description, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
-    const description = withoutSeedCopy(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
+    const description = seedFreeMeta(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
     return {
       title,
       description,
@@ -1214,7 +1213,7 @@ export async function generateMetadata({ params }: Props) {
     // RT5-166: the member's own name wins over the roster's SEO title (itemPageTitle).
     const title = itemPageTitle(pageConfig, member, siteName);
     const description =
-      withoutSeedCopy(seo?.metaDescription) ||
+      seedFreeMeta(seo?.metaDescription) ||
       (name ? `Learn more about ${name} at ${siteName}.` : `Team member at ${siteName}.`);
     return {
       title,
@@ -1438,7 +1437,7 @@ export async function generateMetadata({ params }: Props) {
   const title = itemPageTitle(pageConfig, undefined, siteName);
   const description =
     // W25f-1: a kit seed instruction is no description (lib/seo/seedCopy.ts).
-    withoutSeedCopy(seo?.metaDescription) || withoutSeedCopy(pageConfig.labels?.subtitle) || `${pageConfig.name} | ${siteName}`;
+    seedFreeMeta(seo?.metaDescription) || seedFreeMeta(pageConfig.labels?.subtitle) || `${pageConfig.name} | ${siteName}`;
   return {
     title,
     description,

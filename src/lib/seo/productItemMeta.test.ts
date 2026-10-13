@@ -36,3 +36,12 @@ test('a blank item title falls back to the page name', () => {
 test('a description is capped at 160 characters', () => {
   assert.ok(productItemMetaText({ ...BASE, itemDescription: 'x'.repeat(400) }).description.length <= 160);
 });
+
+test('REFUSE (F-1): a seed description pattern falls back like a seed item description', () => {
+  const seed = 'Placeholder product note. Replace with your own description.';
+  assert.equal(productItemMetaText({ ...BASE, itemDescription: seed, patternDescription: seed }).description, 'Forty-eight pieces, each one of one.');
+});
+
+test('ALLOW (F-1): a real description pattern is kept', () => {
+  assert.equal(productItemMetaText({ ...BASE, patternDescription: 'One of one, hand-set turnlock.' }).description, 'One of one, hand-set turnlock.');
+});

@@ -137,3 +137,29 @@ test('an item title that is only whitespace is treated as absent', () => {
   const out = detailItemMetaText({ ...BASE, itemTitle: '   ' });
   assert.equal(out.title, 'Blog | Vivreal');
 });
+
+// F-1 (v5 final walk): Halo's journal authors `descriptionPattern:
+// "{item.description}"`, so the pattern carried the kit seed past the seed
+// rule straight into meta, og:description and twitter:description.
+const HALO_JOURNAL = 'Placeholder journal entry. Replace with your own writing.';
+
+test('REFUSE (F-1): a Halo journal entry through its description pattern falls back to the page description', () => {
+  const out = detailItemMetaText({
+    ...BASE,
+    itemTitle: 'Why we cut dry',
+    itemDescription: HALO_JOURNAL,
+    siteName: 'Halo Blow Dry Bar',
+    patternDescription: HALO_JOURNAL,
+    pageMetaDescription: 'Notes from behind the chair.',
+    pageName: 'Journal',
+  });
+  assert.equal(out.description, 'Notes from behind the chair.');
+  const bare = detailItemMetaText({ ...BASE, itemTitle: 'Why we cut dry', itemDescription: 'Placeholder journal entry.', patternDescription: 'Placeholder journal entry.', siteName: 'Halo Blow Dry Bar' });
+  assert.equal(bare.description, 'Why we cut dry | Halo Blow Dry Bar', 'a disclosure alone falls back to the title');
+});
+
+test('ALLOW (F-1): a real article excerpt through the description pattern is kept', () => {
+  const excerpt = 'Why we cut dry: you see the shape you will actually wear.';
+  const out = detailItemMetaText({ ...BASE, itemDescription: excerpt, patternDescription: excerpt, pageMetaDescription: 'Notes from behind the chair.' });
+  assert.equal(out.description, excerpt);
+});

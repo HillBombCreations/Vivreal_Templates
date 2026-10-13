@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { seedFreeText } from './seedFreeText.ts';
+import { seedFreeMeta, seedFreeText } from './seedFreeText.ts';
 
 const PARTLY_SEEDED = 'Three sessions over six weeks. Placeholder journal entry. Replace with your own writing.';
 const KEPT = 'Three sessions over six weeks.';
@@ -24,10 +24,31 @@ test('REFUSE (W25f-1): a description that is seed as a whole publishes nothing',
   assert.equal(seedFreeText('<p>Placeholder bio, replace with your story.</p>', 500), undefined);
 });
 
-test('ALLOW (W25tc-1): a visitor disclaimer is published, a person line keeps only its disclaimer', () => {
+test('ALLOW (W25tc-1): a visitor disclaimer beside a real sentence is published whole', () => {
   const caption = 'Three sessions over six weeks. Illustrative placeholder photography, not a patient result.';
   assert.equal(seedFreeText(caption, 500), caption);
-  assert.equal(seedFreeText('<p>Placeholder biography, replace with your story.</p>', 500), 'Placeholder biography.');
+});
+
+// F-1 changed this from 'Placeholder biography.': the seed rule keeps the
+// disclosure, but a disclosure on its own is no description (seedFreeText.ts).
+test('REFUSE (F-1): a person line left with only its disclaimer publishes nothing', () => {
+  assert.equal(seedFreeText('<p>Placeholder biography, replace with your story.</p>', 500), undefined);
+});
+
+// F-1, the Halo journal entry shape, verbatim from the salon-blo kit.
+const HALO_JOURNAL = 'Placeholder journal entry. Replace with your own writing.';
+
+test('REFUSE (F-1): the Halo journal entry, and its disclosure alone, are no metadata', () => {
+  for (const value of [HALO_JOURNAL, `<p>${HALO_JOURNAL}</p>`, 'Placeholder journal entry.', 'Placeholder press coverage for the demonstration template.']) {
+    assert.equal(seedFreeMeta(value), undefined, value);
+    assert.equal(seedFreeText(value, 160), undefined, value);
+  }
+});
+
+test('ALLOW (F-1): a real article excerpt is returned by reference, unchanged', () => {
+  const excerpt = '<p>Why we cut dry: you see the shape you will actually wear, not the one water gives you.</p>';
+  assert.equal(seedFreeMeta(excerpt), excerpt);
+  assert.equal(seedFreeText(excerpt, 160), 'Why we cut dry: you see the shape you will actually wear, not the one water gives you.');
 });
 
 test('ALLOW (W25f-1): a real description is stripped and cut exactly as before', () => {
@@ -51,8 +72,25 @@ test('REFUSE (W25f-1): every detail description site in the item route goes thro
   for (const site of sites) assert.ok(page.includes(site), `missing: ${site}`);
 });
 
-test('REFUSE (W25f-1): no site uses withoutSeedCopy as a yes/no check and then publishes the original', () => {
-  assert.doesNotMatch(page, /withoutSeedCopy\([^)]*\)\s*\?\s*[{(]?/, 'a ternary on withoutSeedCopy');
-  assert.doesNotMatch(page, /&&\s*withoutSeedCopy\(/, 'withoutSeedCopy behind &&');
-  assert.ok(/withoutSeedCopy\(seo\?\.metaDescription\)/.test(page), 'control: the same file is read and the pattern can match a real call');
+test('REFUSE (W25f-1): no site uses the seed rule as a yes/no check and then publishes the original', () => {
+  assert.doesNotMatch(page, /(?:withoutSeedCopy|seedFreeMeta)\([^)]*\)\s*\?\s*[{(]?/, 'a ternary on the seed rule');
+  assert.doesNotMatch(page, /&&\s*(?:withoutSeedCopy|seedFreeMeta)\(/, 'the seed rule behind &&');
+  assert.ok(/seedFreeMeta\(seo\?\.metaDescription\)/.test(page), 'control: the same file is read and the pattern can match a real call');
+});
+
+// F-1: metadata drops a disclosure-only value, which the renderer's rule keeps,
+// so no metadata site may call the renderer's rule directly.
+test('REFUSE (F-1): no metadata module calls withoutSeedCopy directly', () => {
+  const modules = [
+    '../../app/[slug]/[itemId]/page.tsx',
+    './detailItemMetaText.ts',
+    './productItemMeta.ts',
+    './pageMetaText.ts',
+    '../../components/JsonLd/schema.ts',
+  ];
+  for (const rel of modules) {
+    const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    assert.doesNotMatch(src, /withoutSeedCopy\(/, rel);
+    assert.match(src, /seedFreeMeta\(|seedFreeText\(/, `control: ${rel} is read and calls the metadata rule`);
+  }
 });

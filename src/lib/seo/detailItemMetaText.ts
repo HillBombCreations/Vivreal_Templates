@@ -33,7 +33,7 @@
  */
 
 import { plainMeta } from './plainMeta.ts';
-import { withoutSeedCopy } from './seedCopy.ts';
+import { seedFreeMeta } from './seedFreeText.ts';
 
 export interface DetailItemMetaInput {
   /** The item's own title, already resolved (context overlay applied). */
@@ -78,7 +78,7 @@ export interface DetailItemMetaResult {
  * once it is cut, which is how it used to reach the meta (RT5-176).
  */
 export function recipeSummaryMeta(summary: unknown): string | undefined {
-  return plainMeta(withoutSeedCopy(summary), 160);
+  return plainMeta(seedFreeMeta(summary), 160);
 }
 
 export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaResult {
@@ -94,11 +94,11 @@ export function detailItemMetaText(input: DetailItemMetaInput): DetailItemMetaRe
   // RT5-176: item text that is still a kit seed instruction counts as absent,
   // so the page's own description is used instead (see ./seedCopy.ts).
   const description =
-    input.patternDescription ||
-    withoutSeedCopy(input.recipeSummary) ||
-    plainMeta(withoutSeedCopy(input.itemDescription), 160) ||
-    withoutSeedCopy(input.pageMetaDescription) ||
-    plainMeta(withoutSeedCopy(input.pageSubtitle), 160) ||
+    seedFreeMeta(input.patternDescription) ||
+    seedFreeMeta(input.recipeSummary) ||
+    plainMeta(seedFreeMeta(input.itemDescription), 160) ||
+    seedFreeMeta(input.pageMetaDescription) ||
+    plainMeta(seedFreeMeta(input.pageSubtitle), 160) ||
     title;
 
   const cardTitle = itemTitle || title;

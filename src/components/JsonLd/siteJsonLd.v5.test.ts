@@ -125,8 +125,10 @@ test('REFUSE (W25f-1): a seed business description never reaches the site JSON-L
   const seed = 'This is placeholder copy for a demonstration template. Replace it with your own story before publishing.';
   assert.equal(org(site({ description: seed })).description, undefined);
   assert.equal(org(site({ description: `Skin studio in Los Angeles. ${seed}` })).description, 'Skin studio in Los Angeles.');
-  const disclosure = 'Placeholder press coverage for the demonstration template.';
-  assert.equal(org(site({ description: disclosure })).description, disclosure, 'W25tc-1: a disclosure is not seed');
+  // F-1 changed this from kept: a disclosure on its own says nothing in a search result (seedFreeText.ts).
+  assert.equal(org(site({ description: 'Placeholder press coverage for the demonstration template.' })).description, undefined);
+  const mixed = 'Skin studio in Los Angeles. Placeholder press coverage for the demonstration template.';
+  assert.equal(org(site({ description: mixed })).description, mixed, 'W25tc-1: beside a real sentence a disclosure stays');
 });
 
 test('ALLOW (W25f-1): a real business description is emitted exactly as authored', () => {
