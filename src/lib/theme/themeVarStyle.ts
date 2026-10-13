@@ -20,6 +20,11 @@ import { readableAccentOnWhite } from './readableAccent.ts';
  * keys emits none, so its style is unchanged. The per-kit values are a data
  * step.
  *
+ * Plus `font-mono` (C2, Larkspur, 2026-10-13): the renderer's eyebrow and
+ * index labels read `var(--font-mono, ...)`. Unset on the server, the first
+ * paint falls to Tailwind's own `--font-mono` (the system monospace) until the
+ * Providers effect stamps the site's value. A site without the key emits none.
+ *
  * Moved here from `src/app/layout.tsx` so the plain-Node runner can call it
  * (the layout is JSX); behaviour is unchanged for every existing key.
  */
@@ -35,6 +40,7 @@ export const THEME_TOKEN_KEYS = [
   'contact-button-radius',
   'contact-button-case',
   'contact-button-tracking',
+  'font-mono',
 ] as const;
 
 export function themeVarStyle(siteData: Record<string, unknown>): CSSProperties | undefined {

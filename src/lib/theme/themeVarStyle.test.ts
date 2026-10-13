@@ -35,3 +35,23 @@ test('REFUSE (W25-6ca): the general button keys stay out this release, and a bla
     assert.equal(style[key], undefined, key);
   }
 });
+
+const LARKSPUR_MONO = "'Montserrat', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif";
+
+test('ALLOW (C2): a site font-mono value is on the first server render', () => {
+  const style = themeVarStyle({ ...SITE, 'font-mono': LARKSPUR_MONO }) as Record<string, string>;
+  assert.equal(style['--font-mono'], LARKSPUR_MONO);
+});
+
+test('REFUSE (C2): an absent or blank font-mono emits no --font-mono, so the renderer fallback stands', () => {
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['absent', SITE],
+    ['empty', { ...SITE, 'font-mono': '' }],
+    ['whitespace', { ...SITE, 'font-mono': '   ' }],
+    ['not a string', { ...SITE, 'font-mono': 42 }],
+  ];
+  for (const [label, site] of cases) {
+    const style = themeVarStyle(site) as Record<string, string>;
+    assert.equal(style['--font-mono'], undefined, label);
+  }
+});
