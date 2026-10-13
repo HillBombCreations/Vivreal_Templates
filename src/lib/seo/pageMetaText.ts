@@ -57,7 +57,8 @@ export function readBusinessFacts(
   return {
     name: nonEmpty(businessInfo?.name) ?? nonEmpty(fallbackName) ?? '',
     // W25f-1: a kit seed instruction never reaches a search summary (./seedCopy.ts).
-    description: plainMeta(seedFreeMeta(businessInfo?.description), SUMMARY_MAX_CHARS),
+    // Uncut: the summary that quotes it cuts the whole line at a boundary (`summaryCut`).
+    description: plainMeta(seedFreeMeta(businessInfo?.description), Infinity),
     city: nonEmpty(businessInfo?.address?.city),
     state: nonEmpty(businessInfo?.address?.state),
     serviceArea: (Array.isArray(businessInfo?.serviceArea) ? businessInfo.serviceArea : [])
@@ -84,16 +85,31 @@ export function wherePhrase(facts: BusinessFacts): string | undefined {
 }
 
 /**
+ * Plain text cut to `max` at the last whole sentence that fits, else at the
+ * last whole word with an ellipsis. A summary built from the facts used to be
+ * cut at character 160, mid-word ("... with results that"), which reads as a
+ * broken page in a search result.
+ */
+export function summaryCut(text: string | undefined, max = SUMMARY_MAX_CHARS): string | undefined {
+  if (!text || text.length <= max) return text;
+  let sentenceEnd = 0;
+  for (const m of text.slice(0, max + 1).matchAll(/[.!?](?=\s|$)/g)) if (m.index < max) sentenceEnd = m.index + 1;
+  if (sentenceEnd > 0) return text.slice(0, sentenceEnd);
+  const wordEnd = text.lastIndexOf(' ', max - 1);
+  return wordEnd > 0 ? `${text.slice(0, wordEnd).replace(/[\s,;:]+$/, '')}…` : text.slice(0, max);
+}
+
+/**
  * "Menu at Cobalt & Crumb in Knoxville, TN. Small batch bread, baked daily.",
- * cut to `SUMMARY_MAX_CHARS`, or `undefined` when the facts hold nothing to
- * say beyond the page and business names.
+ * cut at a boundary to `SUMMARY_MAX_CHARS`, or `undefined` when the facts hold
+ * nothing to say beyond the page and business names.
  */
 export function summaryFromFacts(pageLabel: string, facts: BusinessFacts): string | undefined {
   const where = wherePhrase(facts);
   if (!where && !facts.description) return undefined;
   const lead = facts.name ? `${pageLabel} at ${facts.name}` : pageLabel;
   const sentence = where ? `${lead} ${where}.` : `${lead}.`;
-  return plainMeta(facts.description ? `${sentence} ${facts.description}` : sentence, SUMMARY_MAX_CHARS);
+  return summaryCut(plainMeta(facts.description ? `${sentence} ${facts.description}` : sentence, Infinity));
 }
 
 type MetaPage = Pick<PageConfig, 'name' | 'format' | 'labels' | 'seo'>;
@@ -118,7 +134,9 @@ export function pageMetaText({
   const description =
     nonEmpty(seedFreeMeta(page?.seo?.metaDescription)) ??
     nonEmpty(seedFreeMeta(page?.labels?.subtitle)) ??
-    (formatTitle ? undefined : summaryFromFacts(label, facts)) ??
+    // The page's NAME leads the summary ("Press at ..."), not its heading:
+    // `labels.title` is display copy ("Written about") that reads wrongly there.
+    (formatTitle ? undefined : summaryFromFacts(nonEmpty(page?.name) ?? label, facts)) ??
     suffixed;
   return { title, description };
 }
@@ -136,7 +154,7 @@ export function homeMetaText({
   const title = nonEmpty(seo?.metaTitle) ?? (where ? `${name} | ${where}` : name);
   const whereWords = wherePhrase(facts);
   const fromFacts = facts.description
-    ? plainMeta(whereWords ? `${name}, ${whereWords}. ${facts.description}` : facts.description, SUMMARY_MAX_CHARS)
+    ? summaryCut(plainMeta(whereWords ? `${name}, ${whereWords}. ${facts.description}` : facts.description, Infinity))
     : whereWords
       ? `${name}, ${whereWords}.`
       : undefined;

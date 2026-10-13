@@ -94,3 +94,54 @@ test('REFUSE (F-1): no metadata module calls withoutSeedCopy directly', () => {
     assert.match(src, /seedFreeMeta\(|seedFreeText\(/, `control: ${rel} is read and calls the metadata rule`);
   }
 });
+
+// F-1 review: the disclosure list is closed. Every shipped disclosure, alone, is no metadata.
+const SHIPPED_DISCLOSURES = [
+  'Placeholder note.',
+  'Placeholder journal entry.',
+  'Placeholder photography.',
+  'Placeholder body copy.',
+  'Placeholder biography.',
+  'Placeholder text.',
+  'Placeholder terms text.',
+  'Placeholder policy text.',
+  'Placeholder policy copy.',
+  'Placeholder accessibility text.',
+  'Placeholder text message terms.',
+  'Placeholder press coverage for the demonstration template.',
+  'Placeholder testimonials for the demonstration template.',
+  'Illustrative placeholder photography.',
+  'Illustrative placeholder photography, not a patient result.',
+  `Illustrative placeholder photography ${String.fromCharCode(0x2014)} not a patient result.`,
+  'The set below is illustrative placeholder photography.',
+  'This is placeholder copy for a demonstration template.',
+  'Placeholder text supplied with the Vivreal template gallery.',
+  'This is placeholder policy text supplied with the Vivreal template gallery.',
+  'The venue, business details, pricing, vendors and photography on this site are example content.',
+  'The words on this page are example copy.',
+  'All photography is licensed from Unsplash and stands in for your own.',
+  'All photography is licensed from Unsplash and used here as placeholder art.',
+  'Every photograph here is a stock image.',
+];
+
+test('REFUSE (F-1 review): every shipped kit disclosure, alone or two together, is no metadata', () => {
+  for (const value of SHIPPED_DISCLOSURES) {
+    assert.equal(seedFreeMeta(value), undefined, value);
+    assert.equal(seedFreeMeta(`<p>${value}</p>`), undefined, `<p>${value}</p>`);
+  }
+  assert.equal(seedFreeMeta('Placeholder photography. Every photograph here is a stock image.'), undefined);
+});
+
+test('ALLOW (F-1 review): a real sentence that uses a disclosure word keeps its description', () => {
+  for (const value of [
+    'Custom placeholder cards for weddings and events.',
+    'We replace placeholder copy with words that sell.',
+    'A demonstration of our template for florists.',
+    'A demonstration template for florists.',
+    'These are example content ideas for your launch.',
+    'Our menu cards are example content you can order.',
+    'Placeholder cards, hand lettered.',
+  ]) {
+    assert.equal(seedFreeMeta(value), value, value);
+  }
+});

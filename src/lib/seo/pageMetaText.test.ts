@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { homeMetaText, pageMetaText, readBusinessFacts, summaryFromFacts, SUMMARY_MAX_CHARS } from './pageMetaText.ts';
+import { homeMetaText, pageMetaText, readBusinessFacts, summaryCut, summaryFromFacts, SUMMARY_MAX_CHARS } from './pageMetaText.ts';
 import { resolvePageForSlug } from '../pages/builtInPages.ts';
 
 const COBALT = readBusinessFacts(
@@ -115,4 +115,31 @@ test('ALLOW (W25f-1): a real subtitle and a real meta description are used exact
   assert.equal(pageMetaText({ page, slug: 'press', facts: COBALT }).description, 'Coverage from the editors.');
   assert.equal(homeMetaText({ seo: { metaDescription: 'Bread, daily.' }, facts: COBALT }).description, 'Bread, daily.');
   assert.equal(COBALT.description, 'Small batch bread, baked daily.');
+});
+
+// F-1 review: Juniper /press fell back to "Written about at Juniper Row ... with results that", led by its
+// heading and cut mid-word. It now leads with the page name and ends on a sentence.
+const JUNIPER = readBusinessFacts(
+  {
+    name: 'Juniper Row Skin Studio',
+    description:
+      'A single-suite aesthetics studio in Los Angeles. Considered, unhurried treatment with results that look like you on a good day, never like a procedure.',
+    address: { city: 'Los Angeles', state: 'CA' },
+    contactInfo: {},
+  },
+  undefined,
+);
+
+test('REFUSE (F-1 review): a disclosure-only press page falls back to a summary led by its name, ending on a sentence', () => {
+  const disclosure = 'Placeholder press coverage for the demonstration template.';
+  const page = { name: 'Press', format: 'standard', labels: { title: 'Written about', subtitle: disclosure }, seo: { metaDescription: disclosure } };
+  const { description } = pageMetaText({ page, slug: 'press', facts: JUNIPER });
+  assert.equal(description, 'Press at Juniper Row Skin Studio in Los Angeles, CA. A single-suite aesthetics studio in Los Angeles.');
+});
+
+test('ALLOW (F-1 review): a summary that fits is kept whole; one with no sentence end is cut at a word', () => {
+  assert.equal(summaryCut('Short and whole.'), 'Short and whole.');
+  const long = summaryCut('word '.repeat(60).trim()) ?? '';
+  assert.ok(long.length <= SUMMARY_MAX_CHARS, 'within the budget');
+  assert.match(long, /word…$/, 'ends on a whole word and an ellipsis');
 });

@@ -28,12 +28,27 @@ import { plainMeta } from './plainMeta.ts';
 import { withoutSeedCopy } from './seedCopy.ts';
 
 /**
- * A kit disclosure sentence. Taken from the disclaimer halves the seed list
- * keeps (`./seedCopy.ts` `SEED_WORDINGS`): every "Placeholder ..." line, the
- * "... are example content/copy." credits and "for the demonstration
- * template." No owner writes these words into a real search description.
+ * The kit disclosure sentences, a CLOSED list, each matched as a WHOLE
+ * sentence. Enumerated from every kit under `Vivreal_Site_Migrator/captures`
+ * and the disclaimer halves the renderer 1.85.9 seed list keeps
+ * (`./seedCopy.ts` `SEED_WORDINGS`). Closed and anchored for the reason the
+ * renderer's list is: an owner's "Custom placeholder cards for weddings." or
+ * "A demonstration of our template." is real copy and keeps its words.
  */
-const DISCLOSURE = /\bplaceholder\b|\bare example (?:content|copy)\b|\bdemonstration template\b/i;
+/** The em and en dash the kit captions use, by code point so the source holds no dash. */
+const KIT_DASHES = String.fromCharCode(0x2014, 0x2013);
+const DISCLOSURE_SENTENCES: readonly string[] = [
+  String.raw`placeholder (?:note|journal entry|photography|body copy|biography|text|terms text|policy text|policy copy|accessibility text|text message terms)\.`,
+  String.raw`placeholder (?:press coverage|testimonials) for the demonstration template\.`,
+  String.raw`(?:the set below is )?illustrative placeholder photography(?:(?:,|\s[${KIT_DASHES}-]) not a patient result)?\.`,
+  String.raw`this is placeholder copy for a demonstration template\.`,
+  String.raw`(?:this is )?placeholder (?:policy )?text supplied with the vivreal template gallery\.`,
+  String.raw`the [a-z ,]{1,120} on this site are example content\.`,
+  String.raw`the words on this page are example copy\.`,
+  String.raw`all photography is licensed from unsplash and (?:stands in for your own|used here as placeholder art)\.`,
+  String.raw`every photograph here is a stock image\.`,
+];
+const DISCLOSURE = new RegExp(String.raw`^\s*(?:${DISCLOSURE_SENTENCES.join('|')})\s*$`, 'i');
 /** Sentence chunks of plain text, each starting at a non-space. */
 const SENTENCE = /[^.!?…]+(?:[.!?…]+["'’”)\]]{0,3})?\s*/g;
 
