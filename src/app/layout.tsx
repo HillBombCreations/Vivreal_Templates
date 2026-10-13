@@ -120,8 +120,14 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // before (byte-identical for every existing site). Only meaningful when a
     // display font is also set (no body-only override).
     const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
+    // The same preset shape the Providers effect writes to --font-display/--font-body.
+    const typography = (siteData as { typography?: { displayFamily?: unknown; bodyFamily?: unknown } | null }).typography;
     const fontStylesheets = siteFontStylesheets(
-        [siteFont?.googleFontsHref, siteFontBody?.googleFontsHref],
+        {
+            display: siteFont,
+            body: siteFontBody,
+            typographyPreset: [typography?.displayFamily, typography?.bodyFamily].some((f) => typeof f === 'string' && f.trim() !== ''),
+        },
         { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
     );
     // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
@@ -151,10 +157,18 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   Vivreal's own site: there GA loads only after the visitor
                   accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
               {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
-              {/* C1: the literal families (Inter, Outfit, ...) load from this
+              {/* C1: the literal families (Inter, Outfit, ...) load from a
                   <link>, not from a globals.css @import, which the Turbopack
-                  build drops. Per-site sheets the base already covers are
-                  filtered out. See src/lib/fonts/siteFontStylesheets.ts. */}
+                  build drops, and only on a site that draws one. See
+                  src/lib/fonts/siteFontStylesheets.ts. The preconnects open
+                  the font origins only when a sheet is linked; the woff2
+                  host is found only after the CSS parses otherwise. */}
+              {fontStylesheets.length > 0 && (
+                  <>
+                      <link rel="preconnect" href="https://fonts.googleapis.com" />
+                      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+                  </>
+              )}
               {fontStylesheets.map((href) => (
                   <link key={href} rel="stylesheet" href={href} precedence="default" />
               ))}
