@@ -350,7 +350,7 @@ test('an unpublishable variant price still emits nothing, rather than a repaired
   // Emitting nothing stays a legal outcome. Reject-not-repair survives the move
   // to variants: a range synthesised from values that failed validation would
   // be worse than the `Thing` it replaces.
-  for (const price of [{ Single: '$5' }, { Single: 'Market price' }, { Single: '' }, {}]) {
+  for (const price of [{ Single: 'From $5' }, { Single: 'Market price' }, { Single: '' }, {}]) {
     const schema = offerFor({
       name: 'Unpriceable',
       price,
@@ -362,6 +362,18 @@ test('an unpublishable variant price still emits nothing, rather than a repaired
       `${JSON.stringify(price)} is not publishable and must not become an Offer`,
     );
   }
+});
+
+test('an owner-typed "$5" variant price publishes the bare number (D10)', () => {
+  // The ALLOW side of the test above: one leading "$" is accepted by
+  // `asOfferPrice` in the variant path exactly as in the scalar one.
+  const schema = offerFor({
+    name: 'Cinnamon Roll',
+    price: { Single: '$5' },
+    usingVariant: { name: 'Size', values: ['Single'] },
+  });
+  assert.equal(schema['@type'], 'Product');
+  assert.equal((schema.offers as Record<string, unknown>).price, '5');
 });
 
 test('a Square variant product publishes its real currency', () => {
