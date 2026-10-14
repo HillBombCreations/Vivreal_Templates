@@ -40,6 +40,8 @@ import AttributionCapture from '@/components/AttributionCapture';
 import SiteConsent from '@/components/SiteConsent';
 import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
+import { resolvePrivacyPolicyHref } from '@/lib/pages/policyPage';
 
 /**
  * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
@@ -96,6 +98,12 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // variable already. False on every customer site, and false whenever
     // SITE_ID is unset or unrecognised, which is the safe direction.
     const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
+    // The popup's consent line links only to a policy page this site stores
+    // and the route would serve (see lib/pages/policyPage.ts): there is no
+    // built-in /privacy any more, so the dialog's default link would 404.
+    // `getSeedOnlyPaths` is per-request `cache`d and the Navbar and Footer
+    // already ask it, so this adds no read; it fails open to `[]`.
+    const privacyHref = resolvePrivacyPolicyHref(siteData.pageConfigs, await getSeedOnlyPaths());
     // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
     // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
     const templateType = siteData.siteInfo?.templateType;
@@ -278,6 +286,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       config={siteData.emailPopup ?? {}}
                       siteData={siteData}
                       vivrealOwnSite={vivrealOwnSite}
+                      privacyHref={privacyHref}
                   />
                   {/* Vivreal first-party analytics beacon (cookieless). Fires only
                       on real deployed sites (SITE_ID set + != 'preview'); collection
