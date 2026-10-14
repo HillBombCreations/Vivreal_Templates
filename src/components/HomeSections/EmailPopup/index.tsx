@@ -9,6 +9,7 @@ import { subscribeUser } from "@/lib/api/subscribe/client";
 import { trackLeadConversion } from "@/lib/analytics";
 import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
 import { PHONE_MEDIA_QUERY, classifyPopupPath, resolvePopupTrigger } from "./popupPolicy";
+import { popupConsentProps } from "./popupConsent";
 
 // REUSE the live wrapper's existing keys so users mid-cap aren't reset.
 // vivreal_subscribed = permanent "never again" (set on subscribe).
@@ -38,6 +39,13 @@ export interface EmailPopupProps {
    * consent state.
    */
   vivrealOwnSite: boolean;
+  /**
+   * The site's stored privacy policy page, resolved by the root layout
+   * (`resolvePrivacyPolicyHref`), or `undefined` when it stores none. Absent ⇒
+   * the consent line carries no policy link, never the dialog's `/privacy`
+   * default, which 404s on such a site. See ./popupConsent.ts.
+   */
+  privacyHref?: string;
 }
 
 /**
@@ -52,7 +60,7 @@ export interface EmailPopupProps {
  * so an un-authored site behaves identically to before the layout mount-move
  * (home-only, 3000ms, 24h cap, default copy).
  */
-const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
+const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopupProps) => {
   const cfg = config ?? {};
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -201,6 +209,7 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
   if (!enabled || !pageAllowed) return null;
 
   const copy = cfg.copy ?? {};
+  const siteName = siteData?.businessInfo?.name || siteData?.name || "us";
 
   return (
     <SubscribeDialog
@@ -215,7 +224,7 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
           localStorage.setItem(DISMISS_KEY, Date.now().toString());
         }
       }}
-      siteName={siteData?.businessInfo?.name || siteData?.name || "us"}
+      siteName={siteName}
       accent={siteData?.primary}
       surface={siteData?.surface}
       textInverse={siteData?.["text-inverse"]}
@@ -225,7 +234,7 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite }: EmailPopupProps) => {
       buttonLabel={copy.buttonLabel}
       successText={copy.successText}
       errorText={copy.errorText}
-      consentText={copy.consentText}
+      {...popupConsentProps({ privacyHref, consentText: copy.consentText, siteName })}
       // Levain round — split-image layout. Pass-through only (image.src is a
       // ready URL per the pre-signed contract); absent ⇒ centered legacy card.
       variant={cfg.variant}

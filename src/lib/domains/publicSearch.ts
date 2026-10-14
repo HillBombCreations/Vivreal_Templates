@@ -323,7 +323,7 @@ export function messageForFailure(status: number | null): string {
  *   - `eligibleTiers`           -> which plan the sentence may name
  *   - `eligibleBillingPeriods`  -> the word "yearly"
  *   - `maxCatalogPriceCents`    -> the "$25"
- *   - `perGroupLimit`           -> "One per account."
+ *   - `perGroupLimit`           -> "One per business."
  *
  * Two things check them, and neither can pass by doing nothing:
  *
@@ -401,7 +401,7 @@ export function formatCapUsd(cents: number): string {
  */
 export const FREE_YEAR_HEADING = 'The first year can be free';
 export const FREE_YEAR_OFFER =
-  'Free for the first year on yearly Pro, on addresses up to $25. One per account.';
+  'Free for the first year on yearly Pro, on addresses up to $25. One per business.';
 
 /** Every visible string on the page, in one place, so one test can read them all. */
 export const DOMAIN_SEARCH_COPY = Object.freeze({

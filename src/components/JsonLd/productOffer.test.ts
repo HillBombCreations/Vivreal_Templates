@@ -21,8 +21,8 @@ import {
  *     product whose stock had run out could ship a visible, disabled "Out of
  *     stock" button (the renderer's `DetailAddToCart`, drawn from
  *     `computeProductStockState`) and an in-stock claim in the SAME document;
- *   - `price` was `String(input.price)` over a Mongo Mixed field, so an
- *     authored "$9.00" emitted an `Offer` that fails validation and takes the
+ *   - `price` was `String(input.price)` over a Mongo Mixed field, so free text
+ *     like "From $12" emitted an `Offer` that fails validation and takes the
  *     whole `Product` down with it;
  *   - `priceCurrency` was hard-coded to USD even though Square carries the
  *     merchant's real currency all the way into this repo.
@@ -90,18 +90,53 @@ test('the Offer stays valid in all three states', () => {
 // price: Mongo Mixed reaches this function verbatim
 // ---------------------------------------------------------------------------
 
-test('an authored "$9.00" does not emit an invalid Offer', () => {
-  // `objectValue.price` is Mixed, so this is a real stored shape and not a
-  // hypothetical. It used to be passed straight through by `String(...)`.
-  // Rejecting falls back to `Thing`, the same branch a product with no price at
-  // all already took: no rich result either way, but a valid document.
-  const schema = product({ price: '$9.00' });
-  assert.equal(schema['@type'], 'Thing');
-  assert.equal(schema.offers, undefined);
+test('an owner-typed "$9.50" publishes a Product with the bare number (D10)', () => {
+  // ALLOW. The portal's collection editor stores the price as typed, and
+  // every priced collection item in prod looks like this ("$9.50" on Old Mill,
+  // "$660.00" on Marlowe & Kept). Refusing them left the whole fleet's
+  // collection items publishing `Thing` while the page showed a price.
+  for (const [typed, published] of [
+    ['$9.50', '9.50'],
+    ['$660.00', '660.00'],
+    ['$1,234.50', '1234.50'],
+    ['$1,200', '1200'],
+    [' $9 ', '9'],
+  ] as const) {
+    const schema = product({ price: typed });
+    assert.equal(schema['@type'], 'Product', `"${typed}" is a real price and must reach an Offer`);
+    assert.equal(offerOf(schema)?.price, published);
+    // No currency is read from the "$": the item carries none, so it gets the
+    // same named fallback a bare "9.50" gets.
+    assert.equal(offerOf(schema)?.priceCurrency, DEFAULT_OFFER_CURRENCY);
+  }
 });
 
 test('free text and empty prices are refused the same way', () => {
-  for (const price of ['From $12', '', '   ', 'Market price', '9,00', Number.NaN, -3]) {
+  // REFUSE. Ranges, prefixes, units, words, other currencies, a space after
+  // the "$", and misplaced commas ("9,00" is a European decimal, "$1,23" is not
+  // a thousands group). Each falls back to `Thing`, never a guessed number.
+  for (const price of [
+    'From $9',
+    'From $12',
+    'Starting at $297.50',
+    '$9-$12',
+    '$12.75/unit',
+    '9 USD',
+    '€9',
+    '£9.50',
+    '$ 9',
+    '$$9',
+    '$',
+    '$1,23',
+    '$1234,567',
+    '1,2345',
+    '9,00',
+    '',
+    '   ',
+    'Market price',
+    Number.NaN,
+    -3,
+  ]) {
     const schema = product({ price });
     assert.equal(
       schema['@type'],
@@ -122,11 +157,18 @@ test('a real price still emits a real Product, in both stored shapes', () => {
   assert.equal(offerOf(product({ price: '0' }))?.price, '0');
 });
 
-test('asOfferPrice rejects rather than repairs, exactly as asPublishDate does', () => {
-  // Stripping the "$" would be guessing at the currency the number is
-  // denominated in, which is the other thing this change stopped doing.
-  assert.equal(asOfferPrice('$9.00'), undefined);
+test('asOfferPrice strips one "$" and the grouping commas, and repairs nothing else', () => {
+  // ALLOW: the owner-typed shapes, returned as the number alone.
+  assert.equal(asOfferPrice('$9.50'), '9.50');
+  assert.equal(asOfferPrice('$660.00'), '660.00');
+  assert.equal(asOfferPrice('$1,234.50'), '1234.50');
+  assert.equal(asOfferPrice('$1,234,567'), '1234567');
+  assert.equal(asOfferPrice('1,234'), '1234');
   assert.equal(asOfferPrice('9.00'), '9.00');
+  // REFUSE: anything that would need a guess at the number.
+  for (const refused of ['From $9', '$9-$12', '9,00', '€9', '$1,23', '$ 9', '9 USD']) {
+    assert.equal(asOfferPrice(refused), undefined, `"${refused}" must not be repaired into a price`);
+  }
   assert.equal(asOfferPrice(undefined), undefined);
 });
 

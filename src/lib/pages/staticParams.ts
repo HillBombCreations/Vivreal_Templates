@@ -36,8 +36,10 @@ import { isPageTurnedOff } from './pageEnabled.ts';
  *    prerendered on first request, and the Studio save that flips the switch
  *    fires the revalidate webhook.
  *
- * `alwaysOn` carries the slugs the route serves with no page config at all
- * (privacy, terms). They are appended rather than prepended so a real authored
+ * `alwaysOn` carries the slugs the route serves with no stored page config at
+ * all (the built-in checkout result pages, `CHECKOUT_RESULT_SLUGS`). Privacy
+ * and terms are not among them: the route 404s both on a site that stores no
+ * page there. They are appended rather than prepended so a real authored
  * page of the same slug keeps its position, and the dedupe keeps the first
  * occurrence either way.
  *

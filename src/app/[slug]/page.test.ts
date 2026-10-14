@@ -73,16 +73,46 @@ test('the route refuses to serve a page the owner turned off', () => {
   );
 });
 
-test('the off guard runs BEFORE the privacy/terms fallback', () => {
-  // Order is the whole behaviour here. Those two slugs render on every site
-  // even with no page config at all, so an off privacy page reaching that
-  // fallback would serve the built-in near-empty copy instead of 404ing: the
-  // owner switched their page off and got a different page at the same URL.
-  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
-  const fallback = source.indexOf('const STATIC_SLUGS: Record<string, string> = {');
-  assert.ok(guard > 0, 'the off guard is present in the render');
-  assert.ok(fallback > 0, 'the privacy/terms fallback is present');
-  assert.ok(guard < fallback, 'the off guard must come first');
+// ── privacy and terms are served only from a stored page ────────────────────
+//
+// Owner decision 2026-10-14 (consistent with FP2-08, no invented legal text):
+// a site that stores no privacy or terms page answers 404 for them. They used
+// to be exempt from the no-page 404 and rendered a synthesized, block-less page
+// that was EMPTY with a 200. Which page a slug resolves to is decided by
+// `resolvePageForSlug`, tested by calling it in
+// src/lib/pages/builtInPages.test.ts (REFUSE: no stored page resolves nothing;
+// ALLOW: a stored privacy page resolves as stored). These pin that the route
+// adds no exemption on top of that answer.
+
+test('REFUSE: with no stored page the route 404s every slug, privacy and terms included', () => {
+  assert.match(
+    source,
+    /if \(!pageConfig\) \{[\s\S]{0,1600}?resolveMissingItemRedirect\(siteData\.redirects, `\/\$\{slug\}`\);[\s\S]{0,120}?return notFound\(\);/,
+    'a missing page goes to the redirect check and then notFound(), with no exemption in the condition',
+  );
+  for (const retired of ['STATIC_SLUGS', 'STATIC_PAGE_TITLES', '"Privacy Policy"', '"Terms of Service"']) {
+    assert.ok(!source.includes(retired), `${retired} must not come back: it served an empty 200 on sites with no policy`);
+  }
+});
+
+test('REFUSE: metadata titles a missing privacy or terms page Not Found, like any other missing page', () => {
+  assert.match(source, /if \(!pageConfig\) \{\s*return \{ title: `Not Found \| \$\{siteName\}` \};/);
+});
+
+test('the off and seed-only guards still run before the missing-page 404', () => {
+  // A stored policy page the owner switched off, or one that is still all
+  // kit seed, 404s through its own guard; the order keeps that explicit.
+  const off = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  const seed = source.indexOf('if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();');
+  const missing = source.indexOf('if (!pageConfig) {');
+  assert.ok(off > 0 && seed > 0 && missing > 0);
+  assert.ok(off < seed && seed < missing);
+});
+
+test('the prerender list is always-on only for the built-in checkout slugs, never privacy or terms', () => {
+  // Non-empty on every site is load-bearing (see staticParams.test.ts); the
+  // checkout result slugs are what keep it so now.
+  assert.match(source, /slugsForStaticParams\(siteData\.pageConfigs, CHECKOUT_RESULT_SLUGS\)/);
 });
 
 test('the off guard runs AFTER the degraded-read guard, so an upstream wobble cannot 404 a live page', () => {
@@ -120,7 +150,7 @@ test('both the render and the metadata resolve pages through the built-in-aware 
   assert.equal(lookups.length, 2, 'DynamicPage and generateMetadata');
   assert.match(
     source,
-    /import \{ resolvePageForSlug \} from "@\/lib\/pages\/builtInPages"/,
+    /import \{ CHECKOUT_RESULT_SLUGS, resolvePageForSlug \} from "@\/lib\/pages\/builtInPages"/,
   );
   assert.doesNotMatch(
     source,
@@ -165,4 +195,12 @@ test('generateMetadata reads searchParams only behind the config-only emptiness 
   assert.ok(read > gate, 'searchParams is awaited after (inside) the check');
   assert.equal(meta.match(/await searchParams/g)?.length, 1, 'and nowhere else in metadata');
   assert.match(source, /import \{ pageMustDecideEmptiness \} from "@\/lib\/api\/composition\/pageEmptiness"/);
+});
+
+test('the subscribe fallback resolves its list through the tested helper', () => {
+  // The helper reads collections[0] only for a block-less page (review note N5,
+  // VR_Client_API #121 blanks that mirror on pages with blocks). An inline
+  // collections[0] read here would bypass that gate where no test can reach it.
+  assert.match(source, /legacySubscribeCollectionId\(pageConfig\)/, 'the route must reach the tested helper');
+  assert.doesNotMatch(source, /collections\?\.\[0\]/, 'no inline read of the legacy mirror');
 });

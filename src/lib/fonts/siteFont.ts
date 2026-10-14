@@ -38,7 +38,9 @@
  * Loading strategy (why only two families get a next/font call):
  *   - Outfit, Inter, Fraunces, Space Grotesk, Playfair Display, DM Sans, and
  *     Sora are ALREADY fetched for EVERY site, unconditionally, via the
- *     Google Fonts CSS2 `@import` at the top of `src/styles/globals.css` (the
+ *     renderer's `siteFontsHref()` stylesheet linked in `src/app/layout.tsx`
+ *     (see `siteFontStylesheets.ts`; it replaced a globals.css `@import` the
+ *     Turbopack build dropped, C1 2026-10-13) (the
  *     existing Studio "Branding -> Typography preset" system depends on those
  *     LITERAL family names being registered that way). Loading them again via
  *     next/font would double the network cost per site AND register a second,
@@ -47,7 +49,7 @@
  *     `src/app/(studio-frame)/layout.tsx` for the same constraint documented
  *     against the preview shell). Mapping those seven to their existing
  *     literal names costs nothing extra and can't regress the preset system.
- *   - Geist is the one common family NOT already in that @import, so it is
+ *   - Geist is the one common family NOT already in that stylesheet, so it is
  *     the one entry that genuinely needs a next/font/google load (self-hosted,
  *     optimized, `font-display: swap`) — no new npm dependency (Next.js 16
  *     bundles "Geist" in its Google Fonts metadata; see

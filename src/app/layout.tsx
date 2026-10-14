@@ -26,12 +26,13 @@ import { resolveSiteOrigin } from '@/lib/og/ogImage';
 import { buildRootMetadata } from '@/lib/seo/rootMetadata';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
+import { siteFontStylesheets } from '@/lib/fonts/siteFontStylesheets';
 import { themeVarStyle } from '@/lib/theme/themeVarStyle';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
 import { JsonLd, buildSiteJsonLd } from '@/components/JsonLd';
-import { nowInZone, readSiteHours } from '@hillbombcreations/site-renderer';
+import { nowInZone, readSiteHours, siteFontsHref, SITE_FONT_LITERAL_FAMILIES } from '@hillbombcreations/site-renderer';
 import { contactButtonsSiteData } from '@/lib/contactButtons';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
@@ -39,6 +40,8 @@ import AttributionCapture from '@/components/AttributionCapture';
 import SiteConsent from '@/components/SiteConsent';
 import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
+import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
+import { resolvePrivacyPolicyHref } from '@/lib/pages/policyPage';
 
 /**
  * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
@@ -95,6 +98,12 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // variable already. False on every customer site, and false whenever
     // SITE_ID is unset or unrecognised, which is the safe direction.
     const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
+    // The popup's consent line links only to a policy page this site stores
+    // and the route would serve (see lib/pages/policyPage.ts): there is no
+    // built-in /privacy any more, so the dialog's default link would 404.
+    // `getSeedOnlyPaths` is per-request `cache`d and the Navbar and Footer
+    // already ask it, so this adds no read; it fails open to `[]`.
+    const privacyHref = resolvePrivacyPolicyHref(siteData.pageConfigs, await getSeedOnlyPaths());
     // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
     // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
     const templateType = siteData.siteInfo?.templateType;
@@ -119,6 +128,16 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // before (byte-identical for every existing site). Only meaningful when a
     // display font is also set (no body-only override).
     const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
+    // The same preset shape the Providers effect writes to --font-display/--font-body.
+    const typography = (siteData as { typography?: { displayFamily?: unknown; bodyFamily?: unknown } | null }).typography;
+    const fontStylesheets = siteFontStylesheets(
+        {
+            display: siteFont,
+            body: siteFontBody,
+            typographyPreset: [typography?.displayFamily, typography?.bodyFamily].some((f) => typeof f === 'string' && f.trim() !== ''),
+        },
+        { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
+    );
     // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
     // Providers' effect re-stamps both on the client; values are identical so
     // hydration stays clean.
@@ -146,12 +165,21 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   Vivreal's own site: there GA loads only after the visitor
                   accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
               {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
-              {siteFont?.googleFontsHref && (
-                  <link rel="stylesheet" href={siteFont.googleFontsHref} precedence="default" />
+              {/* C1: the literal families (Inter, Outfit, ...) load from a
+                  <link>, not from a globals.css @import, which the Turbopack
+                  build drops, and only on a site that draws one. See
+                  src/lib/fonts/siteFontStylesheets.ts. The preconnects open
+                  the font origins only when a sheet is linked; the woff2
+                  host is found only after the CSS parses otherwise. */}
+              {fontStylesheets.length > 0 && (
+                  <>
+                      <link rel="preconnect" href="https://fonts.googleapis.com" />
+                      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+                  </>
               )}
-              {siteFontBody?.googleFontsHref && (
-                  <link rel="stylesheet" href={siteFontBody.googleFontsHref} precedence="default" />
-              )}
+              {fontStylesheets.map((href) => (
+                  <link key={href} rel="stylesheet" href={href} precedence="default" />
+              ))}
           </head>
           <body
               style={
@@ -258,6 +286,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       config={siteData.emailPopup ?? {}}
                       siteData={siteData}
                       vivrealOwnSite={vivrealOwnSite}
+                      privacyHref={privacyHref}
                   />
                   {/* Vivreal first-party analytics beacon (cookieless). Fires only
                       on real deployed sites (SITE_ID set + != 'preview'); collection

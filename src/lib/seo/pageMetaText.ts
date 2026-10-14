@@ -118,17 +118,15 @@ type MetaPage = Pick<PageConfig, 'name' | 'format' | 'labels' | 'seo'>;
 export function pageMetaText({
   page,
   slug,
-  staticTitle,
   facts,
 }: {
   page: MetaPage | undefined;
   slug: string;
-  staticTitle?: string;
   facts: BusinessFacts;
 }): { title: string; description: string } {
   const formatTitle = page?.format ? FORMAT_DEFAULT_TITLES[page.format] : undefined;
   const label =
-    nonEmpty(page?.labels?.title) ?? formatTitle ?? nonEmpty(page?.name) ?? staticTitle ?? slug;
+    nonEmpty(page?.labels?.title) ?? formatTitle ?? nonEmpty(page?.name) ?? slug;
   const suffixed = facts.name ? `${label} | ${facts.name}` : label;
   const title = nonEmpty(page?.seo?.metaTitle) ?? suffixed;
   const description =

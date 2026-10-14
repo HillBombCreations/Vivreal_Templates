@@ -160,11 +160,13 @@ const FROZEN_SIGNAL_TTL_MS = 90_000;
 
 const PREVIEW_QUERY_PARAM = 'vivreal_preview';
 
-/** Slugs that always render regardless of pageConfigs: privacy/terms (mirrors
- * the STATIC_SLUGS map in src/app/[slug]/page.tsx) and the two checkout result
+/** Slugs that always render regardless of pageConfigs: the two checkout result
  * pages, which the route synthesizes on every site (`resolvePageForSlug`). An
- * authored redirect must not send a paying buyer away from the confirmation. */
-const ALWAYS_LIVE_SLUGS = new Set(['privacy', 'terms', ...CHECKOUT_RESULT_SLUGS]);
+ * authored redirect must not send a paying buyer away from the confirmation.
+ * Privacy and terms are NOT here: the route serves them only from a stored
+ * page (which is in `slugs` like any other), and 404s them otherwise, so an
+ * authored redirect from either is allowed to run. */
+const ALWAYS_LIVE_SLUGS = new Set(CHECKOUT_RESULT_SLUGS);
 
 export interface EdgeSiteMap {
   slugs: Set<string>;
@@ -248,7 +250,7 @@ export function firstPathSegment(pathname: string): string {
 
 /**
  * True when `pathname` must NEVER be shadowed by a redirect: the root, a
- * static always-on slug (privacy/terms), or a real Studio-authored page.
+ * built-in checkout result slug, or a real Studio-authored page.
  * This re-establishes the invariant `src/lib/redirects.ts:44-52` documents
  * ("a redirect must never shadow live content") — middleware runs BEFORE the
  * page layer that normally enforces that ordering, so it has to be

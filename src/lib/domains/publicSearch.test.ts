@@ -348,7 +348,7 @@ test('the free-year sentence is the portal\'s, byte for byte', () => {
   // contradicting it.
   assert.equal(
     FREE_YEAR_OFFER,
-    'Free for the first year on yearly Pro, on addresses up to $25. One per account.',
+    'Free for the first year on yearly Pro, on addresses up to $25. One per business.',
   );
   assert.equal(DOMAIN_SEARCH_COPY.freeYearOffer, FREE_YEAR_OFFER);
 });
@@ -399,7 +399,7 @@ test('the sentence names the eligible tier, the eligible period, and the per-gro
   // the sentence says one of them, never neither.
   assert.ok(lower.includes('yearly') || lower.includes('annual'),
     'sentence does not say the offer is on the yearly plan');
-  assert.ok(lower.includes('one per account'),
+  assert.ok(lower.includes('one per business'),
     'sentence does not carry perGroupLimit: 1');
 });
 

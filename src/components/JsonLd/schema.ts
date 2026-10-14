@@ -192,8 +192,8 @@ export interface DetailJsonLdInput {
   // Product-specific
   /**
    * The authored price. `objectValue` is Mongo Mixed, so this is whatever the
-   * CMS wrote: "9.00", 9, a Square-synced "8.50", or free text like "$9.00" or
-   * "From $12". Only a bare decimal is publishable, see `asOfferPrice`.
+   * CMS wrote: "9.00", 9, a Square-synced "8.50", an owner-typed "$9.00", or
+   * free text like "From $12". What is publishable is decided by `asOfferPrice`.
    */
   price?: number | string;
   /**
@@ -301,26 +301,33 @@ function asPublishDate(value: string | undefined): string | undefined {
  * A price we are willing to publish inside an `Offer`.
  *
  * Same reasoning and the same shape as `asPublishDate` above: `objectValue` is
- * Mongo Mixed, so the stored price is whatever the CMS wrote. An authored
- * `"$9.00"` used to be passed through verbatim by `String(...)`, which emits an
- * `Offer` that fails validation and takes the whole `Product` down with it.
- * schema.org wants the number alone, with no currency symbol and no thousands
- * separator.
+ * Mongo Mixed, so the stored price is whatever the CMS wrote. schema.org wants
+ * the number alone, with no currency symbol and no thousands separator.
  *
- * It REJECTS rather than repairs, deliberately, which is the same call
- * `asPublishDate` makes for "Autumn 2026". Stripping a `$` would be guessing at
- * both the number and the currency it is denominated in, and this file has just
- * stopped guessing at the second of those. A rejected price falls back to
- * `Thing`, the branch that already exists for a product with no price at all:
- * no rich result either way, but a valid document rather than a broken one.
+ * The portal's collection editor stores a price as the owner typed it, so the
+ * fleet's collection items read `"$9.50"` or `"$1,200.00"`, not `"9.50"`.
+ * Refusing those left every collection-backed item publishing a bare `Thing`
+ * while its page showed a price (v6 D10). So exactly one leading `$` and
+ * correctly grouped thousands commas are accepted, and both are removed from
+ * the published number. Accepting the `$` adds no currency guess: a collection
+ * item never carries a currency, so it falls back to `DEFAULT_OFFER_CURRENCY`,
+ * the same USD a bare `9.50` already got.
+ *
+ * Everything else is still REJECTED rather than repaired, the call
+ * `asPublishDate` makes for "Autumn 2026": ranges and prefixes ("From $12",
+ * "$9-$12"), units ("$12.75/unit", "9 USD"), words, other currency symbols, a
+ * space after the `$`, and misplaced commas ("9,00" is a European decimal, not
+ * nine hundred). A rejected price falls back to `Thing`, the branch a product
+ * with no price at all already takes: no rich result, but a valid document.
  */
 export function asOfferPrice(value: number | string | undefined): string | undefined {
   if (typeof value === 'number') {
     return Number.isFinite(value) && value >= 0 ? String(value) : undefined;
   }
   if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return /^\d+(\.\d+)?$/.test(trimmed) ? trimmed : undefined;
+  const match = /^\$?(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?$/.exec(value.trim());
+  if (!match) return undefined;
+  return `${match[1].replace(/,/g, '')}${match[2] ?? ''}`;
 }
 
 /**
