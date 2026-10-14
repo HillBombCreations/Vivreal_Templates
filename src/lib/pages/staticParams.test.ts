@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PageConfig } from '@/types/SiteData';
 import { slugsForStaticParams } from './staticParams.ts';
+import { CHECKOUT_RESULT_SLUGS } from './builtInPages.ts';
 
 /**
  * `generateStaticParams` decides which URLs a fleet build prerenders. Every
@@ -57,23 +58,40 @@ test('duplicate slugs collapse to one', () => {
 });
 
 test('the always-on slugs are appended', () => {
-  // privacy/terms render from STATIC_PAGE_TITLES with no page config at all.
-  assert.deepEqual(slugsForStaticParams([page('about')], ['privacy', 'terms']), [
+  // The checkout result pages render from `resolvePageForSlug` with no stored
+  // page config at all; the route passes `CHECKOUT_RESULT_SLUGS`.
+  assert.deepEqual(slugsForStaticParams([page('about')], CHECKOUT_RESULT_SLUGS), [
     'about',
+    'checkoutsuccess',
+    'checkoutcancel',
+  ]);
+});
+
+test('REFUSE: privacy and terms are not prerendered on a site that stores neither', () => {
+  // The route 404s both there (owner decision 2026-10-14); prerendering them
+  // would put two 404s in the manifest on 16 of 22 sites.
+  const slugs = slugsForStaticParams([page('about')], CHECKOUT_RESULT_SLUGS);
+  assert.ok(!slugs.includes('privacy') && !slugs.includes('terms'), JSON.stringify(slugs));
+});
+
+test('ALLOW: a stored privacy page is prerendered from the page list itself', () => {
+  assert.deepEqual(slugsForStaticParams([page('privacy', 'static'), page('terms')], CHECKOUT_RESULT_SLUGS), [
     'privacy',
     'terms',
+    'checkoutsuccess',
+    'checkoutcancel',
   ]);
 });
 
 test('an authored page of the same slug keeps its place, and is not duplicated', () => {
-  assert.deepEqual(slugsForStaticParams([page('privacy', 'static'), page('about')], ['privacy']), [
-    'privacy',
-    'about',
-  ]);
+  assert.deepEqual(
+    slugsForStaticParams([page('checkoutsuccess', 'checkout-success'), page('about')], CHECKOUT_RESULT_SLUGS),
+    ['checkoutsuccess', 'about', 'checkoutcancel'],
+  );
 });
 
 test('no pages yields only the always-on slugs, and no pages at all yields nothing', () => {
-  assert.deepEqual(slugsForStaticParams([], ['privacy']), ['privacy']);
+  assert.deepEqual(slugsForStaticParams([], CHECKOUT_RESULT_SLUGS), ['checkoutsuccess', 'checkoutcancel']);
   assert.deepEqual(slugsForStaticParams(undefined), []);
   assert.deepEqual(slugsForStaticParams([]), []);
 });
@@ -83,9 +101,9 @@ test('with always-on slugs the result is NEVER empty, whatever the site data', (
   // classify `/[slug]` as fully static, and with the render gate off every URL
   // on that route then returns HTTP 500 (measured: 45 DYNAMIC_SERVER_USAGE
   // errors, 500 on /about, /our-story, /shop, /schedule). The route passes
-  // `Object.keys(STATIC_PAGE_TITLES)` as `alwaysOn` for exactly this reason,
-  // so the guarantee has to hold for every degenerate input a site can send.
-  const alwaysOn = ['privacy', 'terms'];
+  // `CHECKOUT_RESULT_SLUGS` as `alwaysOn` for exactly this reason, so the
+  // guarantee has to hold for every degenerate input a site can send.
+  const alwaysOn = CHECKOUT_RESULT_SLUGS;
   const degenerate: (PageConfig[] | undefined)[] = [
     undefined,
     [],
@@ -129,5 +147,5 @@ test('an off page cannot take the always-on slugs down with it', () => {
   // The non-empty guarantee above is what keeps a gate-off build from 500ing
   // every `/[slug]` URL, so it has to survive this exclusion too.
   const off = { ...page('specials'), enabled: false } as PageConfig;
-  assert.deepEqual(slugsForStaticParams([off], ['privacy', 'terms']), ['privacy', 'terms']);
+  assert.deepEqual(slugsForStaticParams([off], CHECKOUT_RESULT_SLUGS), ['checkoutsuccess', 'checkoutcancel']);
 });

@@ -9,13 +9,6 @@ import { proxyImageBytes, renderBrandedOgCard } from '@/lib/og/ogCardRender';
 // CDN caching is handled via the response Cache-Control header below.
 export const dynamic = 'force-dynamic';
 
-// Shared with the [slug] route: privacy/terms render on every site without a
-// portal page config, so give them a sensible card heading.
-const STATIC_TITLES: Record<string, string> = {
-  privacy: 'Privacy Policy',
-  terms: 'Terms of Service',
-};
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ slug: string }> },
@@ -55,7 +48,7 @@ export async function GET(
 
   // 2. Generate a branded card.
   const heading = resolvePageOgHeading(pageConfig, {
-    staticTitle: slug === 'home' ? siteName : STATIC_TITLES[slug],
+    staticTitle: slug === 'home' ? siteName : undefined,
     siteName,
     slug,
   });

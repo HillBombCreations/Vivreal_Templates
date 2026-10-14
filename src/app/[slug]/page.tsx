@@ -12,7 +12,7 @@ import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
-import { resolvePageForSlug } from "@/lib/pages/builtInPages";
+import { CHECKOUT_RESULT_SLUGS, resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { pageMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { legacySubscribeCollectionId } from "@/lib/pages/subscribeCollection";
@@ -87,13 +87,13 @@ export const dynamicParams = true;
  */
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   const siteData = await getSiteData();
-  // `STATIC_PAGE_TITLES` is declared further down the file. Safe: this function
-  // runs during the build, long after module evaluation, so the binding is
-  // initialised. It is read rather than duplicated because privacy and terms
-  // render from it with no page config at all, and a second list would drift.
-  // It also guarantees a NON-EMPTY result on every site, which the docblock
-  // above explains is the difference between a working fleet and a 500.
-  return slugsForStaticParams(siteData.pageConfigs, Object.keys(STATIC_PAGE_TITLES)).map(
+  // The checkout result slugs are the only ones this route serves with no
+  // stored page (`resolvePageForSlug`), so they are the always-on list. They
+  // also guarantee a NON-EMPTY result on every site, which the docblock above
+  // explains is the difference between a working fleet and a 500. Privacy and
+  // terms used to be here and are not: a site with no stored policy page now
+  // answers 404 for them (owner decision 2026-10-14, no invented legal text).
+  return slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS).map(
     (slug) => ({ slug }),
   );
 }
@@ -271,7 +271,7 @@ export default async function DynamicPage({
   // back `FALLBACK_SITE_DATA` when VR_Client_API cannot be read, and its
   // `pageConfigs: []` makes `resolvePageForSlug` miss EVERY real slug on the site,
   // so without this line a transient upstream wobble answers 404 on every page
-  // except /privacy and /terms. A 404 tells a crawler the URL is gone and to
+  // of the site. A 404 tells a crawler the URL is gone and to
   // drop it; a 5xx tells it to come back. See `assertUpstreamHealthy`.
   //
   // Placed before the lookup, not inside the `!pageConfig` branch, so it also
@@ -305,11 +305,6 @@ export default async function DynamicPage({
   // /api/revalidate`, which invalidates the `site:<id>` tag this route's
   // `getSiteData()` read carries; `revalidate = 300` is the backstop).
   //
-  // BEFORE the `STATIC_SLUGS` fallback below, deliberately. Privacy and terms
-  // render on every site even with no page config at all, so a site that HAS a
-  // privacy page and switched it off would otherwise fall through to that
-  // fallback and serve the built-in near-empty copy in place of the owner's.
-  //
   // After `assertUpstreamHealthy`, equally deliberately: on a degraded read
   // `pageConfigs` is empty, the lookup returns `undefined`, and `undefined` is
   // not "off" (see `isPageTurnedOff`), so an upstream wobble cannot make this
@@ -327,15 +322,14 @@ export default async function DynamicPage({
   // so an upstream wobble cannot 404 a live page.
   if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();
 
-  // Privacy and terms always render on every site, even if not in page config
-  const STATIC_SLUGS: Record<string, string> = {
-    privacy: "Privacy Policy",
-    terms: "Terms of Service",
-  };
-  if (!pageConfig && !STATIC_SLUGS[slug]) {
+  // No stored page, no exemptions. Privacy and terms used to be exempt here and
+  // rendered a synthesized, block-less page: EMPTY, with a 200, on every site
+  // that stores no policy (owner decision 2026-10-14, consistent with FP2-08,
+  // no invented legal text). A site that stores one is served it like any
+  // other page.
+  if (!pageConfig) {
     // Phase 0 of the two-axis detail-route design (§5.1, §7.2 step 10) — the
-    // WS3 301 redirect mechanism. Reached only when no real page (and no
-    // static slug) matched, so this can never shadow live content. Covers
+    // WS3 301 redirect mechanism. Reached only when no real page matched, so this can never shadow live content. Covers
     // the common case: most migrated-page redirects are single-segment
     // renames (`/old-slug` → `/new-slug`), which route here, not to
     // `[slug]/[itemId]/page.tsx`. Absent/empty siteData.redirects (the fleet
@@ -352,8 +346,8 @@ export default async function DynamicPage({
     return notFound();
   }
 
-  const format = pageConfig?.format ?? (STATIC_SLUGS[slug] ? "static" : undefined);
-  const name = pageConfig?.name ?? STATIC_SLUGS[slug] ?? slug;
+  const format = pageConfig.format;
+  const name = pageConfig.name ?? slug;
 
   // OQ-5 guard (SP-6 Task 5, reviewer Concern #2): the VR_Client_API synthetic
   // "subscribers" page must never be a navigable route — it exists solely so
@@ -367,23 +361,19 @@ export default async function DynamicPage({
   if (format === "subscribers") return notFound();
 
   // Composed formats (Plan 4 + SP-6) — render through the same composePage() the
-  // Studio preview uses. Handled first so static can render with pageConfig undefined
-  // (privacy/terms always exist even without a portal page config).
+  // Studio preview uses.
   if (composeFormat(format)) {
 
     let composedPage: PageConfig;
     if (format === "static") {
-      // Static (privacy/terms): resolve labels via getPageLabel exactly as the
-      // legacy StaticPage did, and synthesize a config for the slug-only
-      // privacy/terms pages that have no portal page config. composePage's static
-      // branch keys default copy off page.slug and emits the trailing CTA band.
+      // Static: resolve labels via getPageLabel exactly as the legacy StaticPage
+      // did. composePage's static branch keys default copy off page.slug and
+      // emits the trailing CTA band.
       const labels: Record<string, string> = {
         title: getPageLabel(siteData, name, "title", name),
         content: getPageLabel(siteData, name, "content", ""),
       };
-      composedPage = pageConfig
-        ? { ...pageConfig, labels }
-        : { name, slug, format, collectionId: null, labels };
+      composedPage = { ...pageConfig, labels };
       // Delegate to the shared helper so [slug] and [slug]/[itemId] cannot drift.
       return renderComposedPage({ siteData, composedPage });
     } else if (format === "subscribe") {
@@ -804,11 +794,6 @@ async function ComposedFormatBody({
   );
 }
 
-const STATIC_PAGE_TITLES: Record<string, string> = {
-  privacy: "Privacy Policy",
-  terms: "Terms of Service",
-};
-
 export async function generateMetadata({
   params,
   searchParams,
@@ -829,7 +814,7 @@ export async function generateMetadata({
   const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
 
-  if (!pageConfig && !STATIC_PAGE_TITLES[slug]) {
+  if (!pageConfig) {
     return { title: `Not Found | ${siteName}` };
   }
 
@@ -873,7 +858,6 @@ export async function generateMetadata({
   const { title, description } = pageMetaText({
     page: pageConfig,
     slug,
-    staticTitle: STATIC_PAGE_TITLES[slug],
     facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
   });
 

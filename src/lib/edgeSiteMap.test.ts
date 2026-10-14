@@ -70,9 +70,17 @@ test('isLiveContentPath: the root path is always live', () => {
   assert.equal(isLiveContentPath('/', new Set()), true);
 });
 
-test('isLiveContentPath: privacy/terms are always live even when absent from slugs', () => {
-  assert.equal(isLiveContentPath('/privacy', new Set()), true);
-  assert.equal(isLiveContentPath('/terms', new Set()), true);
+test('REFUSE isLiveContentPath: privacy/terms with no stored page are NOT live', () => {
+  // The route 404s both when the site stores no page there (owner decision
+  // 2026-10-14), so there is no live content for a redirect to shadow.
+  assert.equal(isLiveContentPath('/privacy', new Set()), false);
+  assert.equal(isLiveContentPath('/terms', new Set(['about'])), false);
+});
+
+test('ALLOW isLiveContentPath: a stored privacy/terms page is live like any other page', () => {
+  const slugs = new Set(['privacy', 'terms']);
+  assert.equal(isLiveContentPath('/privacy', slugs), true);
+  assert.equal(isLiveContentPath('/terms', slugs), true);
 });
 
 test('isLiveContentPath: the checkout result pages are always live, so a redirect cannot shadow them', () => {

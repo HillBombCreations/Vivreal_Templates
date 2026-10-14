@@ -157,8 +157,8 @@ test('a stored page with a checkout slug but another format keeps its own format
 // ── REFUSE: nothing else becomes routable ──────────────────────────────────
 
 test('an unrelated unknown slug still resolves to nothing (the route 404s it)', () => {
-  // privacy/terms are absent here on purpose: the route serves those through
-  // its own STATIC_SLUGS fallback, not through this resolver.
+  // privacy/terms included: with no stored page the route 404s them too
+  // (owner decision 2026-10-14), there is no built-in policy page.
   for (const slug of ['nope', 'checkout', 'order', 'privacy', 'terms', 'subscribers', '']) {
     assert.equal(resolvePageForSlug(storeWithoutCheckoutPages, slug), undefined, slug);
   }
@@ -191,4 +191,34 @@ test('the slug list is exactly the two pages, frozen', () => {
   assert.ok(Object.isFrozen(CHECKOUT_RESULT_SLUGS));
   assert.ok(Object.isFrozen(CHECKOUT_RESULT_PAGES));
   assert.ok(CHECKOUT_RESULT_PAGES.every((p) => Object.isFrozen(p)));
+});
+
+// ── privacy and terms: a stored page serves, no stored page 404s ────────────
+//
+// Owner decision 2026-10-14 (FP2-08, no invented legal text). The route has no
+// exemption for these slugs any more (pinned in src/app/[slug]/page.test.ts),
+// so this resolver's answer IS the route's answer. 6 of 22 live sites store a
+// `privacy` and/or `terms` page (Waves of Grain, Dougs Kitchen, Comedy
+// Collective, Vivreal, globaldropsupply, Marlowe & Kept); the other 16 store
+// neither and go from an empty 200 to a 404.
+
+test('ALLOW: a stored privacy or terms page resolves as stored, whatever its format', () => {
+  // Kit policy pages are `about` or `standard`, migrated ones `static`.
+  for (const format of ['static', 'about', 'standard']) {
+    const privacy = page('privacy', format);
+    const terms = page('terms', format);
+    const site = [page('about'), privacy, terms];
+    assert.equal(resolvePageForSlug(site, 'privacy'), privacy, `privacy (${format})`);
+    assert.equal(resolvePageForSlug(site, 'terms'), terms, `terms (${format})`);
+  }
+});
+
+test('REFUSE: with no stored privacy or terms page both resolve to nothing, so the route 404s', () => {
+  // Including a site that stores a policy under ANOTHER slug: `/privacy` is
+  // still not a page there, only `/privacy-policy` is.
+  const site = [page('about'), page('privacy-policy'), page('terms-of-use')];
+  for (const slug of ['privacy', 'terms']) {
+    assert.equal(resolvePageForSlug(site, slug), undefined, slug);
+    assert.equal(resolvePageForSlug([], slug), undefined, `${slug}, no pages`);
+  }
 });

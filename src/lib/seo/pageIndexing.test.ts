@@ -111,7 +111,7 @@ test('pageIndexingBlock puts the AUTHOR cause first, because the `follow` half o
 });
 
 test('pageIndexingBlock survives an absent page and an absent format without blocking it', () => {
-  // A slug with no page config at all (a STATIC_PAGE_TITLES route) must not be
+  // A caller holding no page config at all must not have that page
   // silently deindexed by the composer that runs for every page on the site.
   assert.equal(pageIndexingBlock(undefined), null);
   assert.equal(pageIndexingBlock(null), null);
