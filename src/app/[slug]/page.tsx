@@ -15,6 +15,7 @@ import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageI
 import { resolvePageForSlug } from "@/lib/pages/builtInPages";
 import { pageMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
+import { legacySubscribeCollectionId } from "@/lib/pages/subscribeCollection";
 import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
 import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 // CC8 Phase 4: FormClient is no longer routed (form pages compose through the
@@ -406,8 +407,8 @@ export default async function DynamicPage({
       if (!hasSubscribeBlock) {
         // Resolve the collection id via the legacy fields (additive: these still
         // exist until SP-7 $unsets them; the block binding is the SP-6+ path).
-        const legacyCollectionId =
-          pageConfig?.collectionId ?? pageConfig?.collections?.[0]?.collectionId ?? "";
+        // collections[0] is read only for a block-less page, see the helper.
+        const legacyCollectionId = legacySubscribeCollectionId(pageConfig);
         const storedBlocks = pageConfig?.blocks ?? [];
         composedPage = {
           ...(pageConfig ?? { name, slug, format, collectionId: null, labels: {} }),

@@ -166,3 +166,11 @@ test('generateMetadata reads searchParams only behind the config-only emptiness 
   assert.equal(meta.match(/await searchParams/g)?.length, 1, 'and nowhere else in metadata');
   assert.match(source, /import \{ pageMustDecideEmptiness \} from "@\/lib\/api\/composition\/pageEmptiness"/);
 });
+
+test('the subscribe fallback resolves its list through the tested helper', () => {
+  // The helper reads collections[0] only for a block-less page (review note N5,
+  // VR_Client_API #121 blanks that mirror on pages with blocks). An inline
+  // collections[0] read here would bypass that gate where no test can reach it.
+  assert.match(source, /legacySubscribeCollectionId\(pageConfig\)/, 'the route must reach the tested helper');
+  assert.doesNotMatch(source, /collections\?\.\[0\]/, 'no inline read of the legacy mirror');
+});
