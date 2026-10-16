@@ -6,6 +6,7 @@ import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import type { EmailPopupConfig } from "@hillbombcreations/site-renderer";
 import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
+import { SIGNUP_UNAVAILABLE_TEXT, resolveSubscribersCollectionId } from "@/lib/subscribe/subscribersList";
 import { trackLeadConversion } from "@/lib/analytics";
 import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
 import { PHONE_MEDIA_QUERY, classifyPopupPath, resolvePopupTrigger } from "./popupPolicy";
@@ -102,19 +103,12 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
   //      live popup working. After Task 8, both legs return the same value; the
   //      block leg wins first, the legacy leg remains as a belt-and-suspenders
   //      fallback until SP-7 $unsets it.
-  //   4. "" — no subscribers collection found; subscribeUser is a no-op.
-  const subPage = siteData?.pageConfigs?.find((p) => p.format === "subscribers");
+  //   4. The list VR_Client_API resolves for a site that links none (N-C6).
+  //   5. "": no list at all. subscribeUser refuses without a request, and the
+  //      dialog says sign ups are not open instead of "valid email".
+  // Legs 2 to 5 are the shared resolver every inline form uses too.
   const collectionId =
-    cfg.collectionId ??
-    subPage?.blocks
-      ?.find(
-        (b) =>
-          b?.type?.kind === "page-template" &&
-          b?.type?.dispatchId === "subscribe",
-      )
-      ?.config?.bindings?.find((bd) => bd.collectionId)?.collectionId ??
-    subPage?.collectionId ??
-    "";
+    cfg.collectionId ?? resolveSubscribersCollectionId(siteData);
 
   // Guard so trigger listeners can't fire after we've decided to open / unmount.
   const firedRef = useRef(false);
@@ -233,7 +227,9 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
       placeholder={copy.placeholder}
       buttonLabel={copy.buttonLabel}
       successText={copy.successText}
-      errorText={copy.errorText}
+      // N-C6: with no list, the only true thing to say is that sign ups are
+      // not open. The dialog's own default reads "valid email address".
+      errorText={collectionId ? copy.errorText : SIGNUP_UNAVAILABLE_TEXT}
       {...popupConsentProps({ privacyHref, consentText: copy.consentText, siteName })}
       // Levain round — split-image layout. Pass-through only (image.src is a
       // ready URL per the pre-signed contract); absent ⇒ centered legacy card.

@@ -8,6 +8,7 @@ import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
 import { footerHours } from '@/lib/footerHours';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
+import { resolveSubscribersCollectionId, withSignupUnavailableCopy } from '@/lib/subscribe/subscribersList';
 
 /**
  * Site footer. Thin server-side data shell around the renderer's <Footer>
@@ -104,7 +105,11 @@ const Footer = async () => {
       hiddenPaths={await getSeedOnlyPaths()}
       pageConfigs={pageConfigs}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
-      newsletter={siteData?.footerNewsletter ?? null}
+      // N-C6: a site with no list says sign ups are not open, not "valid email".
+      newsletter={withSignupUnavailableCopy(
+        siteData?.footerNewsletter,
+        resolveSubscribersCollectionId(siteData),
+      )}
       // A Bakeshop feedback round (renderer 1.34.0): footer logo render height
       // — FooterProps declares it, so it rides as a plain prop.
       logoHeight={siteData?.footer?.brand?.logoHeight ?? null}

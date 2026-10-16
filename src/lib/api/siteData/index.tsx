@@ -114,6 +114,8 @@ interface SiteDetailsResponse {
   commerce?: SiteData['commerce'];
   /** R5 (VR_Client_API v5): when the site document last changed. */
   updatedAt?: string | null;
+  /** N-C6: the claimed subscribers list for a site that links none. */
+  subscribersCollectionId?: string | null;
   /**
    * H177 - the shell's inline rich-text image map, key to signed media URL.
    * Present on every read from VR_Client_API v2.10.16 onward and always an
@@ -275,6 +277,8 @@ export const getSiteData = async (): Promise<SiteData> => {
     // F-C19 and R5 (VR_Client_API v5): top-level, never in siteDetails.values.
     commerce: readCommerce(raw.commerce),
     updatedAt: raw.updatedAt ?? null,
+    // N-C6: top-level only, built at read time like `commerce`.
+    subscribersCollectionId: raw.subscribersCollectionId ?? null,
     // F2: the business wide low stock switch. Absent stays absent (contract C5),
     // so each template's own default decides. See ./showLowStock.ts.
     ...readShowLowStock(raw),
