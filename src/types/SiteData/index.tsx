@@ -782,6 +782,13 @@ export interface SiteData {
      */
     updatedAt?: string | null;
     /**
+     * N-C6: the subscribers list VR_Client_API resolves for a site that links
+     * none (no synthetic `subscribers` page). Read only through
+     * `resolveSubscribersCollectionId`. Absent on an older payload, or null
+     * when the site claims no list.
+     */
+    subscribersCollectionId?: string | null;
+    /**
      * F-C19: which product lists cannot sell right now. `state` is the
      * strongest over every list, `lists` maps a collection id to `'paused'`
      * or `'moving'`; a list absent from it is selling. Always present from
