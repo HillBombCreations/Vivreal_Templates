@@ -10,6 +10,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
+  commitMessageFor,
   parseArgs,
   resolveBuildTier,
   runFleetBuild,
@@ -388,4 +389,35 @@ test("catchup: the CLI exits 2 on a bad tier before touching AWS, and 0-path arg
   assert.match(bad.stderr, /--catchup must be one of demo, live, all/);
   // ALLOW side of the pair: the same command with a valid tier parses.
   assert.equal(parseArgs(["--commit", SHA, "--catchup", "live"], MANUAL).scopeLabel, "scope live");
+});
+
+// ── commit message on every StartJob ────────────────────────────────────
+// jobType reads null in this account, so the message is the only thing that
+// tells a fleet-build job from a git-push autobuild in the rollout proof.
+
+test("message: every StartJob carries fleet-build, the tier, the short sha and the run id", async () => {
+  const s = stubClient(fleet());
+  const env = { GITHUB_RUN_ID: "18734512345", GITHUB_EVENT_NAME: "workflow_dispatch" };
+  await runFleetBuild({ client: s.client, options: parseArgs(["--commit", SHA, "--scope", "all"], env) });
+  assert.equal(s.calls.start.length, 6);
+  for (const c of s.calls.start) {
+    assert.equal(c.commitMessage, `fleet-build live,demo,qa ${SHA.slice(0, 7)} run 18734512345`);
+  }
+});
+
+test("message: the catch-up names its tier, and a local run says local, never undefined", async () => {
+  const s = stubClient(fleet());
+  await runFleetBuild({ client: s.client, options: parseArgs(["--commit", SHA, "--catchup", "demo"], { GITHUB_EVENT_NAME: "schedule" }) });
+  assert.ok(s.calls.start.length > 0);
+  for (const c of s.calls.start) {
+    assert.equal(c.commitMessage, `fleet-build demo ${SHA.slice(0, 7)} run local`);
+    assert.doesNotMatch(c.commitMessage, /undefined/);
+  }
+});
+
+test("message: a non-numeric GITHUB_RUN_ID is refused into the message as local", () => {
+  const o = parseArgs(["--commit", SHA], { GITHUB_RUN_ID: "123; rm -rf /" });
+  assert.equal(o.runId, "local");
+  assert.equal(commitMessageFor(o), `fleet-build live ${SHA.slice(0, 7)} run local`);
+  assert.equal(parseArgs(["--commit", SHA], { GITHUB_RUN_ID: "42" }).runId, "42");
 });

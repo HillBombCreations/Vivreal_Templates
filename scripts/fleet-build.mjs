@@ -71,7 +71,7 @@ export class UsageError extends Error {}
 /**
  * @param {string[]} argv arguments after the script path
  * @returns {{ commit: string, tiers: Set<string>, requiredTiers: string[], scopeLabel: string,
- *             branch: string, dryRun: boolean, concurrency: number, region: string }}
+ *             branch: string, dryRun: boolean, concurrency: number, region: string, runId: string }}
  */
 export function parseArgs(argv, env = process.env) {
   let commit = null;
@@ -178,7 +178,11 @@ export function parseArgs(argv, env = process.env) {
   }
   const requiredTiers = named.filter((t) => MUST_EXIST_TIERS.includes(t));
 
-  return { commit, tiers, requiredTiers, scopeLabel, branch, dryRun, concurrency, region };
+  // Stamped into every StartJob commit message. Digits only, so nothing an
+  // environment can carry reaches the message except a run number.
+  const runId = /^[0-9]+$/.test(env.GITHUB_RUN_ID ?? "") ? env.GITHUB_RUN_ID : "local";
+
+  return { commit, tiers, requiredTiers, scopeLabel, branch, dryRun, concurrency, region, runId };
 }
 
 /**
@@ -280,6 +284,10 @@ async function buildOne({ client, app, options }) {
       // Labels the job so a later cost audit can tell a fan-out build from a
       // hand-run one; ListJobs returns no actor.
       jobReason: `fleet-build ${options.scopeLabel}`,
+      // ListJobs returns jobType null in this account, so the commit message
+      // is what tells a fan-out job from a git-push autobuild (which carries
+      // the commit's own message) in the rollout proof and later cost audits.
+      commitMessage: commitMessageFor(options),
     });
     row.action = "started";
     row.detail = `job ${started.jobId} from ${from}`;
@@ -289,6 +297,11 @@ async function buildOne({ client, app, options }) {
     row.detail = err instanceof Error ? err.message.split("\n")[0] : String(err);
     return row;
   }
+}
+
+/** `fleet-build <tiers> <short sha> run <GITHUB_RUN_ID or local>`. */
+export function commitMessageFor(options) {
+  return `fleet-build ${[...options.tiers].join(",")} ${options.commit.slice(0, 7)} run ${options.runId}`;
 }
 
 const FAILING_ACTIONS = new Set(["failed", "busy"]);
@@ -376,7 +389,7 @@ export function createAwsCliClient({ region }) {
       const res = await aws(["list-jobs", "--app-id", appId, "--branch-name", branch, "--max-items", String(JOBS_TO_READ)]);
       return res.jobSummaries ?? [];
     },
-    async startJob({ appId, branch, jobType, commitId, jobReason }) {
+    async startJob({ appId, branch, jobType, commitId, jobReason, commitMessage }) {
       const res = await aws([
         "start-job",
         "--app-id", appId,
@@ -384,6 +397,7 @@ export function createAwsCliClient({ region }) {
         "--job-type", jobType,
         "--commit-id", commitId,
         "--job-reason", jobReason,
+        "--commit-message", commitMessage,
       ]);
       return { jobId: res.jobSummary?.jobId, status: res.jobSummary?.status };
     },
