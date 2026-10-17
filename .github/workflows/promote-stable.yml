@@ -2,15 +2,48 @@ name: Promote main to stable
 
 # Manual promotion only. Advancing the `stable` release channel is a deliberate
 # release action, never an automatic side-effect of merging to main: every
-# customer site builds from `stable`, so a promotion rebuilds every site. Run
-# this workflow from the Actions tab when integration on `main` is ready to ship.
+# customer site builds from `stable`. Run this workflow from the Actions tab
+# when integration on `main` is ready to ship. One release promote a week;
+# a hotfix only for a security fix or a broken live site.
+#
+# WHICH SITES BUILD (cost cut V7.247). After the push, `scripts/fleet-build.mjs`
+# starts a RELEASE build pinned to the promoted commit for the `live` build tier
+# only (paying customers plus vivreal.io and help; an untagged app counts as
+# live). Demo sites catch up weekly in `demo-catchup.yml`. `scope: all` builds
+# every site, for a security fix, and works with no new commit to promote.
+# Until git-push autobuild is switched off on each app, the push ALSO builds
+# every site; fleet-build skips an app already building this commit, so the
+# overlap costs at most one extra build per live site.
+#
+# ORDER IS LOAD-BEARING. A dispatch from any branch but `main` is refused, then
+# the AWS role is assumed, and only then is `stable` pushed. A sign-in failure
+# therefore stops the run with `stable` unmoved; once autobuild is off, a
+# sign-in failure AFTER the push would leave every live site unbuilt.
+#
+# RECOVERY. If the fan-out fails or reports an app `busy`, run
+# `demo-catchup.yml` by hand with `tier: live` (or `all`). It builds at
+# `stable`'s head. NEVER re-run this workflow to recover: it re-reads `main`
+# and would move `stable` again to whatever has merged since.
 on:
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "live: build live sites only (a release). all: build every site, demos and QA too (a security fix)."
+        type: choice
+        options:
+          - live
+          - all
+        default: live
+      dry_run:
+        description: "Plan only. stable is NOT moved and no build starts; the run summary lists what would build."
+        type: boolean
+        default: false
 
 # Least privilege: the push authenticates as the GitHub App below, not the
-# default GITHUB_TOKEN.
+# default GITHUB_TOKEN. id-token is for the AWS role (OIDC), nothing else.
 permissions:
   contents: read
+  id-token: write
 
 # Serialize promotions so two concurrent runs can't race the `stable` ref.
 concurrency:
@@ -21,6 +54,35 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
+      # Refuse before anything else. The promote always pushes `main`, whatever
+      # branch it was dispatched from, so a dispatch from another branch is a
+      # mistake, and the AWS role would refuse it anyway, only later. A dry run
+      # pushes nothing, so it is allowed (the role will still refuse a non-main
+      # ref, which is the expected answer there).
+      - name: Refuse a dispatch from a branch other than main
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$DRY_RUN" != "true" ]; then
+            echo "::error::Refusing to promote: dispatched from $GITHUB_REF. Run this workflow from main."
+            exit 1
+          fi
+
+      # Assume the AWS role BEFORE the push, so a sign-in failure leaves
+      # `stable` unmoved. Role `VivrealTemplatesFleetBuild`: amplify:ListApps,
+      # ListTagsForResource, ListJobs and StartJob only, trusted for this
+      # repo's `main` ref.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TEMPLATES_FLEET_BUILD_ROLE_ARN }}
+          role-session-name: promote-stable-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       # Authenticate as the Vivreal GitHub App (contents:write on this repo)
       # instead of a long-lived PAT. Scope the installation token to this repo
       # only; feed it to checkout so the push below authenticates as the App.
@@ -42,6 +104,9 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Fast-forward promote main → stable
+        id: promote
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
 
@@ -55,12 +120,17 @@ jobs:
           OLD_SHA="$(git rev-parse origin/stable)"
           NEW_SHA="$(git rev-parse origin/main)"
 
+          # The commit the sites build at. Set before any early exit: on the
+          # no-op path below the fan-out still runs, so `scope: all` can
+          # rebuild every site for a security fix without a dummy commit.
+          echo "sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
+
           if [ "$OLD_SHA" = "$NEW_SHA" ]; then
             echo "stable is already at main ($NEW_SHA) — nothing to promote."
             {
               echo "## Promote main → stable"
               echo ""
-              echo "No-op: \`stable\` already at \`$NEW_SHA\`."
+              echo "No-op: \`stable\` already at \`$NEW_SHA\`. Sites in scope that are behind it still build below."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -73,6 +143,16 @@ jobs:
             exit 1
           fi
 
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "Dry run: would promote stable $OLD_SHA → $NEW_SHA. Not pushing."
+            {
+              echo "## Promote main → stable (dry run)"
+              echo ""
+              echo "Would fast-forward \`stable\`: \`$OLD_SHA\` → \`$NEW_SHA\`. Nothing was pushed."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
           # Fast-forward-only push of main's tip onto stable. Without --force, git
           # also rejects a non-fast-forward push here, so this is a second guard.
           git push origin origin/main:refs/heads/stable
@@ -83,3 +163,16 @@ jobs:
             echo ""
             echo "Fast-forwarded \`stable\`: \`$OLD_SHA\` → \`$NEW_SHA\`."
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # If this step fails, `stable` HAS moved. Do not re-run this workflow:
+      # run demo-catchup.yml with `tier: live` (see RECOVERY at the top).
+      - name: Build sites at the promoted commit
+        env:
+          SHA: ${{ steps.promote.outputs.sha }}
+          SCOPE: ${{ inputs.scope }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--commit "$SHA" --scope "$SCOPE")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          node scripts/fleet-build.mjs "${args[@]}"

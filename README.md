@@ -8,7 +8,8 @@ no per-site branches. Two channels matter:
 - **`main`** — integration. Merge day-to-day template work here. Merging to
   `main` does **not** touch any live site.
 - **`stable`** — the release channel. Every customer site's Amplify app is bound
-  to `stable`; a push to `stable` rebuilds all of them.
+  to `stable`, and a promote starts the builds (see "Which sites build, and
+  when" below).
 - **`beta`** — reserved for a future opt-in channel (volunteer sites). Not wired
   up yet.
 
@@ -20,8 +21,57 @@ strict ancestor of `main` (i.e. a real fast-forward), and reports the old → ne
 is deliberate, so shipping to every site is always an explicit decision.
 
 **Per-site emergency hold.** To pin one site while promoting the rest, disable
-that Amplify app's branch auto-build, then start builds explicitly with
-`start-job` only when you want that site to pick up `stable`.
+that Amplify app's branch auto-build and set its `vivreal:buildTier` tag to
+`qa`, so the promote fan-out skips it. `scope: all` still builds it. Put the tag
+back when you want that site to pick up `stable`.
+
+### Which sites build, and when
+
+Cost cut V7.247. Each Templates Amplify app carries a `vivreal:buildTier` tag:
+`live` (paying customers, vivreal.io, help), `demo` (the VivrealContent showcase
+sites) or `qa` (scratch). **An app with no tag, or a value not in that list,
+counts as `live`**, so a missing tag costs a build and never leaves a customer
+on old code.
+
+- **Content changes never start a build.** A Studio save, an agent edit or a
+  direct Mongo write reaches the site through the `site.updated` event and
+  `/api/revalidate`. After a direct write, send `site.updated`. Do not reach
+  for `aws amplify start-job`. The one exception is the Next image-optimizer
+  cache, which revalidate does not clear: a single-app `start-job`, labelled
+  as such.
+- **A promote builds live sites.** After the fast-forward, `promote-stable.yml`
+  runs `scripts/fleet-build.mjs --scope live`, which starts one RELEASE build
+  per `live` app pinned to the promoted commit. One release promote a week.
+  A hotfix promote only for a security fix or a broken live site.
+- **Demos catch up weekly.** `demo-catchup.yml` runs Wednesdays at 10:43 UTC
+  and builds each `demo` app that is behind `stable`'s head. It never moves
+  `stable`. Run it by hand before a walk, a reshoot or a showcase link. Its
+  manual `tier` input also takes `live` or `all`; the schedule always runs
+  `demo`.
+- **Security fixes use `scope: all`.** It builds every app, demos and QA
+  included, and works on a no-op promote, so no dummy commit is needed.
+- **QA apps** build on their first deploy, by hand, or with `scope: all` / `tier: all`, nothing else.
+
+`fleet-build.mjs` is idempotent: it skips an app whose last successful build
+is already that commit, or that is already building it. An app busy building a
+different commit is not started and fails the run.
+
+**If the fan-out fails or an app is busy, run `demo-catchup.yml` manually with
+tier `live` (or `all`). Never re-run the promote.** The catch-up builds at
+`stable`'s head and skips every app already there. A re-run promote re-reads
+`main` and would move `stable` again to whatever has merged since. The promote
+signs in to AWS before it pushes, so a sign-in failure leaves `stable` unmoved,
+and it refuses a dispatch from any branch other than `main`.
+
+`--dry-run` (the `dry_run` workflow input) reads the fleet and prints the plan
+without starting anything. Exit codes: 0 all good, 1 an app failed or was busy,
+2 bad arguments or an empty fleet or tier. Both workflows assume the AWS role
+in the repository variable `TEMPLATES_FLEET_BUILD_ROLE_ARN` over OIDC.
+
+```bash
+node scripts/fleet-build.mjs --commit <full sha> --dry-run              # plan, live tier
+node scripts/fleet-build.mjs --commit <full sha> --tier demo --dry-run  # plan, demos
+```
 
 ## Getting Started
 
