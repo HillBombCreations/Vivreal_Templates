@@ -90,7 +90,7 @@ test('REFUSE (V7.250): an oversized data: favicon resolves to undefined at the r
 });
 
 test('ALLOW (V7.250): a hosted favicon URL and a tiny data: favicon pass through the read boundary unchanged', () => {
-  for (const favicon of ['https://media.vivreal.io/groupObjects/abc/favicon.png', 'data:image/png;base64,iVBORw0KGgo=']) {
+  for (const favicon of ['https://media.vivreal.io/groupObjects/abc/favicon.png', 'data:image/png;base64,iVBORw0KGgo=', 'data:image/png;base64,' + 'A'.repeat(10_712)]) {
     assert.equal(resolveSiteChrome(makeRaw({ favicon }) as never).favicon, favicon);
   }
 });

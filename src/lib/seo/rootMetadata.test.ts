@@ -102,7 +102,7 @@ test('favicon: present sets icons.icon, absent sets no icons key at all', () => 
 
 // V7.250: vivreal.io stored its favicon as a 221,164-character base64 PNG data
 // URI and every HTML response inlined it (81% of each gzipped page). An inline
-// icon over 4096 characters is refused so Next's /icon and /apple-icon
+// icon over 32,768 characters is refused so Next's /icon and /apple-icon
 // convention routes (src/app/icon.tsx, built from the hosted logo) serve
 // instead, the same path every site without a stored favicon already takes.
 const PNG_PREFIX = 'data:image/png;base64,';
@@ -114,23 +114,33 @@ test('REFUSE (V7.250): an oversized data: favicon is not inlined, no icons overr
 });
 
 test('REFUSE (V7.250): the size cap is not dodged by case or padding on the data: scheme', () => {
-  for (const favicon of ['DATA:image/png;base64,' + 'A'.repeat(5000), '  Data:image/png;base64,' + 'A'.repeat(5000)]) {
+  for (const favicon of ['DATA:image/png;base64,' + 'A'.repeat(40_000), '  Data:image/png;base64,' + 'A'.repeat(40_000)]) {
     const metadata = buildRootMetadata({ favicon } as SiteData);
     assert.equal(metadata.icons, undefined, JSON.stringify(favicon.slice(0, 12)));
   }
 });
 
-test('REFUSE (V7.250): one character over the 4096 cap is refused, exactly the cap is allowed', () => {
-  const atCap = PNG_PREFIX + 'A'.repeat(4096 - PNG_PREFIX.length);
+test('REFUSE (V7.250): one character over the 32,768 cap is refused, exactly the cap is allowed', () => {
+  const atCap = PNG_PREFIX + 'A'.repeat(32_768 - PNG_PREFIX.length);
   const overCap = atCap + 'A';
-  assert.equal(atCap.length, 4096);
+  assert.equal(atCap.length, 32_768);
   assert.deepEqual(buildRootMetadata({ favicon: atCap } as SiteData).icons, { icon: atCap });
   assert.equal(buildRootMetadata({ favicon: overCap } as SiteData).icons, undefined);
 });
 
 test('ALLOW (V7.250): a hosted favicon URL passes through unchanged, whatever its length', () => {
-  const hosted = 'https://media.vivreal.io/groupObjects/abc/' + 'x'.repeat(5000) + '/favicon.png';
+  const hosted = 'https://media.vivreal.io/groupObjects/abc/' + 'x'.repeat(40_000) + '/favicon.png';
   assert.deepEqual(buildRootMetadata({ favicon: hosted } as SiteData).icons, { icon: hosted });
+});
+
+// The Studio downscales an owner's upload to a 64x64 PNG before storing it.
+// pod_01 holds one at 10,734 characters (2026-10-17); a 64x64 RGBA PNG tops
+// out near 22,100. Refusing these would silently drop an owner's own icon.
+test('ALLOW (V7.250): a Studio 64x64 PNG favicon passes, at the stored size and at the format worst case', () => {
+  for (const length of [10_734, 22_200]) {
+    const studio = PNG_PREFIX + 'A'.repeat(length - PNG_PREFIX.length);
+    assert.deepEqual(buildRootMetadata({ favicon: studio } as SiteData).icons, { icon: studio }, String(length));
+  }
 });
 
 test('ALLOW (V7.250): a tiny inline data: favicon passes through unchanged', () => {
