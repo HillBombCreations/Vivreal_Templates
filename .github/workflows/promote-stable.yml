@@ -73,13 +73,13 @@ jobs:
       # ListTagsForResource, ListJobs and StartJob only, trusted for this
       # repo's `main` ref.
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ vars.TEMPLATES_FLEET_BUILD_ROLE_ARN }}
           role-session-name: promote-stable-${{ github.run_id }}
           aws-region: us-east-1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
 
@@ -88,7 +88,7 @@ jobs:
       # only; feed it to checkout so the push below authenticates as the App.
       - name: Mint GitHub App installation token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@d72941d797fd3113feb6b93fd0dec494b13a2547 # v1.12.0
         with:
           app-id: ${{ secrets.VIVREAL_GH_APP_ID }}
           private-key: ${{ secrets.VIVREAL_GH_APP_PRIVATE_KEY }}
@@ -98,7 +98,7 @@ jobs:
       # Full-history checkout so both channel tips are reachable for the
       # ancestry check below.
       - name: Checkout with full history
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
