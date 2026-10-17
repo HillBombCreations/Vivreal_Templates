@@ -14,6 +14,16 @@ name: Promote main to stable
 # Until git-push autobuild is switched off on each app, the push ALSO builds
 # every site; fleet-build skips an app already building this commit, so the
 # overlap costs at most one extra build per live site.
+#
+# ORDER IS LOAD-BEARING. A dispatch from any branch but `main` is refused, then
+# the AWS role is assumed, and only then is `stable` pushed. A sign-in failure
+# therefore stops the run with `stable` unmoved; once autobuild is off, a
+# sign-in failure AFTER the push would leave every live site unbuilt.
+#
+# RECOVERY. If the fan-out fails or reports an app `busy`, run
+# `demo-catchup.yml` by hand with `tier: live` (or `all`). It builds at
+# `stable`'s head. NEVER re-run this workflow to recover: it re-reads `main`
+# and would move `stable` again to whatever has merged since.
 on:
   workflow_dispatch:
     inputs:
@@ -44,6 +54,35 @@ jobs:
   promote:
     runs-on: ubuntu-latest
     steps:
+      # Refuse before anything else. The promote always pushes `main`, whatever
+      # branch it was dispatched from, so a dispatch from another branch is a
+      # mistake, and the AWS role would refuse it anyway, only later. A dry run
+      # pushes nothing, so it is allowed (the role will still refuse a non-main
+      # ref, which is the expected answer there).
+      - name: Refuse a dispatch from a branch other than main
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ] && [ "$DRY_RUN" != "true" ]; then
+            echo "::error::Refusing to promote: dispatched from $GITHUB_REF. Run this workflow from main."
+            exit 1
+          fi
+
+      # Assume the AWS role BEFORE the push, so a sign-in failure leaves
+      # `stable` unmoved. Role `VivrealTemplatesFleetBuild`: amplify:ListApps,
+      # ListTagsForResource, ListJobs and StartJob only, trusted for this
+      # repo's `main` ref.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TEMPLATES_FLEET_BUILD_ROLE_ARN }}
+          role-session-name: promote-stable-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       # Authenticate as the Vivreal GitHub App (contents:write on this repo)
       # instead of a long-lived PAT. Scope the installation token to this repo
       # only; feed it to checkout so the push below authenticates as the App.
@@ -125,21 +164,8 @@ jobs:
             echo "Fast-forwarded \`stable\`: \`$OLD_SHA\` → \`$NEW_SHA\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      # Role `VivrealTemplatesFleetBuild`: amplify:ListApps, ListTagsForResource,
-      # ListJobs and StartJob only, trusted for this repo's `main` ref. If this
-      # step fails, `stable` has ALREADY moved: fix the role, then re-run with
-      # the same scope. The re-run is a no-op promote that still builds.
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ vars.TEMPLATES_FLEET_BUILD_ROLE_ARN }}
-          role-session-name: promote-stable-${{ github.run_id }}
-          aws-region: us-east-1
-
+      # If this step fails, `stable` HAS moved. Do not re-run this workflow:
+      # run demo-catchup.yml with `tier: live` (see RECOVERY at the top).
       - name: Build sites at the promoted commit
         env:
           SHA: ${{ steps.promote.outputs.sha }}

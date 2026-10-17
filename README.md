@@ -45,14 +45,24 @@ on old code.
   A hotfix promote only for a security fix or a broken live site.
 - **Demos catch up weekly.** `demo-catchup.yml` runs Wednesdays at 10:43 UTC
   and builds each `demo` app that is behind `stable`'s head. It never moves
-  `stable`. Run it by hand before a walk, a reshoot or a showcase link.
+  `stable`. Run it by hand before a walk, a reshoot or a showcase link. Its
+  manual `tier` input also takes `live` or `all`; the schedule always runs
+  `demo`.
 - **Security fixes use `scope: all`.** It builds every app, demos and QA
   included, and works on a no-op promote, so no dummy commit is needed.
-- **QA apps** build on their first deploy and by hand, nothing else.
+- **QA apps** build on their first deploy, by hand, or with `scope: all` / `tier: all`, nothing else.
 
 `fleet-build.mjs` is idempotent: it skips an app whose last successful build
 is already that commit, or that is already building it. An app busy building a
-different commit is not started and fails the run, so re-run once it settles.
+different commit is not started and fails the run.
+
+**If the fan-out fails or an app is busy, run `demo-catchup.yml` manually with
+tier `live` (or `all`). Never re-run the promote.** The catch-up builds at
+`stable`'s head and skips every app already there. A re-run promote re-reads
+`main` and would move `stable` again to whatever has merged since. The promote
+signs in to AWS before it pushes, so a sign-in failure leaves `stable` unmoved,
+and it refuses a dispatch from any branch other than `main`.
+
 `--dry-run` (the `dry_run` workflow input) reads the fleet and prints the plan
 without starting anything. Exit codes: 0 all good, 1 an app failed or was busy,
 2 bad arguments or an empty fleet or tier. Both workflows assume the AWS role

@@ -4,7 +4,8 @@
  * one commit, for the build tiers asked for. Cost cut V7.247.
  *
  *   node scripts/fleet-build.mjs --commit <40-hex sha> [--scope live|all]
- *                                [--tier live|demo|qa ...] [--dry-run]
+ *                                [--tier live|demo|qa ...] [--catchup demo|live|all]
+ *                                [--dry-run]
  *                                [--concurrency N] [--branch stable]
  *                                [--region us-east-1]
  *
@@ -17,15 +18,19 @@
  *
  * WHICH TIERS. `--scope live` (the default) builds `live` only, which is what
  * a release promote needs. `--scope all` builds every tier, for a security
- * fix. `--tier demo` is the weekly demo catch-up. `--scope` and `--tier` are
- * mutually exclusive, so a command line cannot mean two things.
+ * fix. `--tier demo` is the weekly demo catch-up. `--catchup` is
+ * demo-catchup.yml's tier input (`demo`, `live` or `all`), forced to `demo` on
+ * a scheduled run. `--scope`, `--tier` and `--catchup` are mutually
+ * exclusive, so a command line cannot mean two things.
  *
  * IDEMPOTENT. An app is skipped when its newest SUCCEED job is already this
- * commit, or when a job for this commit is already active (a re-run, or the
+ * commit, or when a job for this commit is already active (a repeated fan-out, or the
  * git-push autobuild that is still on during rollout). An app busy building a
  * DIFFERENT commit is not started (Amplify runs one job per branch) and fails
- * the run, so a re-run once it settles finishes the job; skipping it quietly
- * would leave that site behind with a green run.
+ * the run; skipping it quietly would leave that site behind with a green run.
+ * RECOVERY is demo-catchup.yml run by hand with tier `live` (or `all`), which
+ * builds at stable's head. NEVER re-run the promote to recover: it re-reads
+ * main and would move stable again to whatever has merged since.
  *
  * EXIT CODES. 0: every in-scope app was started or is already current or
  * building. 1: at least one app failed or was busy. 2: usage error, or a
@@ -55,6 +60,9 @@ const ACTIVE_STATUSES = new Set(["CREATED", "PENDING", "PROVISIONING", "RUNNING"
  */
 const MUST_EXIST_TIERS = Object.freeze(["live", "demo"]);
 
+/** Values of `--catchup`, demo-catchup.yml's `tier` input. */
+const CATCHUP_TIERS = Object.freeze(["demo", "live", "all"]);
+
 const MAX_CONCURRENCY = 10;
 const JOBS_TO_READ = 25;
 
@@ -65,14 +73,15 @@ export class UsageError extends Error {}
  * @returns {{ commit: string, tiers: Set<string>, requiredTiers: string[], scopeLabel: string,
  *             branch: string, dryRun: boolean, concurrency: number, region: string }}
  */
-export function parseArgs(argv) {
+export function parseArgs(argv, env = process.env) {
   let commit = null;
   let scope = null;
+  let catchup = null;
   const tierArgs = [];
   let branch = "stable";
   let dryRun = false;
   let concurrency = 4;
-  let region = process.env.AWS_REGION || "us-east-1";
+  let region = env.AWS_REGION || "us-east-1";
 
   const value = (i, flag) => {
     const v = argv[i + 1];
@@ -107,6 +116,10 @@ export function parseArgs(argv) {
         concurrency = Number(value(i, flag));
         i += 1;
         break;
+      case "--catchup":
+        catchup = value(i, flag);
+        i += 1;
+        break;
       case "--dry-run":
         dryRun = true;
         break;
@@ -120,8 +133,22 @@ export function parseArgs(argv) {
   if (!/^[0-9a-f]{40}$/.test(commit ?? "")) {
     throw new UsageError("--commit must be a full 40-character lowercase commit SHA");
   }
-  if (scope !== null && tierArgs.length > 0) {
-    throw new UsageError("use --scope or --tier, not both");
+  if ([scope !== null, tierArgs.length > 0, catchup !== null].filter(Boolean).length > 1) {
+    throw new UsageError("use one of --scope, --tier or --catchup");
+  }
+  if (catchup !== null) {
+    // demo-catchup.yml's tier input. `demo` is the weekly job. `live` and `all`
+    // are the recovery path for a promote whose fan-out failed or met a busy
+    // app: they rebuild at stable's head without re-running the promote, which
+    // would re-read main and move stable again.
+    if (!CATCHUP_TIERS.includes(catchup)) {
+      throw new UsageError(`--catchup must be one of ${CATCHUP_TIERS.join(", ")}, got ${catchup}`);
+    }
+    // The schedule is pinned to demo whatever it is handed. A cron nobody
+    // watches must never become a weekly rebuild of every live site.
+    if (env.GITHUB_EVENT_NAME === "schedule") catchup = "demo";
+    if (catchup === "demo") tierArgs.push("demo");
+    else scope = catchup;
   }
   if (scope !== null && scope !== "live" && scope !== "all") {
     throw new UsageError(`--scope must be live or all, got ${scope}`);
@@ -226,7 +253,7 @@ async function buildOne({ client, app, options }) {
         row.detail = `job ${active.jobId} ${active.status}`;
       } else {
         row.action = "busy";
-        row.detail = `job ${active.jobId} ${active.status} on ${String(active.commitId).slice(0, 12)}; re-run when it finishes`;
+        row.detail = `job ${active.jobId} ${active.status} on ${String(active.commitId).slice(0, 12)}; when it finishes, run demo-catchup with tier live`;
       }
       return row;
     }

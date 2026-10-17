@@ -6,6 +6,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   parseArgs,
@@ -332,4 +334,58 @@ test("args: an unknown scope, tier or flag is refused", () => {
 test("args: --tier is repeatable and comma separated", () => {
   assert.deepEqual([...parseArgs(["--commit", SHA, "--tier", "demo,qa"]).tiers].sort(), ["demo", "qa"]);
   assert.deepEqual([...parseArgs(["--commit", SHA, "--tier", "demo", "--tier", "qa"]).tiers].sort(), ["demo", "qa"]);
+});
+
+// ── demo-catchup.yml's tier input (--catchup) ───────────────────────────
+// The recovery path for a promote whose fan-out failed: build at stable's head
+// without re-running the promote. The schedule must stay on demo.
+
+const SCHEDULE = { GITHUB_EVENT_NAME: "schedule" };
+const MANUAL = { GITHUB_EVENT_NAME: "workflow_dispatch" };
+
+test("catchup: a scheduled run is pinned to demo even when handed live or all", async () => {
+  for (const handed of ["live", "all", "demo"]) {
+    const s = stubClient(fleet());
+    await runFleetBuild({ client: s.client, options: parseArgs(["--commit", SHA, "--catchup", handed], SCHEDULE) });
+    // REFUSE: no live app builds from the cron.
+    assert.ok(!started(s.calls).includes(COMEDY), `schedule handed ${handed} must not build a live site`);
+    // ALLOW: the demos it exists for do build.
+    assert.deepEqual(started(s.calls), ["ddemo00000001", "ddemo00000002"], `schedule handed ${handed}`);
+  }
+});
+
+test("catchup: a manual live run selects The Comedy Collective and refuses demos", async () => {
+  const s = stubClient(fleet());
+  const result = await runFleetBuild({ client: s.client, options: parseArgs(["--commit", SHA, "--catchup", "live"], MANUAL) });
+  assert.ok(started(s.calls).includes(COMEDY), "the known live app must build");
+  assert.deepEqual(started(s.calls), [COMEDY, "duntagged00001", "dvivrealio0001"].sort());
+  assert.equal(result.exitCode, 0);
+});
+
+test("catchup: a manual all run builds every Templates app; manual demo builds demos only", async () => {
+  const all = stubClient(fleet());
+  await runFleetBuild({ client: all.client, options: parseArgs(["--commit", SHA, "--catchup", "all"], MANUAL) });
+  assert.equal(all.calls.start.length, 6);
+  const demo = stubClient(fleet());
+  await runFleetBuild({ client: demo.client, options: parseArgs(["--commit", SHA, "--catchup", "demo"], MANUAL) });
+  assert.deepEqual(started(demo.calls), ["ddemo00000001", "ddemo00000002"]);
+});
+
+test("catchup: an unknown value or a second selector is refused", () => {
+  assert.throws(() => parseArgs(["--commit", SHA, "--catchup", "qa"], MANUAL), UsageError);
+  assert.throws(() => parseArgs(["--commit", SHA, "--catchup", "prod"], SCHEDULE), UsageError);
+  assert.throws(() => parseArgs(["--commit", SHA, "--catchup", "live", "--scope", "all"], MANUAL), UsageError);
+  assert.throws(() => parseArgs(["--commit", SHA, "--catchup", "live", "--tier", "demo"], MANUAL), UsageError);
+});
+
+test("catchup: the CLI exits 2 on a bad tier before touching AWS, and 0-path args parse", () => {
+  const script = fileURLToPath(new URL("./fleet-build.mjs", import.meta.url));
+  // An empty PATH means the AWS CLI cannot be found: a run that got past
+  // argument parsing would fail differently, so exit 2 here is the parser.
+  const env = { ...process.env, GITHUB_EVENT_NAME: "workflow_dispatch", PATH: "" };
+  const bad = spawnSync(process.execPath, [script, "--commit", SHA, "--catchup", "everything"], { env, encoding: "utf8" });
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /--catchup must be one of demo, live, all/);
+  // ALLOW side of the pair: the same command with a valid tier parses.
+  assert.equal(parseArgs(["--commit", SHA, "--catchup", "live"], MANUAL).scopeLabel, "scope live");
 });

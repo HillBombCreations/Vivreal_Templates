@@ -11,21 +11,42 @@ name: Demo sites catch up to stable
 # below is `contents: read`, so it could not push even by mistake.
 #
 # Before a walk, a reshoot or a showcase link, run this by hand so the demos are
-# on current code. QA apps (`qa` tier) are never built here.
+# on current code. QA apps (`qa` tier) are only built by `tier: all`.
+#
+# RECOVERY FOR A PROMOTE. If the promote's fan-out failed (the AWS step, a
+# StartJob error) or reported an app `busy`, run THIS workflow by hand with
+# `tier: live` (or `all` for a security fix). It builds at `stable`'s head and
+# skips every app already there. Never re-run the promote to recover: the
+# promote re-reads `main` and would move `stable` again to whatever has merged
+# since. The schedule always runs `demo`, whatever the input says; the script
+# enforces that, so it is tested rather than remembered.
+#
+# Keep this FILENAME. The AWS role's trust policy names it.
 
 on:
   schedule:
     # Wednesdays, 10:43 UTC (03:43 Pacific). Quiet for site traffic, and an odd
-    # minute on purpose: cron slots are a cross-repo contract. As of 2026-10-17
-    # the fleet's GitHub Actions crons are daily 08:27 (vivreal-hq), Mon 09:17
-    # (this repo), Mon 15:00 to 16:00 and Sat 01:00 (the API repos and the
-    # portal), so no weekly job runs on Wednesday. Check the ladder before
-    # moving it.
+    # minute on purpose: cron slots are a cross-repo contract. Checked
+    # 2026-10-17 against the anchored slots on the fleet's default branches:
+    # GitHub Actions at daily 08:27 (vivreal-hq), Mon 09:17 (this repo), Mon
+    # 15:00 to 16:00 and Sat 01:00 (the API repos and the portal); EventBridge
+    # at daily 05:00, 06:00, 06:10, 06:30, 07:00 and 07:30, and Sun and Wed
+    # 07:20 (Vivreal_EventHandler revalidateHookCleanupCron). Secure also runs
+    # unanchored rate(6 hours) jobs. Nothing is anchored at 10:43 on Wednesday.
+    # Check the ladder before moving it.
     - cron: '43 10 * * 3'
   workflow_dispatch:
     inputs:
+      tier:
+        description: "demo: the weekly catch-up. live: recover a promote whose fan-out failed. all: every site, for a security fix. Builds at stable's head only."
+        type: choice
+        options:
+          - demo
+          - live
+          - all
+        default: demo
       dry_run:
-        description: "Plan only. No build starts; the run summary lists which demos are behind."
+        description: "Plan only. No build starts; the run summary lists which sites are behind."
         type: boolean
         default: false
 
@@ -70,12 +91,15 @@ jobs:
           role-session-name: demo-catchup-${{ github.run_id }}
           aws-region: us-east-1
 
-      - name: Build demo sites that are behind stable
+      # A scheduled run has no inputs, so TIER is empty and falls back to
+      # demo here; fleet-build also forces demo on GITHUB_EVENT_NAME=schedule.
+      - name: Build sites that are behind stable
         env:
           SHA: ${{ steps.stable.outputs.sha }}
+          TIER: ${{ inputs.tier }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          args=(--commit "$SHA" --tier demo)
+          args=(--commit "$SHA" --catchup "${TIER:-demo}")
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
           node scripts/fleet-build.mjs "${args[@]}"
