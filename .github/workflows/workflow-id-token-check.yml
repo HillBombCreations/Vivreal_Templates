@@ -1,0 +1,69 @@
+name: Workflow id-token check
+
+# V7.279. Runs scripts/workflow-id-token.test.mjs: only promote-stable.yml and
+# demo-catchup.yml may request `id-token`, and only from workflow_dispatch,
+# schedule or push. The AWS role VivrealTemplatesFleetBuild trusts this repo's
+# `main` ref, not a file, so any other main-context workflow with id-token
+# could assume it. See the header of scripts/workflow-id-token.mjs.
+#
+# THIS FLAGS, IT CANNOT BLOCK. `main` has no required status checks, so a red
+# run here stops no merge and no push. It makes a new id-token workflow
+# visible on the PR that adds it.
+#
+# This workflow requests no id-token, so it passes its own check whatever its
+# triggers are. It is `pull_request`, never `pull_request_target`: a fork PR
+# runs here with a read-only token and no secrets.
+#
+# Deliberately NO `npm ci`: this repo's install is heavy and the check needs one
+# package. js-yaml is installed alone, at the version and integrity this repo's
+# lockfile pins, into a temp directory and copied into node_modules. A few
+# seconds, and package-lock.json is never touched.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-id-token-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+
+      - name: Install js-yaml alone, at the lockfile's version and integrity
+        run: |
+          set -euo pipefail
+          lock_field() {
+            node -e 'const l=require(process.argv[1]); const e=l.packages["node_modules/js-yaml"]; if(!e||!e[process.argv[2]]) process.exit(1); console.log(e[process.argv[2]])' "$1" "$2"
+          }
+          VERSION="$(lock_field "$PWD/package-lock.json" version)"
+          WANT="$(lock_field "$PWD/package-lock.json" integrity)"
+          mkdir -p "$RUNNER_TEMP/yaml"
+          cd "$RUNNER_TEMP/yaml"
+          echo '{"private":true}' > package.json
+          npm install --ignore-scripts --no-audit --no-fund "js-yaml@$VERSION"
+          GOT="$(lock_field "$RUNNER_TEMP/yaml/package-lock.json" integrity)"
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::js-yaml $VERSION integrity $GOT does not match the lockfile's $WANT"
+            exit 1
+          fi
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p node_modules
+          cp -R "$RUNNER_TEMP/yaml/node_modules/." node_modules/
+
+      - name: Only the two fleet-build workflows may request id-token
+        run: node --test scripts/workflow-id-token.test.mjs
