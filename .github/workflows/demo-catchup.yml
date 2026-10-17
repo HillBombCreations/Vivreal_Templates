@@ -1,0 +1,81 @@
+name: Demo sites catch up to stable
+
+# Cost cut V7.247. A release promote builds only `live` sites (see
+# promote-stable.yml). The VivrealContent demo sites serve nobody's business,
+# so they catch up once a week instead of on every promote: this builds each
+# `demo` tier app whose last successful build is not `stable`'s head, pinned to
+# that commit. An app already current is skipped, so a quiet week costs nothing.
+#
+# It NEVER moves `stable`. It only reads `stable`'s head and builds what is
+# already released, so it cannot activate unreleased work on `main`. The token
+# below is `contents: read`, so it could not push even by mistake.
+#
+# Before a walk, a reshoot or a showcase link, run this by hand so the demos are
+# on current code. QA apps (`qa` tier) are never built here.
+
+on:
+  schedule:
+    # Wednesdays, 10:43 UTC (03:43 Pacific). Quiet for site traffic, and an odd
+    # minute on purpose: cron slots are a cross-repo contract. As of 2026-10-17
+    # the fleet's GitHub Actions crons are daily 08:27 (vivreal-hq), Mon 09:17
+    # (this repo), Mon 15:00 to 16:00 and Sat 01:00 (the API repos and the
+    # portal), so no weekly job runs on Wednesday. Check the ladder before
+    # moving it.
+    - cron: '43 10 * * 3'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Plan only. No build starts; the run summary lists which demos are behind."
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: demo-catchup
+  cancel-in-progress: false
+
+jobs:
+  catchup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Read stable's head
+        id: stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="$(gh api "repos/${GITHUB_REPOSITORY}/commits/stable" --jq .sha)"
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not read stable's head (got '$SHA'). Refusing to build."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # Same role as promote-stable.yml, `VivrealTemplatesFleetBuild`.
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TEMPLATES_FLEET_BUILD_ROLE_ARN }}
+          role-session-name: demo-catchup-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Build demo sites that are behind stable
+        env:
+          SHA: ${{ steps.stable.outputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(--commit "$SHA" --tier demo)
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          node scripts/fleet-build.mjs "${args[@]}"
