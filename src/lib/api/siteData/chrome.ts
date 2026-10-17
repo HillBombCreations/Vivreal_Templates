@@ -1,4 +1,7 @@
 import type { SiteData } from '@/types/SiteData';
+// Explicit .ts extension, not the `@/` alias: chrome.test.ts runs this module
+// under `node --experimental-strip-types`, which has no tsconfig paths.
+import { resolveServableFavicon } from '../../seo/faviconGuard.ts';
 
 /**
  * The ONE place site chrome is resolved, and the reason it can only come from
@@ -112,5 +115,9 @@ export function resolveSiteChrome(raw: SiteChromeSource): SiteChrome {
   for (const field of SITE_CHROME_FIELDS) {
     chrome[field] = raw[field] ?? undefined;
   }
+  // V7.250: every client component that receives siteData serializes it into
+  // the page, so an oversized inline favicon is refused HERE, the one read
+  // boundary, not only where the <link> is built. See seo/faviconGuard.ts.
+  chrome.favicon = resolveServableFavicon(chrome.favicon);
   return chrome as SiteChrome;
 }

@@ -7,6 +7,7 @@ import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData } from '../api/siteData/degraded.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveServableFavicon } from './faviconGuard.ts';
 
 /**
  * Compose the root layout's `generateMetadata()` result from an already-
@@ -24,7 +25,9 @@ import { resolveSiteOrigin } from '../og/siteOrigin.ts';
  *
  * Brand-asset hardening: `icons` is set from `siteData.favicon` ONLY when
  * present. Absent `favicon` ⇒ no `icons` key at all — byte-identical to
- * before this field existed.
+ * before this field existed. An inline `data:` favicon over
+ * MAX_INLINE_FAVICON_CHARS counts as absent (V7.250, see ./faviconGuard.ts),
+ * so Next's /icon and /apple-icon convention routes serve instead.
  *
  * SEO demo-safety: a pre-cutover demo (or prospect) emits `noindex, nofollow`
  * on every page and NO canonical (owner decision 2026-10-10, W25-12a: no
@@ -65,9 +68,10 @@ export function buildRootMetadata(siteData: SiteData): Metadata {
     };
   }
   const demo = isDemoSite(siteData);
+  const favicon = resolveServableFavicon(siteData.favicon);
   return {
     ...(origin && { metadataBase: new URL(origin) }),
-    ...(siteData.favicon && { icons: { icon: siteData.favicon } }),
+    ...(favicon && { icons: { icon: favicon } }),
     ...(demo && { robots: { index: false, follow: false } }),
   };
 }

@@ -77,6 +77,24 @@ test('an explicit null top-level value normalises to undefined, not the mirror',
   assert.equal(chrome.favicon, undefined);
 });
 
+// V7.250: siteData is serialized into every client component that receives it
+// (Providers, the page templates), so an inline favicon left on siteData is
+// shipped in the RSC payload once per boundary even after the metadata link
+// stops carrying it. The read boundary is the one place that removes it from
+// all of them. Measured on vivreal.io 2026-10-17: 4 copies per page, the
+// <link rel="icon">, its RSC row, and two serialized siteData props.
+test('REFUSE (V7.250): an oversized data: favicon resolves to undefined at the read boundary, key still present', () => {
+  const chrome = resolveSiteChrome(makeRaw({ favicon: 'data:image/png;base64,' + 'A'.repeat(221_164) }) as never);
+  assert.ok(Object.hasOwn(chrome, 'favicon'), 'key must stay present so it overrides the values spread');
+  assert.equal(chrome.favicon, undefined);
+});
+
+test('ALLOW (V7.250): a hosted favicon URL and a tiny data: favicon pass through the read boundary unchanged', () => {
+  for (const favicon of ['https://media.vivreal.io/groupObjects/abc/favicon.png', 'data:image/png;base64,iVBORw0KGgo=']) {
+    assert.equal(resolveSiteChrome(makeRaw({ favicon }) as never).favicon, favicon);
+  }
+});
+
 test('the returned key set is EXACTLY the declared contract', () => {
   // resolveSiteChrome casts its accumulator to SiteChrome. This is the
   // assertion that cast is making, checked at runtime.

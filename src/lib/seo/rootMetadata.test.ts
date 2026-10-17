@@ -99,3 +99,45 @@ test('favicon: present sets icons.icon, absent sets no icons key at all', () => 
   const withoutFavicon = buildRootMetadata({} as SiteData);
   assert.equal(withoutFavicon.icons, undefined);
 });
+
+// V7.250: vivreal.io stored its favicon as a 221,164-character base64 PNG data
+// URI and every HTML response inlined it (81% of each gzipped page). An inline
+// icon over 4096 characters is refused so Next's /icon and /apple-icon
+// convention routes (src/app/icon.tsx, built from the hosted logo) serve
+// instead, the same path every site without a stored favicon already takes.
+const PNG_PREFIX = 'data:image/png;base64,';
+const oversizedDataUri = PNG_PREFIX + 'A'.repeat(221_164);
+
+test('REFUSE (V7.250): an oversized data: favicon is not inlined, no icons override at all', () => {
+  const metadata = buildRootMetadata({ favicon: oversizedDataUri } as SiteData);
+  assert.equal(metadata.icons, undefined);
+});
+
+test('REFUSE (V7.250): the size cap is not dodged by case or padding on the data: scheme', () => {
+  for (const favicon of ['DATA:image/png;base64,' + 'A'.repeat(5000), '  Data:image/png;base64,' + 'A'.repeat(5000)]) {
+    const metadata = buildRootMetadata({ favicon } as SiteData);
+    assert.equal(metadata.icons, undefined, JSON.stringify(favicon.slice(0, 12)));
+  }
+});
+
+test('REFUSE (V7.250): one character over the 4096 cap is refused, exactly the cap is allowed', () => {
+  const atCap = PNG_PREFIX + 'A'.repeat(4096 - PNG_PREFIX.length);
+  const overCap = atCap + 'A';
+  assert.equal(atCap.length, 4096);
+  assert.deepEqual(buildRootMetadata({ favicon: atCap } as SiteData).icons, { icon: atCap });
+  assert.equal(buildRootMetadata({ favicon: overCap } as SiteData).icons, undefined);
+});
+
+test('ALLOW (V7.250): a hosted favicon URL passes through unchanged, whatever its length', () => {
+  const hosted = 'https://media.vivreal.io/groupObjects/abc/' + 'x'.repeat(5000) + '/favicon.png';
+  assert.deepEqual(buildRootMetadata({ favicon: hosted } as SiteData).icons, { icon: hosted });
+});
+
+test('ALLOW (V7.250): a tiny inline data: favicon passes through unchanged', () => {
+  const tiny = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='24'%3EV%3C/text%3E%3C/svg%3E";
+  assert.deepEqual(buildRootMetadata({ favicon: tiny } as SiteData).icons, { icon: tiny });
+});
+
+test('a whitespace-only favicon is treated as absent, not emitted as an href', () => {
+  assert.equal(buildRootMetadata({ favicon: '   ' } as SiteData).icons, undefined);
+});
