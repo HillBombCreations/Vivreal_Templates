@@ -100,6 +100,22 @@ test('REFUSE R5: the pair with an empty RSC', async () => {
   assert.equal(await refused({ ...PAIR, rsc: '' }), true);
 });
 
+// PR #197 review pass 7, B1: Next treats `Next-Action` as a server action
+// only on POST, so on a GET it must not switch the prefetch rules off.
+test('REFUSE R6: the pair plus Next-Action, no RSC', async () => {
+  assert.equal(await refused({ ...PAIR, 'next-action': '7f3a' }), true);
+});
+
+test('REFUSE R7: next-router-prefetch plus Next-Action, no RSC', async () => {
+  assert.equal(await refused({ 'next-router-prefetch': '1', 'next-action': '7f3a' }), true);
+});
+
+for (const header of ['next-router-segment-prefetch', 'next-hmr-refresh']) {
+  test(`REFUSE R8: ${header} plus Next-Action, no RSC`, async () => {
+    assert.equal(await refused({ [header]: '1', 'next-action': '7f3a' }), true);
+  });
+}
+
 test('ALLOW A1: a plain document request', async () => {
   assert.equal(await refused({ accept: 'text/html' }), false);
 });

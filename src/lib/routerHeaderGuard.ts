@@ -30,8 +30,13 @@
  *     every Next bump: if it ever stops sending `RSC: 1`, these rules start
  *     refusing real navigations.
  *   - Server actions send `Next-Action`, `Next-Router-State-Tree` and
- *     `Next-Url` WITHOUT `RSC` (`server-action-reducer.js:51-62`), hence the
- *     `next-action` exemption.
+ *     `Next-Url` WITHOUT `RSC` (`server-action-reducer.js:51-62`), and never a
+ *     prefetch header. So `next-action` exempts ONLY the state-tree and
+ *     `Next-Url` rules. It must never exempt the prefetch rules: Next treats a
+ *     request as a server action only on POST
+ *     (`server/lib/server-action-request-meta.js:39`), so on a GET the header
+ *     changes nothing in the page runtime, and exempting on it would let any
+ *     forged prefetch through by adding one header (PR #197 review pass 7, B1).
  *   - Browser link prefetch sends `Purpose` / `Sec-Purpose`, never these.
  *
  * Dependency free, so `node --experimental-strip-types` loads it and the test
@@ -53,6 +58,13 @@ export const ROUTER_HEADERS = Object.freeze([
   'next-hmr-refresh',
 ] as const);
 
+/**
+ * The router headers a server action legitimately sends alongside
+ * `Next-Action` (`server-action-reducer.js:51-62`). Only these rules carry the
+ * `next-action` exemption; see the module docblock.
+ */
+const SERVER_ACTION_HEADERS: ReadonlySet<string> = new Set(['next-router-state-tree', 'next-url']);
+
 interface HeaderCondition {
   type: 'header';
   key: string;
@@ -68,7 +80,7 @@ export interface RouterHeaderRefusalRewrite {
 
 /**
  * One rule per header, because `has` is AND and one rule per header gives OR.
- * `missing` is satisfied only when NEITHER item matches, and Next anchors a
+ * `missing` is satisfied only when NONE of its items match, and Next anchors a
  * condition `value` as `^1$`, so `RSC: 0`, an empty `RSC` and a repeated
  * `RSC` (Node joins it as `1, 1`) all still rewrite.
  *
@@ -79,10 +91,12 @@ export function routerHeaderRefusalRewrites(): RouterHeaderRefusalRewrite[] {
   return ROUTER_HEADERS.map((key) => ({
     source: '/:path*',
     has: [{ type: 'header', key }],
-    missing: [
-      { type: 'header', key: 'rsc', value: '1' },
-      { type: 'header', key: 'next-action' },
-    ],
+    missing: SERVER_ACTION_HEADERS.has(key)
+      ? [
+          { type: 'header', key: 'rsc', value: '1' },
+          { type: 'header', key: 'next-action' },
+        ]
+      : [{ type: 'header', key: 'rsc', value: '1' }],
     destination: ROUTER_HEADER_REFUSED_PATH,
   }));
 }
