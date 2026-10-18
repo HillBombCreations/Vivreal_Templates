@@ -51,8 +51,11 @@ export interface SubscribersListSource {
 /**
  * The footer newsletter config with an error line that tells the truth.
  *
- *  - No list: `copy.errorText` is SIGNUP_UNAVAILABLE_TEXT (a stored errorText
- *    is about a bad address, which is not what went wrong).
+ *  - No list: `copy.errorText` AND `copy.failedText` are
+ *    SIGNUP_UNAVAILABLE_TEXT (a stored errorText is about a bad address,
+ *    which is not what went wrong). Renderer 1.88.1 shows errorText for a bad
+ *    address only and failedText for a failed send, and with no list every
+ *    send fails, so the failed-send line is the one a visitor actually sees.
  *  - A list (V7.236, walk C N-C13): a stored `copy.errorText` is DROPPED. The
  *    renderer (1.88.0, `signupErrorText`) shows an authored errorText for a
  *    bad address AND for a failed send, so a stored "Please enter a valid
@@ -62,13 +65,18 @@ export interface SubscribersListSource {
  *    error line field (FooterEditor edits heading, subtitle and button).
  *    A config with no errorText comes back as the SAME reference.
  */
-export function withSignupUnavailableCopy<C extends { copy?: { errorText?: string } | null }>(
+export function withSignupUnavailableCopy<
+  C extends { copy?: { errorText?: string; failedText?: string } | null },
+>(
   config: C | null | undefined,
   collectionId: string,
 ): C | null {
   if (!config) return null;
   if (!collectionId) {
-    return { ...config, copy: { ...(config.copy ?? {}), errorText: SIGNUP_UNAVAILABLE_TEXT } };
+    return {
+      ...config,
+      copy: { ...(config.copy ?? {}), errorText: SIGNUP_UNAVAILABLE_TEXT, failedText: SIGNUP_UNAVAILABLE_TEXT },
+    };
   }
   if (!config.copy || !('errorText' in config.copy)) return config;
   const copy = { ...config.copy };
@@ -95,6 +103,16 @@ export function popupErrorText({
 }): string | undefined {
   if (!collectionId) return SIGNUP_UNAVAILABLE_TEXT;
   return lastSendFailed ? undefined : ownerErrorText;
+}
+
+/**
+ * The popup's failed-send line (renderer 1.88.1 `failedText`). With no list,
+ * `subscribeUser` refuses before any request, so every send fails, and the
+ * true line is that sign ups are not open. With a list, undefined: the
+ * renderer's own "not saved" line.
+ */
+export function popupFailedText(collectionId: string): string | undefined {
+  return collectionId ? undefined : SIGNUP_UNAVAILABLE_TEXT;
 }
 
 export function resolveSubscribersCollectionId(
