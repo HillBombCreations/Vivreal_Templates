@@ -52,6 +52,8 @@ export interface SentryCaptureContext {
   level: 'error';
   fingerprint: string[];
   tags: Record<string, string>;
+  /** Unindexed numbers (V7.319: failures held back since the last capture). */
+  extra?: Record<string, number>;
 }
 
 /**
@@ -140,15 +142,23 @@ export function upstreamFallbackLine({
  * 402 (quota exceeded / frozen account) never reaches this helper: both catch
  * blocks in `./client` re-throw it before the capture, and an expected business
  * state must not page anyone.
+ *
+ * V7.319: `client.ts` sends at most one of these per process per window
+ * (`./captureThrottle`); `suppressed` is how many failed reads it held back
+ * since the last one, carried as `extra.suppressedSinceLastCapture` (an extra,
+ * not a tag: a count in a tag would mint a value per number). Absent or 0
+ * adds nothing, so the context is the same shape as before.
  */
 export function buildFetchFailureCapture({
   source,
   path,
   siteId,
+  suppressed,
 }: {
   source: FetchFailureSource;
   path: string;
   siteId: string | undefined;
+  suppressed?: number;
 }): SentryCaptureContext {
   const normalizedPath = stripQueryString(path);
   return {
@@ -159,6 +169,7 @@ export function buildFetchFailureCapture({
       path: normalizedPath,
       siteId: siteId || UNKNOWN_SITE_ID,
     },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
   };
 }
 
