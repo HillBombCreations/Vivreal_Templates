@@ -58,10 +58,8 @@ test('ALLOW: a no-list footer sign up that fails shows "not taking sign ups yet"
 
 test('ALLOW: a no-list popup sign up that fails shows "not taking sign ups yet"', async () => {
   const signupErrorText = await load();
-  for (const lastSendFailed of [false, true]) {
-    const errorText = popupErrorText({ collectionId: '', ownerErrorText: 'Please enter a valid email address.', lastSendFailed });
-    assert.equal(signupErrorText('failed', errorText, popupFailedText('')), NOT_TAKING);
-  }
+  const errorText = popupErrorText({ collectionId: '', ownerErrorText: 'Please enter a valid email address.' });
+  assert.equal(signupErrorText('failed', errorText, popupFailedText('')), NOT_TAKING);
 });
 
 test('REFUSE: a site WITH a list gets no failedText, so a failed send says "not saved", never "not taking sign ups"', async () => {

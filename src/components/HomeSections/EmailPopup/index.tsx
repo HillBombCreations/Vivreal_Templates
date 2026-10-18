@@ -65,9 +65,6 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
   const cfg = config ?? {};
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  // V7.236: whether the last send failed, so the error line can say the email
-  // was not saved rather than call a correct address invalid.
-  const [lastSendFailed, setLastSendFailed] = useState(false);
 
   // ── Enabled: explicit override, else legacy implicit-on (subscribers exists).
   const hasSubscribers = (siteData?.pageConfigs ?? []).some(
@@ -231,9 +228,8 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
       buttonLabel={copy.buttonLabel}
       successText={copy.successText}
       // N-C6: with no list, the only true thing to say is that sign ups are
-      // not open. V7.236: after a failed send the owner's bad-address line
-      // gives way to the renderer's "not saved" line (see popupErrorText).
-      errorText={popupErrorText({ collectionId, ownerErrorText: copy.errorText, lastSendFailed })}
+      // not open. With a list, the owner's bad-address line (popupErrorText).
+      errorText={popupErrorText({ collectionId, ownerErrorText: copy.errorText })}
       // Renderer 1.88.1 shows errorText for a bad address only. With no list
       // every send fails, so the "not taking sign ups" line rides failedText.
       failedText={popupFailedText(collectionId)}
@@ -244,7 +240,6 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
       image={cfg.image}
       onSubscribe={async (email) => {
         const ok = await subscribeUser(email, collectionId);
-        setLastSendFailed(!ok);
         // C5: the popup calls subscribeUser directly rather than through the
         // renderer provider, so it needs its own conversion call. Same gates
         // inside trackLeadConversion, now including the site-id fleet gate
