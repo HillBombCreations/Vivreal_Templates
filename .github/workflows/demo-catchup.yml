@@ -54,8 +54,15 @@ permissions:
   contents: read
   id-token: write
 
+# V7.277: ONE group shared with promote-stable.yml, so a manual
+# `tier: live` recovery and a promote queue behind each other instead of both
+# starting builds (one at the old `stable` head, the other then red on a busy
+# app). Queue, never cancel: a cancelled run stops mid fan-out. GitHub keeps
+# one PENDING run per group, so a third run replaces a pending second one;
+# both workflows build at `stable`'s head, so nothing is skipped by that.
+# scripts/fleet-concurrency.test.mjs fails if the two files diverge.
 concurrency:
-  group: demo-catchup
+  group: templates-fleet-build
   cancel-in-progress: false
 
 jobs:
