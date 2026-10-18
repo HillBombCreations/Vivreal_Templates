@@ -408,6 +408,10 @@ test('ALLOW: publicSearch keeps a param merely named like _rsc, and keeps raw en
   assert.equal(publicSearch(new URL('https://h/x?q=a%20b&_rsc=H')), '?q=a%20b');
 });
 
+test('ALLOW: publicSearch keeps empty pairs and empty values around a dropped _rsc', () => {
+  assert.equal(publicSearch(new URL('https://h/x?a=1&&_rsc=H&e=&g')), '?a=1&&e=&g');
+});
+
 test('ALLOW: publicSearch with no _rsc is url.search unchanged', () => {
   assert.equal(publicSearch(new URL('https://h/x?q=a%20b&a=1')), '?q=a%20b&a=1');
   assert.equal(publicSearch(new URL('https://h/x')), '');

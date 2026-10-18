@@ -198,14 +198,15 @@ export function resolveMissingItemRedirect(
  * live. It keeps the guarantee if `skipProxyUrlNormalize` is ever turned on,
  * which disables that strip.
  *
- * Every other pair is kept byte for byte and in order: re-serialising through
- * `URLSearchParams` would rewrite encodings (`%20` to `+`) on every 301.
+ * Every other pair, empty ones included, is kept byte for byte and in order:
+ * re-serialising through `URLSearchParams` would rewrite encodings (`%20` to
+ * `+`) on every 301.
  */
 export function publicSearch(url: URL): string {
   if (!url.searchParams.has('_rsc')) return url.search;
   const kept = url.search
     .slice(1)
     .split('&')
-    .filter((pair) => pair !== '' && !new URLSearchParams(pair).has('_rsc'));
+    .filter((pair) => !new URLSearchParams(pair).has('_rsc'));
   return kept.length > 0 ? `?${kept.join('&')}` : '';
 }
