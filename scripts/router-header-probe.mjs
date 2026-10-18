@@ -17,9 +17,15 @@
  * fetch cannot send a repeated header. One PASS/FAIL line per case; exit 1 on
  * any FAIL.
  *
- * `--expect-defect` is the pre-promote baseline: refusal cases PASS when the
- * site still answers the forged shape (the defect is reproduced and printed),
- * and the cases that need the new route are skipped.
+ * `--expect-defect` is the pre-promote baseline. Only the prefetch-pair cases
+ * can reproduce the defect: they PASS when the site answers with flight
+ * (`text/x-component`) or an empty 404, which only a prerendered route does.
+ * Any other answer that is not a 400 prints as INFO "not refused" and counts
+ * neither way. The run FAILs if no pair case reproduced the defect, and the
+ * cases that need the new route are skipped.
+ *
+ * Git Bash rewrites `PATHS=/` and `REDIRECT_FROM=/x` into Windows paths; set
+ * `MSYS2_ENV_CONV_EXCL='*'` when running it there.
  */
 import http from "node:http";
 import https from "node:https";
@@ -112,6 +118,13 @@ function rscFlightProblem(res) {
   return null;
 }
 
+/** True when `res` is the poisoned answer: raw flight, or an empty 404. */
+export function isDefectAnswer(res) {
+  const ct = res.headers["content-type"] ?? "";
+  if (res.status === 200 && ct.startsWith("text/x-component")) return true;
+  return res.status === 404 && res.body.length === 0;
+}
+
 function locationProblem(location) {
   if (!location) return "no Location";
   if (location.includes("_rsc")) return `Location carries _rsc: ${location}`;
@@ -137,21 +150,32 @@ export async function runProbes({ base, paths = ["/"], expectDefect = false, red
     }
   };
 
+  // [label, headers, isPrefetchPair]. Next-Action on a GET is not a server
+  // action (Next requires POST), so it must not lift the refusal.
   const refusalCases = [
-    ["pair without RSC", { ...PAIR }],
-    ["pair with RSC: 0", { ...PAIR, rsc: "0" }],
-    ["pair with repeated RSC", { ...PAIR, rsc: ["1", "1"] }],
-    ...ROUTER_HEADERS.map((h) => [`${h} alone`, { [h]: SINGLE_VALUE[h] }]),
+    ["pair without RSC", { ...PAIR }, true],
+    ["pair with RSC: 0", { ...PAIR, rsc: "0" }, true],
+    ["pair with repeated RSC", { ...PAIR, rsc: ["1", "1"] }, true],
+    ["pair with Next-Action", { ...PAIR, "next-action": "7f3a" }, true],
+    ...ROUTER_HEADERS.map((h) => [`${h} alone`, { [h]: SINGLE_VALUE[h] }, false]),
   ];
+  let reproduced = 0;
 
   for (const path of paths) {
-    for (const [label, headers] of refusalCases) {
+    for (const [label, headers, isPrefetchPair] of refusalCases) {
       const name = `${path} ${label}`;
       await tryCase(name, async () => {
         const url = withProbeQuery(path);
         const res = await request(base, url, headers);
         if (expectDefect) {
-          record(`${name} (baseline)`, res.status === 400 ? "already refused, no defect to record" : null, summary(res));
+          if (res.status === 400) {
+            record(`${name} (baseline)`, "already refused, no defect to record", summary(res));
+          } else if (isPrefetchPair && isDefectAnswer(res)) {
+            reproduced += 1;
+            record(`${name} (baseline, defect reproduced)`, null, summary(res));
+          } else {
+            log(`INFO ${name} (baseline): not refused [${summary(res)}]`);
+          }
           return;
         }
         record(name, refusalProblem(res), summary(res));
@@ -181,6 +205,10 @@ export async function runProbes({ base, paths = ["/"], expectDefect = false, red
       }
       record(`${path} RSC: 1 navigation`, rscFlightProblem(res), summary(res));
     });
+  }
+
+  if (expectDefect && reproduced === 0) {
+    record("baseline", "no prefetch-pair case reproduced the defect; probe a prerendered route");
   }
 
   if (!expectDefect) {
