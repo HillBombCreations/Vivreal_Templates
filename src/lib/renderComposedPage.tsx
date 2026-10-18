@@ -20,6 +20,7 @@ import ListLoadFailedNotice from '@/components/ListLoadFailedNotice';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
+import { skeletonLabelsFor } from '@/lib/composition/skeletonLabels';
 
 /**
  * composePage component overrides (CompositionOptions.components). Typed
@@ -90,7 +91,7 @@ export function skeletonPropsFor(composedPage: PageConfig) {
   }
   return {
     format: composedPage.format,
-    labels: composedPage.labels as Record<string, unknown> | undefined,
+    labels: skeletonLabelsFor(composedPage),
     // Renderer default for a collection block's primary binding is 'grid'.
     displayAs: displayAs ?? 'grid',
     hasFilters,
