@@ -59,9 +59,26 @@ test('UNCHANGED: the block binding outranks the legacy page collectionId, as bef
   assert.equal(resolveSubscribersCollectionId({ pageConfigs: [blockless] }), 'legacy-list');
 });
 
-test('ALLOW: with a list, the form config is returned untouched (same reference)', () => {
-  const config = { enabled: true, copy: { heading: 'Join', errorText: 'Owner copy' } };
+test('ALLOW: with a list and no error line, the form config is returned untouched (same reference)', () => {
+  type FooterConfig = { enabled: boolean; copy?: { heading?: string; errorText?: string } };
+  const config: FooterConfig = { enabled: true, copy: { heading: 'Join' } };
   assert.equal(withSignupUnavailableCopy(config, 'drop-list'), config);
+  const noCopy: FooterConfig = { enabled: true };
+  assert.equal(withSignupUnavailableCopy(noCopy, 'drop-list'), noCopy);
+});
+
+// V7.236 (walk C, N-C13): the renderer shows an authored errorText for a bad
+// address AND for a failed send, so a stored "Please enter a valid email
+// address." told a visitor whose sign up failed that their address was wrong.
+// The footer's errorText is not editable in Studio, so with a list it is
+// dropped and the renderer's own two lines apply.
+test('REFUSE: with a list, the footer drops a stored error line so a failed send is not called a bad address', () => {
+  const config = { enabled: true, copy: { heading: 'Join', errorText: 'Please enter a valid email address.' } };
+  const out = withSignupUnavailableCopy(config, 'drop-list');
+  assert.ok(out?.copy, 'the copy survives');
+  assert.equal('errorText' in (out?.copy ?? {}), false, 'no authored error line reaches the renderer');
+  assert.equal(out?.copy && 'heading' in out.copy ? out.copy.heading : undefined, 'Join');
+  assert.equal(config.copy.errorText, 'Please enter a valid email address.', 'the stored config is not mutated');
 });
 
 test('REFUSE: with no list, the error line says sign ups are not open, not "valid email"', () => {
@@ -91,7 +108,10 @@ test('REFUSE: every sign-up surface Templates owns resolves through the shared r
   const footer = read('../../components/Footer/index.tsx');
   assert.match(providers, /resolveSubscribersCollectionId\(siteData\)/, 'Providers onSubscribe');
   assert.match(popup, /cfg\.collectionId \?\? resolveSubscribersCollectionId\(siteData\)/, 'EmailPopup, Studio override first');
-  assert.match(popup, /errorText=\{collectionId \? copy\.errorText : SIGNUP_UNAVAILABLE_TEXT\}/, 'EmailPopup honest copy');
+  // V7.236: the popup's error line goes through popupErrorText, which drops
+  // the owner's bad-address line once a send has failed.
+  assert.match(popup, /errorText=\{popupErrorText\(\{ collectionId, ownerErrorText: copy\.errorText, lastSendFailed \}\)\}/, 'EmailPopup honest copy');
+  assert.match(popup, /setLastSendFailed\(!ok\)/, 'EmailPopup records a failed send');
   assert.match(footer, /withSignupUnavailableCopy\(\s*siteData\?\.footerNewsletter,\s*resolveSubscribersCollectionId\(siteData\)/, 'footer newsletter');
   // The old inline chain read ONLY the subscribers page; it must not survive.
   assert.doesNotMatch(providers, /p\.format === 'subscribers'/);

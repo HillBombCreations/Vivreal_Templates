@@ -49,19 +49,52 @@ export interface SubscribersListSource {
 }
 
 /**
- * A sign-up form config whose error line tells the truth when the site has no
- * list. With a list, the config comes back as the SAME reference, so every
- * site that can sign people up renders exactly what it did before. With none,
- * a copy whose `copy.errorText` is SIGNUP_UNAVAILABLE_TEXT (the owner's own
- * errorText is about a bad address, which is not what went wrong).
+ * The footer newsletter config with an error line that tells the truth.
+ *
+ *  - No list: `copy.errorText` is SIGNUP_UNAVAILABLE_TEXT (a stored errorText
+ *    is about a bad address, which is not what went wrong).
+ *  - A list (V7.236, walk C N-C13): a stored `copy.errorText` is DROPPED. The
+ *    renderer (1.88.0, `signupErrorText`) shows an authored errorText for a
+ *    bad address AND for a failed send, so a stored "Please enter a valid
+ *    email address." told a visitor whose sign up failed on the server that
+ *    their correct address was wrong. Without it the renderer uses its own
+ *    two lines. Nothing an owner set is lost: Studio's footer editor has no
+ *    error line field (FooterEditor edits heading, subtitle and button).
+ *    A config with no errorText comes back as the SAME reference.
  */
 export function withSignupUnavailableCopy<C extends { copy?: { errorText?: string } | null }>(
   config: C | null | undefined,
   collectionId: string,
 ): C | null {
   if (!config) return null;
-  if (collectionId) return config;
-  return { ...config, copy: { ...(config.copy ?? {}), errorText: SIGNUP_UNAVAILABLE_TEXT } };
+  if (!collectionId) {
+    return { ...config, copy: { ...(config.copy ?? {}), errorText: SIGNUP_UNAVAILABLE_TEXT } };
+  }
+  if (!config.copy || !('errorText' in config.copy)) return config;
+  const copy = { ...config.copy };
+  delete copy.errorText;
+  return { ...config, copy };
+}
+
+/**
+ * The popup's error line (V7.236). Unlike the footer's, the popup's "Error
+ * message" is the owner's to edit in Studio (EmailPopupEditor), and Studio
+ * seeds it with the bad-address line. So it stays the bad-address line until
+ * a send fails; after that the renderer gets no authored line and says the
+ * email was not saved (or, for a bad address, its own bad-address line).
+ * `lastSendFailed` is reset by the next send.
+ */
+export function popupErrorText({
+  collectionId,
+  ownerErrorText,
+  lastSendFailed,
+}: {
+  collectionId: string;
+  ownerErrorText: string | undefined;
+  lastSendFailed: boolean;
+}): string | undefined {
+  if (!collectionId) return SIGNUP_UNAVAILABLE_TEXT;
+  return lastSendFailed ? undefined : ownerErrorText;
 }
 
 export function resolveSubscribersCollectionId(
