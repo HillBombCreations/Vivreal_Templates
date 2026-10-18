@@ -1,17 +1,17 @@
 /**
  * V7.277. promote-stable.yml and demo-catchup.yml both start Amplify builds
- * across the fleet. With two concurrency groups a manual `tier: live`
- * recovery could run beside a promote: one run started a job at the old
- * `stable` head and the other then saw that app busy and went red. One shared
- * group with cancel-in-progress false makes the second run wait instead.
+ * across the fleet. With two groups a manual `tier: live` recovery could run
+ * beside a promote: one run started a job at the old `stable` head and the
+ * other then saw that app busy and went red.
  *
- * GitHub keeps at most ONE pending run per group: a third run queued while a
- * second is pending replaces the pending one. That is acceptable here (both
- * workflows build at `stable`'s head, and demo-catchup skips an app already
- * there), and it is why cancel-in-progress must stay false: true would kill a
- * RUNNING promote mid fan-out.
+ * GitHub keeps ONE pending run per group and a newer run REPLACES it, so the
+ * shared group holds only the runs that must not overlap: a real promote and
+ * a manual live or all recovery. The review of PR 197 (C4) found the first
+ * version put every run in it, so the Wednesday schedule, a demo run or a dry
+ * run could cancel a waiting live recovery or promote. These tests evaluate
+ * each workflow's group expression for every kind of run it can start.
  *
- * Hermetic: reads this repo's own workflow files.
+ * Hermetic: reads this repo's own workflow files and planted documents.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import yaml from "js-yaml";
 
-import { fleetBuildConcurrencyIssues } from "./fleet-concurrency.mjs";
+import { SHARED_GROUP, evaluateExpression, fleetBuildConcurrencyIssues, resolveGroup } from "./fleet-concurrency.mjs";
 
 const WORKFLOW_DIR = fileURLToPath(new URL("../.github/workflows/", import.meta.url));
 
@@ -30,21 +30,51 @@ function workflow(fileName) {
 
 const promote = () => workflow("promote-stable.yml");
 const catchup = () => workflow("demo-catchup.yml");
+const queued = (group) => ({ concurrency: { group, "cancel-in-progress": false } });
 
-test("[V7.277 REFUSE] the two fleet-build workflows share one queueing concurrency group", () => {
+test("[V7.277 REFUSE] only real promotes and live or all recoveries join the shared group", () => {
   assert.deepEqual(fleetBuildConcurrencyIssues(promote(), catchup()), []);
 });
 
-test("[V7.277 REFUSE] the checker reports diverging groups and a cancelling group", () => {
-  const a = { concurrency: { group: "templates-fleet-build", "cancel-in-progress": false } };
-  assert.equal(fleetBuildConcurrencyIssues(a, { concurrency: { group: "demo-catchup", "cancel-in-progress": false } }).length, 1);
-  assert.equal(fleetBuildConcurrencyIssues(a, { concurrency: { group: "templates-fleet-build", "cancel-in-progress": true } }).length, 1);
-  assert.equal(fleetBuildConcurrencyIssues(a, {}).length, 1, "no concurrency at all");
-  assert.equal(fleetBuildConcurrencyIssues(a, { concurrency: "templates-fleet-build" }).length, 0, "the short string form queues too");
+test("[V7.277 REFUSE] the schedule, a demo run or a dry run in the shared group is reported", () => {
+  // The first version of this change: one literal group for every run.
+  const issues = fleetBuildConcurrencyIssues(queued(SHARED_GROUP), queued(SHARED_GROUP));
+  for (const kind of ["promote dry run", "catch-up manual demo", "catch-up live dry run", "catch-up weekly schedule"]) {
+    assert.ok(issues.some((i) => i.startsWith(kind)), `${kind} must be reported: ${issues.join("; ")}`);
+  }
+  assert.equal(issues.length, 4, "and nothing that belongs there is reported");
 });
 
-test("[V7.277 ALLOW] identical queueing groups pass, and the real files parse", () => {
-  const ok = { concurrency: { group: "templates-fleet-build", "cancel-in-progress": false } };
-  assert.deepEqual(fleetBuildConcurrencyIssues(ok, structuredClone(ok)), []);
-  assert.ok(promote().jobs && catchup().jobs, "positive control: both workflow files load with their jobs");
+test("[V7.277 REFUSE] a recovery or promote left out of the shared group is reported, and so is cancelling", () => {
+  const issues = fleetBuildConcurrencyIssues(queued("promote-stable"), queued("demo-catchup"));
+  for (const kind of ["promote live", "promote all", "catch-up recovery live", "catch-up recovery all"]) {
+    assert.ok(issues.some((i) => i.startsWith(kind)), kind);
+  }
+  const cancelling = { concurrency: { group: SHARED_GROUP, "cancel-in-progress": true } };
+  assert.ok(fleetBuildConcurrencyIssues(promote(), cancelling).some((i) => i.includes("cancel-in-progress")));
+  assert.ok(fleetBuildConcurrencyIssues(promote(), {}).some((i) => i.includes("no concurrency group")));
+});
+
+test("[V7.277 ALLOW] the real files resolve each run to the group it should have", () => {
+  const p = promote().concurrency.group;
+  const c = catchup().concurrency.group;
+  const dispatch = (inputs) => ({ github: { event_name: "workflow_dispatch", run_id: "42" }, inputs });
+  assert.equal(resolveGroup(p, dispatch({ scope: "live", dry_run: false })), SHARED_GROUP);
+  assert.equal(resolveGroup(p, dispatch({ scope: "live", dry_run: true })), "fleet-dry-run-42");
+  assert.equal(resolveGroup(c, dispatch({ tier: "live", dry_run: false })), SHARED_GROUP);
+  assert.equal(resolveGroup(c, dispatch({ tier: "all", dry_run: false })), SHARED_GROUP);
+  assert.equal(resolveGroup(c, dispatch({ tier: "demo", dry_run: false })), "demo-catchup");
+  assert.equal(resolveGroup(c, { github: { event_name: "schedule", run_id: "43" }, inputs: {} }), "demo-catchup");
+  assert.equal(catchup().concurrency["cancel-in-progress"], false);
+  assert.equal(promote().concurrency["cancel-in-progress"], false);
+});
+
+test("[V7.277 ALLOW] the evaluator follows GitHub's && and || value rules and refuses what it does not know", () => {
+  const ctx = { github: { event_name: "schedule" }, inputs: {} };
+  assert.equal(evaluateExpression("inputs.missing && 'a' || 'b'", ctx), "b", "a null input is falsy");
+  assert.equal(evaluateExpression("github.event_name == 'SCHEDULE'", ctx), true, "string equality ignores case");
+  assert.equal(evaluateExpression("format('x-{0}-{1}', 'a', 2)", ctx), "x-a-2");
+  assert.equal(resolveGroup("plain-literal", ctx), "plain-literal");
+  assert.throws(() => evaluateExpression("vars.X", ctx), /unsupported context/);
+  assert.throws(() => evaluateExpression("contains(github.event_name, 's')", ctx), /unsupported context/);
 });
