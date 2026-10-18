@@ -143,9 +143,9 @@ export function upstreamFallbackLine({
  * blocks in `./client` re-throw it before the capture, and an expected business
  * state must not page anyone.
  *
- * V7.319: `client.ts` sends at most one of these per process per window
- * (`./captureThrottle`); `suppressed` is how many failed reads it held back
- * since the last one, carried as `extra.suppressedSinceLastCapture` (an extra,
+ * V7.319: `client.ts` sends at most one of these per process per window for
+ * each query-free path (`./captureThrottle`); `suppressed` is how many failed
+ * reads of that path it held back since its last capture, carried as `extra.suppressedSinceLastCapture` (an extra,
  * not a tag: a count in a tag would mint a value per number). Absent or 0
  * adds nothing, so the context is the same shape as before.
  */

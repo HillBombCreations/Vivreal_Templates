@@ -56,3 +56,24 @@ test('[V7.319 ALLOW] two throttles (two sites, two processes) do not share a win
   assert.equal(a.take().capture, true);
   assert.equal(b.take().capture, true);
 });
+
+// Review of PR 197, C5: the window is per failure signature, not one per site.
+test('[V7.319 REFUSE] a second, different failing path inside the window is not held behind the first', () => {
+  const c = clock();
+  const throttle = createCaptureThrottle(FETCH_FAILURE_CAPTURE_WINDOW_MS, c.now);
+  assert.equal(throttle.take('/tenant/siteDetails').capture, true);
+  c.advance(60_000);
+  assert.equal(throttle.take('/tenant/collectionObjects').capture, true, 'its own Issue still reaches Sentry');
+});
+
+test('[V7.319 ALLOW] repeats of one path stay held while another path has its own count', () => {
+  const c = clock();
+  const throttle = createCaptureThrottle(FETCH_FAILURE_CAPTURE_WINDOW_MS, c.now);
+  throttle.take('/a');
+  throttle.take('/b');
+  for (let i = 0; i < 5; i += 1) assert.equal(throttle.take('/a').capture, false);
+  assert.equal(throttle.take('/b').capture, false);
+  c.advance(FETCH_FAILURE_CAPTURE_WINDOW_MS);
+  assert.deepEqual(throttle.take('/a'), { capture: true, suppressed: 5 });
+  assert.deepEqual(throttle.take('/b'), { capture: true, suppressed: 1 });
+});

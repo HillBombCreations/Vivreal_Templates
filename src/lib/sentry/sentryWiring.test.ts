@@ -24,6 +24,9 @@ test('[V7.319 REFUSE] a swallowed upstream failure is not captured once per call
   const gated = client.match(/if \(\w+\.capture\)\s*\{?\s*Sentry\.captureException\(/g) ?? [];
   assert.equal(gated.length, 2, 'both captures sit behind the per-process throttle');
   assert.match(client, /from '\.\/captureThrottle'/);
+  // Review of PR 197, C5: keyed by the failure signature, so a second failing
+  // path in the same window still reaches Sentry.
+  assert.equal((client.match(/\.take\(stripQueryString\(path\)\)/g) ?? []).length, 2, 'both captures key the window by path');
 });
 
 test('[V7.319 REFUSE] no runtime sends without the environment gate', () => {
