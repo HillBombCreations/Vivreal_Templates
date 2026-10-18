@@ -8,7 +8,7 @@ import {
   isSelfRedirectLoop,
 } from '@/lib/edgeSiteMap'
 import { FROZEN_HEADERS, FROZEN_STATUS, renderFrozenPage } from '@/lib/frozenGate'
-import { resolveMissingItemRedirect } from '@/lib/redirects'
+import { publicSearch, resolveMissingItemRedirect } from '@/lib/redirects'
 import {
   PREVIEW_QUERY_PARAM,
   PREVIEW_TOKEN_COOKIE,
@@ -213,6 +213,8 @@ export async function middleware(request: NextRequest) {
     return fallthrough()
   }
 
-  redirectUrl.search = request.nextUrl.search
+  // publicSearch drops `_rsc`, so a router cache key can never ride a 301
+  // Location (design-templates-router-header-strip, 2026-10-18).
+  redirectUrl.search = publicSearch(request.nextUrl)
   return NextResponse.redirect(redirectUrl, 301)
 }

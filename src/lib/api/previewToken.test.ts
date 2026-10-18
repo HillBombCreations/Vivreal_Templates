@@ -371,3 +371,16 @@ test('the preview redirect is never stored by a shared cache', () => {
   // It carries a Set-Cookie and is per-visitor.
   assert.match(enableRouteSource, /'Cache-Control': 'no-store'/);
 });
+
+// design-templates-router-header-strip (vivreal-hq, 2026-10-18).
+test('REFUSE: the preview redirect target never carries _rsc', () => {
+  assert.equal(resolvePreviewRedirectTarget('/p?_rsc=H&a=1'), '/p?a=1');
+  assert.equal(resolvePreviewRedirectTarget('/p?_rsc=H'), '/p');
+  const url = buildPreviewEnableUrl(TOKEN, '/p?_rsc=H&a=1');
+  const params = new URLSearchParams(url.slice(url.indexOf('?') + 1));
+  assert.equal(params.get('redirect'), '/p?a=1');
+});
+
+test('ALLOW: the preview redirect target keeps a param merely named like _rsc', () => {
+  assert.equal(resolvePreviewRedirectTarget('/p?_rscx=1&a=1'), '/p?_rscx=1&a=1');
+});

@@ -186,3 +186,26 @@ export function resolveMissingItemRedirect(
     ? target
     : undefined;
 }
+
+/**
+ * The query string an authored 301 may carry forward: `url.search` minus
+ * Next's `_rsc` cache-busting param (design-templates-router-header-strip,
+ * vivreal-hq 2026-10-18). `_rsc` is a per-router-state hash, and a `Location`
+ * carrying it would hand every visitor that one client's RSC cache key.
+ *
+ * Today Next's middleware adapter already removes `_rsc` from
+ * `request.nextUrl` (`stripInternalSearchParams`), so this changes nothing
+ * live. It keeps the guarantee if `skipProxyUrlNormalize` is ever turned on,
+ * which disables that strip.
+ *
+ * Every other pair is kept byte for byte and in order: re-serialising through
+ * `URLSearchParams` would rewrite encodings (`%20` to `+`) on every 301.
+ */
+export function publicSearch(url: URL): string {
+  if (!url.searchParams.has('_rsc')) return url.search;
+  const kept = url.search
+    .slice(1)
+    .split('&')
+    .filter((pair) => pair !== '' && !new URLSearchParams(pair).has('_rsc'));
+  return kept.length > 0 ? `?${kept.join('&')}` : '';
+}
