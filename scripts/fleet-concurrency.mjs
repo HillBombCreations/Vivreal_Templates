@@ -18,22 +18,98 @@
 
 export const SHARED_GROUP = "templates-fleet-build";
 
-/** Every kind of run each workflow can start, with the context GitHub gives it. */
+/**
+ * Every kind of run each workflow can start, with the context GitHub gives it.
+ * Hand written so each entry states whether it SHOULD share the group;
+ * runKindCoverageIssues fails when the workflows declare a run missing here.
+ */
 export const RUN_KINDS = {
   promote: [
     { name: "promote live", shared: true, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { scope: "live", dry_run: false } } },
     { name: "promote all", shared: true, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { scope: "all", dry_run: false } } },
     { name: "promote dry run", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { scope: "live", dry_run: true } } },
+    { name: "promote all dry run", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { scope: "all", dry_run: true } } },
   ],
   catchup: [
     { name: "catch-up recovery live", shared: true, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "live", dry_run: false } } },
     { name: "catch-up recovery all", shared: true, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "all", dry_run: false } } },
     { name: "catch-up manual demo", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "demo", dry_run: false } } },
     { name: "catch-up live dry run", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "live", dry_run: true } } },
+    { name: "catch-up all dry run", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "all", dry_run: true } } },
+    { name: "catch-up demo dry run", shared: false, ctx: { github: { event_name: "workflow_dispatch" }, inputs: { tier: "demo", dry_run: true } } },
     // A scheduled run has no inputs at all: every `inputs.*` reads as null.
     { name: "catch-up weekly schedule", shared: false, ctx: { github: { event_name: "schedule" }, inputs: {} } },
   ],
 };
+
+/**
+ * Every run a workflow document DECLARES it can start, read from its `on:`
+ * block rather than from a list, so a tier, scope or trigger added later is
+ * enumerated without anyone remembering to.
+ *
+ * A dispatch expands to the cross product of its inputs: a `choice` gives its
+ * options, a `boolean` gives true and false. Any other input type (string,
+ * number, environment) has no finite set of values, so it is returned as
+ * `unenumerable` for the caller to fail on, never skipped. Every other event
+ * starts one kind of run with no inputs, the way a schedule does.
+ */
+export function declaredRunKinds(doc) {
+  const on = doc?.on;
+  const events = typeof on === "string" ? { [on] : null }
+    : Array.isArray(on) ? Object.fromEntries(on.map((e) => [e, null]))
+    : on && typeof on === "object" ? on
+    : {};
+  const kinds = [];
+  const unenumerable = [];
+  for (const [event, config] of Object.entries(events)) {
+    const inputs = event === "workflow_dispatch" || event === "workflow_call" ? (config?.inputs ?? {}) : {};
+    let combos = [{}];
+    for (const [name, spec] of Object.entries(inputs)) {
+      const values = spec?.type === "choice" ? (spec.options ?? [])
+        : spec?.type === "boolean" ? [true, false]
+        : null;
+      if (!values || values.length === 0) {
+        unenumerable.push(`${event} input "${name}" (type ${spec?.type ?? "string"}) has no finite set of values`);
+        continue;
+      }
+      combos = combos.flatMap((c) => values.map((v) => ({ ...c, [name]: v })));
+    }
+    for (const c of combos) kinds.push({ event_name: event, inputs: c });
+  }
+  return { kinds, unenumerable };
+}
+
+const sameRun = (declared, listed) => {
+  if (listed.ctx.github.event_name !== declared.event_name) return false;
+  const a = Object.keys(declared.inputs);
+  const b = Object.keys(listed.ctx.inputs);
+  return a.length === b.length && a.every((k) => listed.ctx.inputs[k] === declared.inputs[k]);
+};
+
+/**
+ * Every declared run must appear in RUN_KINDS, or its group is never checked
+ * and a new run kind falls silently into whichever group the expression's
+ * fallback names. A listed run the workflow can no longer start is reported
+ * too, since it tests a run that does not exist.
+ */
+export function runKindCoverageIssues(promoteDoc, catchupDoc, runKinds = RUN_KINDS) {
+  const issues = [];
+  for (const [key, doc] of Object.entries({ promote: promoteDoc, catchup: catchupDoc })) {
+    const { kinds, unenumerable } = declaredRunKinds(doc);
+    if (kinds.length === 0) issues.push(`${key}: declares no triggers`);
+    for (const u of unenumerable) issues.push(`${key}: ${u}`);
+    const listed = runKinds[key] ?? [];
+    for (const d of kinds) {
+      if (!listed.some((l) => sameRun(d, l))) {
+        issues.push(`${key}: ${d.event_name} ${JSON.stringify(d.inputs)} is declared but not in RUN_KINDS`);
+      }
+    }
+    for (const l of listed) {
+      if (!kinds.some((d) => sameRun(d, l))) issues.push(`${key}: RUN_KINDS "${l.name}" is not a run the workflow declares`);
+    }
+  }
+  return issues;
+}
 
 function tokenize(src) {
   const tokens = [];
