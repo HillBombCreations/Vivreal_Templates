@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import Navbar from "@/components/Navigation/Navbar";
+import Footer from "@/components/Footer";
 
 /**
  * App Router `not-found` boundary.
@@ -22,6 +24,16 @@ import type { Metadata } from "next";
  * Keep this component trivial and side-effect free: it is the last boundary
  * before a request gives up, so anything that can throw here costs a status
  * code fleet-wide.
+ *
+ * V7.51 (v6 walk F6): it used to render no site chrome at all, so a visitor
+ * who followed a dead link lost the site's own menu (Larkspur `/privacy`). It
+ * now mounts the same Navbar and Footer shells as every page. Neither can
+ * throw on an upstream failure: both read `getSiteData()`, which answers
+ * FALLBACK_SITE_DATA instead of throwing, and the root layout has already
+ * made that read for this request. `hasMasthead={false}` because no hero sits
+ * under the bar here (a transparent-on-hero kit would otherwise paint white
+ * ink on a light page, the FP2-27 detail-page case). The body takes the
+ * site's own colours rather than a fixed grey slab.
  */
 export const metadata: Metadata = {
   title: "404 Not Found",
@@ -31,15 +43,17 @@ export const metadata: Metadata = {
 
 const NotFound = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <div className="text-center">
-        <h1 className="text-4xl font-bold mb-4">404</h1>
-        <p className="text-xl text-gray-600 mb-4">Oops! Page not found</p>
-        <Link href="/" className="text-blue-700 hover:text-blue-700 underline">
+    <>
+      <Navbar hasMasthead={false} />
+      <div className="content-grid py-24 text-center">
+        <h1 className="text-4xl font-bold mb-4" style={{ color: "var(--text-primary)" }}>404</h1>
+        <p className="text-xl mb-4" style={{ color: "var(--text-secondary)" }}>Oops! Page not found</p>
+        <Link href="/" className="underline" style={{ color: "var(--text-primary)" }}>
           Return to Home
         </Link>
       </div>
-    </div>
+      <Footer />
+    </>
   );
 };
 
