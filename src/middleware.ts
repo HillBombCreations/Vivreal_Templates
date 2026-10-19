@@ -8,6 +8,12 @@ import {
   isSelfRedirectLoop,
 } from '@/lib/edgeSiteMap'
 import { FROZEN_HEADERS, FROZEN_STATUS, renderFrozenPage } from '@/lib/frozenGate'
+import {
+  NEVER_A_PAGE_BODY,
+  NEVER_A_PAGE_HEADERS,
+  NEVER_A_PAGE_STATUS,
+  isNeverAPagePath,
+} from '@/lib/neverAPagePath'
 import { publicSearch, resolveMissingItemRedirect } from '@/lib/redirects'
 import {
   PREVIEW_QUERY_PARAM,
@@ -17,6 +23,18 @@ import {
 } from '@/lib/api/previewToken'
 
 export async function middleware(request: NextRequest) {
+  // Scanner probes (`*.php`, `/wp-admin/*`, `/.env`) can never be a page, so
+  // they get a data-free 404 here, before the edge map fetch below and before
+  // the page layer, which during an upstream outage would answer them 5xx.
+  // First on purpose: nothing below can turn one into a page. See
+  // `neverAPagePath.ts`.
+  if (isNeverAPagePath(request.nextUrl.pathname)) {
+    return new NextResponse(NEVER_A_PAGE_BODY, {
+      status: NEVER_A_PAGE_STATUS,
+      headers: NEVER_A_PAGE_HEADERS,
+    })
+  }
+
   // ISR migration Phase 1 -- upgrade the portal's `?vivreal_preview=<token>`
   // URL into a Next draft-mode session instead of injecting it as a request
   // header.
