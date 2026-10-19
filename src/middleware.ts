@@ -12,6 +12,7 @@ import {
   NEVER_A_PAGE_BODY,
   NEVER_A_PAGE_HEADERS,
   NEVER_A_PAGE_STATUS,
+  hasProbeExtension,
   isNeverAPagePath,
 } from '@/lib/neverAPagePath'
 import { publicSearch, resolveMissingItemRedirect } from '@/lib/redirects'
@@ -22,17 +23,59 @@ import {
   isWellFormedPreviewToken,
 } from '@/lib/api/previewToken'
 
+function neverAPageResponse() {
+  return new NextResponse(NEVER_A_PAGE_BODY, {
+    status: NEVER_A_PAGE_STATUS,
+    headers: NEVER_A_PAGE_HEADERS,
+  })
+}
+
+/**
+ * A legacy `*.php/.asp/.aspx/.jsp/.cgi` address. Before the probe 404 these
+ * skipped middleware (`isSkippablePath`, a dot in the last segment) and
+ * reached `[slug]/page.tsx` or `[slug]/[itemId]/page.tsx`, where
+ * `resolveMissingItemRedirect` + `permanentRedirect(target)` answered 308 to
+ * the bare target. This answers the same thing here: same lookup, same 308,
+ * no query carried, because Site_Migrator's `buildRedirectMap` writes exactly
+ * this shape (`{ from: '/about.php', to: '/about' }`) for a migrated legacy
+ * site.
+ *
+ * Everything else is the probe 404, including a null map (cold fetch failed or
+ * the upstream is down), so an outage still gives a probe 404 and never 5xx.
+ * Two cases the page layer would have mishandled also 404: a target that
+ * resolves back to the same path (the page layer looped), and a resolved
+ * target on another origin (unreachable after `resolveMissingItemRedirect`,
+ * checked against the real request as the 301 path below does).
+ */
+async function legacyExtensionResponse(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  const siteMap = await getEdgeSiteMap()
+  const target = siteMap ? resolveMissingItemRedirect(siteMap.redirects, pathname) : undefined
+  if (!target || isSelfRedirectLoop(pathname, target)) {
+    return neverAPageResponse()
+  }
+
+  const redirectUrl = new URL(target, request.url)
+  if (redirectUrl.origin !== request.nextUrl.origin) {
+    return neverAPageResponse()
+  }
+  return NextResponse.redirect(redirectUrl, 308)
+}
+
 export async function middleware(request: NextRequest) {
-  // Scanner probes (`*.php`, `/wp-admin/*`, `/.env`) can never be a page, so
-  // they get a data-free 404 here, before the edge map fetch below and before
-  // the page layer, which during an upstream outage would answer them 5xx.
-  // First on purpose: nothing below can turn one into a page. See
-  // `neverAPagePath.ts`.
+  // Scanner probes (`/wp-admin/*`, `/.env`) can never be a page, so they get a
+  // data-free 404 here, before the edge map fetch below and before the page
+  // layer, which during an upstream outage would answer them 5xx. First on
+  // purpose: nothing below can turn one into a page. See `neverAPagePath.ts`.
   if (isNeverAPagePath(request.nextUrl.pathname)) {
-    return new NextResponse(NEVER_A_PAGE_BODY, {
-      status: NEVER_A_PAGE_STATUS,
-      headers: NEVER_A_PAGE_HEADERS,
-    })
+    return neverAPageResponse()
+  }
+
+  // `*.php` and friends are not a page either, but a migrated legacy site can
+  // hold an authored redirect FROM one. Only these paths pay the edge map read
+  // here; every other request reaches the existing read below unchanged.
+  if (hasProbeExtension(request.nextUrl.pathname)) {
+    return legacyExtensionResponse(request)
   }
 
   // ISR migration Phase 1 -- upgrade the portal's `?vivreal_preview=<token>`

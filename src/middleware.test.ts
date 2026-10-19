@@ -60,11 +60,10 @@ async function run(pathname: string, init?: { cookie?: string; method?: string }
   return (await middleware(requestFor(pathname, init) as never)) as unknown as StubResponse;
 }
 
+// Directory and dot-file probes only: these never read site data. Extension
+// probes (`/ebkid.php`) read the edge map's redirects first, see the legacy
+// redirect tests below.
 const PROBES = [
-  '/ebkid.php',
-  '/xmlrpc.php',
-  '/wp-login.php',
-  '/magento/index.php/admin',
   '/wp-admin/css/install',
   '/wp-content/plugins/x',
   '/wp-includes/wlwmanifest',
@@ -91,9 +90,14 @@ test('REFUSE: a preview cookie does not carry a probe past the 404', async () =>
 });
 
 test('REFUSE: HEAD gets the same 404', async () => {
-  const response = await run('/ebkid.php', { method: 'HEAD' });
+  const response = await run('/wp-admin/setup', { method: 'HEAD' });
   assert.equal(response.status, 404);
   assert.deepEqual(fetchCalls, []);
+});
+
+test('REFUSE: HEAD on an extension probe gets the 404 during an outage', async () => {
+  const response = await run('/ebkid.php', { method: 'HEAD' });
+  assert.equal(response.status, 404);
 });
 
 test('control: a real page path under the same outage DOES reach the edge-map fetch', async () => {
@@ -105,12 +109,100 @@ test('control: a real page path under the same outage DOES reach the edge-map fe
   assert.ok(fetchCalls.some((url) => url.includes('/tenant/siteDetails')), `fetch calls: ${fetchCalls.join(', ')}`);
 });
 
+// BLOCK 1 of the PR #197 review: a legacy-extension address can be an
+// authored redirect's `from`. Site_Migrator's buildRedirectMap writes
+// `{ from: '/about.php', to: '/about' }` for a migrated PHP or ASP site, and
+// before the probe 404 that request reached `[slug]/page.tsx`, where
+// `resolveMissingItemRedirect` + `permanentRedirect` answered 308 to the
+// target with the query dropped. That answer must survive.
+function useHealthyMap(redirects: Array<{ from: string; to: string; status?: number }>) {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetchCalls.push(String(input instanceof Request ? input.url : input));
+    return new Response(
+      JSON.stringify({
+        success: true,
+        data: { pages: [{ slug: 'about' }, { slug: 'store' }], redirects, siteDetails: { values: {} } },
+        error: null,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch; // the mock implements only the call shape middleware uses
+}
+
+const MIGRATED_REDIRECTS = [
+  { from: '/about.php', to: '/about', status: 301 },
+  { from: '/store/index.jsp', to: '/store', status: 301 },
+  { from: '/loop.php', to: '/loop.php', status: 301 },
+  { from: '/hostile.asp', to: '//evil.example', status: 301 },
+];
+
+function assertPermanentRedirect(response: StubResponse, expectedPath: string) {
+  assert.equal(response.kind, 'redirect');
+  // 308, the status `permanentRedirect()` at `[slug]/page.tsx` gave this path
+  // before b65a539, not middleware's own 301.
+  assert.equal(response.status, 308);
+  const location = new URL(response.headers.get('location') ?? '', 'https://site.example.com');
+  assert.equal(location.origin, 'https://site.example.com');
+  assert.equal(`${location.pathname}${location.search}`, expectedPath);
+}
+
+test('ALLOW: /about.php with an authored redirect answers the same 308 as before the probe 404', async () => {
+  useHealthyMap(MIGRATED_REDIRECTS);
+  assertPermanentRedirect(await run('/about.php'), '/about');
+});
+
+test('ALLOW: the legacy redirect drops the query, as permanentRedirect(target) did', async () => {
+  useHealthyMap(MIGRATED_REDIRECTS);
+  assertPermanentRedirect(await run('/about.php?id=7'), '/about');
+});
+
+test('ALLOW: a multi-segment legacy address follows its authored redirect', async () => {
+  useHealthyMap(MIGRATED_REDIRECTS);
+  assertPermanentRedirect(await run('/store/index.jsp'), '/store');
+});
+
+test('ALLOW: legacy redirect matching is case-sensitive like the page layer, so /About.php is not /about.php', async () => {
+  useHealthyMap(MIGRATED_REDIRECTS);
+  const response = await run('/About.php');
+  assert.equal(response.status, 404);
+});
+
+for (const [label, pathname] of [
+  ['an unmatched probe', '/ebkid.php'],
+  ['a mid-path probe', '/magento/index.php/admin'],
+  ['a self-loop redirect', '/loop.php'],
+  ['a cross-origin redirect target', '/hostile.asp'],
+] as const) {
+  test(`REFUSE: ${label} (${pathname}) answers 404 against a healthy map`, async () => {
+    useHealthyMap(MIGRATED_REDIRECTS);
+    const response = await run(pathname);
+    assert.equal(response.kind, 'response');
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get('cache-control'), 'private, no-cache, no-store, max-age=0, must-revalidate');
+    assert.equal(response.headers.get('location'), null);
+  });
+}
+
+for (const pathname of ['/about.php', '/ebkid.php', '/xmlrpc.php', '/wp-login.php', '/magento/index.php/admin']) {
+  test(`REFUSE: ${pathname} answers 404, not 5xx, when the map is null in an outage`, async () => {
+    // The default beforeEach mock: siteDetails refused with 403, map null.
+    const response = await run(pathname);
+    assert.equal(response.kind, 'response');
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get('cache-control'), 'private, no-cache, no-store, max-age=0, must-revalidate');
+    // The map really was asked for, so "null map" is the outage, not a skip.
+    assert.ok(fetchCalls.some((url) => url.includes('/tenant/siteDetails')), `fetch calls: ${fetchCalls.join(', ')}`);
+  });
+}
+
 const REAL_PATHS = [
   '/',
   '/about',
   '/wp-engine-review',
   '/cgi-bin-guide',
   '/env-setup',
+  '/wp-configuration-guide',
+  '/wp-config',
   '/shop/6721f0c2a1b2c3d4e5f60718',
   '/features/ai-sites',
   '/blog/version-1.2',

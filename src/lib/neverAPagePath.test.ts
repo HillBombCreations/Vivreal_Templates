@@ -4,14 +4,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 // Explicit .ts extension: runs under `node --experimental-strip-types --test`.
-import { isNeverAPagePath, NEVER_A_PAGE_HEADERS } from './neverAPagePath.ts';
+import { hasProbeExtension, isNeverAPagePath, NEVER_A_PAGE_HEADERS } from './neverAPagePath.ts';
 
 // research-site-5xx-2026-10-17.md fix 1: scanner probes answered 500 during a
 // VR_Client_API outage because only the page list could prove them absent.
 // These pin which paths are provably not a page (REFUSE, 404 with no data)
 // and, just as hard, that nothing real is caught (ALLOW).
 
-const PROBES = [
+// Extension probes: not a page, but possibly an authored redirect's `from`
+// (Site_Migrator writes `/about.php`), so they are NOT data-free. Middleware
+// checks the redirects before the 404 (middleware.test.ts).
+const EXTENSION_PROBES = [
   '/ebkid.php',
   '/xmlrpc.php',
   '/wp-login.php',
@@ -22,6 +25,17 @@ const PROBES = [
   '/login.aspx',
   '/index.jsp',
   '/test.cgi',
+  '/about.php',
+];
+
+for (const probe of EXTENSION_PROBES) {
+  test(`REFUSE: ${probe} has a probe extension and is not data-free`, () => {
+    assert.equal(hasProbeExtension(probe), true);
+    assert.equal(isNeverAPagePath(probe), false);
+  });
+}
+
+const PROBES = [
   '/wp-admin',
   '/wp-admin/',
   '/wp-admin/css/install.css',
@@ -69,6 +83,8 @@ const REAL_PAGE_PATHS = [
   '/wordpress',
   '/wp',
   '/wpadmin-tips',
+  '/wp-configuration-guide',
+  '/wp-config',
   '/cgi-bin-guide',
   '/phpmyadmin-help',
   '/php-classes',
@@ -86,6 +102,7 @@ const REAL_PAGE_PATHS = [
 for (const page of REAL_PAGE_PATHS) {
   test(`ALLOW: real page path ${page} is not a probe`, () => {
     assert.equal(isNeverAPagePath(page), false);
+    assert.equal(hasProbeExtension(page), false);
   });
 }
 
@@ -149,7 +166,9 @@ test('control: the route walk found the real code routes', () => {
 });
 
 test('ALLOW: no code route, public file or framework path is a probe', () => {
-  const caught = [...CODE_ROUTE_URLS, ...PUBLIC_URLS, ...FRAMEWORK_URLS].filter(isNeverAPagePath);
+  const caught = [...CODE_ROUTE_URLS, ...PUBLIC_URLS, ...FRAMEWORK_URLS].filter(
+    (url) => isNeverAPagePath(url) || hasProbeExtension(url),
+  );
   assert.deepEqual(caught, []);
 });
 
