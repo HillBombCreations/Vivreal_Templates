@@ -23,6 +23,8 @@ import {
   type DetailItemSummary as Summary,
   type SummaryInput,
 } from '../../lib/detail/itemSummary.ts';
+
+export type { DetailItemSummary as ItemSummary } from '../../lib/detail/itemSummary.ts';
 import { inkOnAccentIfFailsAA } from '../../lib/theme/readableAccent.ts';
 
 interface SummaryProps {
@@ -84,6 +86,19 @@ interface TemplateProps {
   detailPage?: DetailPageConfig;
 }
 
+/**
+ * The summary for one item page, decided on the SERVER: every arm calls this
+ * in `page.tsx` and hands only the result (a few strings) to the render, so a
+ * client component such as the product renderer never receives the site's
+ * page configs to decide it itself.
+ */
+export function resolveItemSummary(
+  input: Omit<SummaryInput, 'fields'> & { detailPage: DetailPageConfig | undefined },
+): Summary | undefined {
+  const { detailPage, ...rest } = input;
+  return resolveDetailItemSummary({ ...rest, fields: detailPage?.fields });
+}
+
 export interface RenderItemDetailInput<P extends TemplateProps> {
   /** The renderer's `DetailPageTemplate` (passed in: its package root cannot load under plain Node). */
   Template: ComponentType<P>;
@@ -93,36 +108,31 @@ export interface RenderItemDetailInput<P extends TemplateProps> {
   format: string | undefined;
   /** The renderer's `resolveDetailSections`. */
   resolveSections: (format: string | undefined, config: DetailPageConfig | undefined) => DetailSection[];
-  /** Where the item came from. Absent: no summary, the single template render. */
-  source?: Omit<SummaryInput, 'format' | 'fields' | 'sections'>;
+  /** From `resolveItemSummary`. Absent: the single template render, unchanged. */
+  summary?: Summary;
   accent?: string;
   textInverse?: string;
   /**
-   * `false` draws the summary after the whole template instead of splitting
-   * it at the hero. For a product page on a look shell: the look draws the
-   * hero AND the first other look section it finds, so a second template
-   * instance would draw the look page twice.
+   * The product page is drawn by a look (`resolveProductPageShell` answered a
+   * component). The look draws itself in the first look section of each
+   * template instance, so the second instance drops those sections.
    */
-  split?: boolean;
+  lookShell?: boolean;
 }
 
 /**
  * The template, with the summary directly under its hero when there is one to
- * draw. Nothing to draw returns the single template render with the very same
+ * draw. No summary returns the single template render with the very same
  * props object, so a page with no link and no facts is unchanged.
  *
- * Split into two template instances around the summary. Safe because the only
- * state a template shares across sections is the product buy box, which lives
- * inside the hero; `splitAtHero` drops the hero-inline sections from the
- * second half; and an empty half is never rendered, since `sections: []`
- * would fall back to the format's full default list.
+ * Split into two template instances around the summary (`splitAtHero`). The
+ * only state a template shares across sections is the product buy box, and
+ * it lives inside the hero, whose inline sections stay in the first instance.
+ * An empty half is never rendered, since `sections: []` would fall back to
+ * the format's full default list.
  */
 export function renderItemDetail<P extends TemplateProps>(input: RenderItemDetailInput<P>): ReactElement {
-  const { Template, props } = input;
-  const sections = input.resolveSections(input.format, props.detailPage);
-  const summary = input.source
-    ? resolveDetailItemSummary({ ...input.source, format: input.format, fields: props.detailPage?.fields, sections })
-    : undefined;
+  const { Template, props, summary } = input;
   if (!summary) return createElement(Template, props);
 
   const block = createElement(DetailItemSummary, {
@@ -131,9 +141,9 @@ export function renderItemDetail<P extends TemplateProps>(input: RenderItemDetai
     textInverse: input.textInverse,
     editorial: props.detailPage?.styleVariant === 'editorial',
   });
-  if (input.split === false) return createElement(Fragment, null, createElement(Template, props), block);
-
-  const { before, after } = splitAtHero(sections);
+  const { before, after } = splitAtHero(input.resolveSections(input.format, props.detailPage), {
+    lookShell: input.lookShell === true,
+  });
   const part = (s: DetailSection[]) => createElement(Template, { ...props, detailPage: { ...props.detailPage, sections: s } });
   return createElement(
     Fragment,

@@ -9,9 +9,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 // template stops rendering, so a moved dist path cannot pass on nothing.
 import DetailPageTemplateModule from '../../../node_modules/@hillbombcreations/site-renderer/dist/DetailPage/DetailPageTemplate.js';
 import { resolveDetailSections } from '../../../node_modules/@hillbombcreations/site-renderer/dist/types/DetailPage.js';
-import { renderItemDetail } from './index.ts';
+import { renderItemDetail, resolveItemSummary } from './index.ts';
 import { withoutUnsafeHeroLink } from '../../lib/detail/itemSummary.ts';
 import type { LinkPage } from '../../lib/detail/linkedItems.ts';
+import type { DetailPageConfig } from '@hillbombcreations/site-renderer';
 
 /**
  * V7 F-D1, review C1: the item page's composition, rendered for real.
@@ -32,31 +33,44 @@ const COLLECTION = '6ad6ec892d800eff033fa56d';
 const APPLY = 'https://example.com/qa-test-apply-2026-10-20';
 const ROLE_RAW = { title: 'QA TEST Baker role 2026-10-20', location: 'Knoxville', type: 'Full Time', link: APPLY };
 
+// What the Studio switch writes: no fields, no sections.
+const ROLE_DETAIL: DetailPageConfig = { enabled: true, itemCollectionId: COLLECTION };
 const page: LinkPage = {
   slug: 'qa-test-careers-2026-10-20',
   format: 'standard',
-  // What the Studio switch writes: no fields, no sections.
-  detailPage: { enabled: true, itemCollectionId: COLLECTION },
+  detailPage: ROLE_DETAIL,
   blocks: [{ type: { kind: 'layout', dispatchId: 'positions' }, config: { bindings: [{ collectionId: COLLECTION, displayAs: 'positions' }] } }],
 };
 
-function render(raw: Record<string, unknown>, opts: { source?: boolean; split?: boolean } = {}) {
+function render(raw: Record<string, unknown>, opts: { source?: boolean } = {}) {
   const item = { id: '6ad6ec892d800eff033fa576', title: String(raw.title ?? ''), href: undefined, source: 'collection', raw };
   const props = {
     slug: page.slug,
     format: page.format,
     item: withoutUnsafeHeroLink(item),
     siteData: { primary: '#aa3333', pageConfigs: [{ slug: page.slug, name: 'QA TEST careers 2026-10-20' }] },
-    detailPage: page.detailPage,
+    detailPage: ROLE_DETAIL,
   };
+  // As the route does: the summary is decided first, then handed to the render.
+  const summary =
+    opts.source === false
+      ? undefined
+      : resolveItemSummary({
+          page,
+          pages: [page],
+          collectionId: COLLECTION,
+          item,
+          format: page.format,
+          detailPage: props.detailPage,
+          sections: resolveDetailSections(page.format, props.detailPage),
+        });
   const element = renderItemDetail({
     Template: DetailPageTemplate,
     resolveSections: resolveDetailSections,
     format: page.format,
     props,
-    source: opts.source === false ? undefined : { page, pages: [page], collectionId: COLLECTION, item },
+    summary,
     accent: '#aa3333',
-    split: opts.split,
   });
   return { html: renderToStaticMarkup(element), props };
 }
@@ -99,10 +113,92 @@ test('REFUSE: a javascript: link with a ctaLabel renders no javascript: href any
   assert.doesNotMatch(html, /href="javascript:/i);
 });
 
-test('split: false draws the summary after the whole template (a product page on a look shell)', () => {
-  const { html, props } = render(ROLE_RAW, { split: false });
-  const whole = renderToStaticMarkup(createElement(DetailPageTemplate, props));
-  assert.ok(whole.includes('<h1'), 'non-vacuous: the template rendered');
-  assert.ok(html.startsWith(whole), 'the unsplit template comes first, unchanged');
-  assert.match(html.slice(whole.length), /^<section data-detail-item-summary=""/);
+// Delta 2 review, BLOCK 1: on a product page the hero draws the size picker
+// and the buy box INSIDE itself, gated on its own instance listing `variants`
+// and `addToCart`. A split that kept only `hero` in the first instance drew a
+// product nobody could buy.
+const PRODUCT_COLLECTION = 'c-products';
+const PRODUCT_DETAIL: DetailPageConfig = { enabled: true, itemCollectionId: PRODUCT_COLLECTION };
+const productPage: LinkPage = {
+  slug: 'shop',
+  format: 'products',
+  detailPage: PRODUCT_DETAIL,
+  blocks: [{ type: { kind: 'layout' }, config: { bindings: [{ collectionId: PRODUCT_COLLECTION, displayAs: 'product-tiles' }] } }],
+};
+
+function renderProduct(withSummary: boolean) {
+  const raw = { title: 'Tour shirt', meta: 'Organic cotton', orderUrl: 'https://shop.example.com/tour-shirt' };
+  const product = { _id: 'p1', name: 'Tour shirt', price: '25', imageUrl: '', usingVariant: { name: 'Size', values: ['S', 'M'] }, raw };
+  const props = {
+    slug: productPage.slug,
+    format: 'products',
+    item: product,
+    siteData: { primary: '#1a1a2e', pageConfigs: [{ slug: productPage.slug, name: 'Shop' }] },
+    detailPage: PRODUCT_DETAIL,
+  };
+  const sections = resolveDetailSections('products', props.detailPage);
+  const summary = withSummary
+    ? resolveItemSummary({ page: productPage, pages: [productPage], collectionId: PRODUCT_COLLECTION, item: { title: 'Tour shirt', raw }, format: 'products', detailPage: props.detailPage, sections })
+    : undefined;
+  return renderToStaticMarkup(
+    renderItemDetail({ Template: DetailPageTemplate, resolveSections: resolveDetailSections, format: 'products', props, summary }),
+  );
+}
+
+const sizeButtons = (html: string) => html.match(/<button[^>]*aria-label="(S|M)"/g) ?? [];
+// The buy box: "Add to cart" with a cart adapter, "Cart unavailable" without
+// one (this render has none). Either is the buy box; its absence is the bug.
+const BUY_BOX = /Add to cart|Cart unavailable/;
+
+test('REFUSE (delta 2 BLOCK 1): a product page that draws the summary keeps its size picker and its buy box', () => {
+  const plain = renderProduct(false);
+  assert.equal(sizeButtons(plain).length, 2, 'non-vacuous: without a summary the product has two size buttons');
+  assert.match(plain, BUY_BOX, 'non-vacuous: without a summary the product has its buy box');
+  const withSummary = renderProduct(true);
+  assert.match(withSummary, /data-detail-item-action/, 'the summary drew');
+  assert.equal(sizeButtons(withSummary).length, 2, 'the size buttons survive the summary');
+  assert.match(withSummary, BUY_BOX, 'the buy box survives the summary');
+  assert.ok(withSummary.search(BUY_BOX) < withSummary.indexOf('data-detail-item-summary'), 'the summary sits under the buy box');
+});
+
+// Delta 2 review D2-C1: a look's product page splits too, with the summary
+// right under the look, not after the whole page.
+function renderLook(lookShell: boolean) {
+  const raw = { title: 'Tour shirt', orderUrl: 'https://shop.example.com/tour-shirt' };
+  const product = { _id: 'p1', name: 'Tour shirt', price: '25', imageUrl: '', usingVariant: { name: 'Size', values: ['S', 'M'] }, raw };
+  const detailPage: DetailPageConfig = { ...PRODUCT_DETAIL, sections: ['hero', 'variants', 'addToCart', 'vitals', 'related', 'cta'] };
+  const props = {
+    slug: productPage.slug,
+    format: 'products',
+    item: product,
+    siteData: { primary: '#1a1a2e', pageConfigs: [{ slug: productPage.slug, name: 'Shop' }] },
+    detailPage,
+    storefrontConfig: { shell: 'cobalt-crumb-storefront' },
+    productSource: raw,
+    collectionItems: [],
+  };
+  const summary = resolveItemSummary({
+    page: productPage,
+    pages: [productPage],
+    collectionId: PRODUCT_COLLECTION,
+    item: { title: 'Tour shirt', raw },
+    format: 'products',
+    detailPage,
+    sections: resolveDetailSections('products', detailPage),
+  });
+  return renderToStaticMarkup(
+    renderItemDetail({ Template: DetailPageTemplate, resolveSections: resolveDetailSections, format: 'products', props, summary, lookShell }),
+  );
+}
+
+const lookPages = (html: string) => (html.match(/data-vivreal-product-page/g) ?? []).length;
+
+test('ALLOW (delta 2 D2-C1): a look product page draws its look once, with the summary right under it', () => {
+  const html = renderLook(true);
+  assert.equal(lookPages(html), 1);
+  assert.match(html, /data-detail-item-action/, 'the summary drew');
+  assert.ok(html.indexOf('data-vivreal-product-page') < html.indexOf('data-detail-item-summary'), 'the summary follows the look');
+  // Control: without the look flag the second half claims `vitals`, and the
+  // look draws a second time. This is what the flag exists to prevent.
+  assert.equal(lookPages(renderLook(false)), 2, 'non-vacuous: the drop is what keeps the look single');
 });

@@ -237,12 +237,12 @@ test('the per-item OG card is the item\'s own for every format reaching this arm
 // `renderItemDetail`, which `src/components/DetailItemSummary/
 // DetailItemSummary.test.ts` renders for real. These pins are what make that
 // render test a test of the ROUTE: drop the call from an arm and this goes red.
-test('the collection and menu arms render the item page through renderItemDetail, with a source', () => {
-  assert.match(source, /import \{ renderItemDetail \} from "@\/components\/DetailItemSummary"/);
-  const calls = source.match(/renderItemDetail\(\{/g) ?? [];
-  assert.equal(calls.length, 2, 'the collection arm and the menu arm');
-  assert.match(source, /source: \{ page: pageConfig, pages: sitePages, collectionId, item: effectiveItem \}/);
-  assert.match(source, /source: poolCollectionId \? \{ page: pageConfig, pages: sitePages, collectionId: poolCollectionId, item \} : undefined/);
+test('the collection and menu arms render the item page through renderItemDetail, with a server-decided summary', () => {
+  assert.match(source, /import \{ renderItemDetail, resolveItemSummary \} from "@\/components\/DetailItemSummary"/);
+  assert.equal((source.match(/renderItemDetail\(\{/g) ?? []).length, 2, 'the collection arm and the menu arm');
+  assert.equal((source.match(/resolveItemSummary\(\{/g) ?? []).length, 3, 'collection, menu and collection-products');
+  assert.match(source, /summary: resolveItemSummary\(\{\s*page: pageConfig,\s*pages: sitePages,\s*collectionId,\s*item: effectiveItem,/);
+  assert.match(source, /summary: poolCollectionId\s*\? resolveItemSummary\(\{\s*page: pageConfig,\s*pages: sitePages,\s*collectionId: poolCollectionId,/);
 });
 
 test('only the shows and team arms still render the template directly', () => {
@@ -252,14 +252,15 @@ test('only the shows and team arms still render the template directly', () => {
   assert.equal((source.match(/<DetailPageTemplate\b/g) ?? []).length, 2);
 });
 
-test('the collection products arm hands its source to the product renderer, which renders through renderItemDetail', () => {
-  assert.match(source, /itemSource=\{\{ page: pageConfig, pages: sitePages, collectionId, item: effectiveItem \}\}/);
+test('the collection products arm hands the product renderer only the decided summary, and it renders through renderItemDetail', () => {
+  assert.match(source, /itemSummary=\{resolveItemSummary\(\{\s*page: pageConfig,/);
+  assert.doesNotMatch(source, /itemSource=/, 'no page configs cross to the client component');
   const productRenderer = fs.readFileSync(
     new URL('../../../components/PageTemplates/ProductDetailRenderer/index.tsx', import.meta.url),
     'utf8',
   );
   assert.match(productRenderer, /renderItemDetail\(\{/);
-  assert.match(productRenderer, /source: itemSource,/);
-  assert.match(productRenderer, /split: !storefrontConfig\?\.shell,/);
+  assert.match(productRenderer, /summary: itemSummary,/);
+  assert.match(productRenderer, /lookShell: resolveProductPageShell\(storefrontConfig\?\.shell\) !== null,/);
   assert.doesNotMatch(productRenderer, /<DetailPageTemplate\b/);
 });

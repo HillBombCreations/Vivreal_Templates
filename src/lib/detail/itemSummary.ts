@@ -342,21 +342,49 @@ export function withoutUnsafeHeroLink<T extends SummaryItem>(item: T): T {
   return { ...item, raw };
 }
 
-/** The sections the hero draws inline and skips standalone while it is present (`DetailPageTemplate`). */
+/**
+ * The sections the hero draws INSIDE itself, gated on its own instance
+ * listing them (`DetailPageTemplate.js`, `case 'hero'`: the product hero's
+ * `interactiveSlot` reads `sections.includes('variants')` and
+ * `sections.includes('addToCart')`; the shows hero's meta row the same way),
+ * and skips standalone while the hero is present.
+ */
 const HERO_INLINE_SECTIONS: ReadonlySet<string> = new Set(['meta', 'variants', 'addToCart']);
 
 /**
- * The resolved section list split around the hero, so the summary can sit
- * directly under it: `before` ends with the hero (empty when the page has no
- * hero), `after` is the rest, minus the sections the hero draws inline (in a
- * template instance without the hero those would render a second time).
+ * The sections a look's product page claims (`DetailPageTemplate.js`,
+ * `LOOK_PAGE_SECTIONS`): the look draws itself once, in the first of these
+ * its instance lists, and the rest render nothing.
  */
-export function splitAtHero<T extends string>(sections: readonly T[]): { before: T[]; after: T[] } {
+const LOOK_PAGE_SECTIONS: ReadonlySet<string> = new Set(['hero', 'variants', 'addToCart', 'vitals', 'specFacets']);
+
+/**
+ * The resolved section list split around the hero, so the summary can sit
+ * directly under it.
+ *
+ * `before` is everything up to the hero plus the hero-inline sections listed
+ * after it. They must stay with the hero: a product page whose first instance
+ * was `['hero']` alone drew no size picker and no buy box at all (Delta 2
+ * review, BLOCK 1). `after` is the rest without them, since a second instance
+ * with no hero would draw them standalone, a second time.
+ *
+ * `lookShell`: the product page is a look's. `after` then also drops the
+ * look's sections, so the look draws once, in `before`, and the summary sits
+ * right under it rather than after the whole page.
+ *
+ * No hero: `before` is empty and `after` is the list unchanged, so a look that
+ * claims a later section still draws (the summary goes first).
+ */
+export function splitAtHero<T extends string>(
+  sections: readonly T[],
+  options: { lookShell?: boolean } = {},
+): { before: T[]; after: T[] } {
   // Cast: widening to `string` to search; `T` is a string union that may or may not name 'hero'.
   const heroAt = (sections as readonly string[]).indexOf('hero');
   if (heroAt === -1) return { before: [], after: [...sections] };
+  const rest = sections.slice(heroAt + 1);
   return {
-    before: sections.slice(0, heroAt + 1),
-    after: sections.slice(heroAt + 1).filter((s) => !HERO_INLINE_SECTIONS.has(s)),
+    before: [...sections.slice(0, heroAt + 1), ...rest.filter((s) => HERO_INLINE_SECTIONS.has(s))],
+    after: rest.filter((s) => !HERO_INLINE_SECTIONS.has(s) && !(options.lookShell && LOOK_PAGE_SECTIONS.has(s))),
   };
 }

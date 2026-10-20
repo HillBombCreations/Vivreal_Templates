@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DetailPageTemplate, resolveDetailSections } from "@hillbombcreations/site-renderer";
+import { DetailPageTemplate, resolveDetailSections, resolveProductPageShell } from "@hillbombcreations/site-renderer";
 import type {
   ContentItem,
   DetailPageConfig,
@@ -15,7 +15,7 @@ import { useOptionalCart } from "@/contexts/CartContext";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import SiteRendererBridge from "@/components/SiteRendererBridge";
 import FloatingCartDialog from "@/components/PageTemplates/ProductDetailClient/FloatingCartDialog";
-import { renderItemDetail, type RenderItemDetailInput } from "@/components/DetailItemSummary";
+import { renderItemDetail, type ItemSummary } from "@/components/DetailItemSummary";
 
 interface ProductDetailRendererProps {
   /** The product in the renderer's shape: a provider product via `templatesProductToRenderer`, or a collection item via `contentItemToProduct`. */
@@ -39,11 +39,12 @@ interface ProductDetailRendererProps {
    */
   collectionItems?: ContentItem[];
   /**
-   * V7 F-D1: where a collection product came from, so its own outbound link
-   * (a tile's Order link) and card facts are drawn under the buy box. Absent
-   * for a provider product, whose Templates `Product` carries no authored link.
+   * V7 F-D1: the product's own outbound link (a tile's Order link) and card
+   * facts, decided on the server by `resolveItemSummary` so no page config
+   * crosses to this client component. Absent for a provider product, whose
+   * Templates `Product` carries no authored link.
    */
-  itemSource?: RenderItemDetailInput<{ detailPage?: DetailPageConfig }>["source"];
+  itemSummary?: ItemSummary;
 }
 
 /**
@@ -61,7 +62,7 @@ export default function ProductDetailRenderer({
   storefrontConfig,
   productSource,
   collectionItems,
-  itemSource,
+  itemSummary,
 }: ProductDetailRendererProps) {
   const cartCtx = useOptionalCart();
   const cartProduct = useMemo(() => rendererProductToTemplates(item), [item]);
@@ -95,13 +96,13 @@ export default function ProductDetailRenderer({
             setAddedOpen(true);
           },
         },
-        source: itemSource,
+        summary: itemSummary,
         accent: siteData.primary ?? undefined,
         textInverse: siteData["text-inverse"] ?? undefined,
-        // A look shell draws its product page in the first look section of each
-        // template instance, so a second instance would draw it twice: the
-        // summary goes after the whole template there instead.
-        split: !storefrontConfig?.shell,
+        // The renderer's own answer to "does a look draw this product page"
+        // (an unknown shell draws none), so the second template instance drops
+        // the look's sections exactly when there is a look to draw twice.
+        lookShell: resolveProductPageShell(storefrontConfig?.shell) !== null,
       })}
       {cartCtx ? (
         <FloatingCartDialog

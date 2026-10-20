@@ -249,8 +249,20 @@ test('ink: nothing measurable, nothing changed', () => {
 
 // ---------------------------------------------------------------- split
 
-test('splitAtHero: the summary sits right after the hero, and the hero-inline sections leave the second half', () => {
-  assert.deepEqual(splitAtHero(['hero', 'meta', 'content', 'cta']), { before: ['hero'], after: ['content', 'cta'] });
+test('splitAtHero: the hero keeps its inline sections, and the summary sits right after them', () => {
+  assert.deepEqual(splitAtHero(['hero', 'meta', 'content', 'cta']), { before: ['hero', 'meta'], after: ['content', 'cta'] });
+  assert.deepEqual(
+    splitAtHero(['hero', 'variants', 'addToCart', 'content', 'supplementalIntegrations', 'related', 'cta']),
+    { before: ['hero', 'variants', 'addToCart'], after: ['content', 'supplementalIntegrations', 'related', 'cta'] },
+    'the products default: the buy box stays with the hero (delta 2 BLOCK 1)',
+  );
   assert.deepEqual(splitAtHero(['content', 'cta']), { before: [], after: ['content', 'cta'] });
   assert.deepEqual(splitAtHero(['hero']), { before: ['hero'], after: [] });
+});
+
+test('splitAtHero (look shell): the second half drops the look sections, so the look draws once', () => {
+  const sections = ['hero', 'variants', 'addToCart', 'vitals', 'specFacets', 'related', 'cta'];
+  assert.deepEqual(splitAtHero(sections, { lookShell: true }), { before: ['hero', 'variants', 'addToCart'], after: ['related', 'cta'] });
+  assert.deepEqual(splitAtHero(sections), { before: ['hero', 'variants', 'addToCart'], after: ['vitals', 'specFacets', 'related', 'cta'] }, 'no look: vitals and specFacets still draw standalone');
+  assert.deepEqual(splitAtHero(['vitals', 'related'], { lookShell: true }), { before: [], after: ['vitals', 'related'] }, 'no hero: the list is untouched, so the look still draws');
 });

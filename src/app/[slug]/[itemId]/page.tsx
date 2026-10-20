@@ -77,7 +77,7 @@ import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaT
 import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
 import { withoutUnsafeHeroLink } from "@/lib/detail/itemSummary";
-import { renderItemDetail } from "@/components/DetailItemSummary";
+import { renderItemDetail, resolveItemSummary } from "@/components/DetailItemSummary";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
@@ -845,7 +845,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
             collectionItems={unscopedItems}
             // V7 F-D1: the product's own outbound link (a tile's Order link) and
             // card facts, under the buy box, as on every other item page.
-            itemSource={{ page: pageConfig, pages: sitePages, collectionId, item: effectiveItem }}
+            // Decided HERE, on the server: the renderer is a client component,
+            // and only the result (a few strings) crosses to it.
+            itemSummary={resolveItemSummary({
+              page: pageConfig,
+              pages: sitePages,
+              collectionId,
+              item: effectiveItem,
+              format: "products",
+              detailPage: scopedDetailPage as DetailPageConfig | undefined,
+              sections: resolveDetailSections("products", scopedDetailPage as DetailPageConfig | undefined),
+            })}
           />
           </RichTextImages>
           <Footer />
@@ -879,7 +889,15 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
               detailPage: scopedDetailPage as DetailPageConfig | undefined,
               context: contextRaw,
             },
-            source: { page: pageConfig, pages: sitePages, collectionId, item: effectiveItem },
+            summary: resolveItemSummary({
+              page: pageConfig,
+              pages: sitePages,
+              collectionId,
+              item: effectiveItem,
+              format: pageConfig.format,
+              detailPage: scopedDetailPage as DetailPageConfig | undefined,
+              sections: resolveDetailSections(pageConfig.format, scopedDetailPage as DetailPageConfig | undefined),
+            }),
             accent: siteData.primary ?? undefined,
             textInverse: siteData["text-inverse"] ?? undefined,
           })}
@@ -1014,7 +1032,17 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
               detailPage: pageConfig.detailPage as DetailPageConfig | undefined,
               relatedItems,
             },
-            source: poolCollectionId ? { page: pageConfig, pages: sitePages, collectionId: poolCollectionId, item } : undefined,
+            summary: poolCollectionId
+              ? resolveItemSummary({
+                  page: pageConfig,
+                  pages: sitePages,
+                  collectionId: poolCollectionId,
+                  item,
+                  format: pageConfig.format,
+                  detailPage: pageConfig.detailPage as DetailPageConfig | undefined,
+                  sections: resolveDetailSections(pageConfig.format, pageConfig.detailPage as DetailPageConfig | undefined),
+                })
+              : undefined,
             accent: siteData.primary ?? undefined,
             textInverse: siteData["text-inverse"] ?? undefined,
           })}
