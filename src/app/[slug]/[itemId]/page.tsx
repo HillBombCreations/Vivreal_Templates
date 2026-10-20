@@ -2,7 +2,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { CTASectionTemplate } from "@/components/RendererExports";
-import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
+import { DetailPageTemplate, resolveDetailSections } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
@@ -76,6 +76,8 @@ import { seedFreeMeta, seedFreeText } from "@/lib/seo/seedFreeText";
 import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
 import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
+import { resolveDetailItemSummary, splitAtHero, withoutUnsafeHeroLink } from "@/lib/detail/itemSummary";
+import { DetailItemSummary } from "@/components/DetailItemSummary";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
@@ -843,20 +845,59 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       );
     }
 
+    // V7 F-D1: the item's own outbound link (a role's apply URL) and the card
+    // facts the generic hero never draws, directly under the hero. While
+    // Detail pages are on the card links here instead of to that link, so this
+    // page is the only place a visitor can still reach it. Nothing to draw ⇒
+    // `undefined` ⇒ the single template render below, exactly as before.
+    const rendererDetailPage = scopedDetailPage as DetailPageConfig | undefined;
+    const detailSections = resolveDetailSections(pageConfig.format, rendererDetailPage);
+    const itemSummary = resolveDetailItemSummary({
+      page: pageConfig,
+      collectionId,
+      item: effectiveItem,
+      fields: rendererDetailPage?.fields,
+      sections: detailSections,
+    });
+    // Same bridge as every arm in this file: the collection item is the
+    // renderer's generic detail item at runtime, under another declared type.
+    const templateItem = withoutUnsafeHeroLink(effectiveItem) as unknown as DetailItem;
+    const renderDetail = (sections?: DetailSection[]) => (
+      <DetailPageTemplate
+        slug={slug}
+        format={pageConfig.format}
+        item={templateItem}
+        siteData={siteData as unknown as RendererSiteData}
+        cta={pageConfig.cta as RendererPageCtaConfig | undefined}
+        detailPage={sections ? { ...rendererDetailPage, sections } : rendererDetailPage}
+        context={contextRaw}
+      />
+    );
+    const { before, after } = splitAtHero(detailSections);
+
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
         <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
-          <DetailPageTemplate
-            slug={slug}
-            format={pageConfig.format}
-            item={effectiveItem as unknown as DetailItem}
-            siteData={siteData as unknown as RendererSiteData}
-            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-            detailPage={scopedDetailPage as DetailPageConfig | undefined}
-            context={contextRaw}
-          />
+          {itemSummary ? (
+            // Two template instances around the summary. Safe for this arm's
+            // formats: no product state is shared across sections here, and
+            // `splitAtHero` drops the hero-inline sections from the second.
+            // An empty half is never rendered: `sections: []` would fall back
+            // to the format's full default list.
+            <>
+              {before.length > 0 && renderDetail(before)}
+              <DetailItemSummary
+                summary={itemSummary}
+                accent={siteData.primary ?? undefined}
+                editorial={rendererDetailPage?.styleVariant === "editorial"}
+              />
+              {after.length > 0 && renderDetail(after)}
+            </>
+          ) : (
+            renderDetail()
+          )}
         </RichTextImages>
         <Footer />
       </>
