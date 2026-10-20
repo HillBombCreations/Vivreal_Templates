@@ -2,7 +2,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import Footer from "@/components/Footer";
 import { CTASectionTemplate } from "@/components/RendererExports";
-import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
+import { DetailPageTemplate, resolveDetailSections } from "@hillbombcreations/site-renderer";
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
@@ -76,6 +76,8 @@ import { seedFreeMeta, seedFreeText } from "@/lib/seo/seedFreeText";
 import { detailItemMetaText, recipeSummaryMeta } from "@/lib/seo/detailItemMetaText";
 import { itemPageTitle, menuItemOwnTitle } from "@/lib/seo/itemPageTitle";
 import { resolveDetailContext } from "@/lib/detail/resolveContext";
+import { withoutUnsafeHeroLink } from "@/lib/detail/itemSummary";
+import { renderItemDetail, resolveItemSummary } from "@/components/DetailItemSummary";
 import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
@@ -338,6 +340,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // storefront binding and falls THROUGH to the collection and menu arms on a
   // miss, so its flag has to survive into them.
   const reads: DetailItemReads = [];
+
+  // Every page of the site, home included: the item summary looks here for a
+  // card on another page that links into this one (V7 F-D1). The same list
+  // `lookupDetailItem` reads for the link rule.
+  const sitePages = [...(siteData.pageConfigs ?? []), ...(siteData.homePageConfig ? [siteData.homePageConfig] : [])];
 
   // H177 - the inline rich-text image map for whichever arm ends up serving.
   //
@@ -836,6 +843,19 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
             // rides `storefrontConfig.shell`.
             productSource={effectiveItem.raw as Record<string, unknown> | undefined}
             collectionItems={unscopedItems}
+            // V7 F-D1: the product's own outbound link (a tile's Order link) and
+            // card facts, under the buy box, as on every other item page.
+            // Decided HERE, on the server: the renderer is a client component,
+            // and only the result (a few strings) crosses to it.
+            itemSummary={resolveItemSummary({
+              page: pageConfig,
+              pages: sitePages,
+              collectionId,
+              item: effectiveItem,
+              format: "products",
+              detailPage: scopedDetailPage as DetailPageConfig | undefined,
+              sections: resolveDetailSections("products", scopedDetailPage as DetailPageConfig | undefined),
+            })}
           />
           </RichTextImages>
           <Footer />
@@ -843,20 +863,44 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       );
     }
 
+    // V7 F-D1: the item's own outbound link (a role's apply URL) and the card
+    // facts the generic hero never draws, directly under the hero. While
+    // Detail pages are on the card links here instead of to that link, so this
+    // page is the only place a visitor can still reach it. Nothing to draw ⇒
+    // the single template render, exactly as before. See
+    // `@/components/DetailItemSummary` (`renderItemDetail`).
     return (
       <>
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
         <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
-          <DetailPageTemplate
-            slug={slug}
-            format={pageConfig.format}
-            item={effectiveItem as unknown as DetailItem}
-            siteData={siteData as unknown as RendererSiteData}
-            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-            detailPage={scopedDetailPage as DetailPageConfig | undefined}
-            context={contextRaw}
-          />
+          {renderItemDetail({
+            Template: DetailPageTemplate,
+            resolveSections: resolveDetailSections,
+            format: pageConfig.format,
+            props: {
+              slug,
+              format: pageConfig.format,
+              // Same bridge as every arm in this file: the collection item is the
+              // renderer's generic detail item at runtime, under another declared type.
+              item: withoutUnsafeHeroLink(effectiveItem) as unknown as DetailItem,
+              siteData: siteData as unknown as RendererSiteData,
+              cta: pageConfig.cta as RendererPageCtaConfig | undefined,
+              detailPage: scopedDetailPage as DetailPageConfig | undefined,
+              context: contextRaw,
+            },
+            summary: resolveItemSummary({
+              page: pageConfig,
+              pages: sitePages,
+              collectionId,
+              item: effectiveItem,
+              format: pageConfig.format,
+              detailPage: scopedDetailPage as DetailPageConfig | undefined,
+              sections: resolveDetailSections(pageConfig.format, scopedDetailPage as DetailPageConfig | undefined),
+            }),
+            accent: siteData.primary ?? undefined,
+            textInverse: siteData["text-inverse"] ?? undefined,
+          })}
         </RichTextImages>
         <Footer />
       </>
@@ -893,6 +937,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     >["items"][number];
     let pool: PoolItem[] = [];
     let item: PoolItem | undefined;
+    // The collection the item came from: the summary reads that binding's card.
+    let poolCollectionId: string | undefined;
     // Two-axis detail-route design, Phase 1 (T2) — `_id` first unconditionally,
     // then `raw[itemKeyField]` when configured. Shared with the scoped-detail
     // arm above via `resolveItem` so both arms agree on lookup semantics.
@@ -906,7 +952,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       reads.push({ source: "menu-items", degraded });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
-      if (item) pool = items;
+      if (item) {
+        pool = items;
+        poolCollectionId = itemsCollectionId;
+      }
     }
     if (!item) {
       for (const cid of siblingCollectionIds) {
@@ -919,6 +968,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         if (hit) {
           item = hit;
           pool = items;
+          poolCollectionId = cid;
           break;
         }
       }
@@ -963,15 +1013,39 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: item.title || undefined })} />
         <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
-          <DetailPageTemplate
-            slug={slug}
-            format={pageConfig.format}
-            item={item as unknown as DetailItem}
-            siteData={siteData as unknown as RendererSiteData}
-            cta={pageConfig.cta as RendererPageCtaConfig | undefined}
-            detailPage={pageConfig.detailPage as DetailPageConfig | undefined}
-            relatedItems={relatedItems}
-          />
+          {/* V7 F-D1: a sibling pool's card (the catering page's tiles) links
+              here while Detail pages are on, so the item's own external link is
+              drawn here, as on the collection arm. A menu tile never draws an
+              item-authored link (MenuTileCard), and a relative link draws
+              nothing, so a plain menu item renders as before. */}
+          {renderItemDetail({
+            Template: DetailPageTemplate,
+            resolveSections: resolveDetailSections,
+            format: pageConfig.format,
+            props: {
+              slug,
+              format: pageConfig.format,
+              // Same bridge as the arms above: a collection item, under another declared type.
+              item: withoutUnsafeHeroLink(item) as unknown as DetailItem,
+              siteData: siteData as unknown as RendererSiteData,
+              cta: pageConfig.cta as RendererPageCtaConfig | undefined,
+              detailPage: pageConfig.detailPage as DetailPageConfig | undefined,
+              relatedItems,
+            },
+            summary: poolCollectionId
+              ? resolveItemSummary({
+                  page: pageConfig,
+                  pages: sitePages,
+                  collectionId: poolCollectionId,
+                  item,
+                  format: pageConfig.format,
+                  detailPage: pageConfig.detailPage as DetailPageConfig | undefined,
+                  sections: resolveDetailSections(pageConfig.format, pageConfig.detailPage as DetailPageConfig | undefined),
+                })
+              : undefined,
+            accent: siteData.primary ?? undefined,
+            textInverse: siteData["text-inverse"] ?? undefined,
+          })}
         </RichTextImages>
         <Footer />
       </>

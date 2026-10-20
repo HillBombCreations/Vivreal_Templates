@@ -16,11 +16,13 @@
  *     `detailEligible: false`, and only the items inside that binding's
  *     `sectionConfig.scope` (`mapLayout` and the page-template arms of
  *     `composition/blocks.js`; both apply `applyScope` to the bound items).
- *   - INBOUND. A layout on a page that owns no detail route of its own (home,
- *     a standard page) links into the FIRST page that serves the collection
- *     (`resolveDetailRouteSlug` in `composition/detailRouteOwnership.js`),
- *     which ignores that owner's own `detailEligible`. So an owner whose own
- *     list opts out can still receive real links, and they count.
+ *   - INBOUND. A layout on a page whose own detail route does not serve the
+ *     collection (home, a standard page, or a page serving another
+ *     collection) links into the FIRST page that serves it
+ *     (`resolveServingDetailRouteSlug` in `composition/detailRouteOwnership.js`,
+ *     renderer 1.88.2), which ignores that owner's own `detailEligible`. So an
+ *     owner whose own list opts out can still receive real links, and they
+ *     count.
  *   - A page with NO block drawing the collection (the format-independent
  *     `detailPage.itemCollectionId` opt-in, a blockless legacy page) is left
  *     exactly as it was: unrestricted. Nothing here can see what links to
@@ -33,7 +35,8 @@
  *
  * Pure and dependency-free (no `server-only`, no renderer import, whose root
  * barrel pulls `next/link`), so it runs under `node --test`; the parity test
- * calls the renderer's own `resolveDetailRouteSlug` from its `dist`.
+ * calls the renderer's own `resolveDetailRouteSlug` from its `dist` (the two
+ * agree on every linker that owns no route, the only kind it covers).
  */
 import { withSystemValues } from '@hillbombcreations/site-renderer/bindings';
 import { pageDetailCollectionId } from './detailCollection.ts';
@@ -43,6 +46,8 @@ export interface LinkBinding {
   collectionId?: string | null;
   integrationProvider?: string | null;
   title?: string | null;
+  /** The layout that draws the binding's items (`itemSummary.ts` reads it for the card's wording). */
+  displayAs?: string | null;
   sectionConfig?: { detailEligible?: unknown; scope?: unknown; menuRole?: unknown; fieldMap?: unknown } | null;
 }
 
@@ -170,19 +175,37 @@ export function linkedItemScopes(page: LinkPage, pages: readonly LinkPage[], col
   }
   if (!drawnHere) return null;
 
+  for (const binding of inboundLinkBindings(page, pages, collectionId)) {
+    if (addLink(binding, scopes)) return null;
+  }
+  return scopes;
+}
+
+/**
+ * The bindings on OTHER pages whose cards link `collectionId`'s items into
+ * `page`'s detail route, in page order (the INBOUND half of the rule above):
+ * a page that does not serve the collection itself links into the first page
+ * that does (`resolveServingDetailRouteSlug`, renderer 1.88.2). Bindings that
+ * opt out with `detailEligible: false` are included; callers decide.
+ */
+export function inboundLinkBindings(page: LinkPage, pages: readonly LinkPage[], collectionId: string): LinkBinding[] {
+  const out: LinkBinding[] = [];
   for (const other of pages) {
-    if (!other || other.slug === page.slug || ownsAnyDetailRoute(other)) continue;
+    // Only a page whose own route serves THIS collection keeps the links for
+    // itself (the renderer's `resolveServingDetailRouteSlug`, 1.88.2). One that
+    // owns a route for another collection links these items into the owner.
+    if (!other || other.slug === page.slug) continue;
+    if (ownsAnyDetailRoute(other) && servesCollection(other, collectionId)) continue;
     const owner = pages.find((p) => p && p.slug !== other.slug && servesCollection(p, collectionId));
     if (owner?.slug !== page.slug) continue;
     for (const block of allBlocks(other.blocks)) {
       // A page template on a page that owns no route links to that page, not here.
       if (block.type?.kind === 'page-template') continue;
       const binding = itemBinding(block);
-      if (binding?.collectionId !== collectionId) continue;
-      if (addLink(binding, scopes)) return null;
+      if (binding?.collectionId === collectionId) out.push(binding);
     }
   }
-  return scopes;
+  return out;
 }
 
 /**

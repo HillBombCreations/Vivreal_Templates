@@ -46,8 +46,21 @@ permissions:
   id-token: write
 
 # Serialize promotions so two concurrent runs can't race the `stable` ref.
+# V7.277: the group is shared with demo-catchup.yml's live and all recoveries.
+# GitHub keeps ONE pending run per group and a newer one REPLACES it (the older
+# pending run is cancelled, shown as "cancelled" in Actions). So only runs that
+# must not overlap share the group: a real promote and a manual `tier: live` or
+# `tier: all` recovery. The weekly schedule and manual `tier: demo` runs touch
+# no live app and keep their own `demo-catchup` group, and a dry run builds
+# nothing and gets a group of its own (keyed by run id), so none of them can
+# replace a pending live run. Residual, accepted: a promote and a live/all
+# recovery dispatched inside the ~2 minutes a run holds the group can still
+# replace each other while one waits; check the run list after dispatching both.
+# Queue, never cancel: cancel-in-progress true would stop a fan-out midway.
+# scripts/fleet-concurrency.test.mjs evaluates these expressions for every kind
+# of run and fails if the wrong runs join the shared group.
 concurrency:
-  group: promote-stable
+  group: ${{ inputs.dry_run && format('fleet-dry-run-{0}', github.run_id) || 'templates-fleet-build' }}
   cancel-in-progress: false
 
 jobs:

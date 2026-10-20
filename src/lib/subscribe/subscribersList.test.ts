@@ -59,9 +59,37 @@ test('UNCHANGED: the block binding outranks the legacy page collectionId, as bef
   assert.equal(resolveSubscribersCollectionId({ pageConfigs: [blockless] }), 'legacy-list');
 });
 
-test('ALLOW: with a list, the form config is returned untouched (same reference)', () => {
-  const config = { enabled: true, copy: { heading: 'Join', errorText: 'Owner copy' } };
+test('ALLOW: with a list and no error line, the form config is returned untouched (same reference)', () => {
+  type FooterConfig = { enabled: boolean; copy?: { heading?: string; errorText?: string } };
+  const config: FooterConfig = { enabled: true, copy: { heading: 'Join' } };
   assert.equal(withSignupUnavailableCopy(config, 'drop-list'), config);
+  const noCopy: FooterConfig = { enabled: true };
+  assert.equal(withSignupUnavailableCopy(noCopy, 'drop-list'), noCopy);
+});
+
+// V7.236 (walk C, N-C13) used to drop a stored footer errorText on a list
+// site, because renderer 1.88.0 showed an authored errorText for a failed send
+// too. Renderer 1.88.1 shows it for a bad address only, so the config passes
+// through, and the INSTALLED renderer's rule (loaded by file path, as in
+// signupFailedText.test.ts) proves a failed send still never shows it.
+type SignupErrorText = (error: 'invalid' | 'failed', errorText?: string, failedText?: string) => string;
+const loadSignupErrorText = async (): Promise<SignupErrorText> =>
+  (
+    await import(
+      new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/lib/signupCopy.js', import.meta.url).href
+    )
+  ).signupErrorText;
+
+test('REFUSE: with a list, a failed footer sign up never shows the stored bad-address line', async () => {
+  const signupErrorText = await loadSignupErrorText();
+  const config = { enabled: true, copy: { heading: 'Join', errorText: 'Please enter a valid email address.' } };
+  const out = withSignupUnavailableCopy(config, 'drop-list');
+  assert.equal(out, config, 'the SAME reference: nothing is copied or dropped');
+  // A list footer carries no failedText (signupFailedText.test.ts REFUSE).
+  const line = signupErrorText('failed', out?.copy?.errorText);
+  assert.notEqual(line, 'Please enter a valid email address.');
+  assert.match(line, /not saved/);
+  assert.equal(signupErrorText('invalid', out?.copy?.errorText), 'Please enter a valid email address.', 'a bad address still gets it');
 });
 
 test('REFUSE: with no list, the error line says sign ups are not open, not "valid email"', () => {
@@ -91,7 +119,9 @@ test('REFUSE: every sign-up surface Templates owns resolves through the shared r
   const footer = read('../../components/Footer/index.tsx');
   assert.match(providers, /resolveSubscribersCollectionId\(siteData\)/, 'Providers onSubscribe');
   assert.match(popup, /cfg\.collectionId \?\? resolveSubscribersCollectionId\(siteData\)/, 'EmailPopup, Studio override first');
-  assert.match(popup, /errorText=\{collectionId \? copy\.errorText : SIGNUP_UNAVAILABLE_TEXT\}/, 'EmailPopup honest copy');
+  // The popup's error line goes through popupErrorText (no list: sign ups
+  // are not open; a list: the owner's bad-address line).
+  assert.match(popup, /errorText=\{popupErrorText\(\{ collectionId, ownerErrorText: copy\.errorText \}\)\}/, 'EmailPopup honest copy');
   assert.match(footer, /withSignupUnavailableCopy\(\s*siteData\?\.footerNewsletter,\s*resolveSubscribersCollectionId\(siteData\)/, 'footer newsletter');
   // The old inline chain read ONLY the subscribers page; it must not survive.
   assert.doesNotMatch(providers, /p\.format === 'subscribers'/);

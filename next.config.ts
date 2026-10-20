@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
+import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
@@ -48,6 +49,20 @@ const nextConfig: NextConfig = {
         headers: [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }],
       },
     ];
+  },
+  // A request carrying a Next router header without exactly `RSC: 1` (and
+  // without `Next-Action`) is answered from the route's prerendered flight,
+  // under the page's own `s-maxage`, and Amplify's CDN ignores `Vary`, so one
+  // forged request poisons that URL for every visitor. These rules send that
+  // shape to a no-store 400 instead. `beforeFiles`, because an `afterFiles`
+  // rule never runs for `/` or any filesystem match. See
+  // src/lib/routerHeaderGuard.ts.
+  async rewrites() {
+    return {
+      beforeFiles: routerHeaderRefusalRewrites(),
+      afterFiles: [],
+      fallback: [],
+    };
   },
   // NOTE: `experimental.viewTransition` was REMOVED here in the Next 16.3.0
   // bump. The flag did not disappear because the feature was dropped — it

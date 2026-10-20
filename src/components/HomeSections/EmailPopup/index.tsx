@@ -6,7 +6,7 @@ import { SubscribeDialog } from "@hillbombcreations/site-renderer";
 import type { EmailPopupConfig } from "@hillbombcreations/site-renderer";
 import type { SiteData } from "@/types/SiteData";
 import { subscribeUser } from "@/lib/api/subscribe/client";
-import { SIGNUP_UNAVAILABLE_TEXT, resolveSubscribersCollectionId } from "@/lib/subscribe/subscribersList";
+import { popupErrorText, popupFailedText, resolveSubscribersCollectionId } from "@/lib/subscribe/subscribersList";
 import { trackLeadConversion } from "@/lib/analytics";
 import { normalizePageSlug, isPageAllowed } from "@hillbombcreations/site-renderer";
 import { PHONE_MEDIA_QUERY, classifyPopupPath, resolvePopupTrigger } from "./popupPolicy";
@@ -228,8 +228,11 @@ const EmailPopup = ({ config, siteData, vivrealOwnSite, privacyHref }: EmailPopu
       buttonLabel={copy.buttonLabel}
       successText={copy.successText}
       // N-C6: with no list, the only true thing to say is that sign ups are
-      // not open. The dialog's own default reads "valid email address".
-      errorText={collectionId ? copy.errorText : SIGNUP_UNAVAILABLE_TEXT}
+      // not open. With a list, the owner's bad-address line (popupErrorText).
+      errorText={popupErrorText({ collectionId, ownerErrorText: copy.errorText })}
+      // Renderer 1.88.1 shows errorText for a bad address only. With no list
+      // every send fails, so the "not taking sign ups" line rides failedText.
+      failedText={popupFailedText(collectionId)}
       {...popupConsentProps({ privacyHref, consentText: copy.consentText, siteName })}
       // Levain round — split-image layout. Pass-through only (image.src is a
       // ready URL per the pre-signed contract); absent ⇒ centered legacy card.

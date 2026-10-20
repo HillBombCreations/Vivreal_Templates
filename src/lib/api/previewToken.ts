@@ -177,6 +177,9 @@ export function resolvePreviewRedirectTarget(raw: string | null | undefined): st
   // Never carry the preview param through: middleware would see it again and
   // redirect back here forever.
   resolved.searchParams.delete(PREVIEW_QUERY_PARAM);
+  // Nor Next's `_rsc` router cache key: it must never reach a Location
+  // (design-templates-router-header-strip, 2026-10-18).
+  resolved.searchParams.delete('_rsc');
   const search = resolved.searchParams.toString();
   return `${resolved.pathname}${search ? `?${search}` : ''}${resolved.hash}`;
 }

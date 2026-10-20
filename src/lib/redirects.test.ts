@@ -7,6 +7,7 @@ import {
   resolveRedirect,
   isSameOriginRedirectTarget,
   resolveMissingItemRedirect,
+  publicSearch,
 } from './redirects.ts';
 // edgeSiteMap.ts is edge-safe / dependency-free (no `next/server`, see its
 // own header comment), so it -- unlike `middleware.ts` -- can be imported
@@ -390,3 +391,38 @@ test('middleware.ts wiring: calls the composed resolveMissingItemRedirect(), nev
 // never on the success path — so an existing item can never reach this
 // function. Stated plainly per the test-plan instruction: this half of the
 // decision table is a call-site invariant, not a unit-testable branch.
+
+// design-templates-router-header-strip (vivreal-hq, 2026-10-18): Next's
+// `_rsc` router cache key must never ride an authored 301's Location.
+test('REFUSE: publicSearch drops _rsc and keeps the other params in order', () => {
+  assert.equal(publicSearch(new URL('https://h/x?_rsc=H&a=1')), '?a=1');
+  assert.equal(publicSearch(new URL('https://h/x?k=1&_rsc=abc&z=2')), '?k=1&z=2');
+});
+
+test('REFUSE: publicSearch of ?_rsc alone is empty', () => {
+  assert.equal(publicSearch(new URL('https://h/x?_rsc=H')), '');
+});
+
+test('ALLOW: publicSearch keeps a param merely named like _rsc, and keeps raw encoding', () => {
+  assert.equal(publicSearch(new URL('https://h/x?_rscx=1&_rsc=H')), '?_rscx=1');
+  assert.equal(publicSearch(new URL('https://h/x?q=a%20b&_rsc=H')), '?q=a%20b');
+});
+
+test('ALLOW: publicSearch keeps empty pairs and empty values around a dropped _rsc', () => {
+  assert.equal(publicSearch(new URL('https://h/x?a=1&&_rsc=H&e=&g')), '?a=1&&e=&g');
+});
+
+test('ALLOW: publicSearch with no _rsc is url.search unchanged', () => {
+  assert.equal(publicSearch(new URL('https://h/x?q=a%20b&a=1')), '?q=a%20b&a=1');
+  assert.equal(publicSearch(new URL('https://h/x')), '');
+});
+
+test('middleware.ts wiring: the authored 301 copies publicSearch(), never the raw search', () => {
+  const source = readFileSync(fileURLToPath(new URL('../middleware.ts', import.meta.url)), 'utf8');
+  const code = source
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\/\/.*$/, ''))
+    .join('\n');
+  assert.match(code, /redirectUrl\.search = publicSearch\(request\.nextUrl\)/);
+  assert.doesNotMatch(code, /redirectUrl\.search = request\.nextUrl\.search/);
+});

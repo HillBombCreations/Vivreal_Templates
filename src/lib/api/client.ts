@@ -9,10 +9,11 @@ import { cookies, draftMode, headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
 import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
-import { buildFetchFailureCapture, upstreamFallbackLine } from './errorCapture';
+import { buildFetchFailureCapture, stripQueryString, upstreamFallbackLine } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
 import { createFailureMemo, readWithFailureMemo } from './failureMemo';
+import { createCaptureThrottle } from './captureThrottle';
 
 export { ApiError, isQuotaError };
 
@@ -22,6 +23,15 @@ export { ApiError, isQuotaError };
  * scoped cache cannot reach the second one. See ./failureMemo.ts.
  */
 const FAILED_READS = createFailureMemo();
+
+/**
+ * V7.319: one Sentry capture per process per 5 minutes for each failing path
+ * (keyed by the query-free path, the Issue fingerprint), shared by both swallow
+ * points below, so repeats of a failing read stop costing an event per page
+ * view while a different failing path still gets its own. Module scope for the
+ * same reason as FAILED_READS. The log lines still print for every failure.
+ */
+const FETCH_FAILURE_CAPTURES = createCaptureThrottle();
 
 const CLIENT_API_URL =
   process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
@@ -178,10 +188,14 @@ export async function clientFetchSafe<T>(
     // still exists. One line lower it is gone and only the fallback remains,
     // which is precisely why the 2026-08-20 fallback renders reached Sentry as
     // nothing at all. 402 is already excluded - it re-throws above.
-    Sentry.captureException(
-      err,
-      buildFetchFailureCapture({ source: 'clientFetchSafe', path, siteId: SITE_ID })
-    );
+    // V7.319: the first failure of this path per window is sent; repeats are counted.
+    const gate = FETCH_FAILURE_CAPTURES.take(stripQueryString(path));
+    if (gate.capture) {
+      Sentry.captureException(
+        err,
+        buildFetchFailureCapture({ source: 'clientFetchSafe', path, siteId: SITE_ID, suppressed: gate.suppressed })
+      );
+    }
     console.error(`[clientFetchSafe] returning fallback for ${path}:`, err);
     console.error(upstreamFallbackLine({ source: 'clientFetchSafe', path, siteId: SITE_ID, err }));
     return fallback;
@@ -249,10 +263,14 @@ export async function clientFetchCached<T>(
     }
     // Same reasoning as clientFetchSafe above - capture at the swallow, while
     // the ApiError is still intact. 402 re-throws above and is never captured.
-    Sentry.captureException(
-      err,
-      buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID })
-    );
+    // V7.319: same per-path window as clientFetchSafe (one throttle for both).
+    const gate = FETCH_FAILURE_CAPTURES.take(stripQueryString(path));
+    if (gate.capture) {
+      Sentry.captureException(
+        err,
+        buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID, suppressed: gate.suppressed })
+      );
+    }
     console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
     console.error(upstreamFallbackLine({ source: 'clientFetchCached', path, siteId: SITE_ID, err }));
     return fallback;

@@ -5,7 +5,7 @@ import { linkedItemScopes, restrictToLinked, type LinkPage } from './linkedItems
 // no React-free subpath for them), so the mirror is checked against the real
 // thing, not against a copy of it.
 import { applyScope } from '../../../node_modules/@hillbombcreations/site-renderer/dist/composition/shapeContent.js';
-import { resolveDetailRouteSlug } from '../../../node_modules/@hillbombcreations/site-renderer/dist/composition/detailRouteOwnership.js';
+import { resolveServingDetailRouteSlug } from '../../../node_modules/@hillbombcreations/site-renderer/dist/composition/detailRouteOwnership.js';
 
 const C = 'articles';
 const scope = (value: string) => ({ field: 'section', value: [value] });
@@ -70,9 +70,9 @@ test('REFUSE: a page template on a non-owning page links to that page, not into 
 });
 
 // Parity: a widget on a non-owning page links into exactly the page the
-// renderer's `resolveDetailRouteSlug` names. Each case gives the owner an
+// renderer's `resolveServingDetailRouteSlug` names. Each case gives the owner an
 // opted-out list, so its only link is the widget's.
-test('PARITY: inbound links reach the page resolveDetailRouteSlug resolves, and no other', () => {
+test('PARITY: inbound links reach the page resolveServingDetailRouteSlug resolves, and no other', () => {
   const optedOut = { detailEligible: false };
   const sites: { name: string; pages: LinkPage[] }[] = [
     { name: 'two owners, first wins', pages: [list('first', template(optedOut)), list('second', template(optedOut))] },
@@ -90,7 +90,7 @@ test('PARITY: inbound links reach the page resolveDetailRouteSlug resolves, and 
       const all = [linker, ...pages];
       // The renderer's `pages` excludes home (buildPageContext reads `pageConfigs`).
       const rendererPages = all.filter((p) => p.slug !== 'home');
-      const resolved = resolveDetailRouteSlug(linker as never, rendererPages as never, C);
+      const resolved = resolveServingDetailRouteSlug(linker as never, rendererPages as never, C);
       for (const p of pages) {
         // A page that does not draw C is asked about its own collection, never C.
         if (!JSON.stringify(p.blocks).includes(`"collectionId":"${C}"`)) continue;
@@ -101,11 +101,39 @@ test('PARITY: inbound links reach the page resolveDetailRouteSlug resolves, and 
   }
 });
 
-test('PARITY: a widget on a page that owns a route links to its own page, never into another owner', () => {
+// Renderer 1.88.2 (`resolveServingDetailRouteSlug`, PR #111): a layout links
+// `/<its page>/<id>` only when its page serves THAT collection. A page that
+// owns a route for another collection links C into the page serving C.
+test('ALLOW: an item linked only from a page serving another collection is served', () => {
   const owner = list('help', template({ detailEligible: false }));
   const ownsOther = { slug: 'shop', format: 'catalog', blocks: [template({}, 'products'), layout()] } as LinkPage;
-  assert.equal(resolveDetailRouteSlug(ownsOther as never, [ownsOther, owner] as never, C), 'shop');
-  assert.deepEqual(linkedItemScopes(owner, [ownsOther, owner], C), []);
+  // The renderer half: the layout on `shop` links C into `help`, the page serving C.
+  assert.equal(resolveServingDetailRouteSlug(ownsOther as never, [ownsOther, owner] as never, C), 'help');
+  const scopes = linkedItemScopes(owner, [ownsOther, owner], C);
+  assert.equal(scopes, null);
+  assert.deepEqual(restrictToLinked(items, scopes, scopeFn).map((i) => i.id), ['a', 'b', 'c']);
+});
+
+test('ALLOW: a scoped widget on a page serving another collection reaches its scope only', () => {
+  const owner = list('help', template({ detailEligible: false }));
+  const ownsOther = { slug: 'shop', format: 'catalog', blocks: [template({}, 'products'), layout({ scope: scope('connections') })] } as LinkPage;
+  assert.deepEqual(restrictToLinked(items, linkedItemScopes(owner, [ownsOther, owner], C), scopeFn).map((i) => i.id), ['a']);
+});
+
+test('REFUSE: a widget on a page that serves the SAME collection links to its own page, never into another owner', () => {
+  const owner = list('help', template({ detailEligible: false }));
+  const servesSame = list('blog', template({ detailEligible: false }), layout());
+  for (const pages of [[servesSame, owner], [owner, servesSame]]) {
+    const scopes = linkedItemScopes(owner, pages, C);
+    assert.deepEqual(scopes, []);
+    assert.deepEqual(restrictToLinked(items, scopes, scopeFn), []);
+  }
+});
+
+test('REFUSE: a widget on a page serving the same collection through itemCollectionId is skipped too', () => {
+  const owner = list('help', template({ detailEligible: false }));
+  const optIn = { slug: 'stories', format: 'standard', detailPage: { itemCollectionId: C }, blocks: [layout()] } as LinkPage;
+  assert.deepEqual(linkedItemScopes(owner, [optIn, owner], C), []);
 });
 
 // F-C16R: a scope on a SYSTEM key (`section`) matches a value kept only in `_system`.

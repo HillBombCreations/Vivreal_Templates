@@ -269,3 +269,17 @@ test('site.upstream.fallback: a network failure (no status) and an unset site id
   assert.equal(line.status, 'network');
   assert.equal(line.siteId, 'unknown');
 });
+
+// V7.319: the held-back count rides as an extra on the one capture a window sends.
+test('[V7.319 ALLOW] a capture after a held window carries the count as an extra, not a tag', () => {
+  const ctx = buildFetchFailureCapture({ source: 'clientFetchSafe', path: '/x?siteId=1', siteId: 's', suppressed: 13 });
+  assert.deepEqual(ctx.extra, { suppressedSinceLastCapture: 13 });
+  assert.equal(Object.values(ctx.tags).includes('13'), false, 'never a tag value');
+});
+
+test('[V7.319 ALLOW] nothing held back adds no extra, so the context keeps its old shape', () => {
+  for (const suppressed of [undefined, 0]) {
+    const ctx = buildFetchFailureCapture({ source: 'clientFetchCached', path: '/x', siteId: 's', suppressed });
+    assert.equal(Object.hasOwn(ctx, 'extra'), false, `suppressed ${suppressed}`);
+  }
+});
