@@ -5,10 +5,10 @@
  *
  * THE DEFECT. Renderer 1.88.2 (R-D2) made a card link its item's own page while
  * Detail pages are on, ahead of the item's authored link (owner decision
- * 2026-10-19: the item page wins). The item page is the renderer's generic
- * `DetailPageTemplate`, whose hero draws an authored link only when the item
- * also carries `raw.ctaLabel` (`DetailPage/DetailHero.js`, "the label is the
- * opt-in"), and `fields.show` defaults to `[]`. The Studio switch writes
+ * 2026-10-19: the item page wins). The item page is the renderer's
+ * `DetailPageTemplate`, whose generic hero draws an authored link only when the
+ * item also carries `raw.ctaLabel` (`DetailPage/DetailHero.js`, "the label is
+ * the opt-in"), and `fields.show` defaults to `[]`. The Studio switch writes
  * `detailPage { enabled, itemCollectionId }` with no `fields`. So a role on a
  * positions board linked to a page with its title and a back link, and its
  * apply URL appeared nowhere: applying was impossible. Its location, drawn on
@@ -24,46 +24,46 @@
  *   - `raw.orderUrl`: ProductTilesLayout's float Order button,
  *     `tile.url ?? tile.orderUrl`.
  * `'#'` is the placeholder dead link the layouts treat as absent (ProductTiles:
- * `url !== "#"`), so it is skipped here too.
- * Only an EXTERNAL link becomes the action (`externalActionHref`): a relative
- * one is the item's own address on live data, never the link a card lost.
+ * `url !== "#"`), so it is skipped here too. Only an EXTERNAL link becomes the
+ * action (`externalActionHref`): a relative one is the item's own address on
+ * live data, never the link a card lost.
+ *
+ * WHICH CARD. The layout the visitor clicked: a binding on this page that
+ * links its items here, else a binding on another page whose cards link into
+ * this page (`inboundLinkBindings`, the renderer's link-into rule), so a
+ * positions board on the home page keeps "Apply" and its facts on a careers
+ * page that draws the collection differently or not at all.
  *
  * WHICH LABEL. The item's own (`raw.linkLabel`, which ProductTiles reads; then
  * `raw.ctaLabel`, which the detail hero reads), else the wording the source
  * layout put on that link, else a neutral "Visit".
  *
- * THE OWNER'S CHOICE WINS. An explicit `detailPage.fields.show` is honoured
- * exactly: the action draws only if it lists `link` (or `url`/`orderUrl`), and
- * a fact only if it lists that fact's key. `fields.hide` removes either.
+ * `fields`, READ AS THE RENDERER READS IT. `fields.show` is an additive
+ * opt-in for extras (`DetailHero.js`, the Levain PDP round: "opt-in
+ * info-column extras", the description and tags), never an allowlist that
+ * removes defaults, so it ADDS facts here and removes nothing. `fields.hide`
+ * is the renderer's opt-out (`DetailPageTemplate.js`, `hiddenFields`), and it
+ * removes the action (`link`, `url` or `orderUrl`) or any fact by its key.
  *
  * Pure and dependency-free, so it runs under `node --test`.
  */
-/** The page shape read here. Structural, so the route's page type fits. */
-export interface SummaryPage {
-  blocks?: readonly SummaryBlock[] | null;
-}
-
-interface SummaryBinding {
-  collectionId?: string | null;
-  displayAs?: string | null;
-  sectionConfig?: Record<string, unknown> | null;
-}
-
-interface SummaryBlock {
-  type?: { kind?: string | null; dispatchId?: string | null } | null;
-  config?: { bindings?: readonly SummaryBinding[] | null; children?: unknown } | null;
-}
+// Explicit `.ts` extensions: this module loads under the plain-Node runner.
+import { allBlocks, inboundLinkBindings, itemBinding, type LinkBinding, type LinkPage } from './linkedItems.ts';
 
 /** The item fields read here. `raw` is the item's `objectValue`, after any field map and context overlay. */
 export interface SummaryItem {
+  title?: string;
   href?: string;
   raw?: Record<string, unknown>;
 }
 
 export interface DetailItemAction {
   href: string;
+  /** The visible words. */
   label: string;
-  /** `http(s)` only: opens in a new tab with `noopener noreferrer`, the renderer's rule. */
+  /** The accessible name: the words, the item they act on, and a new tab when there is one. */
+  ariaLabel: string;
+  /** Opens in a new tab with `noopener noreferrer`: an `http(s)` link, the renderer's rule. */
   external: boolean;
 }
 
@@ -74,10 +74,15 @@ export interface DetailItemSummary {
 }
 
 export interface SummaryInput {
-  page: SummaryPage;
-  /** The collection this detail route serves. */
+  /** The page whose detail route serves the item. */
+  page: LinkPage;
+  /** Every page of the site, home included, to find a card on another page that links here. */
+  pages: readonly LinkPage[];
+  /** The collection the item came from. */
   collectionId: string;
   item: SummaryItem;
+  /** The page format the template renders with: it decides which hero draws. */
+  format: string | undefined;
   /** `detailPage.fields`, as authored. */
   fields?: { show?: unknown; hide?: unknown } | null;
   /** The renderer's resolved detail sections for this page. */
@@ -87,15 +92,21 @@ export interface SummaryInput {
 /** The neutral action wording when neither the item nor its layout names one. */
 export const NEUTRAL_ACTION_LABEL = 'Visit';
 
-/** The keys an explicit `fields.show` can name to keep the action. */
+/** The keys `fields.hide` can name to remove the action. */
 const LINK_FIELD_KEYS: readonly string[] = ['link', 'url', 'orderUrl'];
+
+/** The layouts whose card names the item's link or draws facts the hero does not. */
+const WORDED_LAYOUTS: ReadonlySet<string> = new Set(['positions', 'product-tiles', 'case-cards']);
+
+/** Formats the renderer gives their own hero (`DetailHero.js`); every other format gets the generic one. */
+const OWN_HERO_FORMATS: ReadonlySet<string> = new Set(['products', 'shows', 'team']);
 
 function str(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
 }
 
-function stringList(value: unknown): string[] | undefined {
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : undefined;
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string') : [];
 }
 
 /** Schemes a link may use. The same allowlist `mapItem.ts` applies to `item.href`. */
@@ -129,11 +140,24 @@ function linkScheme(value: string): string | undefined {
  * pages this route serves, every one a same-site path such as
  * `/connections/facebook`, the help site's article links. Drawing those would
  * put a button on each article that leads back to an article. Refusing them
- * also refuses the relative values that leave the site (`//host`, `/\host`).
+ * also refuses the relative values that leave the site (`//host`, a slash
+ * then a backslash).
  */
 export function externalActionHref(value: string): string | undefined {
   const scheme = linkScheme(value);
   return scheme !== undefined && SAFE_SCHEMES.has(scheme) ? value : undefined;
+}
+
+/**
+ * Whether `href` opens in a new tab: the renderer's rule (`DetailHero.js`,
+ * PositionsBoardLayout: `/^https?:\/\//i`), applied to the scheme the browser
+ * reads, so an `http(s)` link written with a stray control character inside
+ * (`ht<TAB>tps://`, which the browser navigates as https) behaves like every
+ * other `http(s)` link.
+ */
+function opensInNewTab(href: string): boolean {
+  const scheme = linkScheme(href);
+  return scheme === 'http:' || scheme === 'https:';
 }
 
 type LinkField = 'link' | 'url' | 'href' | 'orderUrl';
@@ -154,30 +178,29 @@ function itemOwnLink(item: SummaryItem): { value: string; field: LinkField } | u
   return undefined;
 }
 
-/** Top-level blocks and, recursively, group children (as `linkedItems.ts`'s `allBlocks`). */
-function walkBlocks(blocks: readonly SummaryBlock[] | null | undefined, out: SummaryBlock[] = []): SummaryBlock[] {
-  for (const block of blocks ?? []) {
-    if (!block) continue;
-    out.push(block);
-    const children = block.config?.children;
-    // Cast: `children` is the renderer's nested block list; only the optional
-    // fields `SummaryBlock` declares are read.
-    if (Array.isArray(children)) walkBlocks(children as SummaryBlock[], out);
-  }
-  return out;
+/**
+ * The binding whose card the visitor followed here. This page's own bindings
+ * that link here first (not opted out with `detailEligible: false`), then the
+ * inbound ones in page order; among them the first with a worded layout, else
+ * the first at all. Block resolution is `itemBinding`, the renderer's
+ * `firstBinding`, shared with the page list's link rule.
+ */
+function sourceBinding(input: SummaryInput): LinkBinding | undefined {
+  const own = allBlocks(input.page.blocks)
+    .map(itemBinding)
+    .filter((b): b is LinkBinding => b?.collectionId === input.collectionId && b.sectionConfig?.detailEligible !== false);
+  const inbound = inboundLinkBindings(input.page, input.pages, input.collectionId).filter(
+    (b) => b.sectionConfig?.detailEligible !== false,
+  );
+  const candidates = [...own, ...inbound];
+  return candidates.find((b) => WORDED_LAYOUTS.has(str(b.displayAs) ?? '')) ?? candidates[0];
 }
 
-/** The page's binding to `collectionId` that draws its list: the one whose layout the card came from. */
-function sourceBinding(page: SummaryPage, collectionId: string): SummaryBinding | undefined {
-  let firstMatch: SummaryBinding | undefined;
-  for (const block of walkBlocks(page.blocks)) {
-    for (const binding of block.config?.bindings ?? []) {
-      if (binding?.collectionId !== collectionId) continue;
-      if (str(binding.displayAs)) return binding;
-      firstMatch ??= binding;
-    }
-  }
-  return firstMatch;
+/** A binding's section config, read as a loose record. */
+function configOf(binding: LinkBinding | undefined): Record<string, unknown> {
+  // Cast: `sectionConfig` is a free-form record in the stored page; LinkBinding
+  // declares only the keys the link rule reads.
+  return (binding?.sectionConfig ?? {}) as Record<string, unknown>;
 }
 
 /**
@@ -188,11 +211,11 @@ function sourceBinding(page: SummaryPage, collectionId: string): SummaryBinding 
  *     "Buy" (pastel), "Explore" (friends) and "Shop Now" (the default arm).
  * Every other layout makes the whole card the link and names no action.
  */
-function layoutActionLabel(binding: SummaryBinding | undefined, field: LinkField): string | undefined {
+function layoutActionLabel(binding: LinkBinding | undefined, field: LinkField): string | undefined {
   const displayAs = str(binding?.displayAs);
   if (displayAs === 'positions') return 'Apply';
   if (displayAs !== 'product-tiles') return undefined;
-  const config = binding?.sectionConfig ?? {};
+  const config = configOf(binding);
   const tileStyle = str(config.tileStyle);
   if (field === 'orderUrl' || tileStyle === 'float') return str(config.linkLabel) ?? 'Order';
   if (tileStyle === 'pastel') return 'Buy';
@@ -203,36 +226,54 @@ function layoutActionLabel(binding: SummaryBinding | undefined, field: LinkField
 /** One card fact: the key `fields.show`/`fields.hide` name it by, and its value. */
 type Fact = { key: string; value: string | undefined };
 
+/** Every fact key this page knows how to read, and how the cards read it. */
+function factValue(key: string, raw: Record<string, unknown>): string | undefined {
+  switch (key) {
+    case 'location':
+      return str(raw.location);
+    case 'type':
+      return str(raw.type) ?? str(raw.employmentType);
+    case 'pay':
+      return str(raw.pay) ?? str(raw.compensation);
+    case 'meta':
+      return str(raw.meta);
+    case 'subject':
+      return str(raw.subject) ?? str(raw.demographic);
+    default:
+      return undefined;
+  }
+}
+
 /**
  * The facts a source layout's card draws that the generic detail hero does
  * not, one array per line. The hero already draws the title and `item.price`,
  * so neither is here (a positions card's pay falls back to `item.price`; the
  * hero shows that).
  */
-function layoutFacts(binding: SummaryBinding | undefined, raw: Record<string, unknown>): Fact[][] {
-  const displayAs = str(binding?.displayAs);
-  if (displayAs === 'positions') {
-    // PositionsBoardLayout: location under the title, then `type · pay`.
-    return [
-      [{ key: 'location', value: str(raw.location) }],
-      [
-        { key: 'type', value: str(raw.type) ?? str(raw.employmentType) },
-        { key: 'pay', value: str(raw.pay) ?? str(raw.compensation) },
-      ],
-    ];
+function layoutFacts(binding: LinkBinding | undefined, raw: Record<string, unknown>): Fact[][] {
+  const fact = (key: string): Fact => ({ key, value: factValue(key, raw) });
+  switch (str(binding?.displayAs)) {
+    case 'positions':
+      // PositionsBoardLayout: location under the title, then `type · pay`.
+      return [[fact('location')], [fact('type'), fact('pay')]];
+    case 'product-tiles':
+      return [[fact('meta')]];
+    case 'case-cards':
+      return [[fact('subject')]];
+    default:
+      return [];
   }
-  if (displayAs === 'product-tiles') return [[{ key: 'meta', value: str(raw.meta) }]];
-  if (displayAs === 'case-cards') return [[{ key: 'subject', value: str(raw.subject) ?? str(raw.demographic) }]];
-  return [];
 }
 
 /**
- * Whether the renderer's own hero already draws `raw.link` as a button: it
- * does exactly when the item carries both `raw.link` and `raw.ctaLabel` and
- * the page renders a hero. Drawing ours too would be the same link twice.
+ * Whether the renderer's own hero already draws `raw.link` as a button: the
+ * GENERIC hero does exactly when the item carries both `raw.link` and
+ * `raw.ctaLabel` and the page renders a hero. The products, shows and team
+ * heroes never read `raw.link`. Drawing ours too would be the same link twice.
  */
-function heroDrawsOwnLink(item: SummaryItem, sections: readonly string[]): boolean {
-  return sections.includes('hero') && !!str(item.raw?.link) && !!str(item.raw?.ctaLabel);
+function heroDrawsOwnLink(input: SummaryInput): boolean {
+  if (OWN_HERO_FORMATS.has(input.format ?? '')) return false;
+  return input.sections.includes('hero') && !!str(input.item.raw?.link) && !!str(input.item.raw?.ctaLabel);
 }
 
 /**
@@ -242,16 +283,21 @@ function heroDrawsOwnLink(item: SummaryItem, sections: readonly string[]): boole
 export function resolveDetailItemSummary(input: SummaryInput): DetailItemSummary | undefined {
   const raw = input.item.raw ?? {};
   const show = stringList(input.fields?.show);
-  const hide = stringList(input.fields?.hide) ?? [];
-  const allowed = (keys: readonly string[]): boolean =>
-    (show === undefined || keys.some((k) => show.includes(k))) && !keys.some((k) => hide.includes(k));
+  const hide = stringList(input.fields?.hide);
+  const binding = sourceBinding(input);
 
-  const binding = sourceBinding(input.page, input.collectionId);
-
-  const facts = layoutFacts(binding, raw)
+  const lines = layoutFacts(binding, raw);
+  const drawn = new Set(lines.flat().map((f) => f.key));
+  // `fields.show` adds a known fact the card did not draw, each on its own line.
+  for (const key of show) {
+    if (drawn.has(key) || factValue(key, raw) === undefined) continue;
+    drawn.add(key);
+    lines.push([{ key, value: factValue(key, raw) }]);
+  }
+  const facts = lines
     .map((line) =>
       line
-        .filter((fact) => fact.value !== undefined && allowed([fact.key]))
+        .filter((fact) => fact.value !== undefined && !hide.includes(fact.key))
         .map((fact) => fact.value)
         .join(' · '),
     )
@@ -259,16 +305,18 @@ export function resolveDetailItemSummary(input: SummaryInput): DetailItemSummary
 
   let action: DetailItemAction | undefined;
   const own = itemOwnLink(input.item);
-  if (own && allowed(LINK_FIELD_KEYS) && !heroDrawsOwnLink(input.item, input.sections)) {
+  if (own && !LINK_FIELD_KEYS.some((k) => hide.includes(k)) && !heroDrawsOwnLink(input)) {
     const href = externalActionHref(own.value);
     if (href) {
-      action = {
-        href,
-        label:
-          str(raw.linkLabel) ?? str(raw.ctaLabel) ?? layoutActionLabel(binding, own.field) ?? NEUTRAL_ACTION_LABEL,
-        // The renderer's target rule (`DetailHero.js`, PositionsBoardLayout).
-        external: /^https?:\/\//i.test(href),
-      };
+      const label =
+        str(raw.linkLabel) ?? str(raw.ctaLabel) ?? layoutActionLabel(binding, own.field) ?? NEUTRAL_ACTION_LABEL;
+      const external = opensInNewTab(href);
+      const title = str(input.item.title) ?? str(raw.title);
+      // `label: title`, the accessible name ProductTilesLayout gives its float
+      // Order button, so "Apply" is "Apply: Baker" to a screen reader; plus the
+      // new tab, which nothing on the button says.
+      const ariaLabel = `${title ? `${label}: ${title}` : label}${external ? ' (opens in a new tab)' : ''}`;
+      action = { href, label, ariaLabel, external };
     }
   }
 

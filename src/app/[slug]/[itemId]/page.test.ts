@@ -232,3 +232,34 @@ test('the per-item OG card is the item\'s own for every format reaching this arm
     'every format reaching this arm gets its own card, matching the render path\'s per-item og route',
   );
 });
+
+// V7 F-D1, review C1/C3: the item-page arms hand their template to
+// `renderItemDetail`, which `src/components/DetailItemSummary/
+// DetailItemSummary.test.ts` renders for real. These pins are what make that
+// render test a test of the ROUTE: drop the call from an arm and this goes red.
+test('the collection and menu arms render the item page through renderItemDetail, with a source', () => {
+  assert.match(source, /import \{ renderItemDetail \} from "@\/components\/DetailItemSummary"/);
+  const calls = source.match(/renderItemDetail\(\{/g) ?? [];
+  assert.equal(calls.length, 2, 'the collection arm and the menu arm');
+  assert.match(source, /source: \{ page: pageConfig, pages: sitePages, collectionId, item: effectiveItem \}/);
+  assert.match(source, /source: poolCollectionId \? \{ page: pageConfig, pages: sitePages, collectionId: poolCollectionId, item \} : undefined/);
+});
+
+test('only the shows and team arms still render the template directly', () => {
+  // Parsed something first: the two arms that keep their own render are there.
+  assert.match(source, /format="shows"/);
+  assert.match(source, /format="team"/);
+  assert.equal((source.match(/<DetailPageTemplate\b/g) ?? []).length, 2);
+});
+
+test('the collection products arm hands its source to the product renderer, which renders through renderItemDetail', () => {
+  assert.match(source, /itemSource=\{\{ page: pageConfig, pages: sitePages, collectionId, item: effectiveItem \}\}/);
+  const productRenderer = fs.readFileSync(
+    new URL('../../../components/PageTemplates/ProductDetailRenderer/index.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(productRenderer, /renderItemDetail\(\{/);
+  assert.match(productRenderer, /source: itemSource,/);
+  assert.match(productRenderer, /split: !storefrontConfig\?\.shell,/);
+  assert.doesNotMatch(productRenderer, /<DetailPageTemplate\b/);
+});

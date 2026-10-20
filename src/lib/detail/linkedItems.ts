@@ -46,6 +46,8 @@ export interface LinkBinding {
   collectionId?: string | null;
   integrationProvider?: string | null;
   title?: string | null;
+  /** The layout that draws the binding's items (`itemSummary.ts` reads it for the card's wording). */
+  displayAs?: string | null;
   sectionConfig?: { detailEligible?: unknown; scope?: unknown; menuRole?: unknown; fieldMap?: unknown } | null;
 }
 
@@ -173,6 +175,21 @@ export function linkedItemScopes(page: LinkPage, pages: readonly LinkPage[], col
   }
   if (!drawnHere) return null;
 
+  for (const binding of inboundLinkBindings(page, pages, collectionId)) {
+    if (addLink(binding, scopes)) return null;
+  }
+  return scopes;
+}
+
+/**
+ * The bindings on OTHER pages whose cards link `collectionId`'s items into
+ * `page`'s detail route, in page order (the INBOUND half of the rule above):
+ * a page that does not serve the collection itself links into the first page
+ * that does (`resolveServingDetailRouteSlug`, renderer 1.88.2). Bindings that
+ * opt out with `detailEligible: false` are included; callers decide.
+ */
+export function inboundLinkBindings(page: LinkPage, pages: readonly LinkPage[], collectionId: string): LinkBinding[] {
+  const out: LinkBinding[] = [];
   for (const other of pages) {
     // Only a page whose own route serves THIS collection keeps the links for
     // itself (the renderer's `resolveServingDetailRouteSlug`, 1.88.2). One that
@@ -185,11 +202,10 @@ export function linkedItemScopes(page: LinkPage, pages: readonly LinkPage[], col
       // A page template on a page that owns no route links to that page, not here.
       if (block.type?.kind === 'page-template') continue;
       const binding = itemBinding(block);
-      if (binding?.collectionId !== collectionId) continue;
-      if (addLink(binding, scopes)) return null;
+      if (binding?.collectionId === collectionId) out.push(binding);
     }
   }
-  return scopes;
+  return out;
 }
 
 /**

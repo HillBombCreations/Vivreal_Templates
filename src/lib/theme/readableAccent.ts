@@ -71,3 +71,32 @@ export function readableAccentOnWhite(accent: string | undefined): string | null
   }
   return '#111111';
 }
+
+/** WCAG AA for normal-size text. */
+const AA_NORMAL = 4.5;
+
+/**
+ * The ink to put on an accent-filled button, ONLY when the caller's own ink
+ * fails WCAG AA on it; `undefined` means "keep yours".
+ *
+ * Exists for the item page's action button (V7 F-D1), which copies the
+ * renderer detail hero's rule (`var(--text-inverse, #ffffff)` on the accent)
+ * and must not quietly ship a light accent with white ink. Unmeasurable input
+ * (a CSS var, `rgb()`) answers `undefined`: nothing can be shown to fail.
+ *
+ * The replacement is the renderer's `readableBandInk` rule (`lib/contrast.js`,
+ * 1.88.2, not exported from the package root): the softer `#111111` when it
+ * clears AA, else whichever pure end clears, which always succeeds (the worst
+ * case of the better of pure white and pure black is 4.58).
+ */
+export function inkOnAccentIfFailsAA(accent: string | undefined, ink: string | undefined): string | undefined {
+  const bg = accent ? parseHex(accent) : null;
+  const fg = parseHex(ink ?? '#ffffff');
+  if (!bg || !fg) return undefined;
+  const bgL = colorLuminance(bg[0], bg[1], bg[2]);
+  if (wcagContrast(colorLuminance(fg[0], fg[1], fg[2]), bgL) >= AA_NORMAL) return undefined;
+  // A grey's luminance is its one channel's (the three weights sum to 1).
+  const soft = srgbRelativeLuminance(0x11 / 255);
+  if (wcagContrast(soft, bgL) >= AA_NORMAL) return '#111111';
+  return wcagContrast(1, bgL) >= wcagContrast(0, bgL) ? '#ffffff' : '#000000';
+}

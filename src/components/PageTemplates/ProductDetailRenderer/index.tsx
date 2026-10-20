@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { DetailPageTemplate } from "@hillbombcreations/site-renderer";
+import { DetailPageTemplate, resolveDetailSections } from "@hillbombcreations/site-renderer";
 import type {
   ContentItem,
   DetailPageConfig,
@@ -15,6 +15,7 @@ import { useOptionalCart } from "@/contexts/CartContext";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import SiteRendererBridge from "@/components/SiteRendererBridge";
 import FloatingCartDialog from "@/components/PageTemplates/ProductDetailClient/FloatingCartDialog";
+import { renderItemDetail, type RenderItemDetailInput } from "@/components/DetailItemSummary";
 
 interface ProductDetailRendererProps {
   /** The product in the renderer's shape: a provider product via `templatesProductToRenderer`, or a collection item via `contentItemToProduct`. */
@@ -37,6 +38,12 @@ interface ProductDetailRendererProps {
    * Absent for a provider product.
    */
   collectionItems?: ContentItem[];
+  /**
+   * V7 F-D1: where a collection product came from, so its own outbound link
+   * (a tile's Order link) and card facts are drawn under the buy box. Absent
+   * for a provider product, whose Templates `Product` carries no authored link.
+   */
+  itemSource?: RenderItemDetailInput<{ detailPage?: DetailPageConfig }>["source"];
 }
 
 /**
@@ -54,6 +61,7 @@ export default function ProductDetailRenderer({
   storefrontConfig,
   productSource,
   collectionItems,
+  itemSource,
 }: ProductDetailRendererProps) {
   const cartCtx = useOptionalCart();
   const cartProduct = useMemo(() => rendererProductToTemplates(item), [item]);
@@ -67,22 +75,34 @@ export default function ProductDetailRenderer({
 
   return (
     <SiteRendererBridge>
-      <DetailPageTemplate
-        slug={slug}
-        item={item}
-        format="products"
-        siteData={siteData as unknown as RendererSiteData}
-        detailPage={detailPage}
-        cta={cta}
-        storefrontConfig={storefrontConfig}
-        productSource={productSource}
-        collectionItems={collectionItems}
-        onProductAddedToCart={({ variant, quantity }) => {
-          setAddedVariant(variant);
-          setAddedQuantity(quantity);
-          setAddedOpen(true);
-        }}
-      />
+      {renderItemDetail({
+        Template: DetailPageTemplate,
+        resolveSections: resolveDetailSections,
+        format: "products",
+        props: {
+          slug,
+          item,
+          format: "products",
+          siteData: siteData as unknown as RendererSiteData,
+          detailPage,
+          cta,
+          storefrontConfig,
+          productSource,
+          collectionItems,
+          onProductAddedToCart: ({ variant, quantity }: { variant: string | null; quantity: number }) => {
+            setAddedVariant(variant);
+            setAddedQuantity(quantity);
+            setAddedOpen(true);
+          },
+        },
+        source: itemSource,
+        accent: siteData.primary ?? undefined,
+        textInverse: siteData["text-inverse"] ?? undefined,
+        // A look shell draws its product page in the first look section of each
+        // template instance, so a second instance would draw it twice: the
+        // summary goes after the whole template there instead.
+        split: !storefrontConfig?.shell,
+      })}
       {cartCtx ? (
         <FloatingCartDialog
           open={addedOpen}
