@@ -45,8 +45,27 @@ test('the constant is the exact line the visitor must see', () => {
   assert.equal(SIGNUP_UNAVAILABLE_TEXT, NOT_TAKING);
 });
 
-test('the installed renderer is 1.88.1, the release that reads failedText', () => {
-  assert.equal(installedVersion, '1.88.1');
+// Asserted against the pin, not a literal, so a later bump does not break it,
+// plus a floor at 1.88.1, the first release that reads failedText.
+const pinnedVersion: string = JSON.parse(
+  fs.readFileSync(new URL('../../../package.json', import.meta.url), 'utf8'),
+).dependencies['@hillbombcreations/site-renderer'];
+const atLeast = (v: string, floor: string): boolean => {
+  const a = v.split('.').map(Number);
+  const b = floor.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i];
+  return true;
+};
+
+test('the installed renderer is the pinned one, and at least 1.88.1, the release that reads failedText', () => {
+  assert.equal(installedVersion, pinnedVersion);
+  assert.ok(atLeast(installedVersion, '1.88.1'), `installed ${installedVersion} is older than 1.88.1`);
+});
+
+test('REFUSE: the floor rejects a renderer older than 1.88.1', () => {
+  assert.equal(atLeast('1.88.0', '1.88.1'), false);
+  assert.equal(atLeast('1.87.9', '1.88.1'), false);
+  assert.equal(atLeast('1.88.2', '1.88.1'), true);
 });
 
 test('ALLOW: a no-list footer sign up that fails shows "not taking sign ups yet"', async () => {
