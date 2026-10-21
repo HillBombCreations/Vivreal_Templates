@@ -72,6 +72,27 @@ const nextConfig: NextConfig = {
   // a hard build FAILURE (exit 1), not just the console warning.
   // The `<ViewTransition>` wrappers in src/app/layout.tsx are unaffected and
   // stay enabled — they import from `react`, not from a Next config surface.
+  experimental: {
+    // BOTH OFF ON PURPOSE. These are security settings, not speed ones. Next
+    // 16.3.8 defaults both to true (next/dist/server/config-shared.js) and
+    // creates the Turbopack project with `env: process.env`, the WHOLE build
+    // environment, for `next build` (next/dist/build/turbopack-build/impl.js)
+    // and for `next dev` (next/dist/server/dev/hot-reloader-turbopack.js). So
+    // either cache writes every env value into `.next/cache/turbopack/*.sst`.
+    // On Amplify, that cache sits in `.next/cache/**`, which every site's
+    // generated buildspec (Vivreal_EventHandler src/shared/amplify/buildSpec.js)
+    // saved to the app's build cache, together with that site's API_KEY,
+    // REVALIDATE_WEBHOOK_SECRET and possibly the fleet packages token
+    // (vivreal-hq docs/projects/admin-restyle/
+    // research-next-cache-templates-portal-2026-10-21.md). Local dev and build
+    // caches did the same thing in worktrees on disk.
+    // Cost: no incremental Turbopack reuse between builds and no warm
+    // `next dev` restarts. src/lib/turbopackCacheConfig.test.ts fails if
+    // either key is removed or set to true, or if the installed Next stops
+    // recognising the key name.
+    turbopackFileSystemCacheForDev: false,
+    turbopackFileSystemCacheForBuild: false,
+  },
   images: {
     // Pre-cutover migration previews carry source-domain media URLs
     // (e.g. abakeshop.com/cdn/...) that aren't in remotePatterns, so next/image
