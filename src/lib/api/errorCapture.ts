@@ -332,6 +332,57 @@ export function buildContactRecipientFailureCapture({
   };
 }
 
+/**
+ * Fingerprint root for "a contact or migration form submission was refused,
+ * so it was neither stored nor emailed" (vivreal-hq
+ * research-admin-inbound-2026-10-21.md: this used to happen with no trace at
+ * all). One Issue fleet wide; `stage`, `formType` and `siteId` are tags.
+ */
+export const CONTACT_REJECTED_FINGERPRINT = 'templates.contact.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const CONTACT_REJECTED_MESSAGE =
+  'contact-form submission rejected, not stored or emailed';
+
+/**
+ * Capture context for a refused submission. Carries field NAMES and the
+ * upstream status only, never a submitted value or the upstream body: these
+ * are people's names, addresses and messages, and a VR_Client_API validation
+ * error can quote the value it refused.
+ *
+ * `missing-fields` is this route's own check (`missing` lists the names);
+ * `upstream-rejected` is a non-2xx from VR_Client_API, which answers 2xx
+ * whenever it stored the submission, so a non-2xx means nothing was kept.
+ */
+export function buildContactRejectionCapture({
+  siteId,
+  formType,
+  stage,
+  missingFields,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  formType: 'contact' | 'migration';
+  stage: 'missing-fields' | 'upstream-rejected';
+  missingFields?: readonly ('name' | 'customerEmail' | 'message')[];
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [CONTACT_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage,
+      formType,
+      ...(missingFields?.length ? { missing: missingFields.join(',') } : {}),
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
 export function buildDegradedRefusalCapture({
   siteId,
   format,

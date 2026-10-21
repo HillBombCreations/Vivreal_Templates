@@ -5,8 +5,20 @@ import { mergeAttributionCustomFields } from "@/lib/leadAttribution";
 import { resolveContactRecipient, resolveSiteContact } from "@/lib/contactRecipient";
 import {
   CONTACT_RECIPIENT_FAILURE_MESSAGE,
+  CONTACT_REJECTED_MESSAGE,
   buildContactRecipientFailureCapture,
+  buildContactRejectionCapture,
 } from "@/lib/api/errorCapture";
+import { createCaptureThrottle } from "@/lib/api/captureThrottle";
+import {
+  classifyContactForm,
+  isBlankText,
+  messageToForward,
+  missingRequiredContactFields,
+  withFormTypeMarker,
+  type ContactFormType,
+  type RequiredContactField,
+} from "@/lib/contactSubmission";
 import { resolveTenantBrand, wrapInTenantLayout } from "@hillbombcreations/email-brand";
 
 export const runtime = "edge";
@@ -51,6 +63,42 @@ interface ContactPayload {
     textPrimary?: string;
     logoUrl?: string;
   };
+}
+
+/**
+ * At most one Sentry capture per process per 5 minutes for each kind of
+ * refused submission (stage, form type, missing names or upstream status),
+ * the same throttle `client.ts` uses for failing reads: a flood of one bad
+ * shape costs one event, while a different kind still gets its own. Module
+ * scope so it outlives a request.
+ */
+const CONTACT_REJECTION_CAPTURES = createCaptureThrottle();
+
+/**
+ * Tell Sentry a submission was refused, by field NAME and status only (see
+ * `buildContactRejectionCapture`). Returns whether a capture was queued, so
+ * the caller knows to flush it before the response: this route runs on the
+ * edge, and Amplify can freeze the instance the moment the response is sent.
+ */
+function captureRejection(details: {
+  formType: ContactFormType;
+  stage: "missing-fields" | "upstream-rejected";
+  missingFields?: readonly RequiredContactField[];
+  upstreamStatus?: number;
+}): boolean {
+  const key = [
+    details.stage,
+    details.formType,
+    details.missingFields?.join(",") ?? "",
+    details.upstreamStatus ?? "",
+  ].join(":");
+  const gate = CONTACT_REJECTION_CAPTURES.take(key);
+  if (!gate.capture) return false;
+  Sentry.captureMessage(
+    CONTACT_REJECTED_MESSAGE,
+    buildContactRejectionCapture({ ...details, siteId: process.env.SITE_ID, suppressed: gate.suppressed }),
+  );
+  return true;
 }
 
 function escapeHtml(str: string): string {
@@ -233,14 +281,29 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, customerEmail, message } = body;
+  const { name, customerEmail } = body;
 
-  if (!name?.trim() || !customerEmail?.trim() || !message?.trim()) {
+  // vivreal-hq research-admin-inbound-2026-10-21.md: the renderer fills
+  // `message` from a form's first textarea, which on /migrate is the OPTIONAL
+  // notes box, so a migration request (a non-empty `customFields.siteUrl`) may
+  // arrive with a blank message and is accepted. A plain contact message still
+  // needs one. See `@/lib/contactSubmission`.
+  const formType = classifyContactForm(body.customFields);
+  const missingFields = missingRequiredContactFields(body, formType);
+  if (missingFields.length > 0) {
+    // A refused submission is a lost lead, so it reaches Sentry (by field
+    // name, never value). A filled honeypot is a bot, not a lead: no capture.
+    if (isBlankText(body.company_website) && captureRejection({ formType, stage: "missing-fields", missingFields })) {
+      await Sentry.flush(1500);
+    }
     return NextResponse.json(
       { error: "Missing required fields" },
       { status: 400 }
     );
   }
+  // VR_Client_API refuses an empty `message` (`Joi.string().required()`), so a
+  // migration request with no notes sends a fixed sentence instead.
+  const message = messageToForward(body.message);
 
   // review-templates-184.md P2-1: `resolveContactRecipient()` runs
   // `body.siteName?.trim()`, which throws a TypeError on a non-string value
@@ -335,12 +398,21 @@ export async function POST(request: NextRequest) {
     // Receiving validator verified before shipping: VR_Client_API's
     // sendContactEmailValidator declares `customFields: Joi.object().unknown(true)
     // .max(40)`, so these string keys are accepted with headroom to spare.
-    const customFields = mergeAttributionCustomFields(
-      body.customFields,
-      request.headers.get("cookie"),
+    //
+    // `formType` (contact or migration) is added on Vivreal's own sites only,
+    // so the admin inbound page can label stored rows; customer sites forward
+    // exactly what they did before. VR_Client_API stores it as
+    // `objectValue.formType` (`strict: false`), no schema change.
+    const customFields = withFormTypeMarker(
+      mergeAttributionCustomFields(
+        body.customFields,
+        request.headers.get("cookie"),
+        process.env.SITE_ID,
+      ),
+      formType,
       process.env.SITE_ID,
     );
-    const enriched: ContactPayload = { ...body, contactEmail: to, siteName, branding, customFields };
+    const enriched: ContactPayload = { ...body, message, contactEmail: to, siteName, branding, customFields };
 
     const apiKey = process.env.API_KEY;
     const clientApiUrl =
@@ -381,6 +453,12 @@ export async function POST(request: NextRequest) {
     const data = await res.json();
 
     if (!res.ok) {
+      // VR_Client_API answers 2xx whenever it stored the submission, so a
+      // non-2xx means nothing was kept. Status only: its error body can quote
+      // the value it refused.
+      if (captureRejection({ formType, stage: "upstream-rejected", upstreamStatus: res.status })) {
+        flushPromise = Sentry.flush(1500);
+      }
       return NextResponse.json(
         { error: upstreamErrorForVisitor(data, "Failed to send message") },
         { status: res.status }

@@ -576,3 +576,333 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
     },
   );
 });
+
+// ---------------------------------------------------------------------------
+// The /migrate blank-notes defect (vivreal-hq research-admin-inbound-2026-10-21.md,
+// summary item 3). The /migrate form has no field keyed `message`; the renderer
+// maps the FIRST textarea to `message`, and on /migrate that is the OPTIONAL
+// notes box. A visitor who leaves it blank passed the form's own check, then got
+// a 400 "Missing required fields" here: nothing stored, nothing emailed, and
+// Sentry never told.
+//
+// Payloads are built by the RENDERER'S OWN `buildSubmitPayload` (the pinned
+// version in node_modules), from the field lists the research read off the live
+// site document, so these tests send what the live form sends.
+// ---------------------------------------------------------------------------
+
+type FormField = { key: string; label: string; type: string; required?: boolean };
+
+interface RendererFormModule {
+  buildSubmitPayload(
+    fields: FormField[],
+    values: Record<string, unknown>,
+    submitMode?: string,
+    honeypot?: string,
+  ): Record<string, unknown>;
+}
+
+type RoutePost = (req: NextRequest) => Promise<{ status: number; body: unknown }>;
+
+/** vivreal.io /migrate: name, email, siteUrl (required), notes (textarea, optional). */
+const MIGRATE_FIELDS: FormField[] = [
+  { key: "name", label: "Name", type: "text", required: true },
+  { key: "email", label: "Email", type: "email", required: true },
+  { key: "siteUrl", label: "Your current website", type: "text", required: true },
+  { key: "notes", label: "Anything you want us to know", type: "textarea", required: false },
+];
+
+/** vivreal.io /contact: name, email, subject (optional), message (textarea, required). */
+const CONTACT_FIELDS: FormField[] = [
+  { key: "name", label: "Name", type: "text", required: true },
+  { key: "email", label: "Email", type: "email", required: true },
+  { key: "subject", label: "Subject", type: "text", required: false },
+  { key: "message", label: "Message", type: "textarea", required: true },
+];
+
+/** Every value a visitor types below carries this marker, so a single substring
+ * search proves no field VALUE reached a Sentry capture. */
+const SENTINEL = "7731";
+const SENTINEL_VALUES = {
+  name: `Ada Sentinel-${SENTINEL}`,
+  email: `sentinel-${SENTINEL}@example.com`,
+  siteUrl: `https://sentinel-site-${SENTINEL}.example`,
+  subject: `Subject-${SENTINEL}`,
+};
+
+/** Fixed sentence the route sends when a migration request has no notes. */
+const NO_NOTES_MESSAGE = "No notes were added.";
+
+/** A customer site's id: anything outside Vivreal's own allowlist. */
+const CUSTOMER_SITE_ID = "customer-site-1";
+
+test("/migrate blank notes, and every remaining rejection is visible (research-admin-inbound-2026-10-21.md)", async (t) => {
+  const { VIVREAL_MARKETING_SITE_ID } = await import("../../../lib/vivrealApex.ts");
+  const rendererUrl = new URL(
+    "../../../../node_modules/@hillbombcreations/site-renderer/dist/components/ConfigurableForm.js",
+    import.meta.url,
+  );
+  // A computed specifier is typed as an unknown module; the one export used is
+  // described by `RendererFormModule`.
+  const renderer: RendererFormModule = await import(rendererUrl.href);
+  const { __sentryStubControl } = (await import("@sentry/nextjs")) as unknown as SentryStubModule;
+
+  // Each case loads a FRESH instance of route.ts (a distinct query string is a
+  // distinct ESM module), so the module-scope capture throttle starts empty and
+  // one case's capture cannot hold back the next case's.
+  let instance = 0;
+  async function freshPost(): Promise<RoutePost> {
+    instance += 1;
+    const mod: { POST: RoutePost } = await import(`./route.ts?blank-notes=${instance}`);
+    return mod.POST;
+  }
+
+  /** Records what the route sent to VR_Client_API. */
+  function stubUpstream(sendStatus = 201, sendBody: unknown = { success: true }) {
+    const sent: Array<Record<string, unknown>> = [];
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/tenant/siteDetails")) {
+        return new Response(
+          JSON.stringify({ businessInfo: { name: "Vivreal", contactInfo: { email: "owner@example.com" } } }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/tenant/sendContactEmail")) {
+        sent.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify(sendBody), { status: sendStatus });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+    return sent;
+  }
+
+  /** Round-trip through JSON, the same as `request.json()` on a real POST. */
+  function wire(payload: Record<string, unknown>): NextRequest {
+    return fakeRequest(JSON.parse(JSON.stringify(payload)));
+  }
+
+  /** Start a POST, prove it waits for the Sentry flush, then release it. */
+  async function postAwaitingFlush(post: RoutePost, payload: Record<string, unknown>) {
+    const pending = post(wire(payload));
+    let settled = false;
+    pending.then(() => {
+      settled = true;
+    });
+    await flush();
+    assert.equal(settled, false, "a captured rejection must not answer before its Sentry flush resolves");
+    __sentryStubControl.resolveFlush(true);
+    return pending;
+  }
+
+  function capturesCarryNoFieldValues() {
+    const captured = JSON.stringify(__sentryStubControl.captureCalls);
+    assert.equal(captured.includes(SENTINEL), false, `a Sentry capture carried a field value: ${captured}`);
+  }
+
+  t.beforeEach(() => {
+    __sentryStubControl.reset();
+  });
+  t.afterEach(() => {
+    globalThis.fetch = realFetch;
+    __sentryStubControl.reset();
+  });
+  t.after(() => {
+    if (realSiteId === undefined) delete process.env.SITE_ID;
+    else process.env.SITE_ID = realSiteId;
+  });
+
+  await t.test("CONTROL: the renderer really sends an empty message for blank notes, with siteUrl in customFields", () => {
+    const payload = renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, notes: "" });
+    assert.equal(payload.message, "");
+    assert.deepEqual(payload.customFields, { siteUrl: SENTINEL_VALUES.siteUrl });
+    assert.equal(JSON.stringify(payload).includes(SENTINEL), true, "the sentinel must be in what the visitor sent");
+  });
+
+  await t.test("ALLOW: a /migrate request with blank notes is forwarded to be stored and emailed, marked as a migration", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await post(wire(renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, notes: "" })));
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body, { success: true });
+    assert.equal(sent.length, 1, "the submission must reach VR_Client_API, which stores and emails it");
+    // VR_Client_API origin/stable `sendContactEmailValidator`: `message: Joi.string().required()`,
+    // which refuses "", so the route must send a non-empty message.
+    assert.equal(sent[0].message, NO_NOTES_MESSAGE);
+    assert.deepEqual(sent[0].customFields, { siteUrl: SENTINEL_VALUES.siteUrl, formType: "migration" });
+    assert.equal(sent[0].customerEmail, SENTINEL_VALUES.email);
+    assert.match(String(sent[0].customHtml), /No notes were added\./);
+    assert.equal(__sentryStubControl.captureCalls.length, 0, "an accepted submission is not a rejection");
+  });
+
+  await t.test("ALLOW: a /migrate request WITH notes forwards the notes unchanged", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await post(wire(renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, notes: "We run on Wix." })));
+
+    assert.equal(res.status, 200);
+    assert.equal(sent[0].message, "We run on Wix.");
+    assert.equal((sent[0].customFields as Record<string, unknown>).formType, "migration");
+  });
+
+  await t.test("ALLOW: a /contact message on Vivreal's own site is marked as a contact", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await post(wire(renderer.buildSubmitPayload(CONTACT_FIELDS, { ...SENTINEL_VALUES, message: "Hello" })));
+
+    assert.equal(res.status, 200);
+    assert.equal(sent[0].message, "Hello");
+    assert.deepEqual(sent[0].customFields, { subject: SENTINEL_VALUES.subject, formType: "contact" });
+  });
+
+  await t.test("ALLOW: on a CUSTOMER site, blank notes with a siteUrl are accepted and the payload carries no formType", async () => {
+    process.env.SITE_ID = CUSTOMER_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const migrateRes = await post(wire(renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, notes: "" })));
+    assert.equal(migrateRes.status, 200);
+    assert.equal(sent[0].message, NO_NOTES_MESSAGE);
+    assert.deepEqual(sent[0].customFields, { siteUrl: SENTINEL_VALUES.siteUrl }, "the marker is for Vivreal's own sites only");
+
+    const contactRes = await post(wire(renderer.buildSubmitPayload(CONTACT_FIELDS, { ...SENTINEL_VALUES, message: "Hello" })));
+    assert.equal(contactRes.status, 200);
+    assert.deepEqual(sent[1].customFields, { subject: SENTINEL_VALUES.subject }, "a customer's contact payload is unchanged");
+  });
+
+  await t.test("REFUSE: a /contact message with a blank message is still refused, and Sentry is told without any field value", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+    const payload = renderer.buildSubmitPayload(CONTACT_FIELDS, { ...SENTINEL_VALUES, message: "   " });
+    assert.equal(JSON.stringify(payload).includes(SENTINEL), true, "control: the visitor's values are in the request");
+
+    const res = await postAwaitingFlush(post, payload);
+
+    assert.equal(res.status, 400);
+    assert.deepEqual(res.body, { error: "Missing required fields" });
+    assert.equal(sent.length, 0, "a refused submission must never reach VR_Client_API");
+    assert.equal(__sentryStubControl.captureCalls.length, 1, "the refusal must reach Sentry");
+    assert.deepEqual(__sentryStubControl.captureCalls[0].context, {
+      level: "error",
+      fingerprint: ["templates.contact.rejected"],
+      tags: { siteId: VIVREAL_MARKETING_SITE_ID, stage: "missing-fields", formType: "contact", missing: "message" },
+    });
+    capturesCarryNoFieldValues();
+  });
+
+  await t.test("REFUSE: a migration whose siteUrl is only whitespace is not a migration, so blank notes are still refused", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await postAwaitingFlush(
+      post,
+      renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, siteUrl: "   ", notes: "" }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 0);
+    assert.equal(__sentryStubControl.captureCalls.length, 1);
+    capturesCarryNoFieldValues();
+  });
+
+  await t.test("REFUSE: a missing email is refused for a migration too, and the capture names the field, not its value", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await postAwaitingFlush(
+      post,
+      renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, email: "", notes: "" }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 0);
+    assert.deepEqual(__sentryStubControl.captureCalls[0].context, {
+      level: "error",
+      fingerprint: ["templates.contact.rejected"],
+      tags: { siteId: VIVREAL_MARKETING_SITE_ID, stage: "missing-fields", formType: "migration", missing: "customerEmail" },
+    });
+    capturesCarryNoFieldValues();
+  });
+
+  await t.test("REFUSE: a non-string message is a 400, not a thrown 500", async () => {
+    process.env.SITE_ID = CUSTOMER_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await postAwaitingFlush(post, { name: SENTINEL_VALUES.name, customerEmail: SENTINEL_VALUES.email, message: 5 });
+
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 0);
+    capturesCarryNoFieldValues();
+  });
+
+  await t.test("REFUSE (bot): a filled honeypot is refused with no Sentry capture and no flush", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream();
+    const post = await freshPost();
+
+    const res = await post(
+      wire(renderer.buildSubmitPayload(CONTACT_FIELDS, { ...SENTINEL_VALUES, message: "" }, "contact", "http://spam.example")),
+    );
+
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 0);
+    assert.equal(__sentryStubControl.captureCalls.length, 0, "a bot's refusal is not a lost lead");
+    assert.equal(__sentryStubControl.flushCalls.length, 0);
+  });
+
+  await t.test("REFUSE: when VR_Client_API refuses a submission, Sentry is told the status, never the body or a field value", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    const sent = stubUpstream(400, { success: false, error: `"message" is not allowed to be empty ${SENTINEL}` });
+    const post = await freshPost();
+
+    const res = await postAwaitingFlush(
+      post,
+      renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, notes: "" }),
+    );
+
+    assert.equal(res.status, 400);
+    assert.equal(sent.length, 1);
+    assert.equal(__sentryStubControl.captureCalls.length, 1);
+    assert.deepEqual(__sentryStubControl.captureCalls[0].context, {
+      level: "error",
+      fingerprint: ["templates.contact.rejected"],
+      tags: { siteId: VIVREAL_MARKETING_SITE_ID, stage: "upstream-rejected", formType: "migration", status: "400" },
+    });
+    capturesCarryNoFieldValues();
+  });
+
+  await t.test("a repeat of the same rejection inside the window is held back; a different rejection is still captured", async () => {
+    process.env.SITE_ID = VIVREAL_MARKETING_SITE_ID;
+    stubUpstream();
+    const post = await freshPost();
+    const blankContact = renderer.buildSubmitPayload(CONTACT_FIELDS, { ...SENTINEL_VALUES, message: "" });
+
+    const first = await postAwaitingFlush(post, blankContact);
+    assert.equal(first.status, 400);
+    assert.equal(__sentryStubControl.captureCalls.length, 1);
+
+    __sentryStubControl.reset();
+    const repeat = await post(wire(blankContact));
+    assert.equal(repeat.status, 400, "a held-back capture never changes the answer");
+    assert.equal(__sentryStubControl.captureCalls.length, 0, "the same rejection inside the window is not re-sent");
+    assert.equal(__sentryStubControl.flushCalls.length, 0, "nothing captured, nothing to flush");
+
+    __sentryStubControl.reset();
+    const other = await postAwaitingFlush(
+      post,
+      renderer.buildSubmitPayload(MIGRATE_FIELDS, { ...SENTINEL_VALUES, email: "", notes: "" }),
+    );
+    assert.equal(other.status, 400);
+    assert.equal(__sentryStubControl.captureCalls.length, 1, "a different rejection keeps its own window");
+  });
+});
