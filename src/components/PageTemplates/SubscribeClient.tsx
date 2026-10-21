@@ -103,23 +103,20 @@ export default function SubscribeClient({
               className="h-12 w-12 mx-auto mb-4"
               style={{ color: siteData?.primary || "#1a1a2e" }}
             />
-            {/* NOT "you are subscribed". Capture writes
-                `subscriberStatus: 'pending'` and the campaign send path
-                allow-lists `'subscribed'`, so this person cannot receive
-                anything until they click the link in the confirmation email.
-                Saying they are subscribed is false at the moment they read it,
-                and it removes their reason to go and finish -- the list then
-                fills with addresses that can never be mailed, and the owner
-                sees signups that never convert. */}
-            <h2 className="text-xl font-semibold mb-2">Almost there</h2>
+            {/* One step (owner decision, 2026-10-20): capture writes
+                `subscriberStatus: 'subscribed'` and sends no confirmation
+                email, so the person is on the list the moment this shows.
+                Never point them at an inbox, nothing is coming. Matches the
+                renderer's SIGNUP_SUCCESS_TEXT; pinned by
+                subscribeSuccessCopy.test.ts. */}
+            <h2 className="text-xl font-semibold mb-2">{"You're on the list"}</h2>
             <p
               className="text-sm"
               style={{
                 color: siteData?.["text-secondary"] || "rgba(0,0,0,0.6)",
               }}
             >
-              {labels?.successMessage ||
-                "We sent you an email. Click the link in it to confirm, and you are all set."}
+              {labels?.successMessage || "Thanks for signing up."}
             </p>
             <button
               type="button"
