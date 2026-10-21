@@ -203,8 +203,11 @@ export async function optOutOfPrerenderUnlessIsr(
  *     research-stale-nostore-2026-10-21.md: 1,825 of 1,830 failures fleet wide
  *     from 10-07 were in flight across a freeze), and no retry schedule fixes
  *     that. What removes it is foreground regeneration: `next.config.ts` sets
- *     `expireTime` equal to `ISR_REVALIDATE_SECONDS`, so every time-based
- *     regeneration runs inside the visitor's own request and completes. A
+ *     `expireTime` to `min(ISR_REVALIDATE_SECONDS, SITE_CACHE_TTL_SECONDS)`,
+ *     so a time-based regeneration runs inside the visitor's own request and
+ *     completes. The one exception is the residual window after a FAILED
+ *     render, when Next re-stores the old page with revalidate 3..30 against
+ *     the same expire and a background regeneration can still start. A
  *     hard drop was already foreground, so this compound case (a purge, then
  *     a failed render, then a 500) is unchanged by that; it is just rarer
  *     because the failures behind it are.

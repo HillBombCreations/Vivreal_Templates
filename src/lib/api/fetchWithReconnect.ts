@@ -45,7 +45,8 @@
  * that: an attempt started in a short invocation is frozen with it whatever
  * its schedule. The backoff stays because it is harmless and still covers a
  * real dead-socket case. What removed the freeze-killed regeneration is
- * `expireTime` equal to `revalidate` in `next.config.ts` (see the LOGGING
+ * `expireTime` no greater than the page's `revalidate` in `next.config.ts`
+ * (see the LOGGING
  * correction below).
  *
  * WHAT IS RETRIED, AND WHAT NEVER IS
@@ -88,7 +89,7 @@
  * 1,825 of 1,830 failure lines fleet wide from 10-07 had `elapsedMs` over
  * 10 s). So `elapsedMs` includes any freeze the call was in flight across, and
  * a value above about 10 s means exactly that, not a slow upstream. Since
- * `next.config.ts` set `expireTime` equal to the route `revalidate`, steady
+ * `next.config.ts` capped `expireTime` at the page's `revalidate`, steady
  * state regeneration is foreground and such a line should only come from the
  * window after a FAILED regeneration (Next re-stores the old page with a 30 s
  * revalidate but keeps its later expiry, which reopens a background window).

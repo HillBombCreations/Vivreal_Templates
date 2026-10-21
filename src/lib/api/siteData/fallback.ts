@@ -45,11 +45,12 @@ export const FALLBACK_SITE_DATA: SiteData = {
   //     `src/lib/renderMode.ts`. (Phase 4 blocker 1.)
   //   - `expireTime` in `next.config.ts` was set to 3600 (Phase 4 blocker 2),
   //     capping the `stale-while-revalidate` window on a HEALTHY render at one
-  //     hour rather than Next's default one year. Since 2026-10-21 it equals
-  //     the route `revalidate` (300), so a healthy render carries plain
-  //     `s-maxage=300` and NO `stale-while-revalidate` at all; that is what
-  //     makes every regeneration run in the foreground on Amplify (see the
-  //     comment on `expireTime` there).
+  //     hour rather than Next's default one year. Since 2026-10-21 it is at
+  //     most the page's `revalidate` (300, or the data TTL when lower), so a
+  //     healthy render carries plain `s-maxage` and NO
+  //     `stale-while-revalidate` at all; that is what makes a time-based
+  //     regeneration run in the foreground on Amplify, outside the residual
+  //     window after a failed render (see the comment on `expireTime` there).
   //
   // Full measurements: `docs/projects/isr-migration/phase-4-result.md` and
   // `phase4-blockers-result.md` in `vivreal-hq`.

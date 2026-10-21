@@ -239,7 +239,7 @@ export const getSiteData = cache(async (): Promise<SiteData> => {
     // ISR migration Phase 4, blocker 1. Take THIS render off both caches before
     // handing back the placeholder. Without it the degraded page is emitted with
     // `s-maxage=300` (plus `stale-while-revalidate` whenever `expireTime` in
-    // next.config.ts exceeds the route `revalidate`; equal since 2026-10-21)
+    // next.config.ts exceeds the route `revalidate`; never since 2026-10-21)
     // and pinned at the CloudFront edge, which no `revalidateTag` can reach (Spike B): on
     // 2026-08-31 a 5m41s upstream outage produced 9m46s of a broken customer
     // home page.

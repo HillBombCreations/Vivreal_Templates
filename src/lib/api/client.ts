@@ -25,6 +25,7 @@ import {
   snapshotFilePath,
   statSnapshotFile,
 } from './snapshot/snapshotFile';
+import { parseSiteCacheTtlSeconds } from '../siteCacheTtl';
 
 export { ApiError, isQuotaError };
 
@@ -140,22 +141,16 @@ export function floorAnswerFor<T>(path: string, reason: 'values_missing'): T | u
  * longer TTL is only a backstop for missed webhooks + scheduled publish-date
  * go-lives; raising it is a per-site ops step (`86400`).
  *
- * Invalid/absent/non-positive values fall back to 60 — never crash a render on a
- * bad env value, never silently disable caching.
+ * Invalid/absent/below-one values fall back to 60 — never crash a render on a
+ * bad env value, never silently disable caching. The parse lives in
+ * `../siteCacheTtl.ts` so `next.config.ts` clamps `expireTime` with the SAME
+ * number (it cannot import this module: `server-only`, Next and Sentry).
+ *
+ * Resolved once at module scope so every cached read in this deployment uses
+ * one consistent value (env is fixed per Lambda / Amplify instance for its
+ * lifetime).
  */
-function readCacheTtlSeconds(): number {
-  const raw = process.env.SITE_CACHE_TTL_SECONDS;
-  if (!raw) return 60;
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 60;
-}
-
-/**
- * Resolved per-site cache TTL in seconds. Module-scope const so every cached
- * read in this deployment uses one consistent value (env is fixed per Lambda /
- * Amplify instance for its lifetime).
- */
-export const SITE_CACHE_TTL_SECONDS = readCacheTtlSeconds();
+export const SITE_CACHE_TTL_SECONDS = parseSiteCacheTtlSeconds(process.env.SITE_CACHE_TTL_SECONDS);
 
 /**
  * Pull the portal preview-bypass token (if any) out of the current request

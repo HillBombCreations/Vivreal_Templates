@@ -4,14 +4,16 @@ import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
+import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
   // `expireTime` decides whether an ISR page regenerates in the BACKGROUND or
-  // in the FOREGROUND, and it MUST equal `ISR_REVALIDATE_SECONDS`.
+  // in the FOREGROUND, and it must never exceed the page's effective
+  // `revalidate`: `ISR_REVALIDATE_SECONDS`, or the data TTL when that is lower.
   //
-  // 2026-10-21: equal to the route `revalidate` (300), was 3600. Reason, from
+  // 2026-10-21: at most the route `revalidate` (300), was 3600. Reason, from
   // vivreal-hq research-stale-nostore-2026-10-21.md and
   // design-isr-foreground-regeneration-2026-10-21.md:
   //   - Between `revalidate` and `expireTime` Next answers the visitor with the
@@ -27,19 +29,29 @@ const nextConfig: NextConfig = {
   //   - Past `expireTime` Next regenerates in the FOREGROUND, inside the
   //     visitor's own request, which Amplify keeps awake until the response
   //     is sent, so it finishes like any per-request page.
-  //   - Equal is the only safe value. Anything above `ISR_REVALIDATE_SECONDS`
-  //     reopens a background window between the two, and a request landing
-  //     there starts a regeneration that starves. Next accepts equality: its
-  //     header composer only appends `stale-while-revalidate` when
-  //     `revalidate < expire`, so the header is plain `s-maxage=300`.
-  //     That is why this reads the constant instead of repeating 300, and
-  //     src/lib/renderMode.test.ts fails if the two ever differ.
+  //   - Equal is the largest safe value. Anything above the page's
+  //     `revalidate` reopens a background window between the two, and a
+  //     request landing there starts a regeneration that starves. Below it
+  //     there is no background window either; the page just regenerates in
+  //     the foreground sooner. Next accepts equality: its header composer only
+  //     appends `stale-while-revalidate` when `revalidate < expire`, so the
+  //     header is plain `s-maxage=<revalidate>`.
   //   - The page's effective `revalidate` is the LOWEST of the route literal
-  //     and every cached read it makes, so `SITE_CACHE_TTL_SECONDS` below 300
-  //     lowers it too. Measured: with that env unset (the code default, 60)
-  //     the build lists `/` as Revalidate 1m, Expire 5m, which is a
-  //     background window from 60 s to 300 s. The site provisioner sets 300
-  //     (Vivreal_EventHandler serverless.yml), which gives 5m and 5m.
+  //     and every cached read it makes, and every cached read uses the one
+  //     `SITE_CACHE_TTL_SECONDS`, so a TTL below 300 lowers it too. Measured:
+  //     with that env unset (the code default, 60) and `expireTime` 300, the
+  //     build listed `/` as Revalidate 1m, Expire 5m, a background window
+  //     from 60 s to 300 s. So this is `min(300, TTL)`, parsed by the same
+  //     function client.ts uses (`src/lib/siteCacheTtl.ts`): 60 when unset,
+  //     300 at the provisioner's 300 (Vivreal_EventHandler serverless.yml)
+  //     and above. It clamps `expireTime` DOWN, never the data TTL UP, which
+  //     has to stay under the signed media URL lifetime (client.ts).
+  //     src/lib/renderMode.test.ts evaluates the shipped config at TTL unset,
+  //     60, 300 and 86400.
+  //   - Not covered: after a FAILED render Next re-stores the old page with
+  //     revalidate 3..30 against the same expire (`response-cache/index.js`),
+  //     so until that expire a background regeneration can still start. That
+  //     residual window predates this setting.
   //
   // What this gives up, accepted by the owner on 2026-10-21: the edge
   // `stale-while-revalidate` cushion. The 3600 it replaces was chosen in ISR
@@ -56,7 +68,7 @@ const nextConfig: NextConfig = {
   // enters the page cache that way (`bailOutOfCachingDegradedRender()` in
   // src/lib/renderGate.ts). The first visitor after each 300 s window waits
   // for one render (0.6 to 2.6 s measured locally).
-  expireTime: ISR_REVALIDATE_SECONDS,
+  expireTime: Math.min(ISR_REVALIDATE_SECONDS, parseSiteCacheTtlSeconds(process.env.SITE_CACHE_TTL_SECONDS)),
   // v5 search R4: HSTS on every response. Every fleet host (custom domains,
   // *.vivreal.io subdomains, vivreal.io) is already HTTPS-only behind a 301,
   // so this only tells a browser to skip the plain-HTTP hop next time. One
