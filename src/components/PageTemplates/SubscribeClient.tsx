@@ -107,7 +107,7 @@ export default function SubscribeClient({
                 `subscriberStatus: 'subscribed'` and sends no confirmation
                 email, so the person is on the list the moment this shows.
                 Never point them at an inbox, nothing is coming. Matches the
-                renderer's SIGNUP_CONFIRM_TEXT; pinned by
+                renderer's SIGNUP_SUCCESS_TEXT; pinned by
                 subscribeSuccessCopy.test.ts. */}
             <h2 className="text-xl font-semibold mb-2">{"You're on the list"}</h2>
             <p
