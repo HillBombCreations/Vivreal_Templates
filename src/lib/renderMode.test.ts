@@ -116,6 +116,14 @@ const { connection } = await import('next/dist/server/request/connection.js');
  */
 const { getCacheControlHeader } = await import('next/dist/server/lib/cache-control.js');
 
+/**
+ * The SHIPPED config, the default export after `withSentryConfig`, the same
+ * object `turbopackCacheConfig.test.ts` reads. Imported here, after the
+ * `AsyncLocalStorage` assignment above, for the same hoisting reason as the
+ * Next imports.
+ */
+const { default: nextConfig } = await import('../../next.config.ts');
+
 /** The gate, wired the way `renderGate.ts` wires it. */
 const enforceDynamicUnlessIsr = () => optOutOfPrerenderUnlessIsr(connection);
 
@@ -331,8 +339,19 @@ test('gate OFF does not throw on a real request — it only blocks prerendering'
  * GOOD entry with a 3..30s revalidate. Either way the degraded render is not
  * stored, which is the property. Measured both ways in
  * `docs/projects/isr-migration/phase4-blockers-result.md` (vivreal-hq).
+ *
+ * `CONFIGURED_EXPIRE_TIME` is read from the shipped `next.config.ts`, not
+ * restated, so these header assertions follow the real config.
  */
-const CONFIGURED_EXPIRE_TIME = 3600;
+const CONFIGURED_EXPIRE_TIME = readConfiguredExpireTime();
+
+function readConfiguredExpireTime(): number {
+  const value = nextConfig.expireTime;
+  if (typeof value !== 'number') {
+    throw new Error(`next.config.ts must set expireTime to a number, got ${String(value)}`);
+  }
+  return value;
+}
 
 test('a FALLBACK_SITE_DATA render collects revalidate 0, which is Next\'s "do not store"', async () => {
   // Seeded the way the route's `export const revalidate = 300` literal seeds it,
@@ -368,7 +387,7 @@ test('a HEALTHY render is still cacheable, so the fix does not cost the ISR win'
 
   assert.equal(
     emittedCacheControl(prerenderRevalidate, CONFIGURED_EXPIRE_TIME),
-    `s-maxage=${ISR_REVALIDATE_SECONDS}, stale-while-revalidate=${CONFIGURED_EXPIRE_TIME - ISR_REVALIDATE_SECONDS}`,
+    `s-maxage=${ISR_REVALIDATE_SECONDS}`,
   );
 });
 
@@ -558,26 +577,59 @@ test('getSiteMap imports the bail from the one place it is bound to real Next', 
   );
 });
 
-test('next.config.ts pins expireTime, so nobody inherits Next\'s one-year default', () => {
-  // Phase 4 blocker 2. Next's default `expireTime` is 31536000, and
-  // `getCacheControlHeader` emits `expire - revalidate`, which is where the
-  // fleet's `stale-while-revalidate=31535700` came from. CloudFront honours it:
-  // an `s-maxage=300` object was measured being served at `Age: 599`.
-  const configSource = fs.readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
-  assert.match(
-    configSource,
-    new RegExp(`^\\s*expireTime: ${CONFIGURED_EXPIRE_TIME},$`, 'm'),
-    'next.config.ts must set expireTime explicitly',
+/**
+ * True when an `expireTime` leaves a window in which Next serves STALE and
+ * regenerates in the BACKGROUND. On Amplify compute that regeneration is frozen
+ * with the response and starves (research-stale-nostore-2026-10-21.md,
+ * vivreal-hq). Read off Next's real header composer, which appends
+ * `stale-while-revalidate` exactly when `revalidate < expire`, the same
+ * comparison that makes the incremental cache answer `isStale = true` rather
+ * than the blocking `-1`.
+ */
+function opensBackgroundWindow(expireTime: number): boolean {
+  return /stale-while-revalidate/.test(
+    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: expireTime }),
   );
+}
 
-  // The value is only meaningful through the header it produces.
+test('REFUSE: next.config.ts expireTime equals ISR_REVALIDATE_SECONDS, so no background regeneration window exists', () => {
+  // 2026-10-21. Above `revalidate`, Next answers STALE and regenerates in the
+  // background, which Amplify freezes mid flight; at `expireTime` it
+  // regenerates in the visitor's own request, which completes. Equal is the
+  // only value with no background window. This reads the SHIPPED config, so a
+  // literal, a stray edit or a wrapper that drops the key all fail here.
+  assert.equal(
+    CONFIGURED_EXPIRE_TIME,
+    ISR_REVALIDATE_SECONDS,
+    'expireTime must equal ISR_REVALIDATE_SECONDS; a larger value reopens the background regeneration window',
+  );
+  assert.equal(opensBackgroundWindow(CONFIGURED_EXPIRE_TIME), false);
   assert.equal(
     getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
-    's-maxage=300, stale-while-revalidate=3300',
+    's-maxage=300',
   );
-  assert.notEqual(
-    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
-    's-maxage=300, stale-while-revalidate=31535700',
+});
+
+test('next.config.ts reads expireTime from the constant, so the two cannot drift', () => {
+  // A literal 300 would pass the value test above today and drift the day the
+  // cadence moves.
+  const configSource = fs.readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
+  assert.match(configSource, /^\s*expireTime: ISR_REVALIDATE_SECONDS,$/m);
+  assert.match(
+    configSource,
+    /^import \{ ISR_REVALIDATE_SECONDS \} from "\.\/src\/lib\/renderMode\.ts";$/m,
+  );
+});
+
+test('CONTROL: every expireTime above revalidate opens a background window, including the old 3600 and Next\'s default', () => {
+  // Without this the REFUSE test's `false` could come from a predicate that
+  // never answers true.
+  for (const expireTime of [ISR_REVALIDATE_SECONDS + 1, 3600, 31536000]) {
+    assert.equal(opensBackgroundWindow(expireTime), true, `expireTime ${expireTime}`);
+  }
+  assert.equal(
+    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: 3600 }),
+    's-maxage=300, stale-while-revalidate=3300',
   );
 });
 

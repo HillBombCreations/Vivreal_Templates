@@ -43,9 +43,13 @@ export const FALLBACK_SITE_DATA: SiteData = {
   //     outage does. An app PAGE takes a different route through the framework
   //     to the same guarantee; see `optOutOfCachingDegradedRender` in
   //     `src/lib/renderMode.ts`. (Phase 4 blocker 1.)
-  //   - `expireTime` in `next.config.ts` is set to 3600, so the
-  //     `stale-while-revalidate` window on a HEALTHY render is one hour rather
-  //     than Next's default one year. (Phase 4 blocker 2.)
+  //   - `expireTime` in `next.config.ts` was set to 3600 (Phase 4 blocker 2),
+  //     capping the `stale-while-revalidate` window on a HEALTHY render at one
+  //     hour rather than Next's default one year. Since 2026-10-21 it equals
+  //     the route `revalidate` (300), so a healthy render carries plain
+  //     `s-maxage=300` and NO `stale-while-revalidate` at all; that is what
+  //     makes every regeneration run in the foreground on Amplify (see the
+  //     comment on `expireTime` there).
   //
   // Full measurements: `docs/projects/isr-migration/phase-4-result.md` and
   // `phase4-blockers-result.md` in `vivreal-hq`.

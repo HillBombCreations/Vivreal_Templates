@@ -3,39 +3,60 @@ import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
+import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
-  // ISR migration Phase 4, blocker 2 — the `stale-while-revalidate` window a CDN
-  // is allowed to serve an ISR page past its `s-maxage`.
+  // `expireTime` decides whether an ISR page regenerates in the BACKGROUND or
+  // in the FOREGROUND, and it MUST equal `ISR_REVALIDATE_SECONDS`.
   //
-  // Next's default is 31536000 (one year), and `getCacheControlHeader` emits
-  // `expire - revalidate`, which is where the fleet's observed
-  // `s-maxage=300, stale-while-revalidate=31535700` came from. Nobody chose that
-  // number. CloudFront honours it, and on 2026-08-31 that is how an
-  // `s-maxage=300` object was served at `Age: 599` as an ordinary `X-Cache: Hit`
-  // (also seen at 509, 516, 519, 552) and how two POPs served two different
-  // versions of the same URL simultaneously.
+  // 2026-10-21: equal to the route `revalidate` (300), was 3600. Reason, from
+  // vivreal-hq research-stale-nostore-2026-10-21.md and
+  // design-isr-foreground-regeneration-2026-10-21.md:
+  //   - Between `revalidate` and `expireTime` Next answers the visitor with the
+  //     STALE page at once and regenerates in the background. Amplify compute
+  //     freezes the process as soon as the response is sent, so that
+  //     background regeneration's reads to VR_Client_API are frozen mid flight,
+  //     their sockets are dead by the next request, every retry dies the same
+  //     way, and Next keeps the old page and tries again. On a quiet site the
+  //     page stayed STALE (sent by Amplify as bare `no-store`, so nothing was
+  //     cached at the edge) until a new instance started. Fleet wide since
+  //     10-07, 1,825 of 1,830 `[clientFetch]` failures had been in flight
+  //     across a freeze.
+  //   - Past `expireTime` Next regenerates in the FOREGROUND, inside the
+  //     visitor's own request, which Amplify keeps awake until the response
+  //     is sent, so it finishes like any per-request page.
+  //   - Equal is the only safe value. Anything above `ISR_REVALIDATE_SECONDS`
+  //     reopens a background window between the two, and a request landing
+  //     there starts a regeneration that starves. Next accepts equality: its
+  //     header composer only appends `stale-while-revalidate` when
+  //     `revalidate < expire`, so the header is plain `s-maxage=300`.
+  //     That is why this reads the constant instead of repeating 300, and
+  //     src/lib/renderMode.test.ts fails if the two ever differ.
+  //   - The page's effective `revalidate` is the LOWEST of the route literal
+  //     and every cached read it makes, so `SITE_CACHE_TTL_SECONDS` below 300
+  //     lowers it too. Measured: with that env unset (the code default, 60)
+  //     the build lists `/` as Revalidate 1m, Expire 5m, which is a
+  //     background window from 60 s to 300 s. The site provisioner sets 300
+  //     (Vivreal_EventHandler serverless.yml), which gives 5m and 5m.
   //
-  // 3600 is chosen, and the tradeoff is real in BOTH directions:
-  //   - A very short window would have removed the thing that kept `/` and
-  //     `/privacy` serving correct content at `Age: 552` while every dynamic
-  //     route on the same site returned 504 during the same incident. That
-  //     resilience is the strongest result the ISR pilot produced.
-  //   - One year is indefensible: the post-edit and post-incident stale tail is
-  //     unbounded in practice, and Amplify offers no edge invalidation, so there
-  //     is no way to cut it short.
-  // One hour caps the tail at something a human would tolerate while keeping
-  // most of the outage resilience. It is defensible only BECAUSE the degraded
-  // render can no longer enter the cache at all (blocker 1,
-  // `bailOutOfCachingDegradedRender()` in src/lib/renderGate.ts) — a longer
-  // stale window is only safe when what goes stale was correct to begin with.
-  //
-  // Matches the framework's own documented example
-  // (`node_modules/next/dist/docs/.../expireTime.md`, "one hour in seconds").
-  // Effect on a 300s route: `s-maxage=300, stale-while-revalidate=3300`.
-  expireTime: 3600,
+  // What this gives up, accepted by the owner on 2026-10-21: the edge
+  // `stale-while-revalidate` cushion. The 3600 it replaces was chosen in ISR
+  // migration Phase 4 (blocker 2) because on 2026-08-31 that window kept `/`
+  // and `/privacy` serving correct content at `Age: 552` while dynamic routes
+  // returned 504, and because Next's default (one year,
+  // `stale-while-revalidate=31535700`) left an unbounded stale tail. Measured
+  // locally on 2026-10-21 (`next start`, upstream made unreachable): the first
+  // request after a 300 s window answers 500 (21 bytes, no Cache-Control),
+  // warm instance or cold, because Next marks a past-`expireTime`
+  // regeneration as on-demand and `unstable_cache` then skips the data cache
+  // entirely, so there is no last good data to fall back to. The next request
+  // gets the last good page for up to 30 s. A degraded render still never
+  // enters the page cache that way (`bailOutOfCachingDegradedRender()` in
+  // src/lib/renderGate.ts). The first visitor after each 300 s window waits
+  // for one render (0.6 to 2.6 s measured locally).
+  expireTime: ISR_REVALIDATE_SECONDS,
   // v5 search R4: HSTS on every response. Every fleet host (custom domains,
   // *.vivreal.io subdomains, vivreal.io) is already HTTPS-only behind a 301,
   // so this only tells a browser to skip the plain-HTTP hop next time. One

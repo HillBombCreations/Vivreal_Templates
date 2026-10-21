@@ -33,12 +33,18 @@
 /**
  * `Retry-After`, in seconds.
  *
- * One hour. Chosen to match `next.config.ts`'s `expireTime`, which is the
- * outer bound on how long a pre-freeze page can still be sitting in
+ * One hour. Chosen to match what was then `next.config.ts`'s `expireTime`
+ * (3600), the outer bound on how long a pre-freeze page could still sit in
  * CloudFront: there is no invalidation API for an Amplify-managed
  * distribution, so `s-maxage + stale-while-revalidate` is the real ceiling on
- * how stale the edge can be. Telling a crawler to come back sooner than the
- * edge can even change its answer would just buy pointless re-crawls.
+ * how stale the edge can be, and telling a crawler to come back sooner than
+ * the edge can change its answer would just buy pointless re-crawls.
+ *
+ * NO LONGER THE REASON, 2026-10-21. `expireTime` now equals the route
+ * `revalidate` (300), so an ISR page carries plain `s-maxage=300` and the edge
+ * ceiling is 300 s, not 3600. One hour is kept in this change as a deliberate
+ * crawler back-off for a billing state; lowering it toward 300 is a separate
+ * follow-up, not a correction this value needs to be safe.
  */
 export const FROZEN_RETRY_AFTER_SECONDS = 3600;
 
