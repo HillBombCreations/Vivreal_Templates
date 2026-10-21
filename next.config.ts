@@ -78,7 +78,8 @@ const nextConfig: NextConfig = {
     // creates the Turbopack project with `env: process.env`, the WHOLE build
     // environment, for `next build` (next/dist/build/turbopack-build/impl.js)
     // and for `next dev` (next/dist/server/dev/hot-reloader-turbopack.js). So
-    // either cache writes every env value into `.next/cache/turbopack/*.sst`.
+    // either cache writes every env value into its `*.sst` files, under
+    // `.next/cache/turbopack` for a build and `.next/dev/cache/turbopack` for dev.
     // On Amplify, that cache sits in `.next/cache/**`, which every site's
     // generated buildspec (Vivreal_EventHandler src/shared/amplify/buildSpec.js)
     // saved to the app's build cache, together with that site's API_KEY,
