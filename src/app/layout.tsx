@@ -98,9 +98,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // variable already. False on every customer site, and false whenever
     // SITE_ID is unset or unrecognised, which is the safe direction.
     const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
-    // The popup's consent line links only to a policy page this site stores
-    // and the route would serve (see lib/pages/policyPage.ts): there is no
-    // built-in /privacy any more, so the dialog's default link would 404.
+    // The popup's consent line and the cookie banner link only to a policy
+    // page this site stores and the route would serve (see
+    // lib/pages/policyPage.ts): there is no built-in /privacy any more, so a
+    // default /privacy link would 404.
     // `getSeedOnlyPaths` is per-request `cache`d and the Navbar and Footer
     // already ask it, so this adds no read; it fails open to `[]`.
     const privacyHref = resolvePrivacyPolicyHref(siteData.pageConfigs, await getSeedOnlyPaths());
@@ -321,6 +322,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       vivrealOwnSite={vivrealOwnSite}
                       additional={siteData.analytics?.additional}
                       analytics={siteData.analytics}
+                      privacyHref={privacyHref}
                   />
               </Providers>
           </body>

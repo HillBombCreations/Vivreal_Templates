@@ -41,12 +41,21 @@ function bannerParagraphText(): string {
     .trim();
 }
 
-test('the banner text is the owner-approved sentence, exactly', () => {
-  assert.equal(bannerParagraphText(), BANNER_TEXT);
+// The paragraph ends in `{bannerPolicySentence(privacyHref, Link)}`, which
+// renders " See our Privacy Policy." only when the site stores a policy page
+// (./bannerPolicy.ts, pinned by bannerPolicy.test.ts).
+const POLICY_CALL = '{bannerPolicySentence(privacyHref, Link)}';
+
+test('the banner text is the owner-approved sentence, exactly, with or without a policy page', () => {
+  const text = bannerParagraphText();
+  assert.ok(text.endsWith(POLICY_CALL), 'the policy sentence closes the paragraph');
+  const base = text.slice(0, -POLICY_CALL.length).trim();
+  assert.equal(`${base} See our Privacy Policy.`, BANNER_TEXT, 'with a policy page');
+  assert.equal(base, BANNER_TEXT.replace(/ See our Privacy Policy\.$/, ''), 'without one');
 });
 
-test('the Privacy Policy link and the Cookie settings control are still there', () => {
-  assert.match(source, /<Link\s+href="\/privacy"[\s\S]*?>\s*Privacy Policy\s*<\/Link>/);
+test('the Privacy Policy sentence and the Cookie settings control are still there', () => {
+  assert.ok(source.includes(POLICY_CALL));
   assert.match(source, /onClick=\{onWithdraw\}[\s\S]*?>\s*Cookie settings\s*<\/button>/);
 });
 
