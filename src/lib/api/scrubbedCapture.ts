@@ -6,7 +6,7 @@ import { stripQueryString, type SentryCaptureContext } from "@/lib/api/errorCapt
  * freeze the instance the moment the response is sent, and a queued event
  * would go with it, so the flush runs BEFORE the response.
  */
-export const SCRUBBED_CAPTURE_FLUSH_MS = 1500;
+const SCRUBBED_CAPTURE_FLUSH_MS = 1500;
 
 /**
  * The capture context is not the only thing an event carries. A route that
@@ -21,7 +21,7 @@ export const SCRUBBED_CAPTURE_FLUSH_MS = 1500;
  * breadcrumbs are applied, so nothing the SDK adds can get past it.
  * `scrubbedCapture.sdk.test.ts` proves that against the installed SDK.
  */
-export function withoutRequestPayload(event: Sentry.Event): Sentry.Event {
+function withoutRequestPayload(event: Sentry.Event): Sentry.Event {
   const { request, ...rest } = event;
   if (!request) return { ...rest, breadcrumbs: [] };
   const url = typeof request.url === "string" ? stripQueryString(request.url) : request.url;

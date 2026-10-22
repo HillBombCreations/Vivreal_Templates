@@ -69,8 +69,9 @@ const realEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]])
 
 test("the shared scrub strips a visitor's details from what the real Sentry SDK sends", async (t) => {
   process.env.NEXT_RUNTIME = "nodejs";
-  // Never dialled: `realSentry.mjs` swaps the transport for an in-memory one.
-  process.env.NEXT_PUBLIC_SENTRY_DSN = "https://public@o0.ingest.sentry.io/0";
+  // Never dialled: `realSentry.mjs` swaps the transport for an in-memory one,
+  // and the .invalid host (RFC 2606) cannot resolve if that swap is ever removed.
+  process.env.NEXT_PUBLIC_SENTRY_DSN = "https://public@sentry.invalid/0";
   process.env.NEXT_PUBLIC_SENTRY_ENVIRONMENT = "production";
   process.env.SITE_ID = SITE_ID;
 
