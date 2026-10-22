@@ -104,6 +104,36 @@ for (const probe of DEEP_PROBES) {
   });
 }
 
+// R1 follow-up: every package-manager manifest and lockfile, at the root and
+// nested, in any case.
+const PACKAGE_MANAGER_FILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'package.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'npm-shrinkwrap.json',
+  'composer.json',
+  'composer.lock',
+  'Gemfile.lock',
+];
+
+for (const name of PACKAGE_MANAGER_FILES) {
+  for (const probe of [`/${name}`, `/app/${name}`, `/a/b/c/${name}`, `/${name.toUpperCase()}`]) {
+    test(`REFUSE: ${probe} is a package-manager file, never a page`, () => {
+      assert.equal(isNeverAPagePath(probe), true);
+    });
+  }
+}
+
+// Slugs that merely resemble those names still render.
+for (const page of ['/package', '/packages/gift-box', '/pricing-packages', '/bun', '/bun-recipes', '/yarn', '/yarn-shop', '/gemfile', '/shrinkwrap-service', '/package-json-guide']) {
+  test(`ALLOW: ${page} is not a package-manager file`, () => {
+    assert.equal(isNeverAPagePath(page), false);
+  });
+}
+
 // What the R1 rules must NOT catch: a dot in the middle of a segment, words
 // that merely contain `map`, `lock`, `composer` or `git`, Next's own source
 // maps, and every `.well-known` route.

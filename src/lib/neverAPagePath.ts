@@ -77,13 +77,25 @@ const PROBE_FIRST_SEGMENT_PREFIXES: readonly string[] = Object.freeze(['wp-confi
  *     `[a-z0-9-]` only and the 2026-10-19 census found zero stored slugs with
  *     a `.` at all, so a leading dot is never a page. Covers `.env*`,
  *     `.git/`, `.DS_Store` and the rest without listing them.
- *   - a segment ending `.lock`, or named `composer.json` / `composer.lock`
- *     (a PHP dependency manifest; this is a Node app, nothing serves one).
+ *   - a segment ending `.lock`, or named as a package-manager manifest or
+ *     lockfile (npm, pnpm, yarn, bun, composer, bundler). They live in the
+ *     repo, never in `public/`, so no site serves one at any depth.
  *   - a last segment ending `.map` anywhere but `/_next/static/`, the only
  *     place Next emits source maps. Checked against the original-case
  *     pathname, because Next's own path is case-sensitive.
  */
-const PROBE_SEGMENT_NAMES: ReadonlySet<string> = new Set(['composer.json', 'composer.lock']);
+const PROBE_SEGMENT_NAMES: ReadonlySet<string> = new Set([
+  'package.json',
+  'package-lock.json',
+  'npm-shrinkwrap.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'composer.json',
+  'composer.lock',
+  'gemfile.lock',
+]);
 const PROBE_SEGMENT_SUFFIX = '.lock';
 const SOURCE_MAP_SUFFIX = '.map';
 const NEXT_STATIC_PREFIX = '/_next/static/';

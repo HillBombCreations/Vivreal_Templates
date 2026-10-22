@@ -78,6 +78,12 @@ const PROBES = [
   '/composer.lock',
   '/backend/.env.production',
   '/assets/main.js.map',
+  '/pnpm-lock.yaml',
+  '/html/package-lock.json',
+  '/package.json',
+  '/bun.lockb',
+  '/npm-shrinkwrap.json',
+  '/Gemfile.lock',
 ];
 
 for (const probe of PROBES) {
@@ -226,6 +232,7 @@ const REAL_PATHS = [
   '/roadmap',
   '/locksmith-services',
   '/composers/bach',
+  '/packages/gift-box',
   '/api/contact',
   '/og/about',
   '/icon',
