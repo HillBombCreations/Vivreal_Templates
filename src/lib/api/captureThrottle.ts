@@ -38,8 +38,15 @@ export interface CaptureDecision {
 }
 
 export interface CaptureThrottle {
-  /** `key` is the failure signature (the query-free path); absent means one shared key. */
-  take(key?: string): CaptureDecision;
+  /**
+   * `key` is the failure signature (the query-free path); absent means one shared key.
+   *
+   * `seen` is an optional per-request marker the caller owns (TEMPLATES-5 R1).
+   * A key already in it was taken by this request, so the call is neither sent
+   * nor counted: `suppressed` then counts REQUESTS, not calls. Without it one
+   * degraded page view (about nine `getSiteData` calls) reads as nine.
+   */
+  take(key?: string, seen?: Set<string>): CaptureDecision;
 }
 
 export function createCaptureThrottle(
@@ -48,9 +55,11 @@ export function createCaptureThrottle(
 ): CaptureThrottle {
   const windows = new Map<string, { start: number; suppressed: number }>();
   return {
-    take(key = '') {
-      const t = now();
+    take(key = '', seen) {
       const w = windows.get(key);
+      if (seen?.has(key)) return { capture: false, suppressed: w?.suppressed ?? 0 };
+      seen?.add(key);
+      const t = now();
       if (!w || t - w.start >= windowMs || t < w.start) {
         windows.set(key, { start: t, suppressed: 0 });
         return { capture: true, suppressed: w?.suppressed ?? 0 };

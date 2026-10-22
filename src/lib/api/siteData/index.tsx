@@ -8,7 +8,9 @@ import type {
   SiteData,
 } from '@/types/SiteData';
 import * as Sentry from '@sentry/nextjs';
+import { cache } from 'react';
 import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { createCaptureThrottle } from '@/lib/api/captureThrottle';
 import {
   ORIGIN_REFUSAL_MESSAGE,
   SITE_DETAILS_FALLBACK_MESSAGE,
@@ -125,6 +127,23 @@ interface SiteDetailsResponse {
   richTextImageUrls?: Record<string, string>;
 }
 
+/**
+ * TEMPLATES-5 R1 (vivreal-hq triage-sentry-clickup-2026-10-22.md): the
+ * fallback capture below ran once per `getSiteData` call, about nine per
+ * request, and `readWithFailureMemo` (client.ts) answers the fallback for 5 s
+ * after one failed read by design, so one transient failure under a scanner
+ * burst sent 90 events. Same per-window gate as the fetch failure (V7.319),
+ * module scope for the same reason as FETCH_FAILURE_CAPTURES.
+ */
+const SITE_DETAILS_FALLBACK_CAPTURES = createCaptureThrottle();
+
+/**
+ * One marker per request (React `cache` is request scoped in a server render),
+ * so the gate counts degraded requests, not calls. Outside a render `cache`
+ * does not memoise, each call gets a fresh set and the window alone gates.
+ */
+const fallbackCapturesThisRequest = cache((): Set<string> => new Set());
+
 export const getSiteData = async (): Promise<SiteData> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
@@ -148,10 +167,13 @@ export const getSiteData = async (): Promise<SiteData> => {
     // handed back the `null` fallback (see the capture at that swallow for the
     // ApiError and its status). Matches VR_Client_Auth's `unmapped_tier`
     // precedent for the same shape of condition.
-    Sentry.captureMessage(
-      SITE_DETAILS_FALLBACK_MESSAGE,
-      buildSiteDetailsFallbackCapture({ siteId: SITE_ID })
-    );
+    const gate = SITE_DETAILS_FALLBACK_CAPTURES.take(undefined, fallbackCapturesThisRequest());
+    if (gate.capture) {
+      Sentry.captureMessage(
+        SITE_DETAILS_FALLBACK_MESSAGE,
+        buildSiteDetailsFallbackCapture({ siteId: SITE_ID, suppressed: gate.suppressed })
+      );
+    }
     // ISR migration Phase 4, blocker 1. Take THIS render off both caches before
     // handing back the placeholder. Without it the degraded page is emitted with
     // `s-maxage=300, stale-while-revalidate=<expireTime>` and pinned at the
