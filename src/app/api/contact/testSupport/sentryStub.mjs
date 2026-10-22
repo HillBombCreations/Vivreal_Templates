@@ -9,9 +9,27 @@ let flushCalls = [];
 let captureCalls = [];
 let exceptionCalls = [];
 let pendingFlush = null;
+// Event processors added inside the innermost `withScope` callback. A capture
+// records the ones active when it was made, so a test can run them over a
+// synthetic event and see what the real SDK would send.
+let activeProcessors = [];
 
 export function captureMessage(message, context) {
-  captureCalls.push({ message, context, at: Date.now() });
+  captureCalls.push({ message, context, at: Date.now(), eventProcessors: [...activeProcessors] });
+}
+
+export function withScope(callback) {
+  const outer = activeProcessors;
+  activeProcessors = [...outer];
+  try {
+    return callback({
+      addEventProcessor(processor) {
+        activeProcessors.push(processor);
+      },
+    });
+  } finally {
+    activeProcessors = outer;
+  }
 }
 
 // P2-1 (review-templates-184.md pass 2): route.ts calls this from its catch
@@ -59,5 +77,6 @@ export const __sentryStubControl = {
     captureCalls = [];
     exceptionCalls = [];
     pendingFlush = null;
+    activeProcessors = [];
   },
 };

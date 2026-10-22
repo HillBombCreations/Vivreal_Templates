@@ -383,6 +383,51 @@ export function buildContactRejectionCapture({
   };
 }
 
+/**
+ * Fingerprint root for "a newsletter sign-up was refused, so the subscriber
+ * was not stored" (vivreal-hq review-templates204-2026-10-21.md, Fold in:
+ * `/api/subscribe` used to log this and nothing else, so an owner never
+ * learned sign-ups were being lost). One Issue fleet wide; `stage`, `status`
+ * and `siteId` are tags.
+ */
+export const SUBSCRIBE_REJECTED_FINGERPRINT = 'templates.subscribe.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const SUBSCRIBE_REJECTED_MESSAGE = 'newsletter sign-up rejected, subscriber not stored';
+
+/**
+ * Capture context for a refused sign-up. Stage and upstream status only,
+ * never the address or the upstream body: a VR_Client_API validation error
+ * can quote the value it refused.
+ *
+ * `missing-collection` is the route's own check (only a stale or broken
+ * client reaches it, the current one refuses before posting);
+ * `upstream-rejected` is a failed `/tenant/definedCollectionObject` write,
+ * with `status` absent when no HTTP answer came back at all.
+ */
+export function buildSubscribeRejectionCapture({
+  siteId,
+  stage,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  stage: 'missing-collection' | 'upstream-rejected';
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [SUBSCRIBE_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage,
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
 export function buildDegradedRefusalCapture({
   siteId,
   format,

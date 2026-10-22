@@ -1,5 +1,13 @@
 import 'server-only';
-import { clientFetch } from '@/lib/api/client';
+import { ApiError, clientFetch } from '@/lib/api/client';
+
+/**
+ * `status` is the upstream HTTP status when VR_Client_API answered, absent
+ * when no answer came back (a network failure). The caller reports it; this
+ * function must not swallow it, or a failing write loses every subscriber
+ * with nothing in Sentry (review-templates204-2026-10-21.md, Fold in).
+ */
+export type SubscribeResult = { ok: true } | { ok: false; status?: number };
 
 export async function subscribeUser(
   email: string,
@@ -8,7 +16,7 @@ export async function subscribeUser(
   // from the footer newsletter's location select). Spread BEFORE email so the
   // caller can never overwrite the validated address.
   fields?: Record<string, string>,
-): Promise<boolean> {
+): Promise<SubscribeResult> {
   try {
     await clientFetch<unknown>('/tenant/definedCollectionObject', {
       method: 'POST',
@@ -21,9 +29,9 @@ export async function subscribeUser(
         },
       }),
     });
-    return true;
+    return { ok: true };
   } catch (err) {
     console.error('[subscribeUser] error:', err);
-    return false;
+    return err instanceof ApiError ? { ok: false, status: err.status } : { ok: false };
   }
 }
