@@ -428,6 +428,46 @@ export function buildSubscribeRejectionCapture({
   };
 }
 
+/**
+ * Fingerprint root for "a visitor's review was refused, so it was not
+ * stored" (vivreal-hq review-templates204-delta-2026-10-21.md: `/api/review`
+ * logged this and nothing else, the same silent loss `/api/subscribe` had).
+ * One Issue fleet wide; `status` and `siteId` are tags.
+ */
+export const REVIEW_REJECTED_FINGERPRINT = 'templates.review.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const REVIEW_REJECTED_MESSAGE = 'site review rejected, review not stored';
+
+/**
+ * Capture context for a refused review: a failed
+ * `/tenant/definedCollectionObject` write, with `status` absent when no HTTP
+ * answer came back at all. Status only, never the email, the name, the text
+ * or the upstream body. VR_Client_API answers a honeypot or malformed review
+ * with a silent 2xx, so a non-2xx (a 429 rate limit, a 5xx) is a review a
+ * real visitor lost.
+ */
+export function buildReviewRejectionCapture({
+  siteId,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [REVIEW_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage: 'upstream-rejected',
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
 export function buildDegradedRefusalCapture({
   siteId,
   format,

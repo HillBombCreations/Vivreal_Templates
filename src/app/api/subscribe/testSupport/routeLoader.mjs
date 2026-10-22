@@ -1,5 +1,7 @@
-// Node module-customization loader for `route.tsx` ONLY, registered by
-// `../route.test.ts` (`node --test` runs each test file in its own child
+// Node module-customization loader for the subscribe and review routes ONLY,
+// registered by `../route.test.ts`, `../../review/route.test.ts` and (wrapped,
+// with the REAL Sentry SDK) `src/lib/api/scrubbedCapture.sdk.test.ts`
+// (`node --test` runs each test file in its own child
 // process, so it touches nothing else). Same approach as
 // `../../contact/testSupport/routeLoader.mjs`, whose header explains why
 // `next/server` and `@sentry/nextjs` cannot be loaded as-is under plain node.
