@@ -69,6 +69,105 @@ for (const probe of PROBES) {
   });
 }
 
+// TEMPLATES-5 R1 (triage-sentry-clickup-2026-10-22.md): the 2026-10-22 scanner
+// burst, nested git metadata, lockfiles and stray source maps. Each read site
+// data before this rule, and each fallback render was a Sentry event.
+const DEEP_PROBES = [
+  '/html/.git/config',
+  '/app/.git/HEAD',
+  '/a/b/.git/',
+  '/backend/.env',
+  '/api/.env.local',
+  '/public/.DS_Store',
+  '/x/.htaccess',
+  '/.vscode/settings.json',
+  '/yarn.lock',
+  '/Gemfile.lock',
+  '/poetry.lock',
+  '/frontend/package.lock',
+  '/composer.json',
+  '/composer.lock',
+  '/vendor/composer.json',
+  '/COMPOSER.JSON',
+  '/main.js.map',
+  '/assets/app.js.map',
+  '/static/js/main.chunk.js.map',
+  '/styles.css.map',
+  '/_next/main.js.map',
+  '/_NEXT/static/chunks/main.js.map',
+  '/.well-known/.env',
+];
+
+for (const probe of DEEP_PROBES) {
+  test(`REFUSE: ${probe} can never be a page (R1)`, () => {
+    assert.equal(isNeverAPagePath(probe), true);
+  });
+}
+
+// R1 follow-up: every package-manager manifest and lockfile, at the root and
+// nested, in any case.
+const PACKAGE_MANAGER_FILES = [
+  'pnpm-lock.yaml',
+  'package-lock.json',
+  'package.json',
+  'yarn.lock',
+  'bun.lock',
+  'bun.lockb',
+  'npm-shrinkwrap.json',
+  'composer.json',
+  'composer.lock',
+  'Gemfile.lock',
+];
+
+for (const name of PACKAGE_MANAGER_FILES) {
+  for (const probe of [`/${name}`, `/app/${name}`, `/a/b/c/${name}`, `/${name.toUpperCase()}`]) {
+    test(`REFUSE: ${probe} is a package-manager file, never a page`, () => {
+      assert.equal(isNeverAPagePath(probe), true);
+    });
+  }
+}
+
+// Slugs that merely resemble those names still render.
+for (const page of ['/package', '/packages/gift-box', '/pricing-packages', '/bun', '/bun-recipes', '/yarn', '/yarn-shop', '/gemfile', '/shrinkwrap-service', '/package-json-guide']) {
+  test(`ALLOW: ${page} is not a package-manager file`, () => {
+    assert.equal(isNeverAPagePath(page), false);
+  });
+}
+
+// What the R1 rules must NOT catch: a dot in the middle of a segment, words
+// that merely contain `map`, `lock`, `composer` or `git`, Next's own source
+// maps, and every `.well-known` route.
+const R1_REAL_PATHS = [
+  '/sitemap.xml',
+  '/sitemaps/0.xml',
+  '/robots.txt',
+  '/feeds/schedule.ics',
+  '/.well-known/mcp.json',
+  '/.well-known/llms.txt',
+  '/.well-known/acme-challenge/abc123',
+  '/_next/static/chunks/main-app.js.map',
+  '/_next/static/css/app.css.map',
+  '/roadmap',
+  '/site-map',
+  '/maps/downtown',
+  '/locksmith-services',
+  '/lock',
+  '/padlock-guide',
+  '/composer',
+  '/composers/bach',
+  '/github-tips',
+  '/team/jane.doe',
+  '/blog/version-1.2',
+  '/shop/6721f0c2a1b2c3d4e5f60718',
+  '/og/about',
+];
+
+for (const page of R1_REAL_PATHS) {
+  test(`ALLOW: ${page} is not caught by the R1 probe rules`, () => {
+    assert.equal(isNeverAPagePath(page), false);
+  });
+}
+
 // Slugs a real owner can produce. `nameToSlug` (portal pageUtils.ts) turns
 // "WP Engine review" into `wp-engine-review`, and the manual slug field and
 // VR_Secure_API (`slug: Joi.string()`) accept anything, so prefixes that look

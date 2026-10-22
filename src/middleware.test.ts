@@ -71,6 +71,19 @@ const PROBES = [
   '/.env',
   '/.env.production',
   '/.git/config',
+  // TEMPLATES-5 R1 (triage-sentry-clickup-2026-10-22.md), the 2026-10-22 burst.
+  '/html/.git/config',
+  '/yarn.lock',
+  '/composer.json',
+  '/composer.lock',
+  '/backend/.env.production',
+  '/assets/main.js.map',
+  '/pnpm-lock.yaml',
+  '/html/package-lock.json',
+  '/package.json',
+  '/bun.lockb',
+  '/npm-shrinkwrap.json',
+  '/Gemfile.lock',
 ];
 
 for (const probe of PROBES) {
@@ -215,6 +228,11 @@ const REAL_PATHS = [
   '/.well-known/llms.txt',
   '/.well-known/mcp.json',
   '/_next/static/chunks/main-app.js',
+  '/_next/static/chunks/main-app.js.map',
+  '/roadmap',
+  '/locksmith-services',
+  '/composers/bach',
+  '/packages/gift-box',
   '/api/contact',
   '/og/about',
   '/icon',

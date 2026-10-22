@@ -283,3 +283,18 @@ test('[V7.319 ALLOW] nothing held back adds no extra, so the context keeps its o
     assert.equal(Object.hasOwn(ctx, 'extra'), false, `suppressed ${suppressed}`);
   }
 });
+
+// TEMPLATES-5 R1: the fallback capture carries its held-back count the same way.
+test('[R1 ALLOW] the fallback-render capture carries the held-back count as an extra, not a tag', () => {
+  const ctx = buildSiteDetailsFallbackCapture({ siteId: 's', suppressed: 9 });
+  assert.deepEqual(ctx.extra, { suppressedSinceLastCapture: 9 });
+  assert.equal(Object.values(ctx.tags).includes('9'), false, 'never a tag value');
+  assert.deepEqual(ctx.fingerprint, [SITE_DETAILS_FALLBACK_FINGERPRINT], 'still one fleet-wide Issue');
+});
+
+test('[R1 ALLOW] a fallback capture with nothing held back keeps its old shape', () => {
+  for (const suppressed of [undefined, 0]) {
+    const ctx = buildSiteDetailsFallbackCapture({ siteId: 's', suppressed });
+    assert.equal(Object.hasOwn(ctx, 'extra'), false, `suppressed ${suppressed}`);
+  }
+});

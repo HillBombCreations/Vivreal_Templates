@@ -179,11 +179,20 @@ export function buildFetchFailureCapture({
  * Fingerprint carries no tenant component on purpose: a fleet-wide upstream
  * outage must collapse into ONE Issue whose event count spikes, because an
  * event-count threshold is what an alert rule can actually fire on.
+ *
+ * TEMPLATES-5 R1: `getSiteData` sends at most one of these per process per
+ * window and at most one per request; `suppressed` is how many degraded
+ * requests it held back since the last capture, carried as
+ * `extra.suppressedSinceLastCapture`, the same shape as the fetch failure.
+ * Absent or 0 adds nothing. So the event count is now degraded windows per
+ * site; the incident size is the extra.
  */
 export function buildSiteDetailsFallbackCapture({
   siteId,
+  suppressed,
 }: {
   siteId: string | undefined;
+  suppressed?: number;
 }): SentryCaptureContext {
   return {
     level: 'error',
@@ -191,6 +200,7 @@ export function buildSiteDetailsFallbackCapture({
     tags: {
       siteId: siteId || UNKNOWN_SITE_ID,
     },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
   };
 }
 
