@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { subscribeUser } from "@/lib/api/subscribe";
 import { SUBSCRIBE_REJECTED_MESSAGE, buildSubscribeRejectionCapture } from "@/lib/api/errorCapture";
 import { createCaptureThrottle } from "@/lib/api/captureThrottle";
+import { captureWithoutRequestPayload } from "@/lib/api/scrubbedCapture";
 import { mergeAttributionFields } from "@/lib/leadAttribution";
 import { isValidEmail } from "@/lib/emailShape";
 
@@ -33,9 +33,9 @@ function sanitizeFields(raw: unknown): Record<string, string> | undefined {
 const SUBSCRIBE_REJECTION_CAPTURES = createCaptureThrottle();
 
 /**
- * Tell Sentry a sign-up was refused, by stage and status only, then flush
- * before the caller responds: Amplify can freeze the instance the moment the
- * response is sent, and a queued event would go with it. Never the address.
+ * Tell Sentry a sign-up was refused, by stage and status only, flushed before
+ * the caller responds. Never the address: the shared helper strips the
+ * request body and the console breadcrumbs the SDK would otherwise attach.
  */
 async function reportRejection(details: {
   stage: "missing-collection" | "upstream-rejected";
@@ -43,31 +43,10 @@ async function reportRejection(details: {
 }): Promise<void> {
   const gate = SUBSCRIBE_REJECTION_CAPTURES.take(`${details.stage}:${details.upstreamStatus ?? ""}`);
   if (!gate.capture) return;
-  Sentry.withScope((scope) => {
-    scope.addEventProcessor(withoutRequestPayload);
-    Sentry.captureMessage(
-      SUBSCRIBE_REJECTED_MESSAGE,
-      buildSubscribeRejectionCapture({ ...details, siteId: process.env.SITE_ID, suppressed: gate.suppressed }),
-    );
-  });
-  await Sentry.flush(1500);
-}
-
-/**
- * The tags are not the only thing an event carries. This route runs on Node,
- * where the SDK's defaults attach the incoming request body (the address) as
- * `request.data`, and record every `console.error` of the request as a
- * breadcrumb (`clientFetch` and `subscribeUser` log the upstream error text,
- * which can quote the address). A scope processor runs after all of those, so
- * this event keeps only the route's method and URL.
- */
-function withoutRequestPayload(event: Sentry.Event): Sentry.Event {
-  const { request, ...rest } = event;
-  return {
-    ...rest,
-    breadcrumbs: [],
-    ...(request ? { request: { method: request.method, url: request.url } } : {}),
-  };
+  await captureWithoutRequestPayload(
+    SUBSCRIBE_REJECTED_MESSAGE,
+    buildSubscribeRejectionCapture({ ...details, siteId: process.env.SITE_ID, suppressed: gate.suppressed }),
+  );
 }
 
 export async function POST(req: Request) {

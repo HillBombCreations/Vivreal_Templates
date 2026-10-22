@@ -112,7 +112,8 @@ test("/api/subscribe reports a lost sign-up to Sentry, never the address", async
       breadcrumbs: [{ category: "console", message: `[subscribeUser] error: ApiError: Refused ${EMAIL_SENTINEL}` }],
       request: {
         method: "POST",
-        url: "https://site.example/api/subscribe",
+        // A hand-made request can put anything in the query (C2 of the delta review).
+        url: `https://site.example/api/subscribe?ref=${EMAIL_SENTINEL}`,
         data: JSON.stringify({ email: EMAIL_SENTINEL, collectionId: COLLECTION_ID }),
         headers: { cookie: `vr_attr=${EMAIL_SENTINEL}` },
       },
