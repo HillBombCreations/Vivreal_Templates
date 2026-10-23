@@ -30,6 +30,12 @@ type RobotsSiteData = Pick<
  *   - OpenAI: `ChatGPT-User` + `OAI-SearchBot` (live), `GPTBot` (training)
  *   - Perplexity: `PerplexityBot` (live)
  *   - Common Crawl: `CCBot` (training / dataset)
+ *   - Apple: `Applebot-Extended` (training opt-out token; `Applebot` itself,
+ *     the search crawler, stays on the wildcard)
+ *   - Meta: `meta-externalagent` (training). Meta documents this agent as
+ *     training AND product indexing, so blocking it may cost Meta shopping
+ *     surfaces; the owner accepted that (2026-10-22, D2). `Meta-WebIndexer`,
+ *     `facebookexternalhit` and `Meta-ExternalFetcher` stay on the wildcard.
  *   - Google: `Google-Extended` is deliberately NOT listed, so it falls
  *     through to the wildcard rule like any normal crawler. It was denied
  *     (2026-05-25, d8c7acb) as a training opt-out, but Google's crawler docs
@@ -58,12 +64,18 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
   if (isDegradedSiteData(siteData)) refuseDegradedClaim('robots.txt');
 
   // SEO demo-safety: a pre-cutover demo site is a near-duplicate of the
-  // prospect's real site — lock every crawler out and advertise no sitemap so it
-  // can never be indexed. Cutover flips lifecycleState to 'live' and this reverts
+  // prospect's real site, so it must never be indexed. Discovery batch 3.4
+  // (2026-10-22): crawlers are now ALLOWED to fetch a demo, and every demo
+  // response answers `X-Robots-Tag: noindex, nofollow` (middleware plus the
+  // non-HTML route handlers, see `demoRobotsHeader.ts`) beside the page's own
+  // robots meta. A `Disallow: /` did the opposite of what it meant: a crawler
+  // that may not fetch a page never sees its noindex, so a demo URL linked
+  // from elsewhere could still be listed. Still no `Sitemap:` line, so a demo
+  // advertises nothing. Cutover flips lifecycleState to 'live' and this reverts
   // to the normal policy below. Fail-safe: a lifecycleState that is present but
   // is not the literal 'live' counts as a demo (see demoSafety.ts).
   if (isDemoSite(siteData)) {
-    return { rules: [{ userAgent: '*', disallow: '/' }] };
+    return { rules: [{ userAgent: '*', allow: '/' }] };
   }
 
   // `durable`, not `deployed`: a robots.txt `Sitemap:` directive sits in
@@ -105,6 +117,8 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
       { userAgent: 'ClaudeBot', disallow: '/' },
       { userAgent: 'anthropic-ai', disallow: '/' },
       { userAgent: 'CCBot', disallow: '/' },
+      { userAgent: 'Applebot-Extended', disallow: '/' },
+      { userAgent: 'meta-externalagent', disallow: '/' },
     ],
     // A subdomain-only site has no custom domainName, which is the fleet
     // majority; before the resolver took over this line those sites advertised

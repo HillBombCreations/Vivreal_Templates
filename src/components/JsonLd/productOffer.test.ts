@@ -31,6 +31,8 @@ import {
  * regression as keeping a false one.
  */
 
+// `?? {}`: a priceless, bodyless item has no node at all (discovery batch
+// 3.2), which every assertion below reads as "no @type, no offers".
 const product = (overrides: Record<string, unknown> = {}) =>
   buildDetailJsonLd({
     format: 'products',
@@ -38,7 +40,7 @@ const product = (overrides: Record<string, unknown> = {}) =>
     price: '8.50',
     sku: 'abc123',
     ...overrides,
-  });
+  }) ?? {};
 
 const offerOf = (schema: Record<string, unknown>) =>
   schema.offers as Record<string, unknown> | undefined;
@@ -140,8 +142,8 @@ test('free text and empty prices are refused the same way', () => {
     const schema = product({ price });
     assert.equal(
       schema['@type'],
-      'Thing',
-      `"${String(price)}" is not a publishable price and must not reach an Offer`,
+      undefined,
+      `"${String(price)}" is not a publishable price and must not reach an Offer (no body text either, so no node, never Thing)`,
     );
   }
 });
@@ -206,13 +208,11 @@ test('collection-list shares the products Offer, and the other formats are untou
     title: 'Chocolate Croissant',
     price: '4.25',
     inStock: false,
-  });
+  }) ?? {};
   assert.equal(item['@type'], 'Product');
   assert.equal(offerOf(item)?.availability, 'https://schema.org/OutOfStock');
 
-  const event = buildDetailJsonLd({ format: 'shows', title: 'A show', startDate: '2026-09-05' });
-  assert.equal(event['@type'], 'Event');
-  const article = buildDetailJsonLd({ format: 'blog', title: 'A post', authorName: 'Jo' });
+  const article = buildDetailJsonLd({ format: 'blog', title: 'A post', authorName: 'Jo' }) ?? {};
   assert.equal(article['@type'], 'Article');
 });
 

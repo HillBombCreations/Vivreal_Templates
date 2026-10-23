@@ -25,6 +25,7 @@ import type { SiteRedirect } from '@/lib/redirects';
 import { fetchWithReconnect } from './api/fetchWithReconnect.ts';
 import { startAwakeTimeout } from './awakeTimeout.ts';
 import { CHECKOUT_RESULT_SLUGS } from './pages/builtInPages.ts';
+import { isDemoSite } from './seo/demoSafety.ts';
 
 const CLIENT_API_URL = process.env.NEXT_PUBLIC_CLIENT_API || 'https://client.vivreal.io';
 // API_KEY/SITE_ID are read INSIDE fetchSiteMap (call-time), not hoisted to a
@@ -171,6 +172,12 @@ const ALWAYS_LIVE_SLUGS = new Set(CHECKOUT_RESULT_SLUGS);
 export interface EdgeSiteMap {
   slugs: Set<string>;
   redirects: SiteRedirect[];
+  /**
+   * The demo verdict (`isDemoSite`) read off the SAME siteDetails response,
+   * for the `X-Robots-Tag` middleware sets on every demo response (discovery
+   * batch 3.4, `seo/demoRobotsHeader.ts`). Costs no extra request.
+   */
+  isDemo: boolean;
 }
 
 interface CacheEntry {
@@ -216,7 +223,7 @@ interface RawPageConfig {
 interface RawSiteDetailsResponse {
   pages?: RawPageConfig[];
   redirects?: SiteRedirect[];
-  siteDetails?: { values?: { redirects?: SiteRedirect[] } };
+  siteDetails?: { values?: { redirects?: SiteRedirect[]; lifecycleState?: unknown } };
 }
 
 interface ApiEnvelope {
@@ -476,12 +483,24 @@ async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | 
     // by the migrator; reading only the top-level field yields an
     // always-empty map.
     const redirects = raw.redirects ?? raw.siteDetails?.values?.redirects ?? [];
+    // `isDemoSite` tells an ABSENT key (every pre-lifecycle site: not a demo)
+    // from a present `null` (a demo), so the key's presence is carried through
+    // rather than collapsed by `?.`. JSON keeps an explicit null, so this sees
+    // exactly what `getSiteData()` sees.
+    const values = raw.siteDetails?.values;
+    const lifecycleState =
+      values && Object.prototype.hasOwnProperty.call(values, 'lifecycleState')
+        ? values.lifecycleState
+        : undefined;
+    // The value is untyped JSON; `isDemoSite` compares it to the literal 'live'
+    // and nothing else, so any other shape (null, '', 'Demo') reads as a demo.
+    const isDemo = isDemoSite({ lifecycleState: lifecycleState as 'live' | 'demo' | undefined });
     // A 2xx is a definitive NOT-frozen verdict, and recording it here is what
     // makes unfreezing fast: the first successful read after the owner fixes
     // their billing clears the gate on this instance immediately, with no
     // separate signal and no webhook required.
     frozenState = { frozen: false, observedAt: Date.now() };
-    return { slugs, redirects };
+    return { slugs, redirects, isDemo };
   } catch (err) {
     // Deliberate fail-open: a network error that survived the reconnect
     // retries, the awake-time abort (800ms warm / 1500ms cold), or a
@@ -678,6 +697,29 @@ export async function getEdgeSiteMap(): Promise<EdgeSiteMap | null> {
   // The subtraction is positive here: a `pending` older than that was already
   // abandoned above, and a `pending` created by startRefresh() started at `now`.
   return awaitWithDeadline(pending, inFlightStartedAt + COLD_FETCH_DEADLINE_MS - now);
+}
+
+/**
+ * The edge map WITHOUT ever waiting for the network.
+ *
+ * For the requests middleware lets through before its blocking read
+ * (`isSkippablePath`: `/api/*`, llms.txt, sitemap.xml, OG cards, the IndexNow
+ * key file), which today never touch the map and must not start blocking on
+ * it now: a cold `/api/checkout` waiting up to `COLD_FETCH_DEADLINE_MS` for a
+ * header is a regression the header is not worth.
+ *
+ * Returns whatever is cached, fresh or stale, or `null`. When the cache is
+ * stale or cold it arms the same deduplicated refresh `getEdgeSiteMap()` would
+ * (respecting the negative cache), so the NEXT request sees a warm map, but it
+ * never awaits that refresh. The route handlers that matter for indexing stamp
+ * the header themselves, which covers the cold case (`demoRobotsHeader.ts`).
+ */
+export function peekEdgeSiteMap(): EdgeSiteMap | null {
+  const now = Date.now();
+  if (cache && now - cache.fetchedAt < TTL_MS) return cache.value;
+  const inNegativeWindow = lastFailureAt !== null && now - lastFailureAt < NEGATIVE_CACHE_MS;
+  if (!inFlight && !inNegativeWindow) startRefresh(now);
+  return cache ? cache.value : null;
 }
 
 /**

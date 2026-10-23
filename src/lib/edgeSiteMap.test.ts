@@ -953,3 +953,35 @@ test('getEdgeSiteMap: the ceiling for a later request is the CLOCK, with no time
     console.error = originalError;
   }
 });
+
+// Discovery batch 3.4: the map carries the demo verdict for the X-Robots-Tag
+// middleware sets, read off the same response with `isDemoSite`'s semantics.
+async function mapFor(values: Record<string, unknown>) {
+  __resetEdgeSiteMapCacheForTests();
+  const originalFetch = globalThis.fetch;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- test double for the ambient `fetch`
+  (globalThis as any).fetch = async () =>
+    new Response(JSON.stringify({ success: true, data: { pages: [], siteDetails: { values } }, error: null }), {
+      status: 200,
+    });
+  try {
+    const map = await getEdgeSiteMap();
+    assert.ok(map, 'sanity: the map was read');
+    return map;
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test('ALLOW (discovery 3.4): a demo, or a present-but-not-live lifecycle value, maps to isDemo true', async () => {
+  delete process.env.SITE_LIFECYCLE;
+  for (const lifecycleState of ['demo', null, '', 'Demo']) {
+    assert.equal((await mapFor({ lifecycleState })).isDemo, true, JSON.stringify(lifecycleState));
+  }
+});
+
+test('REFUSE (discovery 3.4): a live site, and a site with NO lifecycle key at all, map to isDemo false', async () => {
+  delete process.env.SITE_LIFECYCLE;
+  assert.equal((await mapFor({ lifecycleState: 'live' })).isDemo, false);
+  assert.equal((await mapFor({})).isDemo, false, 'an absent key is every pre-lifecycle site: never a demo');
+});

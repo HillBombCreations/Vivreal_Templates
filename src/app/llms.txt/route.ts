@@ -14,6 +14,7 @@
  */
 import { NextResponse } from 'next/server';
 import { fetchLlmsTxt } from '@/lib/llmsTxtProxy';
+import { applyDemoRobotsHeader, edgeRouteIsDemo } from '@/lib/seo/demoRobotsHeader';
 
 // The content is per-tenant (this site's API_KEY/SITE_ID) and dynamic
 // (fetched fresh from VR_Client_API on every request). Without BOTH of these
@@ -23,6 +24,10 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<NextResponse> {
-  const { status, headers, body } = await fetchLlmsTxt();
-  return new NextResponse(body, { status, headers });
+  const [{ status, headers, body }, isDemo] = await Promise.all([fetchLlmsTxt(), edgeRouteIsDemo()]);
+  const responseHeaders = new Headers(headers);
+  // Discovery batch 3.4, route layer: a demo's llms.txt is noindex even when
+  // middleware's edge map was cold. See demoRobotsHeader.ts.
+  applyDemoRobotsHeader(responseHeaders, isDemo);
+  return new NextResponse(body, { status, headers: responseHeaders });
 }

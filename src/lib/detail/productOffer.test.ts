@@ -256,7 +256,8 @@ function offerFor(product: {
     price: offerFieldValue(product.price, key, values),
     currency: product.currency,
     inStock: product.inStock,
-  });
+    // `?? {}`: an unpriceable, bodyless product has no node (discovery batch 3.2).
+  }) ?? {};
 }
 
 test('a VARIANT-PRICED product now emits a real Product with a real Offer', () => {
@@ -358,7 +359,7 @@ test('an unpublishable variant price still emits nothing, rather than a repaired
     });
     assert.equal(
       schema['@type'],
-      'Thing',
+      undefined,
       `${JSON.stringify(price)} is not publishable and must not become an Offer`,
     );
   }

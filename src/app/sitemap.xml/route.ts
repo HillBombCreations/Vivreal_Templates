@@ -1,4 +1,7 @@
 import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
+import { getSiteData } from '@/lib/api/siteData';
+import { isDemoSite } from '@/lib/seo/demoSafety';
+import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 import { loadSitemapEntries } from '@/lib/seo/loadSitemapEntries';
 import { rootSitemapXml } from '@/lib/seo/sitemapXml';
 
@@ -17,8 +20,13 @@ export async function GET(): Promise<Response> {
   // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
   // line runs during `next build`.
   await enforceDynamicUnlessIsr();
-  const entries = await loadSitemapEntries();
-  return new Response(rootSitemapXml(entries), {
-    headers: { 'Content-Type': 'application/xml; charset=utf-8' },
-  });
+  const [entries, siteData] = await Promise.all([loadSitemapEntries(), getSiteData()]);
+  // Discovery batch 3.4, route layer: a demo's (empty) list is noindex even
+  // when middleware's edge map was cold. See demoRobotsHeader.ts.
+  return withDemoRobotsHeader(
+    new Response(rootSitemapXml(entries), {
+      headers: { 'Content-Type': 'application/xml; charset=utf-8' },
+    }),
+    isDemoSite(siteData),
+  );
 }

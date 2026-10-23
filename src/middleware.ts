@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server'
 import { computeBotVerdict, BOT_VERDICT_HEADER } from '@/lib/botVerdict'
 import {
   getEdgeSiteMap,
+  peekEdgeSiteMap,
   isSiteFrozen,
   isSkippablePath,
   isLiveContentPath,
@@ -16,6 +17,7 @@ import {
   isNeverAPagePath,
 } from '@/lib/neverAPagePath'
 import { publicSearch, resolveMissingItemRedirect } from '@/lib/redirects'
+import { applyDemoRobotsHeader, stampsDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader'
 import {
   PREVIEW_QUERY_PARAM,
   PREVIEW_TOKEN_COOKIE,
@@ -169,13 +171,29 @@ export async function middleware(request: NextRequest) {
   // would start being redirected by the 300s-stale edge map -- e.g. a page the
   // author just created would 301 away under them -- which is precisely the
   // failure isSkippablePath's preview clause exists to prevent.
+  //
+  // Discovery batch 3.4: a DEMO site's response carries `X-Robots-Tag:
+  // noindex, nofollow` on these paths too (llms.txt, sitemap.xml, OG cards,
+  // the key file), read from the map WITHOUT waiting for it: these paths never
+  // blocked on the map and must not start now. A cold map stamps nothing
+  // here; the route handlers that matter stamp the header themselves.
   if (request.cookies.has(PREVIEW_TOKEN_COOKIE) || isSkippablePath(request.nextUrl)) {
-    return fallthrough()
+    const response = fallthrough()
+    if (stampsDemoRobotsHeader(request.nextUrl.pathname)) {
+      applyDemoRobotsHeader(response.headers, peekEdgeSiteMap()?.isDemo)
+    }
+    return response
   }
 
   const { pathname } = request.nextUrl
 
   const siteMap = await getEdgeSiteMap()
+  // Every response below this line is for a document path, so each one is
+  // stamped when the site is a demo (discovery batch 3.4).
+  const demoAware = <T extends NextResponse>(response: T): T => {
+    applyDemoRobotsHeader(response.headers, siteMap?.isDemo)
+    return response
+  }
 
   // WHY MIDDLEWARE, and why the freeze is enforced HERE and nowhere else.
   //
@@ -212,10 +230,12 @@ export async function middleware(request: NextRequest) {
   // above already refreshed. No extra fetch, no extra latency, and it fails
   // open on every ambiguous state.
   if (isSiteFrozen()) {
-    return new NextResponse(renderFrozenPage(), {
-      status: FROZEN_STATUS,
-      headers: FROZEN_HEADERS,
-    })
+    return demoAware(
+      new NextResponse(renderFrozenPage(), {
+        status: FROZEN_STATUS,
+        headers: FROZEN_HEADERS,
+      }),
+    )
   }
 
   if (!siteMap) {
@@ -235,7 +255,7 @@ export async function middleware(request: NextRequest) {
   // enforces that ordering, so it has to be re-established explicitly here.
   // This is the single most important line in this file.
   if (isLiveContentPath(pathname, siteMap.slugs)) {
-    return fallthrough()
+    return demoAware(fallthrough())
   }
 
   // Reuse the existing composed resolveMissingItemRedirect() -- the same
@@ -248,14 +268,14 @@ export async function middleware(request: NextRequest) {
   const target = resolveMissingItemRedirect(siteMap.redirects, pathname)
 
   if (!target) {
-    return fallthrough()
+    return demoAware(fallthrough())
   }
 
   // No match, or the target resolves back to the same path (loop guard --
   // resolve at most one hop, never follow chains, exactly as the page layer
   // does today).
   if (isSelfRedirectLoop(pathname, target)) {
-    return fallthrough()
+    return demoAware(fallthrough())
   }
 
   const redirectUrl = new URL(target, request.url)
@@ -271,11 +291,11 @@ export async function middleware(request: NextRequest) {
   // value this app fully controls end-to-end, so it must be treated as
   // untrusted all the way to the literal redirect emitted below.
   if (redirectUrl.origin !== request.nextUrl.origin) {
-    return fallthrough()
+    return demoAware(fallthrough())
   }
 
   // publicSearch drops `_rsc`, so a router cache key can never ride a 301
   // Location (design-templates-router-header-strip, 2026-10-18).
   redirectUrl.search = publicSearch(request.nextUrl)
-  return NextResponse.redirect(redirectUrl, 301)
+  return demoAware(NextResponse.redirect(redirectUrl, 301))
 }

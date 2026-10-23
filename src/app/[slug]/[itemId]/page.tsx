@@ -41,7 +41,7 @@ import type {
   DetailSection,
   PageCtaConfig as RendererPageCtaConfig,
 } from "@hillbombcreations/site-renderer";
-import { JsonLd, buildDetailJsonLd } from "@/components/JsonLd";
+import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } from "@/components/JsonLd";
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
@@ -404,23 +404,35 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // of those when the read above is the reason `show` came back null.
     if (!show) return answerItemMissing(show);
 
-    const showStartDate =
-      show.date && show.time
-        ? `${show.date}T${show.time}`
-        : show.date || undefined;
-    const showJsonLd = buildDetailJsonLd({
-      format: 'shows',
+    // Discovery batch 3.1: a valid startDate in the business's own time zone
+    // and a real address, or no Event node at all (see eventSchema.ts).
+    const showEvent = buildShowEventJsonLd({
       title: show.title,
       // RT5-176: never a kit seed instruction in JSON-LD (lib/seo/seedCopy.ts).
       description: seedFreeText(show.description, 500),
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
-      // (crawler caches outlive the 300s signed-URL TTL) — same treatment the
+      // (crawler caches outlive the 300s signed-URL TTL), same treatment the
       // team branch already applies to member images.
       imageUrl: unsignMediaUrl(show.imageUrl || show.image || undefined),
       url: buildDetailUrl(siteData, slug, itemId),
-      startDate: showStartDate,
-      location: show.location || undefined,
+      date: show.date,
+      time: show.time,
+      location: show.location,
+      address: show.address,
+      ticketsUrl: show.ticketsUrl,
+      timezone: siteData.timezone,
+      organizationId: siteOrganizationId(siteData),
+      business: {
+        name: siteData.businessInfo?.name || siteData.name,
+        address: siteData.businessInfo?.address,
+      },
     });
+    if (showEvent.skipped) {
+      console.info(
+        JSON.stringify({ event: "jsonld.event.skipped", reason: showEvent.skipped, siteId: process.env.SITE_ID || "", itemId }),
+      );
+    }
+    const showJsonLd = showEvent.schema;
 
     return (
       <>
@@ -629,6 +641,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       currency: product.priceCurrency,
       inStock: productStock.tracked ? !productStock.isOutOfStock : undefined,
       sku: product._id,
+      // Discovery batch 3.2: with no publishable price the product is judged
+      // as content (article or no node), never a bare Thing.
+      bodyText: productDescription,
+      organizationId: siteOrganizationId(siteData),
+      organizationName: siteData.businessInfo?.name || siteData.name,
     });
 
     // Build the renderer detail config. The route already renders supplemental
@@ -802,6 +819,14 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // R4: the Article carries when the item last changed (absent when the
       // record has no timestamp; never the clock).
       dateModified: effectiveItem.updatedAt,
+      // Discovery batch 3.2: what decides BlogPosting, Article or no node for
+      // an item with no publishable price. The recipe spread below overrides
+      // datePublished with the same value for a recipe.
+      bodyText: seedFreeText(effectiveItem.raw?.body, 500) ?? cleanDesc,
+      datePublished: effectiveItem.date,
+      itemAuthor: typeof effectiveItem.raw?.author === "string" ? effectiveItem.raw.author : undefined,
+      organizationId: siteOrganizationId(siteData),
+      organizationName: siteData.businessInfo?.name || siteData.name,
       ...(recipe
         ? {
             durableImageUrl: recipeCardUrl,
@@ -1006,6 +1031,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof item.price === "string" ? item.price : undefined,
       sku: item.id,
+      // Discovery batch 3.2, same as the collection arm above.
+      bodyText: seedFreeText(item.raw?.body, 500) ?? cleanDesc,
+      datePublished: item.date,
+      dateModified: item.updatedAt,
+      itemAuthor: typeof item.raw?.author === "string" ? item.raw.author : undefined,
+      organizationId: siteOrganizationId(siteData),
+      organizationName: siteData.businessInfo?.name || siteData.name,
     });
 
     return (

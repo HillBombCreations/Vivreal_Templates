@@ -155,9 +155,9 @@ test('the refusal is a 5xx-shaped signal, not a 404 and not a redirect', () => {
 // The real demo gate is UNCHANGED. This half matters as much as the half above.
 // ---------------------------------------------------------------------------
 
-test('REAL DEMO still gets Disallow: /, and the fix must not un-gate a genuine demo', () => {
+test('REAL DEMO still gets the demo robots policy (Allow: / since discovery 3.4, no sitemap), and the fix must not un-gate a genuine demo', () => {
   delete process.env.SITE_LIFECYCLE;
-  assert.deepEqual(buildRobotsPolicy(REAL_DEMO).rules, [{ userAgent: '*', disallow: '/' }]);
+  assert.deepEqual(buildRobotsPolicy(REAL_DEMO).rules, [{ userAgent: '*', allow: '/' }]);
   assert.equal(buildRobotsPolicy(REAL_DEMO).sitemap, undefined);
 });
 

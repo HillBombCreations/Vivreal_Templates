@@ -90,14 +90,14 @@ test('REFUSE (F-C15): a site with no businessInfo.hours emits exactly today\'s d
 
 test('ALLOW (R4): an Article carries dateModified from the item', async () => {
   const { buildDetailJsonLd } = await import('./schema.ts');
-  const ld = buildDetailJsonLd({ format: 'article', title: 'Post', dateModified: '2026-10-01T12:00:00.000Z' });
+  const ld = buildDetailJsonLd({ format: 'article', title: 'Post', dateModified: '2026-10-01T12:00:00.000Z' }) ?? {};
   assert.equal(ld['@type'], 'Article');
   assert.equal(ld.dateModified, '2026-10-01T12:00:00.000Z');
 });
 
 test('REFUSE (R4): no item date, no dateModified (never the clock)', async () => {
   const { buildDetailJsonLd } = await import('./schema.ts');
-  assert.equal(buildDetailJsonLd({ format: 'article', title: 'Post' }).dateModified, undefined);
+  assert.equal(buildDetailJsonLd({ format: 'article', title: 'Post' })?.dateModified, undefined);
 });
 
 // FP2-21 (owner call O-7): the search-result week follows the footer rule.

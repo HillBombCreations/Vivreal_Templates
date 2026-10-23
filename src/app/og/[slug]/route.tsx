@@ -3,6 +3,8 @@ import { getPageBySlug } from '@/lib/pages';
 import { getSignedUrl } from '@/lib/api/media';
 import { resolvePageOgHeading } from '@/lib/og/ogCard';
 import { proxyImageBytes, renderBrandedOgCard } from '@/lib/og/ogCardRender';
+import { isDemoSite } from '@/lib/seo/demoSafety';
+import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 
 // Never cached at the route level — the underlying media URL is re-signed per
 // request so the crawler-facing og:image (/og/<slug>) never expires. Downstream
@@ -16,6 +18,9 @@ export async function GET(
   const { slug } = await params;
 
   const siteData = await getSiteData();
+  // Discovery batch 3.4, route layer: a demo's share card is noindex even when
+  // middleware's edge map was cold. See demoRobotsHeader.ts.
+  const isDemo = isDemoSite(siteData);
   const siteName = siteData.businessInfo?.name || siteData.name || '';
 
   const pageConfig =
@@ -30,7 +35,7 @@ export async function GET(
   const signedUpload = getSignedUrl(ogImageField);
   if (signedUpload.startsWith('http')) {
     const proxied = await proxyImageBytes(signedUpload);
-    if (proxied) return proxied;
+    if (proxied) return withDemoRobotsHeader(proxied, isDemo);
     // else: upstream unreachable — fall through to the generated card.
   }
 
@@ -43,7 +48,7 @@ export async function GET(
   const siteDefaultOg = getSignedUrl(siteData.defaultOgImage);
   if (siteDefaultOg.startsWith('http')) {
     const proxied = await proxyImageBytes(siteDefaultOg);
-    if (proxied) return proxied;
+    if (proxied) return withDemoRobotsHeader(proxied, isDemo);
   }
 
   // 2. Generate a branded card.
@@ -53,10 +58,13 @@ export async function GET(
     slug,
   });
 
-  return renderBrandedOgCard({
-    heading,
-    siteName,
-    logoSrc: getSignedUrl(siteData.logo),
-    background: siteData.primary || '#0f172a',
-  });
+  return withDemoRobotsHeader(
+    await renderBrandedOgCard({
+      heading,
+      siteName,
+      logoSrc: getSignedUrl(siteData.logo),
+      background: siteData.primary || '#0f172a',
+    }),
+    isDemo,
+  );
 }

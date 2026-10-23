@@ -11,6 +11,8 @@ export type ShowData = {
   /** Responsive srcset of the poster's resized variants (empty when no derivatives). */
   imageSrcSet?: string;
   location?: string;
+  /** The show's own street address, when its content type has the field (discovery batch 3.1). */
+  address?: string;
   ticketsUrl?: string;
 };
 
@@ -26,6 +28,8 @@ export type CMSShowData = {
       currentFile: { source: string };
     };
     location?: string;
+    address?: string;
+    venueAddress?: string;
     tickets_url?: string;
   }
 };

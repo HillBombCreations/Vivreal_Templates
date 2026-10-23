@@ -17,15 +17,17 @@
  * Schema shapes used:
  *   - `WebSite` + `Organization` / `LocalBusiness` — emitted in root layout (every page)
  *   - `Product` — emitted on ecommerce detail pages with a price
- *   - `Event` — emitted on shows detail pages
- *   - `Article` — fallback for other content detail pages
+ *   - `Event`: emitted on shows detail pages with a date and a place
+ *   - `BlogPosting` / `Article`: priceless content items with body text
+ *   - nothing: `schema` is `null` (an item with no node of its own)
  */
 
 interface JsonLdProps {
-  schema: Record<string, unknown> | Array<Record<string, unknown>>;
+  schema: Record<string, unknown> | Array<Record<string, unknown>> | null;
 }
 
 export function JsonLd({ schema }: JsonLdProps) {
+  if (!schema) return null;
   // JSON-LD emission per Google's documented pattern. Inputs are
   // server-controlled (siteData + content from our own VR_Client_API); `<` is
   // defanged via unicode escape to belt-and-suspenders against any adversarial
@@ -43,5 +45,6 @@ export function JsonLd({ schema }: JsonLdProps) {
 // The pure payload builders live in ./schema.ts so the plain-Node test runner
 // can import them (this file's JSX makes it unloadable there). Re-exported so
 // every `@/components/JsonLd` import site is unchanged.
-export { buildSiteJsonLd, buildDetailJsonLd } from './schema';
+export { buildSiteJsonLd, buildDetailJsonLd, siteOrganizationId } from './schema';
+export { buildShowEventJsonLd } from './eventSchema';
 export type { DetailJsonLdInput } from './schema';

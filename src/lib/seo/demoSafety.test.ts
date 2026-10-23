@@ -120,11 +120,11 @@ const PAGES = [
   { slug: 'about', format: 'about' },
 ];
 
-test('GATE 1 (robots): a demo emits Disallow: / and NO Sitemap: directive', () => {
+test('GATE 1 (robots, discovery 3.4): a demo emits Allow: / (so crawlers can read its noindex) and NO Sitemap: directive', () => {
   delete process.env.SITE_LIFECYCLE;
   delete process.env.NEXT_PUBLIC_SITE_URL;
   const policy = buildRobotsPolicy(DEMO_SITE);
-  assert.deepEqual(policy.rules, [{ userAgent: '*', disallow: '/' }], 'exactly one blanket disallow rule');
+  assert.deepEqual(policy.rules, [{ userAgent: '*', allow: '/' }], 'exactly one blanket allow rule; the noindex rides X-Robots-Tag and the robots meta');
   assert.equal(policy.sitemap, undefined, 'a demo must never advertise a sitemap');
   // The control: without the gate this is what a demo would serve, so if the
   // gate is deleted the assertion above sees THIS shape and fails.
@@ -138,7 +138,7 @@ test('GATE 1 (robots): the fail-safe-toward-demo lifecycle values are gated too'
   delete process.env.NEXT_PUBLIC_SITE_URL;
   for (const lifecycleState of ['', 'pending', 'Demo', 'DEMO', ' live', null]) {
     const policy = buildRobotsPolicy({ ...DEMO_SITE, lifecycleState } as unknown as SiteData);
-    assert.deepEqual(policy.rules, [{ userAgent: '*', disallow: '/' }], JSON.stringify(lifecycleState));
+    assert.deepEqual(policy.rules, [{ userAgent: '*', allow: '/' }], JSON.stringify(lifecycleState));
     assert.equal(policy.sitemap, undefined, JSON.stringify(lifecycleState));
   }
 });
