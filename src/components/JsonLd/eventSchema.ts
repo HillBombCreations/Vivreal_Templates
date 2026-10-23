@@ -15,7 +15,8 @@
  *     unparseable or missing time, or no usable time zone, gives the date alone
  *     (`2026-07-24`, still valid ISO 8601). No date at all gives no Event.
  *   - `location`, first match wins: the show's own address field; `location`
- *     text written `Venue: street` where the street starts with a number; no
+ *     text written `Venue: street` where the street starts with a number, or
+ *     `Venue 123 N Street` with no colon (D17, see `splitSpacedVenue`); no
  *     location text at all on a business with a street address (its own
  *     events) gives the business address; location text saying online or
  *     virtual gives a `VirtualLocation`. No city is ever borrowed from the
@@ -183,14 +184,63 @@ function streetPlace(name: string, street: string): Record<string, unknown> {
   };
 }
 
-/** `Venue: street` split, or `undefined` when the text is not that shape. */
-function splitVenue(location: string): { venue: string; street: string } | undefined {
+/** `Venue: street`, the design's form: the right side starts with a number. */
+function splitColonVenue(location: string): { venue: string; street: string } | undefined {
   const colon = location.indexOf(':');
   if (colon === -1) return undefined;
   const venue = location.slice(0, colon).trim();
   const street = location.slice(colon + 1).trim();
   if (!STARTS_WITH_NUMBER.test(street)) return undefined;
   return { venue: venue || street, street };
+}
+
+const HOUSE_NUMBER = /^\d{1,6}$/;
+const DIRECTIONS: ReadonlySet<string> = new Set(['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw', 'north', 'south', 'east', 'west']);
+const STREET_WORDS: ReadonlySet<string> = new Set([
+  'st', 'street', 'ave', 'avenue', 'rd', 'road', 'blvd', 'boulevard', 'dr', 'drive', 'ln', 'lane', 'way',
+  'pl', 'place', 'ct', 'court', 'pkwy', 'parkway', 'hwy', 'highway', 'ter', 'terrace', 'cir', 'circle',
+  'sq', 'square', 'broadway', 'trl', 'trail', 'plz', 'plaza',
+]);
+
+/**
+ * Do the words after a house number read as a street? STRICT on purpose (owner
+ * decision D17, 2026-10-23), so a number inside a venue name never splits it:
+ *   - at least TWO words must follow the number ("Club 21" and "Studio 54
+ *     Lounge" never split);
+ *   - and either the first is a compass direction ("1447 N Wells St",
+ *     "3164 North Broadway"), or one of the next three is a street word
+ *     ("12 Main St").
+ * Trailing dots and commas are ignored ("N.", "Ave.,").
+ */
+function readsAsStreet(after: string[]): boolean {
+  if (after.length < 2) return false;
+  const words = after.map((word) => word.toLowerCase().replace(/[.,]+$/, ''));
+  if (DIRECTIONS.has(words[0])) return true;
+  return words.slice(0, 3).some((word) => STREET_WORDS.has(word));
+}
+
+/**
+ * `Venue Name 123 Street ...` with no colon (D17), measured on The Comedy
+ * Collective's real strings: "Burton Place 1447 N Wells St", "BottlesUp! 3164
+ * North Broadway Chicago, IL 60657", "K&K Wrigleyville  3443 N Sheffield
+ * Chicago, IL 60657". The split is at the FIRST run of digits that starts a
+ * street (`readsAsStreet`); everything before it is the venue. A text that IS
+ * a street address ("1331 N. Milwaukee Ave., Chicago IL") is its own name.
+ */
+function splitSpacedVenue(location: string): { venue: string; street: string } | undefined {
+  const words = location.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < words.length; i += 1) {
+    if (!HOUSE_NUMBER.test(words[i]) || !readsAsStreet(words.slice(i + 1))) continue;
+    const street = words.slice(i).join(' ');
+    const venue = words.slice(0, i).join(' ').replace(/[\s,;-]+$/, '');
+    return { venue: venue || street, street };
+  }
+  return undefined;
+}
+
+/** A venue and its street from the location text, colon form first, or `undefined`. */
+function splitVenue(location: string): { venue: string; street: string } | undefined {
+  return splitColonVenue(location) ?? splitSpacedVenue(location);
 }
 
 function resolveLocation(input: ShowEventInput): EventLocation | undefined {
@@ -203,7 +253,7 @@ function resolveLocation(input: ShowEventInput): EventLocation | undefined {
     return { location: streetPlace(name, ownAddress), online: false };
   }
 
-  // 2. `Venue: street` in the location text.
+  // 2. `Venue: street`, or `Venue 123 N Street` (D17), in the location text.
   if (location) {
     const split = splitVenue(location);
     if (split) return { location: streetPlace(split.venue, split.street), online: false };

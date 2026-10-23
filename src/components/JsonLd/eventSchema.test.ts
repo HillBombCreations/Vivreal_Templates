@@ -185,3 +185,74 @@ test('SOURCE PIN: the show route logs jsonld.event.skipped with the reason when 
   assert.ok(arm.includes('reason: showEvent.skipped'), 'with its reason');
   assert.ok(!page.includes('`${show.date}T${show.time}`'), 'the old concatenation is gone');
 });
+
+// ---------------------------------------------------------------------------
+// D17 (owner 2026-10-23): the colon-less "Venue Name 123 Street" form, with
+// fixtures copied from The Comedy Collective's live shows (read 2026-10-23).
+// ---------------------------------------------------------------------------
+
+const place = (location: string) => schemaOf(show({ location })).location as Record<string, unknown>;
+
+test('ALLOW (D17, real strings): a venue name then a street number splits into Place name plus street', () => {
+  assert.deepEqual(place('Burton Place 1447 N Wells St'), {
+    '@type': 'Place', name: 'Burton Place', address: { '@type': 'PostalAddress', streetAddress: '1447 N Wells St' },
+  });
+  assert.deepEqual(place('BottlesUp! 3164 North Broadway Chicago, IL 60657'), {
+    '@type': 'Place', name: 'BottlesUp!', address: { '@type': 'PostalAddress', streetAddress: '3164 North Broadway Chicago, IL 60657' },
+  });
+  assert.deepEqual(place('K&K Wrigleyville  3443 N Sheffield  Chicago, IL 60657'), {
+    '@type': 'Place', name: 'K&K Wrigleyville', address: { '@type': 'PostalAddress', streetAddress: '3443 N Sheffield Chicago, IL 60657' },
+  });
+});
+
+test('ALLOW (D17, real string): a location that IS a street address is its own place', () => {
+  assert.deepEqual(place('1331 N. Milwaukee Ave., Chicago IL'), {
+    '@type': 'Place', name: '1331 N. Milwaukee Ave., Chicago IL', address: { '@type': 'PostalAddress', streetAddress: '1331 N. Milwaukee Ave., Chicago IL' },
+  });
+});
+
+test('REFUSE (D17): a number inside a venue name never splits it, and a venue alone still emits no Event', () => {
+  for (const location of ['Club 21', 'Studio 54 Lounge', 'The Den Theatre', 'K&K Wrigleyville', 'Room 2 Upstairs', 'Hotshots! With Rosey Catherine February 21st 7pm']) {
+    const result = buildShowEventJsonLd(show({ location }));
+    assert.equal(result.schema, null, location);
+    assert.equal(result.skipped, 'no_address', location);
+  }
+});
+
+test('ALLOW (D17): a number followed by a street word does split ("Club 21 Main St" names venue "Club")', () => {
+  assert.deepEqual(place('Club 21 Main St'), {
+    '@type': 'Place', name: 'Club', address: { '@type': 'PostalAddress', streetAddress: '21 Main St' },
+  });
+});
+
+test('D17 count: 5 of The Comedy Collective’s 14 live shows now emit an Event (was 1 under the colon rule)', () => {
+  // [title, date?, time, location] for every show in the live collection.
+  const LIVE = [
+    ['Hotshots', true, '9:00 pm', '1331 N. Milwaukee Ave., Chicago IL'],
+    ['Monsignor Madness February', true, '', ''],
+    ['Monsignor Madness November', true, '', ''],
+    ['Monsignor Madness Every Third Thursday', true, '', ''],
+    ["Monsignor Madness Part II: Santa's Revenge", true, '', ''],
+    ['Monsignor Madness Wet January', true, '', ''],
+    ['Hotshots! With Rosey Catherine February 21st 7pm', true, '7:00 pm', 'The Den Theatre'],
+    ['Sake To Me!', true, '7:00 pm', 'K&K Wrigleyville'],
+    ['Hotshots! With Luke Null', true, '7:00 pm', 'The Den Theatre'],
+    ['Hotshots! With Lukas McCrary', true, '7:00 pm', 'The Den Theatre'],
+    ['Sake to Me!', true, '7:00 pm', 'K&K Wrigleyville  3443 N Sheffield  Chicago, IL 60657'],
+    ['Uncorked & Unfiltered: a Wine & Comedy Experience', true, '8:00 pm', 'BottlesUp! 3164 North Broadway Chicago, IL 60657'],
+    ["Here's My Thing: A Show & Tell Comedy Show", true, '7:00 pm', 'Burton Place 1447 N Wells St'],
+    ['I Think I Should Leave: A Comedy Storytelling Showcase', true, '7:00 pm', 'Uptown Taproom: 1265 W Wilson Ave'],
+  ] as const;
+  assert.equal(LIVE.length, 14);
+  const emitted = LIVE.filter(([title, , time, location]) =>
+    // The business has no street address (live read), so rule 3 never applies.
+    buildShowEventJsonLd(show({ title, time, location, business: undefined })).schema !== null,
+  ).map(([title]) => title);
+  assert.deepEqual(emitted, [
+    'Hotshots',
+    'Sake to Me!',
+    'Uncorked & Unfiltered: a Wine & Comedy Experience',
+    "Here's My Thing: A Show & Tell Comedy Show",
+    'I Think I Should Leave: A Comedy Storytelling Showcase',
+  ]);
+});
