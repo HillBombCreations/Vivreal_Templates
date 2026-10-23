@@ -858,7 +858,7 @@ export async function generateMetadata({
   const { title, description } = pageMetaText({
     page: pageConfig,
     slug,
-    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
+    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name, siteData?.siteInfo),
   });
 
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });

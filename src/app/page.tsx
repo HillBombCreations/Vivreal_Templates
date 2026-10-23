@@ -142,7 +142,7 @@ export const generateMetadata = async () => {
   // `src/lib/seo/pageMetaText.ts`.
   const { title, description } = homeMetaText({
     seo,
-    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name),
+    facts: readBusinessFacts(siteData?.businessInfo, siteData?.name, siteData?.siteInfo),
   });
 
   return {

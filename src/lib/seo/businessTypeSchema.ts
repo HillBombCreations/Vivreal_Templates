@@ -7,12 +7,13 @@
  * String, so an unknown value never reaches here through Secure, and one that
  * does anyway (an older write, a direct DB edit) is treated as unset.
  *
- * UNSET MEANS TODAY. A site with no `businessType` keeps exactly the output it
- * had before this map existed (the address-or-hours heuristic in
- * `buildSiteJsonLd`, the summaries in `pageMetaText.ts`). The template
- * industry is NOT read here: the portal's "What kind of business" picker
- * prefills from it (plan row P1), so the owner's saved choice is the one
- * source, and a site nobody has touched does not change on the promote.
+ * ORDER (design 3.6, restored by owner decision 2026-10-23): the saved
+ * `businessType` wins; unset, the site's template industry
+ * (`siteInfo.template.industry`) through `INDUSTRY_BUSINESS_TYPE`; still
+ * unknown, today's output exactly (the address-or-hours heuristic in
+ * `buildSiteJsonLd`, the summaries in `pageMetaText.ts`). Only "no saved type
+ * AND no mapped industry" is byte for byte; a bakery site becoming `Bakery`
+ * is the intended fix.
  *
  * Pure, so it runs under `node --test`.
  */
@@ -57,6 +58,47 @@ export const BUSINESS_TYPE_SCHEMA: Readonly<Record<string, BusinessTypeEntry>> =
   'online-business': { schemaType: 'Organization', local: false, words: 'an online business' },
   'software-company': { schemaType: 'Organization', local: false, words: 'a software company', softwareApplication: true },
 });
+
+/**
+ * Template industry to business type: the ONE map, which the portal's "What
+ * kind of business" picker must prefill from too (plan row P1). The keys are
+ * every industry the portal's template picker offers; values are keys of
+ * `BUSINESS_TYPE_SCHEMA`. Two have no entry on purpose and keep today's output:
+ * `taproom` (the P1 row leaves its picker empty; a taproom is a brewery's bar
+ * or a bar of many breweries, and the owner picks) and `live-events` (a venue,
+ * a promoter or a performing group alike).
+ */
+export const INDUSTRY_BUSINESS_TYPE: Readonly<Record<string, string>> = Object.freeze({
+  bakery: 'bakery',
+  barber: 'barber',
+  'med-spa': 'med-spa',
+  salon: 'hair-salon',
+  'wedding-venue': 'event-venue',
+  resale: 'store',
+  musician: 'performing-group',
+});
+
+/** The template industry of a site record, or `undefined`. */
+export function templateIndustry(siteInfo: Record<string, unknown> | undefined): string | undefined {
+  const template = siteInfo?.template;
+  const industry = template && typeof template === 'object' ? (template as Record<string, unknown>).industry : undefined;
+  return typeof industry === 'string' && industry ? industry : undefined;
+}
+
+/**
+ * The site's business type: the saved one, else its template industry's
+ * (`INDUSTRY_BUSINESS_TYPE`), else `undefined` (today's output).
+ */
+export function resolveSiteBusinessType(
+  businessType: unknown,
+  siteInfo: Record<string, unknown> | undefined,
+): BusinessTypeEntry | undefined {
+  const saved = resolveBusinessType(businessType);
+  if (saved) return saved;
+  const industry = templateIndustry(siteInfo);
+  if (!industry || !Object.prototype.hasOwnProperty.call(INDUSTRY_BUSINESS_TYPE, industry)) return undefined;
+  return resolveBusinessType(INDUSTRY_BUSINESS_TYPE[industry]);
+}
 
 /** The entry for a stored value, or `undefined` for unset, empty or unknown. */
 export function resolveBusinessType(value: unknown): BusinessTypeEntry | undefined {

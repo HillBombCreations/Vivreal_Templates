@@ -122,3 +122,10 @@ test('ALLOW: a show page’s share card is the show’s own (/og/<slug>/<itemId>
 test('ALLOW: a hidden street address is never an event’s place either', () => {
   assert.ok(detailRoute.includes('siteData.businessInfo?.hideStreetAddress === true ? undefined : siteData.businessInfo?.address'));
 });
+
+test('ALLOW (3.6): a bakery template site with no saved type says "a bakery" in its summary; REFUSE: no industry keeps the old line', () => {
+  const bakery = readBusinessFacts(BUSINESS, undefined, { template: { industry: 'bakery' } });
+  assert.equal(homeMetaText({ seo: undefined, facts: bakery }).description, 'Cobalt & Crumb, a bakery in Knoxville, TN.');
+  const none = readBusinessFacts(BUSINESS, undefined, { template: { industry: 'taproom' } });
+  assert.equal(homeMetaText({ seo: undefined, facts: none }).description, 'Cobalt & Crumb, in Knoxville, TN.');
+});
