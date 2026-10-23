@@ -33,7 +33,8 @@ export async function resolveStorefrontItemSummary(
     if (source === 'provider') {
       const { product } = await getProductByIdRead(itemId, paymentsProvider ?? 'stripe');
       if (!product) continue;
-      const variantKey = offerVariantKey(product.usingVariant);
+      // W1 (D14): the size the page starts on, so the title and card name it too.
+      const variantKey = offerVariantKey(product.usingVariant, product.notForSaleVariants);
       const variantValues = product.usingVariant?.values;
       return {
         title: offerFieldValue(product.name, variantKey, variantValues),

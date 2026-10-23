@@ -103,12 +103,36 @@ export interface OfferVariantConfig {
  * The variant the page renders with nothing selected, or `null` for a product
  * that has no variants.
  *
- * Mirrors the renderer's `resolveVariant(null, product)`. Server-side there is
- * never a selection, so this is always the first authored value.
+ * Mirrors the renderer's `firstSellableVariant` (1.89.0, W1 D14), which is
+ * what the product page starts on: the first authored value that is not in
+ * `notForSaleVariants`, else the first authored value. With no such list (every
+ * product before W1) that is the first authored value, exactly as before.
  */
-export function offerVariantKey(usingVariant: OfferVariantConfig | undefined): string | null {
-  if (usingVariant?.values?.length) return usingVariant.values[0] ?? null;
-  return null;
+export function offerVariantKey(usingVariant: OfferVariantConfig | undefined, notForSaleVariants?: unknown): string | null {
+  const values = usingVariant?.values ?? [];
+  const listed = Array.isArray(notForSaleVariants) ? notForSaleVariants : [];
+  return values.find((value) => !listed.includes(value)) ?? values[0] ?? null;
+}
+
+/**
+ * The Offer's `inStock` for the rendered variant: `false` when the item cannot
+ * be bought (`purchasable: false`, D13) or the rendered size is one the API
+ * lists as not for sale (D14, which happens only when no size sells, because
+ * the page starts on a size that does); otherwise the stock state's own answer,
+ * `undefined` for untracked stock so the field is omitted rather than guessed.
+ *
+ * Mirrors the renderer's `resolveItemAction` checks (`purchasable === false`,
+ * `isVariantNotForSale`), so the claim matches the "Not for sale right now"
+ * line the page draws.
+ */
+export function offerInStock(
+  stock: { readonly tracked: boolean; readonly isOutOfStock: boolean },
+  sale: { readonly purchasable?: unknown; readonly notForSaleVariants?: unknown },
+  variantKey: string | null,
+): boolean | undefined {
+  if (sale.purchasable === false) return false;
+  if (variantKey !== null && Array.isArray(sale.notForSaleVariants) && sale.notForSaleVariants.includes(variantKey)) return false;
+  return stock.tracked ? !stock.isOutOfStock : undefined;
 }
 
 /**

@@ -263,8 +263,15 @@ test('SOURCE PIN: the route derives the claim from the SAME function as the butt
     !whole.includes('function computeProductStockState'),
     'and it must not be reimplemented in this file, or the button and the claim can drift',
   );
+  // W1 moved the expression into `offerInStock` (lib/detail/productOffer.ts),
+  // which adds the D13/D14 refusals in front of it; the untracked-is-undefined
+  // rule itself is pinned there and exercised in lib/detail/sellableOffer.test.ts.
   assert.ok(
-    arm.includes('inStock: productStock.tracked ? !productStock.isOutOfStock : undefined'),
+    arm.includes('inStock: offerInStock(productStock, product, offerVariant)'),
+    'the claim must come from offerInStock at the rendered variant',
+  );
+  assert.ok(
+    source('../../lib/detail/productOffer.ts').includes('return stock.tracked ? !stock.isOutOfStock : undefined;'),
     'untracked must reach the builder as undefined so the field is omitted, not guessed',
   );
   assert.ok(
