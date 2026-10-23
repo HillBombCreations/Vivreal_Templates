@@ -27,31 +27,54 @@ export async function resolveStorefrontItemSummary(
   pageConfig: PageConfig,
   itemId: string,
 ): Promise<StorefrontItemSummary | null> {
+  return (await resolveStorefrontItemSummaryRead(siteData, pageConfig, itemId)).summary;
+}
+
+/**
+ * `resolveStorefrontItemSummary` with whether any read it consulted was
+ * degraded, for a caller that must not turn a failed read into "not found"
+ * (the `/img` route, review of #212/#213).
+ */
+export async function resolveStorefrontItemSummaryRead(
+  siteData: SiteData,
+  pageConfig: PageConfig,
+  itemId: string,
+): Promise<{ summary: StorefrontItemSummary | null; degraded: boolean }> {
+  let degraded = false;
   const { integrationTypes } = collectBindingTargets(pageConfig);
   const paymentsProvider = integrationTypes.find((type) => isPaymentsProvider(type));
   for (const source of storefrontItemSources(pageConfig, paymentsProvider)) {
     if (source === 'provider') {
-      const { product } = await getProductByIdRead(itemId, paymentsProvider ?? 'stripe');
+      const read = await getProductByIdRead(itemId, paymentsProvider ?? 'stripe');
+      degraded ||= read.degraded;
+      const { product } = read;
       if (!product) continue;
       // W1 (D14): the size the page starts on, so the title and card name it too.
       const variantKey = offerVariantKey(product.usingVariant, product.notForSaleVariants);
       const variantValues = product.usingVariant?.values;
       return {
-        title: offerFieldValue(product.name, variantKey, variantValues),
-        description: offerFieldValue(product.description, variantKey, variantValues),
-        imageUrl: typeof product.imageUrl === 'string' ? product.imageUrl : undefined,
-        raw: Object.fromEntries(Object.entries(product)),
+        summary: {
+          title: offerFieldValue(product.name, variantKey, variantValues),
+          description: offerFieldValue(product.description, variantKey, variantValues),
+          imageUrl: typeof product.imageUrl === 'string' ? product.imageUrl : undefined,
+          raw: Object.fromEntries(Object.entries(product)),
+        },
+        degraded,
       };
     }
     const lookup = await lookupDetailItem(siteData, pageConfig, itemId);
+    degraded ||= lookup?.degraded === true;
     if (lookup?.item) {
       return {
-        title: lookup.item.title,
-        description: lookup.item.description,
-        imageUrl: lookup.item.imageUrl,
-        raw: lookup.item.raw ?? {},
+        summary: {
+          title: lookup.item.title,
+          description: lookup.item.description,
+          imageUrl: lookup.item.imageUrl,
+          raw: lookup.item.raw ?? {},
+        },
+        degraded,
       };
     }
   }
-  return null;
+  return { summary: null, degraded };
 }

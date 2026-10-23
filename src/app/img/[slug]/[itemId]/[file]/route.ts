@@ -14,7 +14,7 @@ import { servesCollectionDetail } from '@/lib/detail/detailFormats';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 import { richTextImageSignedUrl } from '@/lib/media/itemImage';
-import { stableImageResponse } from '@/lib/media/stableImage';
+import { itemImageResponse } from '@/lib/media/stableImage';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,9 +27,11 @@ export async function GET(
   const page = getPageBySlug(siteData, slug);
   // Only a page whose detail route shows collection items (a blog, recipes)
   // renders a post body with stable picture addresses.
-  const signedUrl =
+  // A degraded item read that found nothing is a 503 no-store, never a
+  // cacheable 404 (`itemImageResponse`).
+  const read =
     page && !isPageTurnedOff(page) && servesCollectionDetail(page)
       ? await richTextImageSignedUrl(siteData, page, itemId, file)
-      : undefined;
-  return withDemoRobotsHeader(await stableImageResponse(signedUrl), isDemoSite(siteData));
+      : { degraded: false, itemFound: false };
+  return withDemoRobotsHeader(await itemImageResponse(read), isDemoSite(siteData));
 }

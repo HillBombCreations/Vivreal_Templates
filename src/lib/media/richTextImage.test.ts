@@ -134,7 +134,7 @@ test('SOURCE PIN: the route is keyed by this site, reads nothing from the reques
     'isPageTurnedOff(page)',
     'servesCollectionDetail(page)',
     'richTextImageSignedUrl(siteData, page, itemId, file)',
-    'withDemoRobotsHeader(await stableImageResponse(signedUrl), isDemoSite(siteData))',
+    'withDemoRobotsHeader(await itemImageResponse(read), isDemoSite(siteData))',
   ]) {
     assert.ok(route.includes(piece), `route must use ${piece}`);
   }

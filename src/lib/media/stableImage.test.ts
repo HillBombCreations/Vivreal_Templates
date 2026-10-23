@@ -90,11 +90,18 @@ test('REFUSE: a demo keeps the unsigned logo it had (no public origin is claimed
 const src = (relative: string) => readFileSync(new URL(relative, import.meta.url), 'utf8');
 
 test('SOURCE PIN: neither image route reads a URL, query or header from the request', () => {
-  for (const route of ['../../app/brand/logo/route.ts', '../../app/img/[slug]/[itemId]/route.ts']) {
+  // The item routes answer through `itemImageResponse`, which is
+  // `stableImageResponse` plus the degraded-read 503 (degradedImageRead.test.ts).
+  for (const [route, answer] of [
+    ['../../app/brand/logo/route.ts', 'stableImageResponse('],
+    ['../../app/img/[slug]/[itemId]/route.ts', 'itemImageResponse('],
+    ['../../app/img/[slug]/[itemId]/[file]/route.ts', 'itemImageResponse('],
+  ] as const) {
     const code = src(route);
     assert.ok(!/searchParams|request\.url|req\.url|headers\.get/.test(code), `${route} must not read caller input`);
-    assert.ok(code.includes('stableImageResponse('), `${route} answers through stableImageResponse`);
+    assert.ok(code.includes(answer), `${route} answers through ${answer}`);
   }
+  assert.ok(src('./stableImage.ts').includes('return stableImageResponse(read.signedUrl, fetchImpl);'), 'itemImageResponse falls through to stableImageResponse');
   assert.ok(src('../../app/brand/logo/route.ts').includes('getSignedUrl(siteData.logo)'));
 });
 
