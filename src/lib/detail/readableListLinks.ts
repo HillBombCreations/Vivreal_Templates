@@ -172,8 +172,21 @@ export function applyReadableLinks<P extends ReadablePage, I extends ReadableLis
   for (const [collectionId, segments] of active) {
     const list = itemsByCollection.get(collectionId);
     if (!list) continue;
-    const keyField = effectiveKeyField(page, collectionId);
-    items.set(collectionId, list.map((item) => stampSegment(item, segments.get(item.id), keyField)));
+    // The key field the renderer reads today, and the readable one as well when
+    // they differ, so a list that reads the binding's key rather than the
+    // page's (review of #212: R1's pending shows template) links the same
+    // segment. Safe because every list of this collection on this page lands on
+    // a readable route (`readableLinkCollections`).
+    const keyFields = new Set([effectiveKeyField(page, collectionId), READABLE_KEY_FIELD]);
+    items.set(
+      collectionId,
+      list.map((item) => {
+        const segment = segments.get(item.id);
+        let out = item;
+        for (const keyField of keyFields) out = stampSegment(out, segment, keyField);
+        return out;
+      }),
+    );
   }
   return { page: withReadableKeyField(page, new Set(active.map(([collectionId]) => collectionId))), itemsByCollection: items };
 }

@@ -199,3 +199,67 @@ test('PARITY: the landing page this module reads is the one the renderer links t
     }
   }
 });
+
+/* ── Review of #212, item 9 ───────────────────────────────────────── */
+
+test('REFUSE (a): two lists of one collection on one page landing on different pages plan nothing; the plain-page links stay id links', () => {
+  // The team grid (a page template) links to this page's own generic route;
+  // the cards layout sends the same collection to the team page.
+  const cards = { id: 'blk_team_cards', order: 1, enabled: true, type: { kind: 'layout', dispatchId: 'cards' }, config: { bindings: [{ collectionId: 'team1', displayAs: 'cards' }] } };
+  const mixed = pageOf({ name: 'About', slug: 'about', format: 'standard', blocks: [teamBlock, cards] });
+  const pages = [homePage, mixed, teamPage];
+  // Control: the second list really lands on /team, or this test could not fail.
+  assert.equal(resolveServingDetailRouteSlug(mixed, pages, 'team1'), 'team');
+  assert.equal(plan(mixed, pages).size, 0, 'a collection with one non-readable landing is not planned');
+  // A looser plan would read the team segments and stamp them, and the grid
+  // would then link /about/<segment>, which the generic route 404s.
+  const { html } = composeReadable(mixed, pages);
+  const ids = new Set(teamDocs.map((d) => d._id));
+  const aboutLinks = hrefs(html, '/about/');
+  assert.equal(aboutLinks.length, teamDocs.length, 'sanity: the grid links every member');
+  for (const href of aboutLinks) assert.ok(ids.has(href.slice('/about/'.length)), `${href} is /about/<id>`);
+  const teamLinks = hrefs(html, '/team/');
+  assert.ok(teamLinks.length > 0, 'control: the cards link into /team');
+});
+
+test('ALLOW (b): two shows with the same title each link their own item, apart by the id tail', () => {
+  const twinA = { _id: '6a01f2b3c4d5e6f7081aaa01', objectValue: { title: 'Open Mic', date: SOON, time: '7:00 PM', location: 'Venue Alpha' } };
+  const twinB = { _id: '6a01f2b3c4d5e6f7081bbb02', objectValue: { title: 'Open Mic', date: '2099-08-24T05:00:00.000Z', time: '7:00 PM', location: 'Venue Beta' } };
+  const shows = [...showDocs, twinA, twinB];
+  const segments = readable.readableSegments(detailShows(shows));
+  assert.equal(segments.get(twinA._id), `open-mic-${twinA._id.slice(-6)}`);
+  assert.notEqual(segments.get(twinA._id), segments.get(twinB._id), 'the id tail keeps them apart');
+  const { html } = composeReadable(showsPage, SITE, shows);
+  // Each card is one <article>: its venue says which show it is.
+  const byVenue = new Map([['Venue Alpha', twinA._id], ['Venue Beta', twinB._id]]);
+  let checked = 0;
+  for (const card of html.split('<article').slice(1)) {
+    const venue = [...byVenue.keys()].find((v) => card.includes(v));
+    if (!venue) continue;
+    const href = hrefs(card, '/shows/')[0];
+    assert.ok(href, `${venue} card links`);
+    const resolved = readable.resolveReadableSegment(detailShows(shows), decodeURIComponent(href.slice('/shows/'.length)));
+    assert.equal(resolved?.redirect, false, href);
+    assert.equal(resolved?.item.id, byVenue.get(venue), `${venue} card resolves to its own show, never its twin`);
+    checked += 1;
+  }
+  assert.equal(checked, 2, 'sanity: both twin cards were found');
+});
+
+test('ALLOW: with a page key field that differs, the segment is readable under it AND under slug', async () => {
+  const { systemValue } = await import('@hillbombcreations/site-renderer/bindings');
+  const authored = pageOf({ ...showsPage, detailPage: { enabled: true, itemKeyField: 'Url Slug' } });
+  const { applied } = composeReadable(authored, [homePage, authored, teamPage]);
+  const segments = readable.readableSegments(detailShows(showDocs));
+  const stamped = applied.itemsByCollection.get('shows1') ?? [];
+  assert.equal(stamped.length, showDocs.length, 'sanity');
+  for (const item of stamped) {
+    assert.equal(systemValue(item.raw, 'Url Slug'), segments.get(item.id));
+    assert.equal(systemValue(item.raw, 'slug'), segments.get(item.id), 'a list reading the binding key links the same address');
+  }
+});
+
+test('SOURCE PIN: product cards are titled and priced at the size quick add bags', () => {
+  const bridge = readFileSync(new URL('../api/composition/productBridge.ts', import.meta.url), 'utf8');
+  assert.ok(bridge.includes('const defaultVariant = offerVariantKey(product.usingVariant, product.notForSaleVariants);'));
+});
