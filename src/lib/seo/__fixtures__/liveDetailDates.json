@@ -1,0 +1,137 @@
+{
+  "_source": "Live VR_Client_API reads, captured 2026-10-23 (discovery batch U4): The Comedy Collective shows and team via /tenant/collectionObjects, Dougs Kitchen Stripe products via /tenant/integrationObjects?type=stripe. Sanitized to _id, dates and a title.",
+  "shows": [
+    {
+      "_id": "68fb126ce945a954f02fb644",
+      "createdAt": "2025-10-24T05:45:16.180Z",
+      "updatedAt": "2026-10-03T19:18:03.234Z",
+      "publishDate": "2025-10-24T05:43:05.041Z",
+      "objectValue": {
+        "title": "Hotshots"
+      }
+    },
+    {
+      "_id": "68fb12b8e945a954f02fb64e",
+      "createdAt": "2025-10-24T05:46:32.032Z",
+      "updatedAt": "2025-10-24T05:46:36.689Z",
+      "publishDate": "2025-10-24T05:46:28.620Z",
+      "objectValue": {
+        "title": "Monsignor Madness February"
+      }
+    },
+    {
+      "_id": "68fb130be945a954f02fb65f",
+      "createdAt": "2025-10-24T05:47:55.748Z",
+      "updatedAt": "2025-10-24T05:47:56.316Z",
+      "publishDate": "2025-10-24T05:46:28.620Z",
+      "objectValue": {
+        "title": "Monsignor Madness November"
+      }
+    },
+    {
+      "_id": "68fb13c9e945a954f02fb670",
+      "createdAt": "2025-10-24T05:51:05.612Z",
+      "updatedAt": "2025-10-24T05:52:02.924Z",
+      "publishDate": "2025-10-24T05:52:01.921Z",
+      "objectValue": {
+        "title": "Monsignor Madness Every Third Thursday"
+      }
+    },
+    {
+      "_id": "68fb1433e945a954f02fb67a",
+      "createdAt": "2025-10-24T05:52:51.550Z",
+      "updatedAt": "2025-10-24T05:52:53.005Z",
+      "publishDate": "2025-10-24T05:52:49.027Z",
+      "objectValue": {
+        "title": "Monsignor Madness Part II: Santa's Revenge"
+      }
+    }
+  ],
+  "team": [
+    {
+      "_id": "68fb1674e7e696d5beec7dca",
+      "createdAt": "2025-10-24T06:02:28.880Z",
+      "updatedAt": "2025-10-24T06:02:41.539Z",
+      "publishDate": "2025-10-24T06:02:05.989Z",
+      "objectValue": {
+        "name": "Will Cunnington"
+      }
+    },
+    {
+      "_id": "68fb16aee7e696d5beec7dd4",
+      "createdAt": "2025-10-24T06:03:26.757Z",
+      "updatedAt": "2025-10-24T06:03:35.887Z",
+      "publishDate": "2025-10-24T06:03:22.244Z",
+      "objectValue": {
+        "name": "Tommy Saxton"
+      }
+    },
+    {
+      "_id": "68fb16f2e7e696d5beec7dde",
+      "createdAt": "2025-10-24T06:04:34.669Z",
+      "updatedAt": "2025-10-24T06:04:40.617Z",
+      "publishDate": "2025-10-24T06:04:30.699Z",
+      "objectValue": {
+        "name": "Nick Emeka"
+      }
+    }
+  ],
+  "stripeProducts": [
+    {
+      "_id": "6a38248c80c70647f76fc69e",
+      "createdAt": "2026-06-21T17:51:08.284Z",
+      "updatedAt": "2026-07-29T00:35:41.395Z",
+      "publishDate": "2026-06-21T17:57:04.954Z",
+      "objectValue": {
+        "name": "Fresh Squeezed Lemon Bars "
+      }
+    },
+    {
+      "_id": "6a3809ba9028c0f2bd568baf",
+      "createdAt": "2026-06-21T15:56:42.883Z",
+      "updatedAt": "2026-07-29T00:36:56.752Z",
+      "publishDate": "2026-06-21T15:57:36.343Z",
+      "objectValue": {
+        "name": {
+          "Chocolate Chip": "Brown Butter Chocolate Chip Cookies",
+          "Monster": "Brown Butter Monster Cookies"
+        }
+      }
+    },
+    {
+      "_id": "6a38077519f2070ad27c9a82",
+      "createdAt": "2026-06-21T15:47:01.154Z",
+      "updatedAt": "2026-07-27T18:25:02.819Z",
+      "publishDate": "2026-06-21T15:47:01.088Z",
+      "objectValue": {
+        "name": {
+          "Original": "Made from Scratch Bagels",
+          "Everything": "Everything Bagel",
+          "Onion": "Onion Bagel",
+          "Cheddar Jalepeno": "Cheddar Jalepeno Bagel",
+          "Asiago": "Asiago Bagel",
+          "Sesame Seed": "Sesame Bagel",
+          "Poppyseed": "Poppyseed Bagel"
+        }
+      }
+    },
+    {
+      "_id": "695bfe88374cfa0725a7b2b2",
+      "createdAt": "2026-01-05T18:10:16.320Z",
+      "updatedAt": "2026-06-21T15:33:27.263Z",
+      "publishDate": "2026-01-05T17:54:15.046Z",
+      "objectValue": {
+        "name": "Hummus 8oz"
+      }
+    },
+    {
+      "_id": "68850bc2847dcd972ea617de",
+      "createdAt": "2025-07-26T17:09:22.228Z",
+      "updatedAt": "2026-07-27T18:26:56.855Z",
+      "publishDate": "2025-12-19T17:20:21.564Z",
+      "objectValue": {
+        "name": "Muffins"
+      }
+    }
+  ]
+}

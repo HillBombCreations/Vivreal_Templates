@@ -157,13 +157,16 @@ test('W1: the shipped config wires exactly these rules as beforeFiles, and HSTS 
   const { routerHeaderRefusalRewrites, ROUTER_HEADER_REFUSED_PATH, ROUTER_HEADERS } = await import(
     './routerHeaderGuard.ts'
   );
+  const { KEY_FILE_REWRITE } = await import('./indexnow/keyFileRewrite.ts');
   const { beforeFiles, afterFiles } = await configRewrites();
-  assert.deepEqual(beforeFiles, routerHeaderRefusalRewrites());
-  assert.equal(beforeFiles.length, 5);
+  // Discovery batch 2.2 appends the IndexNow key file rewrite AFTER the five
+  // refusals, so a router-header request to /<key>.txt is still refused first.
+  assert.deepEqual(beforeFiles, [...routerHeaderRefusalRewrites(), KEY_FILE_REWRITE]);
+  assert.equal(beforeFiles.length, 6);
   assert.deepEqual(afterFiles, []);
   assert.equal(ROUTER_HEADER_REFUSED_PATH, REFUSED_PATH);
   assert.deepEqual([...ROUTER_HEADERS], FIVE_ROUTER_HEADERS);
-  for (const rule of beforeFiles) assert.equal(rule.source, '/:path*');
+  for (const rule of beforeFiles.slice(0, 5)) assert.equal(rule.source, '/:path*');
 
   const headers = (await nextConfig.headers?.()) ?? [];
   assert.ok(

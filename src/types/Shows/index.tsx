@@ -4,6 +4,8 @@ export type ShowData = {
   title: string;
   description: string;
   id: string;
+  /** The record's own last change, ISO (discovery batch 3.3, the sitemap date). */
+  updatedAt?: string;
   date?: string;
   time?: string;
   image?: string;
@@ -16,6 +18,7 @@ export type ShowData = {
 
 export type CMSShowData = {
   _id: string;
+  updatedAt?: string;
   objectValue: {
     title: string;
     description: string;

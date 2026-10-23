@@ -29,6 +29,7 @@ import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { readShowLowStock } from './showLowStock';
 import { readCommerce } from './commerce';
+import { readIndexNowKey } from '@/lib/indexnow/keyFile';
 import { FALLBACK_SITE_DATA } from './fallback';
 import { refuseDegradedClaim } from './degraded';
 import { getAllCollectionItems } from '@/lib/api/collections';
@@ -118,6 +119,8 @@ interface SiteDetailsResponse {
   updatedAt?: string | null;
   /** N-C6: the claimed subscribers list for a site that links none. */
   subscribersCollectionId?: string | null;
+  /** Discovery batch 2.1 (VR_Client_API C1): the IndexNow key, live sites only. */
+  indexNowKey?: unknown;
   /**
    * H177 - the shell's inline rich-text image map, key to signed media URL.
    * Present on every read from VR_Client_API v2.10.16 onward and always an
@@ -130,9 +133,9 @@ interface SiteDetailsResponse {
 /**
  * TEMPLATES-5 R1 (vivreal-hq triage-sentry-clickup-2026-10-22.md): the
  * fallback capture below ran once per `getSiteData` call, about nine per
- * request, and `readWithFailureMemo` (client.ts) answers the fallback for 5 s
- * after one failed read by design, so one transient failure under a scanner
- * burst sent 90 events. Same per-window gate as the fetch failure (V7.319),
+ * request, and `readWithFailureMemo` (client.ts) answered the fallback for 5 s
+ * after one failed read (since D7, only after repeated failures), so one
+ * transient failure under a scanner burst sent 90 events. Same per-window gate as the fetch failure (V7.319),
  * module scope for the same reason as FETCH_FAILURE_CAPTURES.
  */
 const SITE_DETAILS_FALLBACK_CAPTURES = createCaptureThrottle();
@@ -143,6 +146,12 @@ const SITE_DETAILS_FALLBACK_CAPTURES = createCaptureThrottle();
  * does not memoise, each call gets a fresh set and the window alone gates.
  */
 const fallbackCapturesThisRequest = cache((): Set<string> => new Set());
+
+/** `{ indexNowKey }` for a well-formed key, else nothing at all. */
+function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
+  const key = readIndexNowKey(value);
+  return key ? { indexNowKey: key } : {};
+}
 
 export const getSiteData = async (): Promise<SiteData> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
@@ -301,6 +310,10 @@ export const getSiteData = async (): Promise<SiteData> => {
     updatedAt: raw.updatedAt ?? null,
     // N-C6: top-level only, built at read time like `commerce`.
     subscribersCollectionId: raw.subscribersCollectionId ?? null,
+    // Discovery batch 2.2: top-level only, derived at read time (K1). Spread so
+    // a payload without it (every site before C1, every demo) adds no key and
+    // the site data stays exactly what it was.
+    ...indexNowKeyField(raw.indexNowKey),
     // F2: the business wide low stock switch. Absent stays absent (contract C5),
     // so each template's own default decides. See ./showLowStock.ts.
     ...readShowLowStock(raw),
@@ -534,15 +547,16 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
         if (source.kind === 'shows') {
           const { shows, degraded } = await getShowsRead(source.collectionId);
           if (degraded) unknownItems();
-          for (const show of shows) if (show.id) items.push({ segment: show.id });
+          // Discovery batch 3.3: each item with its record's own last change.
+          for (const show of shows) if (show.id) items.push({ segment: show.id, lastModified: show.updatedAt });
         } else if (source.kind === 'team') {
           const { members, degraded } = await getTeamMembersRead(source.collectionId);
           if (degraded) unknownItems();
-          for (const member of members) if (member.id) items.push({ segment: member.id });
+          for (const member of members) if (member.id) items.push({ segment: member.id, lastModified: member.updatedAt });
         } else if (source.kind === 'products') {
           const { products, degraded } = await getAllProductsRead(source.provider);
           if (degraded) unknownItems();
-          for (const product of products) if (product._id) items.push({ segment: product._id });
+          for (const product of products) if (product._id) items.push({ segment: product._id, lastModified: product.updatedAt });
           if (source.collection) await collectionItems(source.collection);
         } else {
           await collectionItems(source);
@@ -554,9 +568,11 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
       }),
   );
 
-  const entries = buildSiteMapForSite(siteData, raw.pages, detailItemsByPage, {
-    siteUpdatedAt: raw.updatedAt ?? null,
-  });
+  // Discovery batch 3.3: no site date is handed down. A page's date is its own
+  // `updatedAt` (VR_Client_API) or, for a listing, its newest item's; a page
+  // with neither lists no date, never the site's (the site date changes on
+  // every save of any page, so it told crawlers every page changed).
+  const entries = buildSiteMapForSite(siteData, raw.pages, detailItemsByPage);
   const itemCount = Object.values(detailItemsByPage).reduce((n, list) => n + list.length, 0);
   logSitemapBuilt({ siteId: SITE_ID, urls: entries.length, items: itemCount, ms: Date.now() - startedAt });
   return entries;

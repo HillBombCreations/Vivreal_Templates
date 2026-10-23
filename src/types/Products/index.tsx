@@ -2,6 +2,8 @@ export type Variantable<T> = T | Record<string, T>;
 
 export interface Product {
     _id: string;
+    /** The record's own last change, ISO (discovery batch 3.3, the sitemap date). */
+    updatedAt?: string;
     name: Variantable<string>;
     price: Variantable<string>;
     description: Variantable<string>;

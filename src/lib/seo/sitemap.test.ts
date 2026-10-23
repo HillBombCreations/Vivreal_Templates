@@ -477,12 +477,11 @@ test('ALLOW (R4): last-changed equals the recorded updatedAt, per page and per i
     datedPages,
     'https://acme.test',
     { shop: [{ segment: 'p1', lastModified: '2026-09-03T10:00:00.000Z' }, { segment: 'p2' }] },
-    { siteUpdatedAt: '2026-08-31T10:00:00.000Z' },
   );
   const byUrl = Object.fromEntries(entries.map((e) => [e.url, e.lastModified]));
   assert.equal(byUrl['https://acme.test'], '2026-09-01T10:00:00.000Z');
-  assert.equal(byUrl['https://acme.test/shop'], '2026-09-02T10:00:00.000Z');
-  assert.equal(byUrl['https://acme.test/about'], '2026-08-31T10:00:00.000Z', 'a page with no date of its own takes the site date');
+  assert.equal(byUrl['https://acme.test/shop'], '2026-09-03T10:00:00.000Z', 'a listing takes its newest item (discovery 3.3)');
+  assert.equal(byUrl['https://acme.test/about'], undefined, 'a page with no date of its own claims none, never the site date (discovery 3.3)');
   assert.equal(byUrl['https://acme.test/shop/p1'], '2026-09-03T10:00:00.000Z');
   assert.equal(byUrl['https://acme.test/shop/p2'], undefined, 'an item with no date claims none');
 });
@@ -499,8 +498,63 @@ test('REFUSE (R4): two regenerations give the same dates, and nothing is stamped
 });
 
 test('REFUSE (R4): an unreadable date is dropped, not passed through', () => {
-  const entries = buildSitemapEntries([{ slug: 'shop', format: 'catalog', updatedAt: 'yesterday' }], 'https://acme.test', undefined, {
-    siteUpdatedAt: 'nope',
-  });
+  const entries = buildSitemapEntries([{ slug: 'shop', format: 'catalog', updatedAt: 'yesterday' }], 'https://acme.test');
   assert.equal(entries.find((e) => e.url.endsWith('/shop'))?.lastModified, undefined);
+});
+
+// ── Discovery batch 3.3: real dates, no site-date fallback, listing dates ──
+
+test('ALLOW (discovery 3.3): an item with updatedAt lists its date, and its listing page takes the newest item', () => {
+  const entries = buildSitemapEntries(
+    [{ slug: 'shows', format: 'shows', updatedAt: '2026-09-01T00:00:00.000Z' }],
+    'https://acme.test',
+    {
+      shows: [
+        { segment: 's1', lastModified: '2026-09-05T08:00:00.000Z' },
+        { segment: 's2', lastModified: '2026-10-03T19:18:03.234Z' },
+        { segment: 's3' },
+      ],
+    },
+  );
+  const byUrl = Object.fromEntries(entries.map((e) => [e.url, e.lastModified]));
+  assert.equal(byUrl['https://acme.test/shows'], '2026-10-03T19:18:03.234Z');
+  assert.equal(byUrl['https://acme.test/shows/s2'], '2026-10-03T19:18:03.234Z');
+  assert.equal(byUrl['https://acme.test/shows/s3'], undefined);
+});
+
+test('ALLOW (discovery 3.3): a listing page newer than all its items keeps its own date', () => {
+  const entries = buildSitemapEntries(
+    [{ slug: 'team', format: 'team', updatedAt: '2026-10-10T00:00:00.000Z' }],
+    'https://acme.test',
+    { team: [{ segment: 'm1', lastModified: '2026-01-01T00:00:00.000Z' }] },
+  );
+  assert.equal(entries.find((e) => e.url === 'https://acme.test/team')?.lastModified, '2026-10-10T00:00:00.000Z');
+});
+
+test('REFUSE (discovery 3.3): a page with no updatedAt and no dated items lists NO lastmod, there is no site date to fall back to', () => {
+  const entries = buildSitemapEntries(
+    [{ slug: 'home', format: 'home' }, { slug: 'about', format: 'about' }, { slug: 'shop', format: 'catalog' }],
+    'https://acme.test',
+    { shop: [{ segment: 'p1' }] },
+  );
+  for (const entry of entries) assert.equal(entry.lastModified, undefined, entry.url);
+  assert.equal(buildSitemapEntries.length, 3, 'the builder takes no site-date argument at all');
+});
+
+test('REFUSE (absent C1, byte for byte): the Client API payload of today, every page stamped with the site date, gives exactly the entries of today', () => {
+  // VR_Client_API before C1 stamps `page.updatedAt || site.updatedAt` on every
+  // page (getSiteDetails.js), so the site-date fallback removed here never
+  // fired against it. This pins that removing it changes nothing for that
+  // payload while Templates merges ahead of C1.
+  const SITE_DATE = '2026-10-20T12:00:00.000Z';
+  const preC1Pages = [
+    { slug: 'home', format: 'home', updatedAt: SITE_DATE },
+    { slug: 'about', format: 'about', updatedAt: SITE_DATE },
+    { slug: 'contact', format: 'contact', updatedAt: SITE_DATE },
+  ];
+  assert.deepStrictEqual(buildSitemapEntries(preC1Pages, 'https://acme.test'), [
+    { url: 'https://acme.test', lastModified: SITE_DATE, changeFrequency: 'monthly', priority: 1 },
+    { url: 'https://acme.test/about', lastModified: SITE_DATE, changeFrequency: 'monthly', priority: 0.55 },
+    { url: 'https://acme.test/contact', lastModified: SITE_DATE, changeFrequency: 'monthly', priority: 0.1 },
+  ]);
 });

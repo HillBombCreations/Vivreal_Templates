@@ -789,6 +789,13 @@ export interface SiteData {
      */
     subscribersCollectionId?: string | null;
     /**
+     * Discovery batch 2.1/2.2: this site's IndexNow key (K1), 32 lowercase hex,
+     * derived by VR_Client_API for LIVE sites only and sent top-level. Absent
+     * on a demo and on every payload before C1, which means no key file.
+     * Read only through `readIndexNowKey`.
+     */
+    indexNowKey?: string;
+    /**
      * F-C19: which product lists cannot sell right now. `state` is the
      * strongest over every list, `lists` maps a collection id to `'paused'`
      * or `'moving'`; a list absent from it is selling. Always present from
