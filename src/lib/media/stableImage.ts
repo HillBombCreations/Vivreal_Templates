@@ -167,3 +167,27 @@ export async function stableImageResponse(
     new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=300' } })
   );
 }
+
+/** What an image route learned from its item read (both `/img` routes). */
+export interface ItemImageRead {
+  /** The picture's signed URL, when the item and its picture were found. */
+  signedUrl?: string;
+  /** The read behind the lookup failed or came back degraded. */
+  degraded: boolean;
+  /** The item itself was found (with or without the picture asked for). */
+  itemFound: boolean;
+}
+
+/**
+ * The answer for one item read (review of #212/#213). A degraded read that
+ * found no item cannot say whether the picture exists, so it is a 503
+ * `no-store` (an edge must not keep a 404 after the read recovers). Otherwise
+ * exactly `stableImageResponse`: the picture, or the cacheable 404 for a real
+ * miss on a healthy read, or for an item that has no such picture.
+ */
+export async function itemImageResponse(read: ItemImageRead, fetchImpl: typeof fetch = fetch): Promise<Response> {
+  if (read.degraded && !read.itemFound) {
+    return new Response('Try again shortly', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' } });
+  }
+  return stableImageResponse(read.signedUrl, fetchImpl);
+}

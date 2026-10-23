@@ -10,7 +10,7 @@ import { isPageTurnedOff } from '@/lib/pages/pageEnabled';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 import { itemImageSignedUrl } from '@/lib/media/itemImage';
-import { stableImageResponse } from '@/lib/media/stableImage';
+import { itemImageResponse } from '@/lib/media/stableImage';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,6 +21,8 @@ export async function GET(
   const [{ slug, itemId }, siteData] = await Promise.all([params, getSiteData()]);
   if (siteData.degraded === true) return new Response('Try again shortly', { status: 503, headers: { 'Cache-Control': 'no-store' } });
   const page = getPageBySlug(siteData, slug);
-  const signedUrl = page && !isPageTurnedOff(page) ? await itemImageSignedUrl(siteData, page, itemId) : undefined;
-  return withDemoRobotsHeader(await stableImageResponse(signedUrl), isDemoSite(siteData));
+  // A degraded item read that found nothing is a 503 no-store, never a
+  // cacheable 404 (`itemImageResponse`); an unknown page is a healthy miss.
+  const read = page && !isPageTurnedOff(page) ? await itemImageSignedUrl(siteData, page, itemId) : { degraded: false, itemFound: false };
+  return withDemoRobotsHeader(await itemImageResponse(read), isDemoSite(siteData));
 }
