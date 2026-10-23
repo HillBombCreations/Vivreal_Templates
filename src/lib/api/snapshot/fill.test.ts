@@ -130,7 +130,82 @@ test('T16 executor: inert when the recorder is not recording (every build but th
   assert.equal(reads, 0);
 });
 
-test('T16 executor: a failing read never rejects (it shows up as uncovered instead)', async () => {
+/* ------------------------------------------- review-3 B1: failed fill reads */
+
+// The real readers RESOLVE on an upstream 5xx: list readers hand back their
+// degraded placeholder, a page context reports `listReadFailed`. These fakes
+// resolve the same shapes, never reject. SITE_DATA plans 10 fill reads over
+// 10 distinct snapshot keys.
+const FILL_TASKS = 10;
+
+function fillWith(behaviour: (call: number) => boolean, extra: { targetsOf?: typeof targetsOf } = {}) {
+  const lines: string[] = [];
+  const manifests: Array<Record<string, unknown>> = [];
+  const sleeps: number[] = [];
+  let calls = 0;
+  const reader = async () => {
+    calls += 1;
+    return { items: [], degraded: behaviour(calls) };
+  };
+  return {
+    lines,
+    manifests,
+    sleeps,
+    run: () =>
+      fillSnapshotAtBuild(SITE_DATA, {
+        siteId: SITE,
+        recorder: { active: true, writeManifest: (m) => manifests.push(m as Record<string, unknown>) },
+        targetsOf: extra.targetsOf ?? targetsOf,
+        getCollectionItems: reader,
+        getIntegrationItems: reader,
+        buildNestedPageContext: async () => {
+          calls += 1;
+          return { listReadFailed: behaviour(calls) };
+        },
+        log: (l) => lines.push(l),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }),
+  };
+}
+
+test('B1 REFUSE: reads that RESOLVE degraded (a 5xx) are counted failed, retried once, and listed by path and hash', async () => {
+  const f = fillWith(() => true);
+  await f.run();
+  const summary = JSON.parse(f.lines[0]);
+  assert.equal(summary.failed, FILL_TASKS, 'still failing after the one retry');
+  assert.equal(summary.failedFirstPass, FILL_TASKS);
+  assert.deepEqual(f.sleeps, [2_000], 'one pause (2 s) before the retry');
+  assert.equal(summary.failedKeys.length, FILL_TASKS);
+  for (const k of summary.failedKeys) assert.match(k, /^\/tenant\/(collectionObjects|integrationObjects) [0-9a-f]{12}$/);
+  assert.ok(!JSON.stringify(summary).includes('collectionId='), 'no query values in the log');
+  const withFailed = f.manifests.find((m) => Array.isArray(m.failedKeys));
+  assert.ok(withFailed, 'the failed keys reach the wrapper');
+  assert.equal((withFailed.failedKeys as string[]).length, FILL_TASKS);
+  assert.ok((withFailed.failedKeys as string[]).includes('/tenant/collectionObjects?limit=100&collectionId=specials'), 'a failed nested page names its keys');
+});
+
+test('B1 ALLOW: reads that resolve healthy count 0 failed, with no retry and no failed-keys shard', async () => {
+  const f = fillWith(() => false);
+  await f.run();
+  const summary = JSON.parse(f.lines[0]);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.failedFirstPass, 0);
+  assert.deepEqual(f.sleeps, []);
+  assert.equal(f.manifests.length, 1);
+});
+
+test('B1: a read that fails once and succeeds on its retry is not counted failed', async () => {
+  const f = fillWith((call) => call <= FILL_TASKS);
+  await f.run();
+  const summary = JSON.parse(f.lines[0]);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.failedFirstPass, FILL_TASKS);
+  assert.equal(f.manifests.length, 1);
+});
+
+test('B1: a reader that throws still counts, and the pass still resolves', async () => {
   const lines: string[] = [];
   await fillSnapshotAtBuild(SITE_DATA, {
     siteId: SITE,
@@ -140,10 +215,32 @@ test('T16 executor: a failing read never rejects (it shows up as uncovered inste
     getIntegrationItems: async () => { throw new Error('upstream down'); },
     buildNestedPageContext: async () => { throw new Error('upstream down'); },
     log: (l) => lines.push(l),
+    sleep: async () => {},
   });
-  const summary = JSON.parse(lines[0]);
-  assert.equal(summary.event, 'site.snapshot.fill');
-  assert.ok(summary.failed > 0);
+  assert.equal(JSON.parse(lines[0]).failed, FILL_TASKS);
+});
+
+/* ------------------------------------------- review-3 B2: a planner fault */
+
+test('B2 REFUSE: a planner fault (a malformed page config) writes a shell-only manifest with fillError, and resolves', async () => {
+  const f = fillWith(() => false, {
+    targetsOf: (p) => {
+      if (p.slug === 'events') throw new TypeError("Cannot read properties of undefined (reading 'bindings')");
+      return targetsOf(p);
+    },
+  });
+  await f.run();
+  assert.equal(f.manifests.length, 1);
+  assert.deepEqual(f.manifests[0].expectedKeys, ['/tenant/siteDetails?siteId=site-1']);
+  assert.equal(f.manifests[0].siteDetailsKey, '/tenant/siteDetails?siteId=site-1');
+  assert.equal(f.manifests[0].fillError, true);
+  assert.equal(JSON.parse(f.lines[0]).fillError, true);
+});
+
+test('B2 ALLOW: a plan that succeeds carries no fillError', async () => {
+  const f = fillWith(() => false);
+  await f.run();
+  assert.equal(f.manifests[0].fillError, undefined);
 });
 
 test('usesProductBridge: payments types and every integration on a products page go through the bridge', () => {

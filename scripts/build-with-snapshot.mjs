@@ -139,6 +139,8 @@ export function mergeManifests(manifests, siteId) {
   const keys = new Set();
   const excluded = new Set();
   const payments = new Set();
+  const failedKeys = new Set();
+  let fillError = false;
   let siteDetailsKey = null;
   let forceFloorSiteIds = null;
   for (const m of manifests) {
@@ -151,8 +153,12 @@ export function mergeManifests(manifests, siteId) {
     for (const k of m.expectedKeys ?? []) keys.add(k);
     for (const id of m.excludedCollectionIds ?? []) excluded.add(id);
     for (const t of m.paymentsProviderTypes ?? []) payments.add(String(t).toLowerCase());
+    for (const k of m.failedKeys ?? []) failedKeys.add(k);
+    if (m.fillError === true) fillError = true;
   }
   return {
+    failedKeys: [...failedKeys],
+    fillError,
     siteDetailsKey,
     expectedKeys: [...keys],
     excludedCollectionIds: [...excluded],
@@ -367,8 +373,18 @@ export async function main(deps = {}) {
         droppedExcluded += 1;
       }
     }
+    // Review-3 B2: the fill pass could not even plan (a malformed page config),
+    // so the storefront collections are unknown. Keep only the site shell:
+    // nothing that could carry a price survives, and the fault is counted below.
+    if (manifest.fillError) {
+      for (const key of [...entries.keys()]) if (key !== manifest.siteDetailsKey) entries.delete(key);
+    }
     const trimmed = trimToBudget(entries, manifest.siteDetailsKey);
     const uncovered = manifest.expectedKeys.filter((k) => !entries.has(k));
+    // A fill read that failed (after its retry) and that nothing else recorded
+    // is a hole: counted, so the rollout gate (uncovered > 0) stops the app.
+    for (const k of manifest.failedKeys) if (!entries.has(k) && !uncovered.includes(k)) uncovered.push(k);
+    const uncoveredCount = uncovered.length + (manifest.fillError ? 1 : 0);
     const forceFloor = decideForceFloor(env, siteId, manifest.forceFloorSiteIds);
 
     const snapshot = buildSnapshot({
@@ -393,7 +409,9 @@ export async function main(deps = {}) {
 
     const bytes = Buffer.byteLength(json);
     log(
-      `site snapshot: ${entries.size} entries, ${bytes} bytes, siteDetails ok, snapshot_uncovered: ${uncovered.length}` +
+      `site snapshot: ${entries.size} entries, ${bytes} bytes, siteDetails ok, snapshot_uncovered: ${uncoveredCount}` +
+        (manifest.fillError ? ', snapshot_fill_error' : '') +
+        (manifest.failedKeys.length ? `, snapshot_fill_failed: ${manifest.failedKeys.length}` : '') +
         ` (excluded ${manifest.excludedCollectionIds.length} storefront collection${manifest.excludedCollectionIds.length === 1 ? '' : 's'},` +
         ` dropped ${droppedExcluded} key${droppedExcluded === 1 ? '' : 's'}${forceFloor ? ', FORCED FLOOR' : ''},` +
         ` merge ${Date.now() - mergeStarted} ms, wrapper total ${Date.now() - started} ms, sha256 ${digest.slice(0, 12)})`,

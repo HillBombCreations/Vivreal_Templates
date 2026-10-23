@@ -95,8 +95,11 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
   // docs/bugs/site-first-read-fallback/plan.md, Change 2): reads no prerender
   // makes (nested pages, product supplemental feeds, detail context lists),
   // through the same readers the runtime uses, plus the manifest of keys the
-  // snapshot is expected to hold. Inert unless the build wrapper is recording;
-  // never throws, so it can never fail the build or change this list.
+  // snapshot is expected to hold. Inert unless the build wrapper is recording.
+  // It never throws and never changes this list: a failed read is retried once
+  // and then reported as uncovered, and a planner fault (a malformed page
+  // config) writes a shell-only manifest the wrapper reports as
+  // `snapshot_fill_error`, so the build still succeeds on a valid siteDetails.
   await fillSnapshotAtBuild(siteData, {
     siteId: process.env.SITE_ID || "",
     recorder: SNAPSHOT_RECORDER,

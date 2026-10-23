@@ -245,6 +245,61 @@ test('T14 build: a storefront collection recorded during the build is dropped fr
   }
 });
 
+/* ------------------------------------------- review-3 B1 and B2, the wrapper */
+
+test('B2 REFUSE: a fillError manifest keeps only the site shell, prints snapshot_fill_error, counts it uncovered, and still exits 0', async () => {
+  const root = tempRoot();
+  try {
+    const { code, logs } = await run(root, {
+      spawnBuild: fakeBuild({
+        entries: { [siteDetailsPath(SITE)]: SHELL, [MENU]: { items: [] }, [SOLD]: { items: [{ price: 12 }] } },
+        manifest: manifestFor(SITE, { expectedKeys: [siteDetailsPath(SITE)], fillError: true }),
+      }),
+    });
+    assert.equal(code, 0, 'a bad page config must not block every save rebuild');
+    const written = JSON.parse(fs.readFileSync(files(root)[0], 'utf8'));
+    assert.deepEqual(Object.keys(written.entries), [siteDetailsPath(SITE)], 'nothing that could carry a price survives');
+    assert.ok(logs.some((l) => /snapshot_uncovered: 1, snapshot_fill_error/.test(l)));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('B2 ALLOW: a normal manifest prints no snapshot_fill_error', async () => {
+  const root = tempRoot();
+  try {
+    const { logs } = await run(root);
+    assert.ok(!logs.some((l) => l.includes('snapshot_fill_error')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('B1 REFUSE: a fill key that failed and nothing else recorded is counted uncovered, even outside the expected set', async () => {
+  const root = tempRoot();
+  const feed = '/tenant/integrationObjects?limit=10&type=instagram';
+  try {
+    const { code, logs } = await run(root, {
+      spawnBuild: fakeBuild({ manifest: manifestFor(SITE, { failedKeys: [feed] }) }),
+    });
+    assert.equal(code, 0);
+    assert.ok(logs.some((l) => / snapshot_uncovered: 1, snapshot_fill_failed: 1 /.test(l)));
+    assert.ok(logs.some((l) => l.startsWith('site snapshot: uncovered /tenant/integrationObjects ')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('B1 ALLOW: a fill key that failed but the prerender then recorded is covered, not counted', async () => {
+  const root = tempRoot();
+  try {
+    const { logs } = await run(root, { spawnBuild: fakeBuild({ manifest: manifestFor(SITE, { failedKeys: [MENU] }) }) });
+    assert.ok(logs.some((l) => / snapshot_uncovered: 0, snapshot_fill_failed: 1 /.test(l)));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 /* ------------------------------------------------------- T15, build guards */
 
 const forcedEnv = { [FORCE_FLOOR_ENV]: '1', SITE_ID: QA, AWS_BRANCH: 'snapshot-floor-proof' };
