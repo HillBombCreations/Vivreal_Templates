@@ -577,6 +577,29 @@ export function domainFaqSchema(
  * resolved. Same fleet gate as the page: no other site ever gains the entry.
  * An empty sitemap stays empty (a demo, or a refused degraded read).
  */
+/**
+ * When `/domains`' own copy last changed (discovery batch 3.3). It is a code
+ * route, not a CMS page, so nothing records a date for it; bump this whenever
+ * `DOMAIN_SEARCH_COPY` or the page's content moves. Set from the last commit
+ * that changed either (b32d9af).
+ */
+export const DOMAINS_PAGE_UPDATED = '2026-10-14T04:34:01.000Z';
+
+/**
+ * `/domains`' share card (discovery batch 3.10 item 11). It had no Open Graph
+ * or Twitter tags at all; this gives it the same set every Studio page gets
+ * (`[slug]/page.tsx`), with the branded card from `/og/domains`.
+ */
+export function domainsShareMetadata(origin: string, siteName: string) {
+  const title = DOMAIN_SEARCH_COPY.metaTitle;
+  const description = DOMAIN_SEARCH_COPY.metaDescription;
+  const image = `${origin}/og/domains`;
+  return {
+    openGraph: { title, description, url: `${origin}/domains`, type: 'website' as const, siteName, images: [image] },
+    twitter: { card: 'summary_large_image' as const, title, description, images: [image] },
+  };
+}
+
 export function withDomainsSitemapEntry<T extends { url: string }>(
   siteMap: T[],
   siteId: string | null | undefined,

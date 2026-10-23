@@ -424,7 +424,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       organizationId: siteOrganizationId(siteData),
       business: {
         name: siteData.businessInfo?.name || siteData.name,
-        address: siteData.businessInfo?.address,
+        // "Customers don't visit this address" (discovery batch 3.6): never
+        // published as an event's place either.
+        address: siteData.businessInfo?.hideStreetAddress === true ? undefined : siteData.businessInfo?.address,
       },
     });
     if (showEvent.skipped) {
@@ -1290,6 +1292,10 @@ export async function generateMetadata({ params }: Props) {
     const cleanDesc = seedFreeText(show.description, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
     const description = seedFreeMeta(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
+    // Discovery batch 3.10 item 14: the show's OWN card (its poster, re-signed
+    // per request by /og/<slug>/<itemId>), as products and collection items
+    // already have, instead of the section's card shared by every show.
+    const showCardUrl = buildOgItemImageUrl(origin, slug, itemId);
     return {
       title,
       description,
@@ -1300,13 +1306,13 @@ export async function generateMetadata({ params }: Props) {
         url: itemUrl,
         type: "article",
         siteName,
-        images: [ogImageUrl],
+        images: [showCardUrl],
       },
       twitter: {
         card: "summary_large_image",
         title,
         description,
-        images: [ogImageUrl],
+        images: [showCardUrl],
       },
     };
   }

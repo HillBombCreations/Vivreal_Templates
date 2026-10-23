@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import DomainSearch from "@/components/DomainSearch";
 import { getSiteData } from "@/lib/api/siteData";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
+import { resolveSiteOrigin } from "@/lib/og/ogImage";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import Link from "next/link";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
@@ -13,6 +14,7 @@ import {
   DOMAIN_GUIDE as GUIDE,
   DOMAIN_SEARCH_COPY as COPY,
   domainFaqSchema,
+  domainsShareMetadata,
   servesPublicDomainSearch,
 } from "@/lib/domains/publicSearch";
 
@@ -100,6 +102,11 @@ export async function generateMetadata(): Promise<Metadata> {
     title: COPY.metaTitle,
     description: COPY.metaDescription,
     ...buildRouteCanonicalMetadata(siteData, "/domains"),
+    // Discovery batch 3.10 item 11: the same share tags every Studio page has.
+    ...domainsShareMetadata(
+      resolveSiteOrigin(siteData, { surface: "deployed" }),
+      siteData.businessInfo?.name || siteData.name || "",
+    ),
   };
 }
 

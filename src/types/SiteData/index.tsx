@@ -113,7 +113,15 @@ export interface Businessinfo {
      * absent value to `true` (v5 `withResolvedShowEmail`); only an explicit
      * `false` hides it.
      */
-    showEmail?: boolean
+    showEmail?: boolean,
+    /**
+     * Discovery batch 3.6 (Schemas 1.62.0): "What kind of business", one of
+     * VR_Secure_API's allowlist. Absent means unset; read only through
+     * `resolveBusinessType`.
+     */
+    businessType?: string,
+    /** Discovery batch 3.6: "Customers don't visit this address". */
+    hideStreetAddress?: boolean
 }
 
 export interface SocialLink {
@@ -805,6 +813,12 @@ export interface SiteData {
         state: 'selling' | 'paused' | 'moving';
         lists: Record<string, 'paused' | 'moving'>;
     };
+    /**
+     * Discovery batch 3.7: the Google Search Console "HTML tag" code
+     * (`siteDetails.values.googleSiteVerification`, normalised by
+     * VR_Secure_API). Absent means no verification tag at all.
+     */
+    googleSiteVerification?: string | null;
     /**
      * Set ONLY by `FALLBACK_SITE_DATA`. This object is not a site, it is the
      * placeholder returned when VR_Client_API could not be read at all.

@@ -1,4 +1,6 @@
-import { getSiteData } from '@/lib/api/siteData';
+import { getPageCollectionId, getSiteData } from '@/lib/api/siteData';
+import { getShows } from '@/lib/api/shows';
+import { resolveOgItem } from '@/lib/og/ogItemSource';
 import { getPageBySlug } from '@/lib/pages';
 import { getSignedUrl } from '@/lib/api/media';
 import { lookupDetailItem } from '@/lib/detail/lookupItem';
@@ -51,12 +53,18 @@ export async function GET(
   //
   // Storefront Phase 0.3: a products page's card resolves through the same
   // summary its metadata uses, so a provider product gets its own card too.
-  const summary =
-    pageConfig?.format === 'products'
-      ? await resolveStorefrontItemSummary(siteData, pageConfig, itemId)
-      : null;
-  const lookup = !summary && pageConfig ? await lookupDetailItem(siteData, pageConfig, itemId) : null;
-  const plan = planOgItemCard(summary ?? lookup?.item, pageHeading);
+  //
+  // Discovery batch 3.10 item 14 (review 2026-10-23): a shows page reads its
+  // shows list, so a page on the SHOWS_ID fallback gets each poster too.
+  const item = pageConfig
+    ? await resolveOgItem(pageConfig.format, itemId, {
+        showsCollectionId: getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || ''),
+        readShows: getShows,
+        storefrontSummary: () => resolveStorefrontItemSummary(siteData, pageConfig, itemId),
+        lookup: async () => (await lookupDetailItem(siteData, pageConfig, itemId))?.item,
+      })
+    : null;
+  const plan = planOgItemCard(item, pageHeading);
 
   if (plan.kind === 'photo') {
     const proxied = await proxyImageBytes(plan.signedUrl);

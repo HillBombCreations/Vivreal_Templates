@@ -3,7 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 import type { MetadataRoute } from 'next';
 import { getSiteMap } from '@/lib/api/siteData';
 import { DegradedUpstreamError } from '@/lib/api/siteData/degraded';
-import { withDomainsSitemapEntry } from '@/lib/domains/publicSearch';
+import { DOMAINS_PAGE_UPDATED, withDomainsSitemapEntry } from '@/lib/domains/publicSearch';
 import { SITEMAP_REFUSED, sitemapRefusedLine } from './sitemapSignals';
 import { getSeedOnlyPaths } from './getSeedOnlyPaths';
 import { withoutSeedOnlyEntries } from './seedOnlyPaths';
@@ -26,6 +26,8 @@ export async function loadSitemapEntries(): Promise<MetadataRoute.Sitemap> {
     // it. Gated to the Vivreal marketing deployment like the page itself.
     return withDomainsSitemapEntry(siteMap, siteId, (url) => ({
       url,
+      // Discovery batch 3.3: its own date, bumped with its copy.
+      lastModified: DOMAINS_PAGE_UPDATED,
       changeFrequency: 'monthly',
       priority: 0.8,
     }));

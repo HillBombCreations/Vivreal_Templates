@@ -23,6 +23,7 @@ import { isDemoSite } from '../../lib/seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
 import { footerHours } from '../../lib/footerHours.ts';
 import { seedFreeMeta } from '../../lib/seo/seedFreeText.ts';
+import { resolveSiteBusinessType } from '../../lib/seo/businessTypeSchema.ts';
 
 const SCHEMA_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
 
@@ -147,13 +148,25 @@ export function buildSiteJsonLd(
   const hasAddress = Boolean(
     address?.street1 || address?.city || address?.state || address?.zip
   );
-  const isLocal = hasAddress || hoursSpec.length > 0;
+  // Discovery batch 3.6: "What kind of business" names the type (Bakery,
+  // Brewery, Organization...): the saved one, else the template industry's.
+  // Neither keeps today's heuristic exactly: an address or hours makes a
+  // LocalBusiness. See businessTypeSchema.ts.
+  const businessType = resolveSiteBusinessType(siteData.businessInfo?.businessType, siteData.siteInfo);
+  const isLocal = businessType ? businessType.local : hasAddress || hoursSpec.length > 0;
+  // "Customers don't visit this address": the town and region stay (and the
+  // towns served), the street and postcode are never published.
+  const hideStreet = siteData.businessInfo?.hideStreetAddress === true;
+  const shownAddress = hideStreet ? { city: address?.city, state: address?.state } : address;
+  const hasShownAddress = Boolean(
+    shownAddress?.street1 || shownAddress?.city || shownAddress?.state || shownAddress?.zip
+  );
 
   const organizationId = siteOrganizationId(siteData);
 
   const orgBase: Record<string, unknown> = {
     '@context': 'https://schema.org',
-    '@type': isLocal ? 'LocalBusiness' : 'Organization',
+    '@type': businessType ? businessType.schemaType : isLocal ? 'LocalBusiness' : 'Organization',
     ...(organizationId ? { '@id': organizationId } : {}),
     name: siteName,
     ...(url ? { url } : {}),
@@ -164,20 +177,20 @@ export function buildSiteJsonLd(
     ...(socialLinks.length ? { sameAs: [...new Set(socialLinks)] } : {}),
     ...(areaServed.length ? { areaServed } : {}),
     ...(isLocal && claimsWeek && hoursSpec.length ? { openingHoursSpecification: hoursSpec } : {}),
-    ...(hasAddress
+    ...(hasShownAddress
       ? {
           address: {
             '@type': 'PostalAddress',
-            ...(address?.street1
+            ...(shownAddress?.street1
               ? {
-                  streetAddress: [address.street1, address.street2]
+                  streetAddress: [shownAddress.street1, shownAddress.street2]
                     .filter(Boolean)
                     .join(' '),
                 }
               : {}),
-            ...(address?.city ? { addressLocality: address.city } : {}),
-            ...(address?.state ? { addressRegion: address.state } : {}),
-            ...(address?.zip ? { postalCode: address.zip } : {}),
+            ...(shownAddress?.city ? { addressLocality: shownAddress.city } : {}),
+            ...(shownAddress?.state ? { addressRegion: shownAddress.state } : {}),
+            ...(shownAddress?.zip ? { postalCode: shownAddress.zip } : {}),
           },
         }
       : {}),
@@ -191,7 +204,23 @@ export function buildSiteJsonLd(
     ...(description ? { description } : {}),
   };
 
-  return [orgBase, websiteSchema];
+  // vivreal.io (business type `software-company`): the product itself. No
+  // `offers`: prices are stated only where they are verified at write time
+  // (the brand honesty floor), and this node is not that place.
+  const softwareSchema: Record<string, unknown> | null = businessType?.softwareApplication
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'SoftwareApplication',
+        name: siteName,
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web, iOS, Android',
+        ...(url ? { url } : {}),
+        ...(description ? { description } : {}),
+        ...(organizationId ? { publisher: { '@id': organizationId } } : {}),
+      }
+    : null;
+
+  return softwareSchema ? [orgBase, websiteSchema, softwareSchema] : [orgBase, websiteSchema];
 }
 
 /**

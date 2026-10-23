@@ -25,6 +25,7 @@
 import type { Businessinfo, PageConfig } from '@/types/SiteData';
 import { plainMeta } from './plainMeta.ts';
 import { seedFreeMeta } from './seedFreeText.ts';
+import { resolveSiteBusinessType } from './businessTypeSchema.ts';
 
 /** Google shows roughly this much of a summary; longer is cut, so we cut first. */
 export const SUMMARY_MAX_CHARS = 160;
@@ -45,6 +46,12 @@ export interface BusinessFacts {
   city?: string;
   state?: string;
   serviceArea: string[];
+  /**
+   * Discovery batch 3.10 item 16: what the business is, in words ("a bakery"),
+   * from the owner's "What kind of business", else the template industry. Absent when neither, and then every
+   * summary reads exactly as it did before.
+   */
+  kind?: string;
 }
 
 const nonEmpty = (value: unknown): string | undefined =>
@@ -53,6 +60,8 @@ const nonEmpty = (value: unknown): string | undefined =>
 export function readBusinessFacts(
   businessInfo: Businessinfo | undefined,
   fallbackName: string | undefined,
+  // Design 3.6: the template industry names the kind when no type is saved.
+  siteInfo?: Record<string, unknown>,
 ): BusinessFacts {
   return {
     name: nonEmpty(businessInfo?.name) ?? nonEmpty(fallbackName) ?? '',
@@ -64,7 +73,33 @@ export function readBusinessFacts(
     serviceArea: (Array.isArray(businessInfo?.serviceArea) ? businessInfo.serviceArea : [])
       .map(nonEmpty)
       .filter((town): town is string => !!town),
+    ...kindOf(businessInfo, siteInfo),
   };
+}
+
+function kindOf(businessInfo: Businessinfo | undefined, siteInfo: Record<string, unknown> | undefined): Pick<BusinessFacts, 'kind'> {
+  const words = resolveSiteBusinessType(businessInfo?.businessType, siteInfo)?.words;
+  return words ? { kind: words } : {};
+}
+
+/**
+ * "Cobalt & Crumb, a bakery in Knoxville, TN": the business named with what it
+ * is and where, or `undefined` when there is no kind to add (the callers then
+ * keep their earlier wording exactly).
+ */
+function identityWithKind(facts: BusinessFacts, where: string | undefined): string | undefined {
+  if (!facts.kind || !facts.name) return undefined;
+  return where ? `${facts.name}, ${facts.kind} ${where}` : `${facts.name}, ${facts.kind}`;
+}
+
+/**
+ * Discovery batch 3.10 item 16: the privacy and terms pages get NO generated
+ * summary ("Privacy at Waves of Grain Co. in Knoxville, TN." told a searcher
+ * nothing). They rely on their title; the owner's own words still win.
+ */
+export function isUtilityPage(slug: string): boolean {
+  const key = slug.replace(/^\/+/, '').toLowerCase();
+  return key.startsWith('privacy') || key.startsWith('terms');
 }
 
 /** "A, B and C". */
@@ -106,9 +141,10 @@ export function summaryCut(text: string | undefined, max = SUMMARY_MAX_CHARS): s
  */
 export function summaryFromFacts(pageLabel: string, facts: BusinessFacts): string | undefined {
   const where = wherePhrase(facts);
-  if (!where && !facts.description) return undefined;
+  const identity = identityWithKind(facts, where);
+  if (!where && !facts.description && !identity) return undefined;
   const lead = facts.name ? `${pageLabel} at ${facts.name}` : pageLabel;
-  const sentence = where ? `${lead} ${where}.` : `${lead}.`;
+  const sentence = identity ? `${pageLabel} at ${identity}.` : where ? `${lead} ${where}.` : `${lead}.`;
   return summaryCut(plainMeta(facts.description ? `${sentence} ${facts.description}` : sentence, Infinity));
 }
 
@@ -123,15 +159,17 @@ export function pageMetaText({
   page: MetaPage | undefined;
   slug: string;
   facts: BusinessFacts;
-}): { title: string; description: string } {
+}): { title: string; description: string | undefined } {
   const formatTitle = page?.format ? FORMAT_DEFAULT_TITLES[page.format] : undefined;
   const label =
     nonEmpty(page?.labels?.title) ?? formatTitle ?? nonEmpty(page?.name) ?? slug;
   const suffixed = facts.name ? `${label} | ${facts.name}` : label;
   const title = nonEmpty(page?.seo?.metaTitle) ?? suffixed;
+  const ownerWords =
+    nonEmpty(seedFreeMeta(page?.seo?.metaDescription)) ?? nonEmpty(seedFreeMeta(page?.labels?.subtitle));
+  if (isUtilityPage(slug)) return { title, description: ownerWords };
   const description =
-    nonEmpty(seedFreeMeta(page?.seo?.metaDescription)) ??
-    nonEmpty(seedFreeMeta(page?.labels?.subtitle)) ??
+    ownerWords ??
     // The page's NAME leads the summary ("Press at ..."), not its heading:
     // `labels.title` is display copy ("Written about") that reads wrongly there.
     (formatTitle ? undefined : summaryFromFacts(nonEmpty(page?.name) ?? label, facts)) ??
@@ -151,10 +189,13 @@ export function homeMetaText({
   const where = facts.city ? `${facts.state ? `${facts.city}, ${facts.state}` : facts.city}` : undefined;
   const title = nonEmpty(seo?.metaTitle) ?? (where ? `${name} | ${where}` : name);
   const whereWords = wherePhrase(facts);
+  // Discovery batch 3.10 item 16: with a kind set, "Waves of Grain Co., a
+  // bakery in Knoxville, TN." Without one, exactly the earlier wording.
+  const identity = identityWithKind({ ...facts, name }, whereWords) ?? (whereWords ? `${name}, ${whereWords}` : undefined);
   const fromFacts = facts.description
-    ? summaryCut(plainMeta(whereWords ? `${name}, ${whereWords}. ${facts.description}` : facts.description, Infinity))
-    : whereWords
-      ? `${name}, ${whereWords}.`
+    ? summaryCut(plainMeta(identity ? `${identity}. ${facts.description}` : facts.description, Infinity))
+    : identity
+      ? `${identity}.`
       : undefined;
   const description =
     nonEmpty(seedFreeMeta(seo?.metaDescription)) ??
