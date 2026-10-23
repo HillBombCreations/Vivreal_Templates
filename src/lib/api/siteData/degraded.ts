@@ -1,4 +1,5 @@
 import type { SiteData } from '@/types/SiteData';
+import { isFloorValue } from '../snapshot/floorValue.ts';
 
 /**
  * "The upstream did not answer" as a first-class state, distinct from every
@@ -146,5 +147,29 @@ export function assertUpstreamHealthy(
 ): void {
   if (isDegradedSiteData(siteData)) {
     refuseDegradedClaim('a page-missing (404) verdict');
+  }
+}
+
+/**
+ * Guard for a route about to answer 404 ("no such page", "this page is off")
+ * from site data the build-time floor supplied (vivreal-hq
+ * docs/bugs/site-first-read-fallback/plan.md, section 5.5: negative claims are
+ * never made from the floor).
+ *
+ * Floor site data is not degraded: it renders every page the site had at its
+ * last build, and that is the point of it. But it is BUILD-TIME data, so a
+ * page created (or switched back on) after the build is absent from it, and a
+ * 404 drawn from that absence would tell a crawler a live URL is gone. So the
+ * route refuses instead: a 5xx, for the duration of the live-read failure,
+ * for that URL only. Call it immediately before such a `notFound()`.
+ *
+ * A no-op on live data, so a real 404 is completely unaffected.
+ */
+export function refuseNegativeClaimFromFloor(siteData: object | null | undefined): void {
+  if (isFloorValue(siteData)) {
+    refuseDegradedClaim(
+      'a page-missing (404) verdict',
+      'the page list is the build-time snapshot (the live read failed), so a page created after the build cannot be ruled out',
+    );
   }
 }

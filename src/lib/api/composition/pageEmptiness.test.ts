@@ -83,7 +83,7 @@ const emptyLongform = {
   enabled: true,
   config: { bindings: [{ collectionId: 'c1', displayAs: 'longform' }] },
 };
-const noRowsBack = [{ sourceCount: 0, degraded: false }];
+const noRowsBack = [{ sourceCount: 0, degraded: false, fromFloor: false }];
 
 test('ST3: a Blank page with a Split hero titled "Hello" and an empty Long-form list is NOT empty', () => {
   const verdict = decidePageEmptiness({
@@ -142,7 +142,7 @@ test('ST3: a failed read on a page whose only content is the list still refuses 
     format: 'standard',
     blocks: [heroBlock, emptyLongform],
     hero: { title: '' },
-    reads: [{ sourceCount: 0, degraded: true }],
+    reads: [{ sourceCount: 0, degraded: true, fromFloor: false }],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
 });
@@ -187,7 +187,7 @@ test('QA-G1-2: the verdict never calls empty a page the structural test ruled ou
   ];
   for (const shape of shapes) {
     assert.equal(pageCouldBeEmpty(shape), false);
-    for (const reads of [noRowsBack, [{ sourceCount: 0, degraded: true }], []]) {
+    for (const reads of [noRowsBack, [{ sourceCount: 0, degraded: true, fromFloor: false }], []]) {
       assert.deepEqual(decidePageEmptiness({ ...shape, reads }), { isEmpty: false, emptinessUnknown: false });
     }
   }

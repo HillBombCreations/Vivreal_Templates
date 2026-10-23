@@ -27,6 +27,8 @@ export interface DetailItemLookup {
    * a social card must never be the thing that 404s a shared link.
    */
   degraded: boolean;
+  /** The pool read was answered from the build-time floor. See `@/lib/api/degradedRead`. */
+  fromFloor: boolean;
   /**
    * H177 - the inline rich-text image map for the pool this item came from.
    * The detail route merges it with the shell's and mounts the resolver, so a
@@ -69,7 +71,7 @@ export async function lookupDetailItem(
   // Every item, not the first 100 (v5 search R4): the page list names every
   // item, so every item's address must resolve.
   const read = await getAllCollectionItems(collectionId);
-  const { degraded, richTextImageUrls } = read;
+  const { degraded, fromFloor, richTextImageUrls } = read;
   // As composition enters a binding's items (renderer 1.85.1): `_system`
   // values readable, then the page binding's field map, BEFORE scope, so the
   // list and this page admit and title the same items. See `./detailItems.ts`.
@@ -98,6 +100,7 @@ export async function lookupDetailItem(
     unscopedItems,
     item: resolveItem(scopedItems, itemId, detailPage?.itemKeyField),
     degraded,
+    fromFloor,
     richTextImageUrls,
   };
 }

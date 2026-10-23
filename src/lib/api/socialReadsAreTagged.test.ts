@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { integrationObjectsPath } from './readPaths.ts';
 
 /**
  * B1.6 (docs/projects/isr-and-social-pass/plan.md) — A TRIPWIRE, NOT A BUILD.
@@ -353,11 +354,16 @@ test('[wire] the integration read puts the canonical platform spelling on the qu
     /const storedType = canonicalIntegrationType\(type\);/,
     'the read must canonicalise the type before it goes anywhere',
   );
+  // site-first-read-fallback moved the query string into `../readPaths.ts`
+  // (one builder for the runtime read and the build's snapshot key), so the
+  // wire is pinned there, and now by CALLING it: that module is plain.
   assert.match(
     code,
-    /params\.set\('type', storedType\)/,
-    'and the QUERY must carry the canonical spelling, not the lower-cased key',
+    /integrationObjectsPath\(storedType, opts\)/,
+    'and the QUERY must be built from the canonical spelling, not the lower-cased key',
   );
+  assert.equal(integrationObjectsPath('linkedin', { limit: 100 }), '/tenant/integrationObjects?limit=100&type=linkedIn');
+  assert.equal(integrationObjectsPath('LinkedIn'), '/tenant/integrationObjects?type=linkedIn');
 });
 
 test('[B1.1] the untagged social read module stays deleted', () => {

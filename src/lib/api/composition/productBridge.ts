@@ -32,6 +32,8 @@ export async function getProductsAsContentItems(opts: {
 }): Promise<{
   items: ContentItem[];
   degraded: boolean;
+  /** Always false (product reads opt out of the floor); see `../degradedRead.ts`. */
+  fromFloor: boolean;
   richTextImageUrls: Record<string, string>;
   /**
    * Rows read, before mapping. One-to-one here (the map below drops nothing),
@@ -48,7 +50,7 @@ export async function getProductsAsContentItems(opts: {
   // catalogue and a catalogue that could not be read are the same array here,
   // so the flag has to travel with the items or the verdict is drawn from an
   // absence. See ../degradedRead.ts.
-  const { products, degraded, richTextImageUrls } = await getProductsRead({
+  const { products, degraded, fromFloor, richTextImageUrls } = await getProductsRead({
     integrationType: opts.integrationType,
     filters: opts.filters,
     searchVal: opts.search,
@@ -75,5 +77,5 @@ export async function getProductsAsContentItems(opts: {
     };
   });
 
-  return { items, degraded, richTextImageUrls, sourceCount: products.length };
+  return { items, degraded, fromFloor, richTextImageUrls, sourceCount: products.length };
 }

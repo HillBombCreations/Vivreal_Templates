@@ -12,13 +12,13 @@ import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
 import { collectBindingTargets } from './bindings';
 import { applySocialBands } from '@/lib/api/collections/socialBand';
-import { isPaymentsProvider } from '@/lib/payments';
 import { decidePageEmptiness, pageDataReads, someListReadFailed } from './pageEmptiness';
 import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getShowsRead } from '@/lib/api/shows';
 import { getTeamMembersRead } from '@/lib/api/team';
 import { readableSegments } from '@/lib/detail/readableSegment';
 import { applyReadableLinks, readableLinkCollections, type ReadablePage } from '@/lib/detail/readableListLinks';
+import { PAGE_LIST_LIMIT, usesProductBridge } from '@/lib/api/snapshot/fill';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
@@ -125,7 +125,7 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const [collectionEntries, integrationEntries, readableEntries] = await Promise.all([
     Promise.all(
       collectionIds.map(async (id) => {
-        const read = await getCollectionItems(id, { limit: 100 });
+        const read = await getCollectionItems(id, { limit: PAGE_LIST_LIMIT });
         return { key: id, ...read };
       }),
     ),
@@ -134,15 +134,16 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
         // Route any payments-provider integration through the bridge so the
         // gallery / variant resolution survives and the server-side
         // filter/sort/search (controlled query) applies. Other integrations
-        // use the plain fetch.
-        if (isPaymentsProvider(type) || page.format === 'products') {
+        // use the plain fetch. The same predicate tells the build's fill pass
+        // which reads to expect in the snapshot (../snapshot/fill.ts).
+        if (usesProductBridge(type, page.format)) {
           const read = await getProductsAsContentItems({
             integrationType: type,
             ...productQuery,
           });
           return { key: type, ...read };
         }
-        const read = await getIntegrationItems(type, { limit: 100 });
+        const read = await getIntegrationItems(type, { limit: PAGE_LIST_LIMIT });
         return { key: type, ...read };
       }),
     ),

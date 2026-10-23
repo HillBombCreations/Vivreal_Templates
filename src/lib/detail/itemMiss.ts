@@ -71,6 +71,13 @@ export interface DetailItemRead {
   readonly source: string;
   /** See `../api/degradedRead.ts`. An empty list is the same value either way. */
   readonly degraded: boolean;
+  /**
+   * The read was answered from the build-time snapshot (the live read failed).
+   * Build-time data cannot prove an item created after the build is absent, so
+   * a miss on it is "not knowable", never "not there". Required, so a call
+   * site that forgets it does not compile rather than failing open to a 404.
+   */
+  readonly fromFloor: boolean;
 }
 
 /**
@@ -119,7 +126,9 @@ export function decideDetailItemMiss(args: {
 
   // Nothing matched anywhere. Now, and only now, does it matter whether that is
   // an answer or a silence.
-  if (args.reads.some((read) => read.degraded)) {
+  // A read answered from the build-time floor counts as a silence for this
+  // purpose (plan section 5.5): the item may have been created after the build.
+  if (args.reads.some((read) => read.degraded || read.fromFloor)) {
     return { isMissing: false, existenceUnknown: true };
   }
 

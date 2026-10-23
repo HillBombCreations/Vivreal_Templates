@@ -35,8 +35,8 @@ import { decideDetailItemMiss, type DetailItemRead } from './itemMiss.ts';
  * this bug for indexable junk URLs.
  */
 
-const COLLECTION_READ: DetailItemRead = { source: 'collection', degraded: false };
-const FAILED_READ: DetailItemRead = { source: 'collection', degraded: true };
+const COLLECTION_READ: DetailItemRead = { source: 'collection', degraded: false, fromFloor: false };
+const FAILED_READ: DetailItemRead = { source: 'collection', degraded: true, fromFloor: false };
 
 // ---------------------------------------------------------------------------
 // The two directions the fix is FOR
@@ -83,9 +83,9 @@ test('PARTIAL DEGRADE: an item in hand is served, whatever another read did', ()
   // Refusing on the flag first would turn a partial wobble into a hard error on
   // a page that demonstrably exists.
   const combos: DetailItemRead[][] = [
-    [{ source: 'menu-items', degraded: true }, { source: 'menu-sibling', degraded: false }],
-    [{ source: 'products', degraded: true }, { source: 'collection', degraded: false }],
-    [{ source: 'products', degraded: true }, { source: 'menu-items', degraded: true }],
+    [{ source: 'menu-items', degraded: true, fromFloor: false }, { source: 'menu-sibling', degraded: false, fromFloor: false }],
+    [{ source: 'products', degraded: true, fromFloor: false }, { source: 'collection', degraded: false, fromFloor: false }],
+    [{ source: 'products', degraded: true, fromFloor: false }, { source: 'menu-items', degraded: true, fromFloor: false }],
   ];
   for (const reads of combos) {
     assert.deepEqual(
@@ -103,8 +103,8 @@ test('one failed read poisons the verdict even when a sibling answered empty', (
   const verdict = decideDetailItemMiss({
     found: undefined,
     reads: [
-      { source: 'menu-items', degraded: false },
-      { source: 'menu-sibling', degraded: true },
+      { source: 'menu-items', degraded: false, fromFloor: false },
+      { source: 'menu-sibling', degraded: true, fromFloor: false },
     ],
   });
   assert.deepEqual(verdict, { isMissing: false, existenceUnknown: true });
@@ -119,8 +119,8 @@ test('a products read that failed still counts on the arm it falls through to', 
   const verdict = decideDetailItemMiss({
     found: undefined,
     reads: [
-      { source: 'products', degraded: true },
-      { source: 'collection', degraded: false },
+      { source: 'products', degraded: true, fromFloor: false },
+      { source: 'collection', degraded: false, fromFloor: false },
     ],
   });
   assert.deepEqual(verdict, { isMissing: false, existenceUnknown: true });
@@ -166,9 +166,9 @@ test('PARITY SWEEP: whatever was served before is still served, for every read c
       for (const d2 of flags) {
         for (const d3 of flags) {
           const reads: DetailItemRead[] = [
-            { source: 'products', degraded: d1 },
-            { source: 'menu-items', degraded: d2 },
-            { source: 'menu-sibling', degraded: d3 },
+            { source: 'products', degraded: d1, fromFloor: false },
+            { source: 'menu-items', degraded: d2, fromFloor: false },
+            { source: 'menu-sibling', degraded: d3, fromFloor: false },
           ];
           const servedBefore = Boolean(found);
           const verdict = decideDetailItemMiss({ found, reads });
@@ -209,7 +209,7 @@ test('the flag the route branches on comes from provenance, not from an empty li
   const swallowed = await readOrDegrade<Envelope>(empty, async (fallback) => fallback);
   assert.equal(swallowed.degraded, true);
   assert.deepEqual(
-    decideDetailItemMiss({ found: undefined, reads: [{ source: 'collection', degraded: swallowed.degraded }] }),
+    decideDetailItemMiss({ found: undefined, reads: [{ source: 'collection', degraded: swallowed.degraded, fromFloor: false }] }),
     { isMissing: false, existenceUnknown: true },
   );
 
@@ -221,7 +221,7 @@ test('the flag the route branches on comes from provenance, not from an empty li
   assert.deepEqual(
     decideDetailItemMiss({
       found: undefined,
-      reads: [{ source: 'collection', degraded: genuinelyEmpty.degraded }],
+      reads: [{ source: 'collection', degraded: genuinelyEmpty.degraded, fromFloor: false }],
     }),
     { isMissing: true, existenceUnknown: false },
     'an empty collection is a real answer and its detail URLs must still 404',

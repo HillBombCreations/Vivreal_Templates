@@ -89,7 +89,7 @@ export interface ProductsOpts {
  */
 export async function getProductsRead(
   opts?: ProductsOpts,
-): Promise<{ products: Product[]; totalCount: number; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ products: Product[]; totalCount: number; degraded: boolean; fromFloor: boolean; richTextImageUrls: Record<string, string> }> {
   const params = buildProductsQuery(opts);
 
   const type = opts?.integrationType || "stripe";
@@ -100,7 +100,7 @@ export async function getProductsRead(
   // CACHE MISS -- which is the correct and sufficient scope: a repeat/
   // cached bot hit was never going to be captured a second time anyway.
   const botVerdict = await readBotVerdict();
-  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+  const { value: raw, degraded, fromFloor } = await readOrDegrade<PaginatedResponse>(
     () => ({ items: [], totalCount: 0 }),
     (fallback) =>
       clientFetchCached<PaginatedResponse>(
@@ -108,7 +108,11 @@ export async function getProductsRead(
         fallback,
         SITE_CACHE_TTL_SECONDS,
         { headers: { [BOT_VERDICT_HEADER]: botVerdict } },
-        productTags(type)
+        productTags(type),
+        // Owner decision 2 (site-first-read-fallback): products and prices
+        // never come from the build-time floor. A failed product read keeps
+        // today's "could not load" notice.
+        { floor: false }
       )
   );
   const rows = unwrapItems(raw);
@@ -116,6 +120,9 @@ export async function getProductsRead(
     products: rows.map(transformProduct),
     totalCount: Array.isArray(raw) ? rows.length : (raw?.totalCount ?? rows.length),
     degraded,
+    // Always false today (this read opts out of the floor); carried so the
+    // detail route's item-miss verdict reads one flag from every source.
+    fromFloor,
     richTextImageUrls: unwrapRichTextImageUrls(raw),
   };
 }
@@ -144,14 +151,16 @@ export async function getProducts(opts?: ProductsOpts): Promise<Product[]> {
  */
 export async function getAllProductsRead(
   integrationType?: string,
-): Promise<{ products: Product[]; degraded: boolean; truncated: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ products: Product[]; degraded: boolean; fromFloor: boolean; truncated: boolean; richTextImageUrls: Record<string, string> }> {
   const richTextImageUrls: Record<string, string> = {};
+  let fromFloor = false;
   const all = await readAllPages<Product>(async (skip) => {
     const page = await getProductsRead({ integrationType, ...(skip ? { skip } : {}) });
     Object.assign(richTextImageUrls, page.richTextImageUrls);
+    fromFloor ||= page.fromFloor;
     return { items: page.products, totalCount: page.totalCount, degraded: page.degraded };
   }, { pageSize: PRODUCTS_FETCH_LIMIT });
-  return { products: all.items, degraded: all.degraded, truncated: all.truncated, richTextImageUrls };
+  return { products: all.items, degraded: all.degraded, fromFloor, truncated: all.truncated, richTextImageUrls };
 }
 
 /**
@@ -166,7 +175,7 @@ export async function getAllProductsRead(
 export async function getProductByIdRead(
   productId: string,
   integrationType?: string,
-): Promise<{ product: Product | null; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ product: Product | null; degraded: boolean; fromFloor: boolean; richTextImageUrls: Record<string, string> }> {
   // Omitted integrationType falls back to stripe inside getProductsRead, the
   // legacy default for callers that don't know the page's payments provider.
   //
@@ -176,10 +185,11 @@ export async function getProductByIdRead(
   // no detail page, its card linked to a 404 with no error anywhere. Then it
   // was PRODUCTS_FETCH_LIMIT (100, the server ceiling), and the 101st had the
   // same 404. v5 (search R4) reads every page instead: `getAllProductsRead`.
-  const { products, degraded, richTextImageUrls } = await getAllProductsRead(integrationType);
+  const { products, degraded, fromFloor, richTextImageUrls } = await getAllProductsRead(integrationType);
   return {
     product: products.find((p) => p._id === productId) ?? null,
     degraded,
+    fromFloor,
     richTextImageUrls,
   };
 }
@@ -204,7 +214,10 @@ export async function getFilters(collectionId: string): Promise<Filter[]> {
     { items: [], totalCount: 0 },
     SITE_CACHE_TTL_SECONDS,
     undefined,
-    filterTags(collectionId)
+    filterTags(collectionId),
+    // The storefront's filter chips. Opted out of the floor with the products
+    // they filter (a storefront page is never floored for prices).
+    { floor: false }
   );
   return unwrapItems(raw).map((item) => {
     const obj = (item.objectValue ?? item) as Record<string, unknown>;

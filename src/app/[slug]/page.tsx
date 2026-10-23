@@ -7,7 +7,7 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
 import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
 import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
@@ -36,6 +36,10 @@ import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreation
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import { collectBindingTargets } from "@/lib/api/composition/bindings";
+import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
+import { SNAPSHOT_RECORDER } from "@/lib/api/client";
+import { fillSnapshotAtBuild } from "@/lib/api/snapshot/fill";
 import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
 import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
@@ -87,6 +91,23 @@ export const dynamicParams = true;
  */
 export async function generateStaticParams(): Promise<{ slug: string }[]> {
   const siteData = await getSiteData();
+  // The render floor's build-time fill pass (vivreal-hq
+  // docs/bugs/site-first-read-fallback/plan.md, Change 2): reads no prerender
+  // makes (nested pages, product supplemental feeds, detail context lists),
+  // through the same readers the runtime uses, plus the manifest of keys the
+  // snapshot is expected to hold. Inert unless the build wrapper is recording;
+  // never throws, so it can never fail the build or change this list.
+  await fillSnapshotAtBuild(siteData, {
+    siteId: process.env.SITE_ID || "",
+    recorder: SNAPSHOT_RECORDER,
+    targetsOf: collectBindingTargets,
+    getCollectionItems,
+    getIntegrationItems,
+    // Exactly what the detail route renders a nested page with: no shopper query.
+    buildNestedPageContext: (page) =>
+      buildPageContext({ siteData, page, isHome: false, productQuery: parseProductQuery({}) }),
+    log: (line) => console.log(line),
+  });
   // The checkout result slugs are the only ones this route serves with no
   // stored page (`resolvePageForSlug`), so they are the always-on list. They
   // also guarantee a NON-EMPTY result on every site, which the docblock above
@@ -312,7 +333,11 @@ export default async function DynamicPage({
   //
   // `buildSitemapEntries` drops the page through the SAME predicate, so the
   // file and the route can never disagree about which pages exist.
-  if (isPageTurnedOff(pageConfig)) return notFound();
+  if (isPageTurnedOff(pageConfig)) {
+    // "Off" at the last build is not "off" now: on floor data, refuse.
+    refuseNegativeClaimFromFloor(siteData);
+    return notFound();
+  }
 
   // W25 review C2 (owner decision): a page whose body is entirely kit seed is
   // not served until the owner writes real text (see src/lib/seo/seedOnlyPaths.ts).
@@ -343,6 +368,9 @@ export default async function DynamicPage({
     // instead of reaching `permanentRedirect()` unvalidated.
     const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}`);
     if (redirectTarget) permanentRedirect(redirectTarget);
+    // Site data from the build-time floor cannot rule out a page created after
+    // the build: a 5xx for this URL while the live read fails, never a 404.
+    refuseNegativeClaimFromFloor(siteData);
     return notFound();
   }
 

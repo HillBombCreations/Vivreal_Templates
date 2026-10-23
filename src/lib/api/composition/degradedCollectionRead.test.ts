@@ -133,7 +133,7 @@ const COLLECTION_ONLY_PAGE = {
 };
 
 test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
-  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: true }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: true, fromFloor: false }];
   const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
   assert.equal(
     verdict.isEmpty,
@@ -148,7 +148,7 @@ test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
 });
 
 test('a GENUINELY empty generic page still reports empty, so it still 404s', () => {
-  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false, fromFloor: false }];
   const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
   assert.equal(verdict.isEmpty, true, 'the emptiness 404 exists for a reason and is kept');
   assert.equal(verdict.emptinessUnknown, false);
@@ -157,7 +157,7 @@ test('a GENUINELY empty generic page still reports empty, so it still 404s', () 
 test('a page with items is neither empty nor unknown', () => {
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
-    reads: [{ sourceCount: 3, degraded: false }],
+    reads: [{ sourceCount: 3, degraded: false, fromFloor: false }],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
 });
@@ -169,8 +169,8 @@ test('one degraded read poisons the verdict even when a sibling read succeeded e
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: [
-      { sourceCount: 0, degraded: true },
-      { sourceCount: 0, degraded: false },
+      { sourceCount: 0, degraded: true, fromFloor: false },
+      { sourceCount: 0, degraded: false, fromFloor: false },
     ],
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
@@ -189,12 +189,12 @@ test('PARTIAL DEGRADE: items in hand still render, and are NOT refused', () => {
   // likely the more bindings a page carries.
   const combos: PageDataRead[][] = [
     [
-      { sourceCount: 12, degraded: false },
-      { sourceCount: 0, degraded: true },
+      { sourceCount: 12, degraded: false, fromFloor: false },
+      { sourceCount: 0, degraded: true, fromFloor: false },
     ],
     [
-      { sourceCount: 0, degraded: true },
-      { sourceCount: 5, degraded: false },
+      { sourceCount: 0, degraded: true, fromFloor: false },
+      { sourceCount: 5, degraded: false, fromFloor: false },
     ],
   ];
   for (const reads of combos) {
@@ -222,8 +222,8 @@ test('PARITY SWEEP: whatever rendered before still renders, for every read combi
           // produce and is not worth asserting about.
           if ((d1 && c1 > 0) || (d2 && c2 > 0)) continue;
           const reads: PageDataRead[] = [
-            { sourceCount: c1, degraded: d1 },
-            { sourceCount: c2, degraded: d2 },
+            { sourceCount: c1, degraded: d1, fromFloor: false },
+            { sourceCount: c2, degraded: d2, fromFloor: false },
           ];
           const renderedBefore = !reads.every((r) => r.sourceCount === 0);
           const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
@@ -244,12 +244,12 @@ test('PARITY SWEEP: whatever rendered before still renders, for every read combi
 test('INVARIANT: isEmpty and emptinessUnknown are never both true', () => {
   const combos: PageDataRead[][] = [
     [],
-    [{ sourceCount: 0, degraded: false }],
-    [{ sourceCount: 0, degraded: true }],
-    [{ sourceCount: 2, degraded: true }],
+    [{ sourceCount: 0, degraded: false, fromFloor: false }],
+    [{ sourceCount: 0, degraded: true, fromFloor: false }],
+    [{ sourceCount: 2, degraded: true, fromFloor: false }],
     [
-      { sourceCount: 0, degraded: true },
-      { sourceCount: 5, degraded: false },
+      { sourceCount: 0, degraded: true, fromFloor: false },
+      { sourceCount: 5, degraded: false, fromFloor: false },
     ],
   ];
   for (const reads of combos) {
@@ -283,11 +283,11 @@ test('WEDDINGS/TEA-TIME: an authored static page is neither empty nor unknown, d
       },
     ],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -299,11 +299,11 @@ test('a form page is neither empty nor unknown, degraded or not', () => {
     format: 'standard',
     blocks: [{ id: 'f', type: { kind: 'page-template', dispatchId: 'form' }, enabled: true }],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }] }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -321,7 +321,7 @@ test('PARITY: a page with no bindings at all is still empty', () => {
 });
 
 test('PARITY: home, static and the two checkout formats are never empty', () => {
-  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false }];
+  const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false, fromFloor: false }];
   assert.equal(
     decidePageEmptiness({ isHome: true, format: 'list', blocks: [], reads }).isEmpty,
     false,
@@ -361,10 +361,10 @@ test('PARITY: home, static and the two checkout formats are never empty', () => 
  * the `items` field, and dropping `items` would make the fixture stop showing
  * the very gap it exists to describe.
  */
-const SOCIAL_READ_ALL_DROPPED = { items: [], sourceCount: 6, degraded: false };
+const SOCIAL_READ_ALL_DROPPED = { items: [], sourceCount: 6, degraded: false, fromFloor: false };
 
 /** The same page's read when the integration genuinely holds nothing. */
-const SOCIAL_READ_NOTHING_UPSTREAM = { items: [], sourceCount: 0, degraded: false };
+const SOCIAL_READ_NOTHING_UPSTREAM = { items: [], sourceCount: 0, degraded: false, fromFloor: false };
 
 test('a social band whose every post was dropped renders an empty section, NOT a 404', () => {
   const verdict = decidePageEmptiness({
@@ -399,7 +399,7 @@ test('CONTROL: a page that is genuinely empty for non-social reasons still 404s'
   // still unknowable rather than empty, whatever the source count says.
   const degraded = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
-    reads: pageDataReads([{ sourceCount: 0, degraded: true }]),
+    reads: pageDataReads([{ sourceCount: 0, degraded: true, fromFloor: false }]),
   });
   assert.equal(degraded.isEmpty, false);
   assert.equal(degraded.emptinessUnknown, true);
@@ -416,7 +416,7 @@ test('CONTROL: the verdict reads the SOURCE count, so a mapped count cannot be s
   const asMapped = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([
-      { sourceCount: SOCIAL_READ_ALL_DROPPED.items.length, degraded: false },
+      { sourceCount: SOCIAL_READ_ALL_DROPPED.items.length, degraded: false, fromFloor: false },
     ]),
   });
   assert.equal(asSourced.isEmpty, false);
@@ -524,7 +524,9 @@ test('SOURCE PIN: the products bridge carries the flag too', () => {
     'the bridge must CALL the read that reports degradation, not merely mention it',
   );
   assert.ok(
-    code.includes('return { items, degraded, richTextImageUrls, sourceCount: products.length };'),
+    // site-first-read-fallback widened it by `fromFloor` (always false here:
+    // product reads opt out of the floor), re-pointed in the same change.
+    code.includes('return { items, degraded, fromFloor, richTextImageUrls, sourceCount: products.length };'),
     'and it must actually return the flag to buildPageContext',
   );
   // H177 widened this return by one field and the social pass widened it by a
@@ -643,8 +645,8 @@ test('SOURCE PIN: the [slug] mirror of the guard refuses first as well', () => {
 
 test('RW4-6 REFUSE: one failed read among healthy ones is reported, whatever the page holds', () => {
   const reads: PageDataRead[] = [
-    { sourceCount: 3, degraded: false },
-    { sourceCount: 0, degraded: true },
+    { sourceCount: 3, degraded: false, fromFloor: false },
+    { sourceCount: 0, degraded: true, fromFloor: false },
   ];
   assert.equal(someListReadFailed(reads), true);
   // The case RW4-6 is about: the emptiness verdict says "not empty, not
@@ -662,15 +664,15 @@ test('RW4-6 REFUSE: one failed read among healthy ones is reported, whatever the
 test('RW4-6 REFUSE: a home page with a failed read is reported too', () => {
   // Home is the route ISR page-caches, so it is the one where a missed flag
   // was stored rather than just served.
-  assert.equal(someListReadFailed(pageDataReads([{ sourceCount: 0, degraded: true }])), true);
+  assert.equal(someListReadFailed(pageDataReads([{ sourceCount: 0, degraded: true, fromFloor: false }])), true);
 });
 
 test('RW4-6 ALLOW: healthy reads, including genuinely empty ones, are not a failure', () => {
   assert.equal(someListReadFailed([]), false, 'a page with no lists has nothing that failed');
   assert.equal(
     someListReadFailed([
-      { sourceCount: 0, degraded: false },
-      { sourceCount: 5, degraded: false },
+      { sourceCount: 0, degraded: false, fromFloor: false },
+      { sourceCount: 5, degraded: false, fromFloor: false },
     ]),
     false,
     'an empty collection that answered is an answer, not a failure',
@@ -681,7 +683,7 @@ test('RW4-6 ALLOW/REFUSE end to end through readOrDegrade', async () => {
   const empty = () => ({ items: [] as unknown[], totalCount: 0 });
   const answeredEmpty = await readOrDegrade(empty, async () => ({ items: [], totalCount: 0 }));
   const failed = await readOrDegrade(empty, async (fallback) => fallback);
-  const toRead = (o: typeof answeredEmpty) => ({ sourceCount: o.value.items.length, degraded: o.degraded });
+  const toRead = (o: typeof answeredEmpty) => ({ sourceCount: o.value.items.length, degraded: o.degraded, fromFloor: false });
   assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty)])), false);
   assert.equal(someListReadFailed(pageDataReads([toRead(answeredEmpty), toRead(failed)])), true);
 });

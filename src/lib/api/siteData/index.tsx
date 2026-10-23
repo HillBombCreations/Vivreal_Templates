@@ -9,7 +9,10 @@ import type {
 } from '@/types/SiteData';
 import * as Sentry from '@sentry/nextjs';
 import { cache } from 'react';
-import { clientFetchCached, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { clientFetchCached, floorAnswerFor, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { siteDetailsPath } from '@/lib/api/readPaths';
+import { hasSiteDetailsValues, resolveSiteDetailsRaw } from '@/lib/api/snapshot/resolve';
+import { isFloorValue, markFloorValue } from '@/lib/api/snapshot/floorValue';
 import { createCaptureThrottle } from '@/lib/api/captureThrottle';
 import {
   ORIGIN_REFUSAL_MESSAGE,
@@ -155,6 +158,39 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
 }
 
 /**
+ * The site shell for this render: the live siteDetails read, else the
+ * build-time floor, else nothing (vivreal-hq
+ * docs/bugs/site-first-read-fallback/plan.md, Change 4).
+ *
+ * The seam (`clientFetchCached`) already answers a FAILED read from the floor,
+ * so `live` may itself be a floor answer. What only this layer can see is the
+ * read that "succeeded" with no `siteDetails.values` (three of four TEMPLATES-5
+ * events had no failed fetch at all, research 2.3); that one is answered from
+ * the floor here, as `values_missing`. A `null` is not looked up again: the
+ * seam already asked and found nothing.
+ *
+ * `fromFloor` is true whenever the shell came from the floor by either route,
+ * and the caller marks what it builds so a route about to 404 can refuse
+ * instead (`refuseNegativeClaimFromFloor`).
+ */
+async function readSiteDetails(): Promise<{ raw: SiteDetailsResponse | null; fromFloor: boolean }> {
+  const path = siteDetailsPath(SITE_ID);
+  const live = await clientFetchCached<SiteDetailsResponse | null>(
+    path,
+    null,
+    SITE_DETAILS_REVALIDATE_SECONDS,
+    undefined,
+    SITE_CHROME_TAG
+  );
+  const floor =
+    live !== null && live !== undefined && !hasSiteDetailsValues(live)
+      ? floorAnswerFor<SiteDetailsResponse>(path, 'values_missing')
+      : undefined;
+  const { raw, source } = resolveSiteDetailsRaw(live, floor);
+  return { raw, fromFloor: source === 'floor' || (source === 'live' && isFloorValue(live)) };
+}
+
+/**
  * Discovery batch 3.10 item 17: ONE site-data object per request.
  *
  * React's server serializer writes a plain object once and refers back to it
@@ -172,15 +208,14 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
  * calls through, exactly as before.
  */
 export const getSiteData = cache(async (): Promise<SiteData> => {
-  const raw = await clientFetchCached<SiteDetailsResponse | null>(
-    `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
-    null,
-    SITE_DETAILS_REVALIDATE_SECONDS,
-    undefined,
-    SITE_CHROME_TAG
-  );
+  const { raw, fromFloor } = await readSiteDetails();
 
   if (!raw?.siteDetails?.values) {
+    // Reached only when neither the live read NOR the build-time floor has a
+    // site shell: the snapshot file is missing (a delivery defect, logged as
+    // `site.snapshot.missing`), or this key is not in it. Everything below is
+    // the pre-floor behaviour for that case, unchanged.
+    //
     // TRAIN-1.54.0 gap 2a. Taking this branch means the visitor is being served
     // a black-and-white page with no nav, no content and no logo - the exact
     // render the 2026-08-20 screenshot run photographed, which nobody was paged
@@ -277,7 +312,7 @@ export const getSiteData = cache(async (): Promise<SiteData> => {
   // See ./scheduleFeed.ts.
   applyScheduleFeedUrl(pageConfigs, originSource);
 
-  return {
+  const siteData: SiteData = {
     ...originSource,
     name: raw.name,
     businessInfo: raw.businessInfo ?? raw.siteDetails.values.businessInfo,
@@ -346,6 +381,9 @@ export const getSiteData = cache(async (): Promise<SiteData> => {
     // fail-closed drop the renderer already does.
     richTextImageUrls: readRichTextImageUrls(raw),
   };
+  // Built from the floor: renders and caches like live data (it is not
+  // degraded), but every route about to 404 from it refuses instead.
+  return fromFloor ? markFloorValue(siteData) : siteData;
 });
 
 /**
@@ -464,13 +502,10 @@ export function getPageBindingsByRole(pageConfig: PageConfig): {
 }
 
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
-  const raw = await clientFetchCached<SiteDetailsResponse | null>(
-    `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
-    null,
-    SITE_DETAILS_REVALIDATE_SECONDS,
-    undefined,
-    SITE_CHROME_TAG
-  );
+  // Same resolution as getSiteData: live, else the build-time floor. A sitemap
+  // from the floor lists the URLs the site had at its last build, a true
+  // positive claim; it is never allowed to claim the site has NO URLs (below).
+  const { raw, fromFloor } = await readSiteDetails();
 
   // No response, or a response with no `siteDetails.values`, means we cannot
   // tell a demo from a live site. getSiteData() resolves that same condition to
@@ -519,7 +554,14 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // collection fetches below entirely. The AUTHORITATIVE demo gate lives in
   // buildSiteMapForSite (src/lib/seo/siteMapPolicy.ts) where it is pinned by a
   // test; deleting this line changes nothing but the number of upstream reads.
-  if (isDemoSite(siteData)) return [];
+  //
+  // Not from the floor, though: "demo, so no URLs" on build-time data is an
+  // empty sitemap drawn from a read that failed, and the site may have gone
+  // live since the build. Refuse, so crawlers keep the sitemap they have.
+  if (isDemoSite(siteData)) {
+    if (fromFloor) refuseDegradedClaim('sitemap.xml', 'the lifecycle is the build-time snapshot (the live read failed)');
+    return [];
+  }
 
   // R4 (v5): detail items are listed BY DEFAULT for every page with a detail
   // route, read through the SAME reader that route uses (so every listed
@@ -595,6 +637,11 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // with neither lists no date, never the site's (the site date changes on
   // every save of any page, so it told crawlers every page changed).
   const entries = buildSiteMapForSite(siteData, raw.pages, detailItemsByPage);
+  // Never a floor-sourced EMPTY list (plan 5.5): same reasoning as the demo
+  // refusal above, for a site whose build-time page list was empty.
+  if (fromFloor && entries.length === 0) {
+    refuseDegradedClaim('sitemap.xml', 'the page list is the build-time snapshot (the live read failed)');
+  }
   const itemCount = Object.values(detailItemsByPage).reduce((n, list) => n + list.length, 0);
   logSitemapBuilt({ siteId: SITE_ID, urls: entries.length, items: itemCount, ms: Date.now() - startedAt });
   return entries;
