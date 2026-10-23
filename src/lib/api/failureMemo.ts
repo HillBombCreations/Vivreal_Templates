@@ -12,8 +12,14 @@
  * process.
  *
  * WHAT IT MEMOISES, AND WHAT IT NEVER DOES.
- * - Failures only, for `FAILURE_MEMO_MS`. Inside that window a read of the same
- *   key answers the caller's fallback without going upstream.
+ * - REPEATED failures only (owner decision D7, 2026-10-23). A single one-off
+ *   failed read does NOT start the pause: the next read of that key goes
+ *   upstream as normal. Only `FAILURES_BEFORE_PAUSE` failures of one key, each
+ *   within `FAILURE_MEMO_MS` of the one before, start it, and from then on,
+ *   for `FAILURE_MEMO_MS` after the latest failure, a read of the same key
+ *   answers the caller's fallback without going upstream. Before D7 one blip
+ *   (a single slow or dropped connection) paused every read of that path for
+ *   five seconds, which served visitors a fallback for an API that was fine.
  * - A success is never memoised, and it clears any failure for its key, so a
  *   recovered API is read again at once.
  * - A failure the caller re-throws (a 402 quota answer, which the page must see
@@ -31,8 +37,14 @@
  * is the thin call site.
  */
 
-/** How long a failed read is answered from the memo. */
+/** How long a failed read is answered from the memo, once failures repeat. */
 export const FAILURE_MEMO_MS = 5_000;
+
+/**
+ * D7: how many failures of one key, each within `FAILURE_MEMO_MS` of the
+ * previous one, start the pause. One is a one-off and never pauses.
+ */
+export const FAILURES_BEFORE_PAUSE = 2;
 
 /**
  * Bound on remembered keys. Keys are request paths, and a shop's search and
@@ -62,25 +74,32 @@ export function createFailureMemo({
   maxKeys = FAILURE_MEMO_MAX_KEYS,
   now = Date.now,
 }: { ttlMs?: number; maxKeys?: number; now?: () => number } = {}): FailureMemo {
-  const failedAt = new Map<string, number>();
+  // The latest failure of each key and how many came in a row, each within
+  // `ttlMs` of the one before (D7: the pause needs a streak, not one blip).
+  const failedAt = new Map<string, { at: number; streak: number }>();
   const inFlight = new Map<string, Promise<unknown>>();
 
   const sweepExpired = () => {
     const t = now();
-    for (const [key, at] of failedAt) {
-      if (t - at >= ttlMs) failedAt.delete(key);
+    for (const [key, entry] of failedAt) {
+      if (t - entry.at >= ttlMs) failedAt.delete(key);
     }
   };
 
   return {
     hasRecentFailure(key) {
-      const at = failedAt.get(key);
-      if (at === undefined) return false;
-      if (now() - at < ttlMs) return true;
-      failedAt.delete(key);
-      return false;
+      const entry = failedAt.get(key);
+      if (entry === undefined) return false;
+      if (now() - entry.at >= ttlMs) {
+        failedAt.delete(key);
+        return false;
+      }
+      return entry.streak >= FAILURES_BEFORE_PAUSE;
     },
     recordFailure(key) {
+      const previous = failedAt.get(key);
+      const t = now();
+      const streak = previous && t - previous.at < ttlMs ? previous.streak + 1 : 1;
       failedAt.delete(key);
       if (failedAt.size >= maxKeys) sweepExpired();
       // Still full of live entries: drop the oldest (Map keeps insertion order).
@@ -88,7 +107,7 @@ export function createFailureMemo({
         const oldest = failedAt.keys().next().value;
         if (oldest !== undefined) failedAt.delete(oldest);
       }
-      failedAt.set(key, now());
+      failedAt.set(key, { at: t, streak });
     },
     clear(key) {
       failedAt.delete(key);
@@ -117,8 +136,9 @@ export async function readWithFailureMemo<T>(
   fallback: T,
   handleFailure: (err: unknown) => T,
 ): Promise<T> {
-  // Already reported by the read that failed inside this window, so the
-  // fallback is returned without a second capture for the same outage.
+  // Failures of this key have REPEATED inside the window (D7: one blip never
+  // pauses), and were already reported, so the fallback is returned without a
+  // further upstream call or capture for the same outage.
   if (memo.hasRecentFailure(key)) return fallback;
 
   // Cast: a key is one request path, and every read of one path resolves the

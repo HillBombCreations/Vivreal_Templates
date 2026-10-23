@@ -5,6 +5,7 @@ import { collectionTags } from '@/lib/api/cacheTags';
 import { readOrDegrade } from '@/lib/api/degradedRead';
 import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
+import { withRecordDate } from '@/lib/api/recordDate';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -48,7 +49,9 @@ export async function getTeamMembersRead(
       )
   );
 
-  const members = res.items.map((item) => ({
+  // Discovery batch 3.3: each member carries its record's last change for the
+  // sitemap (`withRecordDate`).
+  const members = res.items.map((item) => withRecordDate({
     name: item.objectValue.name,
     description: item.objectValue.description,
     // Use the collection-object document _id (canonical) so detail links match
@@ -60,7 +63,7 @@ export async function getTeamMembersRead(
     imageUrl: getSignedUrl(item.objectValue.headshot),
     imageSrcSet: getSrcSet(item.objectValue.headshot) || undefined,
     socialLinks: item.objectValue.socialLinks,
-  }));
+  }, item));
 
   return { members, degraded, richTextImageUrls: readRichTextImageUrls(res) };
 }

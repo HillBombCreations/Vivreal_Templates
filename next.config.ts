@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
+import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
@@ -59,7 +60,9 @@ const nextConfig: NextConfig = {
   // src/lib/routerHeaderGuard.ts.
   async rewrites() {
     return {
-      beforeFiles: routerHeaderRefusalRewrites(),
+      // Discovery batch 2.2: /<32 hex>.txt is the IndexNow key file, answered
+      // by /api/indexnow/key/<name> (see src/lib/indexnow/keyFile.ts).
+      beforeFiles: [...routerHeaderRefusalRewrites(), KEY_FILE_REWRITE],
       afterFiles: [],
       fallback: [],
     };

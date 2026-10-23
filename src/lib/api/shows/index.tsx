@@ -5,6 +5,7 @@ import { collectionTags } from '@/lib/api/cacheTags';
 import { readOrDegrade } from '@/lib/api/degradedRead';
 import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
+import { withRecordDate } from '@/lib/api/recordDate';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -100,7 +101,9 @@ export async function getShowsRead(
   );
 
   return {
-    shows: byEventDateDesc(res.items.map(mapShow)),
+    // Discovery batch 3.3: each show carries its record's last change for the
+    // sitemap (`withRecordDate`).
+    shows: byEventDateDesc(res.items.map((item) => withRecordDate(mapShow(item), item))),
     degraded,
     richTextImageUrls: readRichTextImageUrls(res),
   };

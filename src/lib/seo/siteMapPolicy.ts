@@ -36,7 +36,6 @@ export function buildSiteMapForSite(
   siteData: SiteMapSiteData,
   pages: Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled' | 'updatedAt'>[] | undefined,
   detailItemsByPage?: Record<string, ReadonlyArray<string | SitemapItem>>,
-  dates: { siteUpdatedAt?: string | null } = {},
 ): MetadataRoute.Sitemap {
   // DEGRADED READ ⇒ REFUSE, and checked before the demo gate for the same
   // reason robots.txt is. An empty sitemap is the most deceptive artifact in
@@ -59,6 +58,5 @@ export function buildSiteMapForSite(
     pages,
     resolveSiteOrigin(siteData, { surface: 'durable' }),
     detailItemsByPage,
-    dates,
   );
 }
