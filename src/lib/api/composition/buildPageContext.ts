@@ -15,6 +15,10 @@ import { applySocialBands } from '@/lib/api/collections/socialBand';
 import { isPaymentsProvider } from '@/lib/payments';
 import { decidePageEmptiness, pageDataReads, someListReadFailed } from './pageEmptiness';
 import { mergeRichTextImageUrls } from '@/lib/api/richTextImageUrls';
+import { getShowsRead } from '@/lib/api/shows';
+import { getTeamMembersRead } from '@/lib/api/team';
+import { readableSegments } from '@/lib/detail/readableSegment';
+import { applyReadableLinks, readableLinkCollections, type ReadablePage } from '@/lib/detail/readableListLinks';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
@@ -97,6 +101,13 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
 
   // 1. Determine the page's data needs from its bindings (+ products filter collection).
   const { collectionIds, integrationTypes } = collectBindingTargets(page);
+  // Plan row T5 (4): the show and team lists whose links land on a readable
+  // detail route (`readableListLinks.ts`). Casts: the site's page type is the
+  // structural shape that module reads.
+  const readableCollections = readableLinkCollections(
+    page as ReadablePage,
+    (siteData.pageConfigs ?? []) as readonly ReadablePage[],
+  );
 
   // 2. Fetch everything in parallel — server-side, already-signed.
   //
@@ -111,7 +122,7 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   // `sourceCount`: reading the wrong slot of a wide positional tuple is
   // exactly how that confusion gets written by accident, and the two counts
   // differ only on a social read, which is the read nobody is looking at.
-  const [collectionEntries, integrationEntries] = await Promise.all([
+  const [collectionEntries, integrationEntries, readableEntries] = await Promise.all([
     Promise.all(
       collectionIds.map(async (id) => {
         const read = await getCollectionItems(id, { limit: 100 });
@@ -135,11 +146,26 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
         return { key: type, ...read };
       }),
     ),
+    // The readable segments, from the SAME read the detail route resolves
+    // against (same collection, same cache key), so a card links exactly the
+    // address that route serves. A failed read gives an empty list, so no
+    // segments and today's id links (which the route redirects). Not a page
+    // read: it never feeds the emptiness verdict below.
+    Promise.all(
+      [...readableCollections].map(async ([collectionId, kind]) => {
+        const list =
+          kind === 'shows' ? (await getShowsRead(collectionId)).shows : (await getTeamMembersRead(collectionId)).members;
+        return [collectionId, readableSegments(list)] as const;
+      }),
+    ),
   ]);
 
-  const itemsByCollection = new Map<string, ContentItem[]>(
-    collectionEntries.map(({ key, items }) => [key, items]),
+  const readable = applyReadableLinks(
+    page,
+    new Map<string, ContentItem[]>(collectionEntries.map(({ key, items }) => [key, items])),
+    new Map(readableEntries),
   );
+  const itemsByCollection = readable.itemsByCollection;
   const itemsByIntegration = new Map<string, ContentItem[]>(
     integrationEntries.map(({ key, items }) => [key, items]),
   );
@@ -176,7 +202,7 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   // 4. Assemble the composePage input. `pages` = sibling configs (composition
   //    needs them for showcase/nav detection).
   const input: ComposePageInput = {
-    page: page as unknown as RendererPageConfig,
+    page: readable.page as unknown as RendererPageConfig,
     pages: (siteData.pageConfigs ?? []) as unknown as RendererPageConfig[],
     data,
     isHome,
