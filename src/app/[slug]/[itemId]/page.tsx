@@ -64,7 +64,7 @@ import { lookupDetailItem } from "@/lib/detail/lookupItem";
 import { detailFieldMap, enterDetailItems } from "@/lib/detail/detailItems";
 import RichTextImages from "@/components/RichTextImages";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
-import { offerVariantKey, offerFieldValue } from "@/lib/detail/productOffer";
+import { offerVariantKey, offerFieldValue, offerInStock } from "@/lib/detail/productOffer";
 import { refuseUnknownItemExistence } from "@/lib/degradedPageRefusal";
 import {
   RECIPES_FORMAT,
@@ -612,7 +612,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // AggregateOffer to describe a set of product variants") and why Google's
     // own `ProductGroup` variant markup is unreachable from a route that cannot
     // preselect a variant by URL.
-    const offerVariant = offerVariantKey(product.usingVariant);
+    // W1 (D14): the page starts on the first size that sells, so the Offer does too.
+    const offerVariant = offerVariantKey(product.usingVariant, product.notForSaleVariants);
     const variantValues = product.usingVariant?.values;
     const productName = offerFieldValue(product.name, offerVariant, variantValues);
     const productPrice = offerFieldValue(product.price, offerVariant, variantValues);
@@ -660,7 +661,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // Real, when the provider gave us one. Square does; Stripe never captured
       // it, and the Offer builder owns that fallback and names it.
       currency: product.priceCurrency,
-      inStock: productStock.tracked ? !productStock.isOutOfStock : undefined,
+      // W1 (D13, D14): an item, or the rendered size, that cannot be bought is
+      // OutOfStock; otherwise the stock state's answer, as before.
+      inStock: offerInStock(productStock, product, offerVariant),
       sku: product._id,
       // Discovery batch 3.2: with no publishable price the product is judged
       // as content (article or no node), never a bare Thing.

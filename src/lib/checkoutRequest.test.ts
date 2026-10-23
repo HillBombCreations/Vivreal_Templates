@@ -107,7 +107,10 @@ const PAUSED_409 = {
   errorCode: "not_for_sale",
   ownerSafe: true,
 };
-const INACTIVE_409 = { ...PAUSED_409, error: "This item is not available right now. The shop has been told." };
+// W1 (D11): VR_Client_API's product-inactive refusal used to say "The shop has
+// been told", a promise it could not keep. C1 (PR #128) sends the paused-list
+// sentence instead, so the retired one is no longer on the closed list.
+const RETIRED_INACTIVE_409 = { ...PAUSED_409, error: "This item is not available right now. The shop has been told." };
 
 test("ALLOW (FP2-02): a shop that cannot take orders yet says so", () => {
   assert.deepEqual(checkoutRefusal(409, NOT_READY_409.error, NOT_READY_409), { error: "This shop is not taking orders yet." });
@@ -115,16 +118,19 @@ test("ALLOW (FP2-02): a shop that cannot take orders yet says so", () => {
 
 test("ALLOW (FP2-06): each not_for_sale sentence the server wrote for shoppers is shown as written", () => {
   assert.deepEqual(checkoutRefusal(409, PAUSED_409.error, PAUSED_409), { error: "This item is not for sale right now. Take it out of your bag, then check out the rest." });
-  assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, INACTIVE_409), {
-    error: "This item is not available right now. The shop has been told.",
-  });
+});
+
+test("REFUSE (W1, D11): the retired 'the shop has been told' sentence is never shown, even marked ownerSafe", () => {
+  const refusal = checkoutRefusal(409, RETIRED_INACTIVE_409.error, RETIRED_INACTIVE_409);
+  assert.doesNotMatch(refusal.error, /has been told/i);
+  assert.deepEqual(refusal, { error: "This item is not for sale right now. Take it out of your bag, then check out the rest." });
 });
 
 test("REFUSE (FP2-06): no not_for_sale 409 ever says Refresh, and none carries the stock reason", () => {
   const bodies = [
     NOT_READY_409,
     PAUSED_409,
-    INACTIVE_409,
+    RETIRED_INACTIVE_409,
     { errorCode: "not_for_sale" },
     { errorCode: "not_for_sale", error: "No active Stripe integration found for this group", ownerSafe: true },
     { errorCode: "not_for_sale", reason: "not_ready" },
@@ -143,7 +149,7 @@ test("REFUSE (FP2-06): upstream text off the closed list, or not marked ownerSaf
     error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   });
   // A listed sentence without ownerSafe reads as the generic not_for_sale one.
-  assert.deepEqual(checkoutRefusal(409, INACTIVE_409.error, { ...INACTIVE_409, ownerSafe: undefined }), {
+  assert.deepEqual(checkoutRefusal(409, NOT_READY_409.error, { ...NOT_READY_409, reason: undefined, ownerSafe: undefined }), {
     error: "This item is not for sale right now. Take it out of your bag, then check out the rest.",
   });
   // An unknown reason does not borrow the shop sentence.

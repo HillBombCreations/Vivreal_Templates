@@ -166,6 +166,17 @@ function resolveGallerySrcSet(item: Record<string, unknown>): string[] | undefin
   return undefined;
 }
 
+/**
+ * W1 (D14): the size names VR_Client_API lists as not for sale, or `undefined`.
+ * A non-empty array of strings only; any other entry makes the whole field
+ * absent, the renderer's own reading (`shapeDetailProduct`'s
+ * `readNotForSaleVariants`), so the two can never disagree on a malformed list.
+ */
+function readNotForSaleVariants(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value.every((entry) => typeof entry === "string") ? (value as string[]) : undefined;
+}
+
 export function transformProduct(raw: Record<string, unknown>): Product {
   const objectValue = (raw.objectValue ?? {}) as Record<string, unknown>;
   const usingVariant = raw.usingVariant as Product["usingVariant"] | undefined;
@@ -174,6 +185,7 @@ export function transformProduct(raw: Record<string, unknown>): Product {
   const gallerySrcSet = resolveGallerySrcSet(raw);
 
   const updatedAt = sitemapDate(raw.updatedAt);
+  const notForSaleVariants = readNotForSaleVariants(raw.notForSaleVariants);
   return {
     _id: String(raw._id ?? ""),
     // Discovery batch 3.3: the sitemap lists each product with its own last
@@ -229,5 +241,12 @@ export function transformProduct(raw: Record<string, unknown>): Product {
     ...(typeof objectValue.saleName === "string" && objectValue.saleName.trim()
       ? { saleName: objectValue.saleName }
       : {}),
+    // W1 (D10, D14): whether it can be bought, computed by VR_Client_API from
+    // the same rule checkout refuses on and put BESIDE `objectValue`. Spread so
+    // a buyable item (the API sends `purchasable: true`) and an item from an
+    // API without W1 both keep today's keys byte for byte; the renderer reads
+    // absent as buyable. `saleState` never arrives and is never read.
+    ...(raw.purchasable === false ? { purchasable: false as const } : {}),
+    ...(notForSaleVariants ? { notForSaleVariants } : {}),
   };
 }

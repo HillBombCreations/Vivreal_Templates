@@ -57,14 +57,15 @@ const isInsufficientStock = (body: unknown) =>
  * for a shopper and marked `ownerSafe`. Only these exact strings are shown;
  * any other text on a `not_for_sale` reads as the paused-list sentence, so an
  * upstream wording change can never put unreviewed prose in the bag.
+ *
+ * W1 (D11): "This item is not available right now. The shop has been told." is
+ * OFF the list. It promised something nobody could keep; VR_Client_API (C1)
+ * now answers an item Stripe refused with `ITEM_NOT_FOR_SALE`, and an older
+ * build still sending the retired sentence reads as that same sentence here.
  */
 const SHOP_NOT_READY = "This shop is not taking orders yet.";
 const ITEM_NOT_FOR_SALE = "This item is not for sale right now. Take it out of your bag, then check out the rest.";
-const OWNER_SAFE_NOT_FOR_SALE: ReadonlySet<string> = new Set([
-  ITEM_NOT_FOR_SALE,
-  "This item is not available right now. The shop has been told.",
-  SHOP_NOT_READY,
-]);
+const OWNER_SAFE_NOT_FOR_SALE: ReadonlySet<string> = new Set([ITEM_NOT_FOR_SALE, SHOP_NOT_READY]);
 
 /**
  * FP2-06 and FP2-02: the sentence for a 409 `not_for_sale`, or `undefined` when

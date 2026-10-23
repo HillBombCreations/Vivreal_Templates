@@ -3,6 +3,7 @@ import 'server-only';
 import type { ContentItem } from '@hillbombcreations/site-renderer';
 import { getProductsRead } from '@/lib/api/products';
 import { getSafeFieldValue } from '@/lib/utils/variantUtils';
+import { offerVariantKey } from '@/lib/detail/productOffer';
 
 /**
  * Server-side `Product[]` → renderer `ContentItem[]` bridge for the products
@@ -55,7 +56,10 @@ export async function getProductsAsContentItems(opts: {
   });
 
   const items = products.map((product) => {
-    const defaultVariant = product.usingVariant?.values?.[0] ?? null;
+    // W1 (D14): the card's title and price are the first size that sells, the
+    // size the renderer's quick add puts in the bag (`firstSellableVariant`,
+    // which `offerVariantKey` mirrors). With no size listed: the first, as before.
+    const defaultVariant = offerVariantKey(product.usingVariant, product.notForSaleVariants);
     return {
       id: String(product._id ?? ''),
       title: getSafeFieldValue(product, 'name', defaultVariant) ?? '',

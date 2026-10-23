@@ -143,6 +143,21 @@ function servesCollection(page: LinkPage, collectionId: string): boolean {
   return false;
 }
 
+/**
+ * The renderer's `resolveServingDetailRouteSlug` (1.88.2): the page a layout
+ * on `page` links `collectionId`'s items into. `page` itself when its own route
+ * serves the collection, else the first other page that does, else
+ * `undefined` (the renderer draws no link).
+ */
+export function servingDetailRouteSlug(
+  page: LinkPage,
+  pages: readonly LinkPage[],
+  collectionId: string,
+): string | null | undefined {
+  if (ownsAnyDetailRoute(page) && servesCollection(page, collectionId)) return page.slug;
+  return pages.find((p) => p && p.slug !== page.slug && servesCollection(p, collectionId))?.slug;
+}
+
 /** The binding a block draws its items from: a page template's first collection binding, a layout's first binding. */
 export function itemBinding(block: LinkBlock): LinkBinding | undefined {
   const bindings = block.config?.bindings ?? [];
