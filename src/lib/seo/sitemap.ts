@@ -96,19 +96,38 @@ export function sitemapDate(value: unknown): string | undefined {
 
 const asItem = (item: string | SitemapItem): SitemapItem => (typeof item === 'string' ? { segment: item } : item);
 
+/** The later of two ISO dates (either may be absent). ISO strings in UTC compare as text. */
+function laterDate(a: string | undefined, b: string | undefined): string | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return a >= b ? a : b;
+}
+
+/**
+ * Discovery batch 3.3: a listing page changes when any item on it changes, so
+ * its date is the later of its own `updatedAt` and its newest item's. Nothing
+ * known gives nothing: never the site date, never the clock.
+ */
+function listingDate(
+  pageDate: string | undefined,
+  items: ReadonlyArray<string | SitemapItem> | undefined,
+): string | undefined {
+  let newest = pageDate;
+  for (const item of items ?? []) newest = laterDate(newest, sitemapDate(asItem(item).lastModified));
+  return newest;
+}
+
 export function buildSitemapEntries(
   pages:
     | Pick<PageConfig, 'slug' | 'format' | 'detailPage' | 'seo' | 'enabled' | 'updatedAt'>[]
     | undefined,
   siteOrigin: string,
   detailItemsByPage?: Record<string, ReadonlyArray<string | SitemapItem>>,
-  { siteUpdatedAt }: { siteUpdatedAt?: string | null } = {},
 ): MetadataRoute.Sitemap {
   if (!siteOrigin) return [];
   const origin = siteOrigin.replace(/\/+$/, '');
 
   const allPages = pages ?? [];
-  const siteDate = sitemapDate(siteUpdatedAt);
   const dated = (date: string | undefined) => (date ? { lastModified: date } : {});
 
   const eligiblePages = allPages.filter(
@@ -131,7 +150,7 @@ export function buildSitemapEntries(
   if (!isAuthorHiddenPage(homePage)) {
     entries.push({
       url: origin,
-      ...dated(sitemapDate(homePage?.updatedAt) ?? siteDate),
+      ...dated(sitemapDate(homePage?.updatedAt)),
       changeFrequency: 'monthly',
       priority: 1.0,
     });
@@ -140,7 +159,7 @@ export function buildSitemapEntries(
     const priority = Math.max(0.1, 1.0 - (idx + 1) * (0.9 / slugs.length));
     entries.push({
       url: `${origin}/${slug}`,
-      ...dated(sitemapDate(pageBySlug.get(slug)?.updatedAt) ?? siteDate),
+      ...dated(listingDate(sitemapDate(pageBySlug.get(slug)?.updatedAt), detailItemsByPage?.[slug])),
       changeFrequency: 'monthly',
       priority: Number(priority.toFixed(2)),
     });

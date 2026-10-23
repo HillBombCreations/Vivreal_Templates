@@ -250,9 +250,10 @@ export async function clientFetchCached<T>(
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
 
-  // V2: a read that failed in the last 5 s answers its fallback without going
-  // upstream again, so an outage costs one call per page request rather than
-  // two. Failures only. F-C13: concurrent reads of one path share the one in
+  // V2: a read whose failures have REPEATED in the last 5 s answers its
+  // fallback without going upstream again, so an outage costs one call per page
+  // request rather than two. Failures only, and never after a single one-off
+  // failure (D7). F-C13: concurrent reads of one path share the one in
   // flight, so the handler below (and its Sentry capture) runs once per failed
   // call, not once per reader. See ./failureMemo.ts.
   return readWithFailureMemo(FAILED_READS, path, cached, fallback, (err) => {
