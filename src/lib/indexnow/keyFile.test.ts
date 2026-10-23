@@ -75,3 +75,14 @@ test('the rewrite is in next.config.ts beforeFiles, pointing at the key route', 
   const before = (rewrites.beforeFiles ?? []) as Array<{ source: string; destination: string }>;
   assert.ok(before.some((r) => r.source === KEY_FILE_REWRITE.source && r.destination === '/api/indexnow/key/:key'));
 });
+
+test('ALLOW (review 2026-10-23): a demo’s 404 carries X-Robots-Tag from the route itself (cold edge map)', () => {
+  const answer = keyFileAnswer({ ...LIVE, lifecycleState: 'demo' } as SiteData, KEY);
+  assert.equal(answer.status, 404);
+  assert.equal(answer.headers['X-Robots-Tag'], 'noindex, nofollow');
+});
+
+test('REFUSE: a live site’s 404 and 200 carry no X-Robots-Tag', () => {
+  assert.equal(keyFileAnswer(LIVE, 'ffffffffffffffffffffffffffffffff').headers['X-Robots-Tag'], undefined);
+  assert.equal(keyFileAnswer(LIVE, KEY).headers['X-Robots-Tag'], undefined);
+});

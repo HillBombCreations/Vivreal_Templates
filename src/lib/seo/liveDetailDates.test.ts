@@ -46,10 +46,10 @@ for (const source of ['shows', 'team', 'stripeProducts'] as const) {
 }
 
 test('REFUSE (U4): a record with no updatedAt, or an unreadable one, carries no date at all (never the clock)', () => {
-  const { withRecordDate, recordDate } = helpers();
+  const { withRecordDate } = helpers();
   assert.deepEqual(withRecordDate({ id: 'a' }, {}), { id: 'a' });
   assert.deepEqual(withRecordDate({ id: 'a' }, { updatedAt: 'yesterday' }), { id: 'a' });
-  assert.equal(recordDate(null), undefined);
+  assert.deepEqual(withRecordDate({ id: 'a' }, { updatedAt: null }), { id: 'a' });
   assert.equal('updatedAt' in transformProduct({ _id: 'p', objectValue: { name: 'x' } }), false);
 });
 
@@ -72,4 +72,10 @@ test('SOURCE PIN (discovery 3.3): the page list hands every reader’s date to t
     assert.ok(siteData.includes(marker), marker);
   }
   assert.ok(!siteData.includes('siteUpdatedAt'), 'the site date is no longer passed to the sitemap');
+});
+
+test('cleanup (review 2026-10-23): the readers use the page list’s own date rule, with no second copy of it', () => {
+  assert.ok(!src('../api/recordDate.ts').includes('function recordDate'), 'recordDate.ts holds no copy of sitemapDate');
+  assert.ok(src('../api/recordDate.ts').includes("import { sitemapDate } from '../seo/sitemap.ts';"));
+  assert.ok(src('../api/products/transformProduct.ts').includes('sitemapDate(raw.updatedAt)'));
 });

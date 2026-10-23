@@ -12,7 +12,7 @@
 // so this module also loads under the repo's `node --test` harness, which does
 // no extensionless / .js->.ts resolution — see `transformProduct.test.ts`.
 import { getSignedUrl, getSrcSet } from "../media.ts";
-import { recordDate } from "../recordDate.ts";
+import { sitemapDate } from "../../seo/sitemap.ts";
 import type { Product, Variantable } from "@/types/Products";
 
 interface ResolvedProductImages {
@@ -173,7 +173,7 @@ export function transformProduct(raw: Record<string, unknown>): Product {
   const imageSrcSet = resolvePrimarySrcSet(raw);
   const gallerySrcSet = resolveGallerySrcSet(raw);
 
-  const updatedAt = recordDate(raw.updatedAt);
+  const updatedAt = sitemapDate(raw.updatedAt);
   return {
     _id: String(raw._id ?? ""),
     // Discovery batch 3.3: the sitemap lists each product with its own last

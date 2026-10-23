@@ -44,9 +44,13 @@ export function keyFileAnswer(
   if (siteData.degraded === true) {
     return { status: 503, body: 'Try again shortly', headers: { 'Content-Type': TEXT, 'Cache-Control': 'no-store' } };
   }
-  const key = readIndexNowKey(siteData.indexNowKey);
-  if (!key || isDemoSite(siteData) || requested !== key) {
-    return { status: 404, body: 'Not found', headers: { 'Content-Type': TEXT, 'Cache-Control': 'public, max-age=300' } };
+  const notFound = { 'Content-Type': TEXT, 'Cache-Control': 'public, max-age=300' };
+  // A demo's answer is noindex from this route itself (discovery batch 3.4,
+  // review 2026-10-23), so a cold edge map in middleware cannot leave it bare.
+  if (isDemoSite(siteData)) {
+    return { status: 404, body: 'Not found', headers: { ...notFound, 'X-Robots-Tag': 'noindex, nofollow' } };
   }
+  const key = readIndexNowKey(siteData.indexNowKey);
+  if (!key || requested !== key) return { status: 404, body: 'Not found', headers: notFound };
   return { status: 200, body: key, headers: { 'Content-Type': TEXT, 'Cache-Control': 'public, max-age=3600' } };
 }
