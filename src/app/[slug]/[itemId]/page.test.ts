@@ -18,7 +18,8 @@ const source = fs.readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
 test('all five detail JSON-LD call sites resolve their URL through the shared helper', () => {
   // Still five: recipes are served BY the collection arm and share its single
   // call site, so the recipes work added a schema shape without adding a site.
-  const calls = source.match(/buildDetailUrl\(siteData, slug, itemId\)/g) ?? [];
+  // Shows and team pass their readable segment (discovery batch 3.10 item 13).
+  const calls = source.match(/buildDetailUrl\(siteData, slug, (itemId|showSegment|memberSegment)\)/g) ?? [];
   assert.equal(calls.length, 5, 'each JSON-LD call site resolves its detail URL once');
 });
 
@@ -164,7 +165,8 @@ test('the page switch did not replace the detail-page switch: both guards stand'
 test("generateMetadata's team arm scopes the roster via getPageCollectionId, like the render body and the shows arm", () => {
   assert.match(
     source,
-    /if \(pageConfig\.format === "team"\) \{\s*const collectionId = getPageCollectionId\(siteData, pageConfig\.name, process\.env\.TEAMMEMBERS_ID \|\| ""\);\s*const teamMembers = await getTeamMembers\(collectionId\);/,
+    // Discovery batch 3.10 item 13: the roster is read whole, to resolve the readable address.
+    /if \(pageConfig\.format === "team"\) \{\s*const collectionId = getPageCollectionId\(siteData, pageConfig\.name, process\.env\.TEAMMEMBERS_ID \|\| ""\);[\s\S]{0,200}?resolveReadableSegment\(await getTeamMembers\(collectionId\), itemId\);/,
     'the team metadata arm must resolve a collectionId and pass it to getTeamMembers, not call it bare',
   );
 });

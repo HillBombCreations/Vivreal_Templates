@@ -6,6 +6,7 @@ import { readOrDegrade } from '@/lib/api/degradedRead';
 import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 import { withRecordDate } from '@/lib/api/recordDate';
+import { cmsSlugField } from '@/lib/detail/readableSegment';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -53,8 +54,11 @@ function mapShow(item: CMSShowData): ShowData {
     image: getSignedUrl(item.objectValue.poster),
     imageUrl: getSignedUrl(item.objectValue.poster),
     imageSrcSet: getSrcSet(item.objectValue.poster) || undefined,
+    // Discovery batch 3.10 item 13: the readable address, when the CMS has one.
+    ...cmsSlugField(item.objectValue),
   };
 }
+
 
 /** Newest first. The API sorts by publishDate; the UI sorts by event date. */
 function byEventDateDesc(shows: ShowData[]): ShowData[] {
@@ -66,8 +70,9 @@ function byEventDateDesc(shows: ShowData[]): ShowData[] {
 /**
  * The whole show list, CACHED and TAGGED.
  *
- * ISR migration Phase 2 (plan.md, Blocker 5): this read backs `getShowById`
- * and therefore every show DETAIL page. It used to go through the uncached
+ * ISR migration Phase 2 (plan.md, Blocker 5): this read backs every show
+ * DETAIL page (read whole so the readable address resolves, discovery batch
+ * 3.10 item 13). It used to go through the uncached
  * `clientFetchSafe`, which meant a show detail page re-hit VR_Client_API on
  * every render (billing the customer's quota for crawler traffic) AND carried
  * no cache tag, so a Studio edit to that show had nothing to invalidate. It
@@ -112,13 +117,13 @@ export async function getShowsRead(
 /**
  * Shows only. The value-only view of `getShowsRead`, for the callers that only
  * render what came back. Anything that turns "not in this list" into a verdict
- * must use the read above: `getShowById` returning `null` from a degraded read
- * is how the detail route 404'd a live show.
+ * must use the read above: a by-id lookup returning `null` from a degraded
+ * read is how the detail route once 404'd a live show.
  *
- * No caller in this repo today. Its one caller was `getShowById`, which now
- * goes through `getShowByIdRead` for exactly the reason in the sentence above.
- * Kept as the value-only view of a cached, tagged read, which is the shape a
- * shows LIST page would want.
+ * Its caller is the show detail route's metadata, which resolves the show's
+ * readable address over the whole list (discovery batch 3.10 item 13). The
+ * by-id helpers this sentence used to point at were removed with that change:
+ * the render reads `getShowsRead` directly so a degraded read stays visible.
  */
 export async function getShows(collectionId?: string): Promise<ShowData[]> {
   return (await getShowsRead(collectionId)).shows;
@@ -143,28 +148,3 @@ export async function getShowsPaginated({
 
   return { shows: byEventDateDesc(res.items.map(mapShow)), totalCount: res.totalCount };
 }
-
-/**
- * One show, WITH whether the list it was looked up in was actually read.
- *
- * There is no by-id read on VR_Client_API, so this is a `.find()` over the
- * window `getShowsRead` asks for. A degraded read makes that window empty,
- * which is indistinguishable from a show that is not there (see
- * `../degradedRead.ts`). The detail route turns the second into a real 404, so
- * it has to be able to tell them apart.
- */
-export const getShowByIdRead = async (
-  id: string,
-  collectionId?: string
-): Promise<{ show: ShowData | null; degraded: boolean; richTextImageUrls: Record<string, string> }> => {
-  const { shows, degraded, richTextImageUrls } = await getShowsRead(collectionId);
-  return {
-    show: shows.find((show) => show.id === id) || null,
-    degraded,
-    richTextImageUrls,
-  };
-};
-
-export const getShowById = async (id: string, collectionId?: string): Promise<ShowData | null> => {
-  return (await getShowByIdRead(id, collectionId)).show;
-};

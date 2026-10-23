@@ -19,7 +19,9 @@ import { NON_NESTABLE_FORMATS } from "@/lib/pages/nestedItemRoute";
 import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
 import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
-import { getShowById, getShowByIdRead } from "@/lib/api/shows";
+import { getShows, getShowsRead } from "@/lib/api/shows";
+import { readableRedirectTarget, resolveReadableSegment } from "@/lib/detail/readableSegment";
+import { itemImageUrl, jsonLdImage, stableImageOrigin } from "@/lib/media/stableImage";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getProductByIdRead } from "@/lib/api/products";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
@@ -43,7 +45,6 @@ import type {
 } from "@hillbombcreations/site-renderer";
 import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } from "@/components/JsonLd";
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
-import { unsignMediaUrl } from "@/components/JsonLd/unsignMediaUrl";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
 import { itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
@@ -129,7 +130,7 @@ export const dynamicParams = true;
 //
 // Nothing else on this route needs it. Verified against this tree before
 // removing: every VR_Client_API read the route reaches goes through
-// `clientFetchCached` → `unstable_cache` — `getShowByIdRead` →`getShowsRead`,
+// `clientFetchCached` → `unstable_cache` — `getShowsRead`,
 // `getTeamMembersRead`, `getProductByIdRead`, `getIntegrationItems`,
 // `getCollectionItems`, `getSiteData`. The one `clientFetchSafe` left in
 // `lib/api/shows` is `getShowsPaginated`, whose only caller is the
@@ -138,10 +139,10 @@ export const dynamicParams = true;
 //
 // THAT ENUMERATION WAS INCOMPLETE WHEN IT WAS WRITTEN, and the conclusion
 // it reaches is still right. It listed the reads in the page BODY and
-// missed the two in `generateMetadata` below: `getShowById` and
-// `getTeamMembers`. Both are value-only wrappers over cached reads already
-// named here (`getShowById` reaches `getShowByIdRead` reaches
-// `getShowsRead`; `getTeamMembers` reaches `getTeamMembersRead`), so
+// missed the two in `generateMetadata` below: `getShows` (then `getShowById`)
+// and `getTeamMembers`. Both are value-only wrappers over cached reads already
+// named here (`getShows` reaches `getShowsRead`; `getTeamMembers` reaches
+// `getTeamMembersRead`), so
 // "every read goes through `clientFetchCached`" holds for them too and
 // removing `fetchCache` is still correct. Corrected rather than left alone
 // because the next person extending this route will read the LIST instead
@@ -346,6 +347,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // `lookupDetailItem` reads for the link rule.
   const sitePages = [...(siteData.pageConfigs ?? []), ...(siteData.homePageConfig ? [siteData.homePageConfig] : [])];
 
+  // Discovery batch 3.10 item 15: JSON-LD pictures point at this site's own
+  // stable image routes (`/img/<slug>/<id>`, `src/lib/media/stableImage.ts`)
+  // whenever the site has a durable public origin; none (a demo) keeps today's.
+  const imageOrigin = stableImageOrigin(siteData);
+
   // H177 - the inline rich-text image map for whichever arm ends up serving.
   //
   // Accumulated exactly like `reads` above, and for the same reason: the arms
@@ -391,9 +397,16 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Show/event detail
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
-    const { show, degraded, richTextImageUrls } = await getShowByIdRead(itemId, collectionId);
+    const { shows, degraded, richTextImageUrls } = await getShowsRead(collectionId);
     reads.push({ source: "shows", degraded });
     Object.assign(richTextImages, richTextImageUrls);
+    // Discovery batch 3.10 item 13: a show answers at its readable address
+    // (`readableSegment.ts`); its id address, and a readable address from
+    // before a title edit, redirect there permanently.
+    const resolvedShow = resolveReadableSegment(shows, itemId);
+    if (resolvedShow?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedShow.segment, (await searchParams) ?? {}));
+    const show = resolvedShow?.item ?? null;
+    const showSegment = resolvedShow?.segment ?? itemId;
 
     // Change B (docs/bugs/templates-soft-404-and-301-status): this arm used
     // to render a hand-rolled "Not found" page here at a soft status 200 —
@@ -413,8 +426,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the 300s signed-URL TTL), same treatment the
       // team branch already applies to member images.
-      imageUrl: unsignMediaUrl(show.imageUrl || show.image || undefined),
-      url: buildDetailUrl(siteData, slug, itemId),
+      // Discovery batch 3.10 item 15: the picture's stable address on this
+      // site (`/img/<slug>/<id>`), else the unsigned form as before.
+      imageUrl: jsonLdImage(imageOrigin, itemImageUrl(imageOrigin, slug, show.id), show.imageUrl || show.image || undefined),
+      url: buildDetailUrl(siteData, slug, showSegment),
       date: show.date,
       time: show.time,
       location: show.location,
@@ -438,7 +453,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: show.title })} />
+        <JsonLd schema={withDetailBreadcrumbs(showJsonLd, { siteData, page: pageConfig, slug, itemSegment: showSegment, itemName: show.title })} />
         <Navbar hasMasthead={false} />
         {/* H177: the resolver wraps the RENDERER only. JsonLd, Navbar and Footer
             carry no CMS rich text, so the client boundary stays as small as it
@@ -464,7 +479,11 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     const { members: teamMembers, degraded, richTextImageUrls } = await getTeamMembersRead(collectionId);
     reads.push({ source: "team", degraded });
     Object.assign(richTextImages, richTextImageUrls);
-    const member = teamMembers.find((m) => m.id === itemId);
+    // Discovery batch 3.10 item 13, as for shows above.
+    const resolvedMember = resolveReadableSegment(teamMembers, itemId);
+    if (resolvedMember?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedMember.segment, (await searchParams) ?? {}));
+    const member = resolvedMember?.item;
+    const memberSegment = resolvedMember?.segment ?? itemId;
 
     if (!member) return answerItemMissing(member);
 
@@ -491,8 +510,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // Strip CloudFront signing params before embedding in JSON-LD; signed
     // URLs expire after 300s but JSON-LD lives in crawler caches for days.
     // See @/components/JsonLd/unsignMediaUrl.ts for the full rationale.
-    const memberImage = unsignMediaUrl(member.imageUrl || member.image || undefined);
-    const detailUrl = buildDetailUrl(siteData, slug, itemId);
+    const memberImage = jsonLdImage(imageOrigin, itemImageUrl(imageOrigin, slug, member.id), member.imageUrl || member.image || undefined);
+    const detailUrl = buildDetailUrl(siteData, slug, memberSegment);
     const memberDescription = seedFreeText(member.description, 500);
     const memberJsonLd: Record<string, unknown> = {
       '@context': 'https://schema.org',
@@ -515,7 +534,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     return (
       <>
-        <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: member.name })} />
+        <JsonLd schema={withDetailBreadcrumbs(memberJsonLd, { siteData, page: pageConfig, slug, itemSegment: memberSegment, itemName: member.name })} />
         <Navbar hasMasthead={false} />
         <RichTextImages map={richTextImages}>
           <DetailPageTemplate
@@ -635,7 +654,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       format: 'products',
       title: productName || 'Product',
       description: productDescription,
-      imageUrl: productImage,
+      imageUrl: jsonLdImage(imageOrigin, itemImageUrl(imageOrigin, slug, itemId), productImage),
       url: buildDetailUrl(siteData, slug, itemId),
       price: productPrice,
       // Real, when the provider gave us one. Square does; Stripe never captured
@@ -814,7 +833,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       // Strip CloudFront signing params before embedding in long-lived JSON-LD
       // (crawler caches outlive the signed-URL TTL) — same treatment the
       // shows/team branches apply to their media.
-      imageUrl: unsignMediaUrl(effectiveItem.imageUrl),
+      imageUrl: jsonLdImage(imageOrigin, itemImageUrl(imageOrigin, slug, itemId), effectiveItem.imageUrl),
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof effectiveItem.price === "string" ? effectiveItem.price : undefined,
       sku: effectiveItem.id,
@@ -1029,7 +1048,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       format: "products",
       title: item.title || pageConfig.name,
       description: cleanDesc,
-      imageUrl: unsignMediaUrl(item.imageUrl),
+      imageUrl: jsonLdImage(imageOrigin, itemImageUrl(imageOrigin, slug, itemId), item.imageUrl),
       url: buildDetailUrl(siteData, slug, itemId),
       price: typeof item.price === "string" ? item.price : undefined,
       sku: item.id,
@@ -1285,25 +1304,29 @@ export async function generateMetadata({ params }: Props) {
 
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
-    const show = await getShowById(itemId, collectionId);
+    // Discovery batch 3.10 item 13: resolved exactly as the render resolves it,
+    // so the canonical names the readable address.
+    const resolvedShow = resolveReadableSegment(await getShows(collectionId), itemId);
+    const show = resolvedShow?.item;
     if (!show) {
       return { title: `Not found | ${siteName}` };
     }
+    const showUrl = `${origin}/${slug}/${resolvedShow.segment}`;
     const cleanDesc = seedFreeText(show.description, 160);
     const title = seo?.metaTitle || `${show.title} | ${siteName}`;
     const description = seedFreeMeta(seo?.metaDescription) || cleanDesc || `${show.title} | ${siteName}`;
     // Discovery batch 3.10 item 14: the show's OWN card (its poster, re-signed
     // per request by /og/<slug>/<itemId>), as products and collection items
     // already have, instead of the section's card shared by every show.
-    const showCardUrl = buildOgItemImageUrl(origin, slug, itemId);
+    const showCardUrl = buildOgItemImageUrl(origin, slug, show.id);
     return {
       title,
       description,
-      ...routeCanonicalMetadata,
+      ...buildRouteCanonicalMetadata(siteData, `/${slug}/${resolvedShow.segment}`),
       openGraph: {
         title,
         description,
-        url: itemUrl,
+        url: showUrl,
         type: "article",
         siteName,
         images: [showCardUrl],
@@ -1319,8 +1342,10 @@ export async function generateMetadata({ params }: Props) {
 
   if (pageConfig.format === "team") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.TEAMMEMBERS_ID || "");
-    const teamMembers = await getTeamMembers(collectionId);
-    const member = teamMembers.find((m) => m.id === itemId);
+    // Discovery batch 3.10 item 13, as for shows above.
+    const resolvedMember = resolveReadableSegment(await getTeamMembers(collectionId), itemId);
+    const member = resolvedMember?.item;
+    const memberPath = `/${slug}/${resolvedMember?.segment ?? itemId}`;
     const name = member?.name;
     // RT5-166: the member's own name wins over the roster's SEO title (itemPageTitle).
     const title = itemPageTitle(pageConfig, member, siteName);
@@ -1330,11 +1355,11 @@ export async function generateMetadata({ params }: Props) {
     return {
       title,
       description,
-      ...routeCanonicalMetadata,
+      ...buildRouteCanonicalMetadata(siteData, memberPath),
       openGraph: {
         title,
         description,
-        url: itemUrl,
+        url: `${origin}${memberPath}`,
         type: "article",
         siteName,
         images: [ogImageUrl],

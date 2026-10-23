@@ -297,7 +297,8 @@ test('SOURCE PIN: every read on the route reports whether it happened', () => {
   // stays green either way.
   const code = detailRouteComponent();
   for (const call of [
-    'await getShowByIdRead(',
+    // Discovery batch 3.10 item 13: the whole list, to resolve readable addresses.
+    'await getShowsRead(',
     'await getTeamMembersRead(',
     'await getProductByIdRead(',
     'await lookupDetailItem(',

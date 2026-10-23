@@ -115,7 +115,8 @@ test('ALLOW: a show page’s share card is the show’s own (/og/<slug>/<itemId>
   const start = detailRoute.indexOf('if (pageConfig.format === "shows") {', detailRoute.indexOf('export async function generateMetadata'));
   assert.ok(start > 0, 'sanity: the show metadata arm was found');
   const arm = detailRoute.slice(start, detailRoute.indexOf('if (pageConfig.format === "team")', start));
-  assert.ok(arm.includes('buildOgItemImageUrl(origin, slug, itemId)'));
+  // T4 builds it from the show's id once the address is readable (discovery 3.10 item 13).
+  assert.ok(arm.includes('buildOgItemImageUrl(origin, slug, itemId)') || arm.includes('buildOgItemImageUrl(origin, slug, show.id)'));
   assert.ok(!arm.includes('images: [ogImageUrl]'), 'the section card is gone from the show arm');
 });
 

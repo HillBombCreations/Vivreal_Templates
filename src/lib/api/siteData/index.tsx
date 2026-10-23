@@ -43,6 +43,7 @@ import { restrictToLinked } from '@/lib/detail/linkedItems';
 import { detailFieldMap, enterDetailItems } from '@/lib/detail/detailItems';
 import type { SitemapItem } from '@/lib/seo/sitemap';
 import { logSitemapBuilt } from '@/lib/seo/sitemapSignals';
+import { readableSegments } from '@/lib/detail/readableSegment';
 import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
 
 const SITE_ID = process.env.SITE_ID || '';
@@ -153,7 +154,24 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
   return key ? { indexNowKey: key } : {};
 }
 
-export const getSiteData = async (): Promise<SiteData> => {
+/**
+ * Discovery batch 3.10 item 17: ONE site-data object per request.
+ *
+ * React's server serializer writes a plain object once and refers back to it
+ * when the same object is passed again, but only when it is the SAME object.
+ * This read built a fresh object on every call, and the root layout, the page,
+ * the navbar and the footer each call it, so every client component that takes
+ * `siteData` carried its own full copy: four copies of about 200 KB on the
+ * vivreal.io home page, 800 KB of its 970 KB inline payload (measured
+ * 2026-10-23). React `cache` makes every call in one render return the same
+ * object, so it is written once.
+ *
+ * Safe because nothing mutates the returned object (checked when this was
+ * added; the one write, `applyScheduleFeedUrl`, happens below on the copy
+ * being built). Outside a server render (a route handler) `cache` simply
+ * calls through, exactly as before.
+ */
+export const getSiteData = cache(async (): Promise<SiteData> => {
   const raw = await clientFetchCached<SiteDetailsResponse | null>(
     `/tenant/siteDetails?siteId=${encodeURIComponent(SITE_ID)}`,
     null,
@@ -328,7 +346,7 @@ export const getSiteData = async (): Promise<SiteData> => {
     // fail-closed drop the renderer already does.
     richTextImageUrls: readRichTextImageUrls(raw),
   };
-};
+});
 
 /**
  * Helper to find a page config by name and read a label with a fallback.
@@ -548,11 +566,15 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
           const { shows, degraded } = await getShowsRead(source.collectionId);
           if (degraded) unknownItems();
           // Discovery batch 3.3: each item with its record's own last change.
-          for (const show of shows) if (show.id) items.push({ segment: show.id, lastModified: show.updatedAt });
+          // Discovery batch 3.10 item 13: listed at its readable address, the one
+          // the detail route answers on (its id address redirects there).
+          const showSegments = readableSegments(shows);
+          for (const show of shows) if (show.id) items.push({ segment: showSegments.get(show.id) ?? show.id, lastModified: show.updatedAt });
         } else if (source.kind === 'team') {
           const { members, degraded } = await getTeamMembersRead(source.collectionId);
           if (degraded) unknownItems();
-          for (const member of members) if (member.id) items.push({ segment: member.id, lastModified: member.updatedAt });
+          const memberSegments = readableSegments(members);
+          for (const member of members) if (member.id) items.push({ segment: memberSegments.get(member.id) ?? member.id, lastModified: member.updatedAt });
         } else if (source.kind === 'products') {
           const { products, degraded } = await getAllProductsRead(source.provider);
           if (degraded) unknownItems();
