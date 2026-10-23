@@ -22,6 +22,7 @@
  */
 import { NextResponse } from 'next/server';
 import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from '@/lib/api/fetchWithReconnect';
+import { edgeRouteIsDemo, withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 
 export const runtime = 'edge';
 export const revalidate = 3600;
@@ -36,7 +37,16 @@ const EMPTY_VCALENDAR = [
   '',
 ].join('\r\n');
 
-export async function GET(): Promise<NextResponse> {
+/**
+ * Discovery batch 3.4, route layer: a demo's feed is noindex even when
+ * middleware's edge map was cold (review 2026-10-23). See demoRobotsHeader.ts.
+ */
+export async function GET(): Promise<Response> {
+  const [feed, isDemo] = await Promise.all([scheduleFeed(), edgeRouteIsDemo()]);
+  return withDemoRobotsHeader(feed, isDemo);
+}
+
+async function scheduleFeed(): Promise<NextResponse> {
   const apiKey = process.env.API_KEY;
   const siteId = process.env.SITE_ID;
   const clientApiUrl =

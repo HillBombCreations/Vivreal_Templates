@@ -202,21 +202,40 @@ const STREET_WORDS: ReadonlySet<string> = new Set([
   'sq', 'square', 'broadway', 'trl', 'trail', 'plz', 'plaza',
 ]);
 
+const ZIP = /^\d{5}(-\d{4})?$/;
+const STATE = /^[A-Z]{2}$/;
+
 /**
  * Do the words after a house number read as a street? STRICT on purpose (owner
- * decision D17, 2026-10-23), so a number inside a venue name never splits it:
- *   - at least TWO words must follow the number ("Club 21" and "Studio 54
- *     Lounge" never split);
- *   - and either the first is a compass direction ("1447 N Wells St",
- *     "3164 North Broadway"), or one of the next three is a street word
- *     ("12 Main St").
- * Trailing dots and commas are ignored ("N.", "Ave.,").
+ * decision D17, 2026-10-23, tightened by review): D17 must never invent an
+ * address, so a number inside a venue name ("Pier 39 West Lot", "Suite 200
+ * Park Plaza Hotel") never splits it. Accepted only when:
+ *   - at least TWO words follow the number ("Club 21" never splits), the
+ *     first of them not a number ("Hall 5 300 N State St" splits at 300); and
+ *   - EITHER a street word ENDS the street part: it is the last word, or it
+ *     carries a comma, or the next word is a two letter state or a ZIP
+ *     ("1447 N Wells St", "1331 N. Milwaukee Ave., Chicago IL", "12 Main St");
+ *   - OR the first word is a compass direction AND a ZIP, or a `, XX` state,
+ *     follows ("3164 North Broadway Chicago, IL 60657").
+ * A compass word alone ("Stage 3 North Hall") and a street word in the middle
+ * of a name ("The 5 Points Lane Bar") are not enough.
+ * Trailing dots and commas are ignored when reading a word ("N.", "Ave.,").
  */
 function readsAsStreet(after: string[]): boolean {
   if (after.length < 2) return false;
-  const words = after.map((word) => word.toLowerCase().replace(/[.,]+$/, ''));
-  if (DIRECTIONS.has(words[0])) return true;
-  return words.slice(0, 3).some((word) => STREET_WORDS.has(word));
+  // "Hall 5 300 N State St": a number straight after a number means the first
+  // one belongs to the venue name; the street starts at the second.
+  if (/^\d/.test(after[0])) return false;
+  const bare = (word: string) => word.replace(/[.,]+$/, '');
+  const words = after.map((word) => bare(word).toLowerCase());
+  const endsStreetPart = (index: number) => {
+    const next = after[index + 1];
+    return next === undefined || after[index].endsWith(',') || STATE.test(bare(next)) || ZIP.test(bare(next));
+  };
+  if (words.slice(0, 4).some((word, index) => STREET_WORDS.has(word) && endsStreetPart(index))) return true;
+  if (!DIRECTIONS.has(words[0])) return false;
+  const rest = after.slice(1);
+  return rest.some((word) => ZIP.test(bare(word))) || rest.some((word, index) => index > 0 && rest[index - 1].endsWith(',') && STATE.test(bare(word)));
 }
 
 /**
