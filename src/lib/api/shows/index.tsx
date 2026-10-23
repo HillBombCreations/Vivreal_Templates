@@ -6,6 +6,7 @@ import { readOrDegrade } from '@/lib/api/degradedRead';
 import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 import { withRecordDate } from '@/lib/api/recordDate';
+import { cmsSlugField } from '@/lib/detail/readableSegment';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -53,8 +54,11 @@ function mapShow(item: CMSShowData): ShowData {
     image: getSignedUrl(item.objectValue.poster),
     imageUrl: getSignedUrl(item.objectValue.poster),
     imageSrcSet: getSrcSet(item.objectValue.poster) || undefined,
+    // Discovery batch 3.10 item 13: the readable address, when the CMS has one.
+    ...cmsSlugField(item.objectValue),
   };
 }
+
 
 /** Newest first. The API sorts by publishDate; the UI sorts by event date. */
 function byEventDateDesc(shows: ShowData[]): ShowData[] {
@@ -115,10 +119,10 @@ export async function getShowsRead(
  * must use the read above: `getShowById` returning `null` from a degraded read
  * is how the detail route 404'd a live show.
  *
- * No caller in this repo today. Its one caller was `getShowById`, which now
- * goes through `getShowByIdRead` for exactly the reason in the sentence above.
- * Kept as the value-only view of a cached, tagged read, which is the shape a
- * shows LIST page would want.
+ * Its caller is the show detail route's metadata, which resolves the show's
+ * readable address over the whole list (discovery batch 3.10 item 13). The
+ * by-id helpers this sentence used to point at were removed with that change:
+ * the render reads `getShowsRead` directly so a degraded read stays visible.
  */
 export async function getShows(collectionId?: string): Promise<ShowData[]> {
   return (await getShowsRead(collectionId)).shows;
@@ -143,28 +147,3 @@ export async function getShowsPaginated({
 
   return { shows: byEventDateDesc(res.items.map(mapShow)), totalCount: res.totalCount };
 }
-
-/**
- * One show, WITH whether the list it was looked up in was actually read.
- *
- * There is no by-id read on VR_Client_API, so this is a `.find()` over the
- * window `getShowsRead` asks for. A degraded read makes that window empty,
- * which is indistinguishable from a show that is not there (see
- * `../degradedRead.ts`). The detail route turns the second into a real 404, so
- * it has to be able to tell them apart.
- */
-export const getShowByIdRead = async (
-  id: string,
-  collectionId?: string
-): Promise<{ show: ShowData | null; degraded: boolean; richTextImageUrls: Record<string, string> }> => {
-  const { shows, degraded, richTextImageUrls } = await getShowsRead(collectionId);
-  return {
-    show: shows.find((show) => show.id === id) || null,
-    degraded,
-    richTextImageUrls,
-  };
-};
-
-export const getShowById = async (id: string, collectionId?: string): Promise<ShowData | null> => {
-  return (await getShowByIdRead(id, collectionId)).show;
-};

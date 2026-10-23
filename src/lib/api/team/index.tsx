@@ -6,6 +6,7 @@ import { readOrDegrade } from '@/lib/api/degradedRead';
 import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 import { withRecordDate } from '@/lib/api/recordDate';
+import { cmsSlugField } from '@/lib/detail/readableSegment';
 
 const TEAMMEMBERS_ID = process.env.TEAMMEMBERS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -63,6 +64,8 @@ export async function getTeamMembersRead(
     imageUrl: getSignedUrl(item.objectValue.headshot),
     imageSrcSet: getSrcSet(item.objectValue.headshot) || undefined,
     socialLinks: item.objectValue.socialLinks,
+    // Discovery batch 3.10 item 13: the readable address, when the CMS has one.
+    ...cmsSlugField(item.objectValue),
   }, item));
 
   return { members, degraded, richTextImageUrls: readRichTextImageUrls(res) };

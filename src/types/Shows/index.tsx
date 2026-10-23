@@ -6,6 +6,8 @@ export type ShowData = {
   id: string;
   /** The record's own last change, ISO (discovery batch 3.3, the sitemap date). */
   updatedAt?: string;
+  /** The record's CMS slug, when it has one (discovery batch 3.10 item 13). */
+  cmsSlug?: string;
   date?: string;
   time?: string;
   image?: string;
@@ -34,6 +36,8 @@ export type CMSShowData = {
     address?: string;
     venueAddress?: string;
     tickets_url?: string;
+    slug?: string;
+    _system?: { slug?: string };
   }
 };
 
