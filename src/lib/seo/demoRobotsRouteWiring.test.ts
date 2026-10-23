@@ -13,6 +13,7 @@ const routeSource = (relative: string) => readFileSync(new URL(relative, import.
 for (const [route, marker] of [
   ['../../app/llms.txt/route.ts', 'edgeRouteIsDemo()'],
   ['../../app/.well-known/mcp.json/route.ts', 'edgeRouteIsDemo()'],
+  ['../../app/feeds/schedule.ics/route.ts', 'withDemoRobotsHeader(feed, isDemo)'],
   ['../../app/sitemap.xml/route.ts', 'withDemoRobotsHeader('],
   ['../../app/sitemaps/[file]/route.ts', 'withDemoRobotsHeader('],
   ['../../app/og/[slug]/route.tsx', 'withDemoRobotsHeader('],

@@ -256,3 +256,17 @@ test('D17 count: 5 of The Comedy Collective’s 14 live shows now emit an Event 
     'I Think I Should Leave: A Comedy Storytelling Showcase',
   ]);
 });
+
+test('REFUSE (D17 review): a number inside a venue name never becomes a street, however address-like the words after it', () => {
+  for (const location of ['Pier 39 West Lot', 'Stage 3 North Hall', 'Gate 2 East Entrance', 'Suite 200 Park Plaza Hotel', 'The 5 Points Lane Bar']) {
+    const result = buildShowEventJsonLd(show({ location }));
+    assert.equal(result.schema, null, `${location} must not invent an address`);
+    assert.equal(result.skipped, 'no_address', location);
+  }
+});
+
+test('ALLOW (D17 review): a compass street with a ZIP or a ", XX" state, or a street word that ends the street, still splits', () => {
+  assert.equal((place('Hall 5 300 N State Street, Chicago') .address as Record<string, unknown>).streetAddress, '300 N State Street, Chicago');
+  assert.equal((place('The Annex 1200 W Belmont, IL') .address as Record<string, unknown>).streetAddress, '1200 W Belmont, IL');
+  assert.equal((place('The Annex 1200 W Belmont 60657') .address as Record<string, unknown>).streetAddress, '1200 W Belmont 60657');
+});
