@@ -74,6 +74,17 @@ export interface Product {
     saleEnd?: string;
     /** The owner's sale name ("Spring sale"). Absent when unnamed (contract C7). */
     saleName?: string;
+    /**
+     * W1 (D10): `false` when the item cannot be bought right now (archived in
+     * Stripe); the renderer draws "Not for sale right now" in place of the buy
+     * button. Computed by VR_Client_API, never stored. Absent means buyable.
+     */
+    purchasable?: false;
+    /**
+     * W1 (D14): the `usingVariant.values` that cannot be bought right now; only
+     * those sizes show "Not for sale right now". Present only when non-empty.
+     */
+    notForSaleVariants?: string[];
 }
 
 export type ProductVariantKey = "name" | "price" | "description" | "imageUrl" | "imageSrcSet";
