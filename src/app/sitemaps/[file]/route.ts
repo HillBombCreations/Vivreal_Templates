@@ -1,4 +1,7 @@
 import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
+import { getSiteData } from '@/lib/api/siteData';
+import { isDemoSite } from '@/lib/seo/demoSafety';
+import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
 import { loadSitemapEntries } from '@/lib/seo/loadSitemapEntries';
 import { partNumber, partSitemapXml } from '@/lib/seo/sitemapXml';
 
@@ -17,7 +20,12 @@ export async function GET(
   const { file } = await params;
   // A name no part can have is a 404 without reading anything upstream.
   if (partNumber(file) === null) return new Response('Not found', { status: 404 });
-  const xml = partSitemapXml(await loadSitemapEntries(), file);
+  const [entries, siteData] = await Promise.all([loadSitemapEntries(), getSiteData()]);
+  const xml = partSitemapXml(entries, file);
   if (xml === null) return new Response('Not found', { status: 404 });
-  return new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } });
+  // Discovery batch 3.4, route layer. See demoRobotsHeader.ts.
+  return withDemoRobotsHeader(
+    new Response(xml, { headers: { 'Content-Type': 'application/xml; charset=utf-8' } }),
+    isDemoSite(siteData),
+  );
 }

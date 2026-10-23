@@ -141,7 +141,8 @@ function hasDetailLinkingLayout(
  * `"products"` for all of them, so a `case 'recipes'` in that builder would be
  * dead code without this. Widening it to pass `pageConfig.format` VERBATIM was
  * rejected: every scoped-detail page on a non-recipes format (`location-hub`
- * and friends) would stop emitting Product/Thing and start emitting Article,
+ * and friends) would stop emitting Product (or, with no price, an article or
+ * no node, discovery batch 3.2) and start emitting a plain Article,
  * fleet-wide, on the next promote-stable. That is a real change to live
  * structured data and it is not this feature's to make.
  *

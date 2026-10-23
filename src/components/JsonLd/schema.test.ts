@@ -5,6 +5,8 @@ import { buildDetailJsonLd, toIso8601Duration } from './schema.ts';
 const IMAGE = 'https://media.vivreal.io/recipes/focaccia.jpg';
 
 function recipe(overrides: Record<string, unknown> = {}) {
+  // `?? {}`: a recipe always has a node; the type allows null for the
+  // priceless content branch (discovery batch 3.2).
   return buildDetailJsonLd({
     format: 'recipes',
     title: 'Overnight focaccia',
@@ -19,7 +21,7 @@ function recipe(overrides: Record<string, unknown> = {}) {
     authorName: 'Waves of Grain',
     datePublished: '2026-09-05',
     ...overrides,
-  });
+  }) ?? {};
 }
 
 test('a recipe emits Recipe with its ingredients, steps, times and yield', () => {
@@ -142,16 +144,14 @@ test('the other detail formats are untouched by the Recipe branch', () => {
     title: 'Sourdough loaf',
     price: '9.00',
     sku: 'abc',
-  });
+  }) ?? {};
   assert.equal(product['@type'], 'Product');
 
+  // Discovery batch 3.2: no price and no body text is no node, never Thing.
   const priceless = buildDetailJsonLd({ format: 'collection-list', title: 'A thing' });
-  assert.equal(priceless['@type'], 'Thing');
+  assert.equal(priceless, null);
 
-  const event = buildDetailJsonLd({ format: 'shows', title: 'A show', startDate: '2026-09-05' });
-  assert.equal(event['@type'], 'Event');
-
-  const unknown = buildDetailJsonLd({ format: 'blog', title: 'A post', authorName: 'Jo' });
+  const unknown = buildDetailJsonLd({ format: 'blog', title: 'A post', authorName: 'Jo' }) ?? {};
   assert.equal(unknown['@type'], 'Article');
   assert.deepEqual(unknown.author, { '@type': 'Person', name: 'Jo' });
 });

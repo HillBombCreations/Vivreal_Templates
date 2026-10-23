@@ -19,6 +19,7 @@
  */
 import { NextResponse } from 'next/server';
 import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from '@/lib/api/fetchWithReconnect';
+import { DEMO_ROBOTS_HEADER, DEMO_ROBOTS_VALUE, edgeRouteIsDemo } from '@/lib/seo/demoRobotsHeader';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -50,7 +51,7 @@ export async function GET(): Promise<NextResponse> {
       { label: 'mcpJsonProxy', backoffMs: DEFAULT_BACKOFF_MS },
     );
 
-    const body = await upstream.text();
+    const [body, isDemo] = await Promise.all([upstream.text(), edgeRouteIsDemo()]);
     return new NextResponse(body, {
       status: upstream.status,
       headers: {
@@ -62,6 +63,9 @@ export async function GET(): Promise<NextResponse> {
         // SiteData and changes infrequently. Agents that need fresh state
         // can re-fetch.
         'Cache-Control': 'public, max-age=60, s-maxage=60',
+        // Discovery batch 3.4, route layer: noindex on a demo even when
+        // middleware's edge map was cold. See demoRobotsHeader.ts.
+        ...(isDemo ? { [DEMO_ROBOTS_HEADER]: DEMO_ROBOTS_VALUE } : {}),
       },
     });
   } catch {

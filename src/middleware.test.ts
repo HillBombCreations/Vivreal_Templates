@@ -245,3 +245,74 @@ for (const pathname of REAL_PATHS) {
     assert.equal(response.kind, 'next', 'falls through to the route, as before this change');
   });
 }
+
+// Discovery batch 3.4 (design section 6, row "Demo"). A demo's robots.txt now
+// says Allow, so every demo response must carry X-Robots-Tag itself. Layer 1
+// is this file; layer 2 (the route handlers) is demoRobotsHeader.test.ts.
+function serveLifecycle(values: Record<string, unknown>) {
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetchCalls.push(String(input instanceof Request ? input.url : input));
+    return new Response(
+      JSON.stringify({ success: true, data: { pages: [{ slug: 'about' }], siteDetails: { values } }, error: null }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+  }) as typeof fetch; // the mock implements only the call shape middleware uses
+}
+
+const NON_DOCUMENT_PATHS = ['/llms.txt', '/.well-known/mcp.json', '/sitemap.xml', '/og/about', '/robots.txt', '/api/contact'];
+
+test('ALLOW (demo): a document response carries X-Robots-Tag: noindex, nofollow', async () => {
+  serveLifecycle({ lifecycleState: 'demo' });
+  for (const pathname of ['/', '/about', '/about/item-1']) {
+    const response = await run(pathname);
+    assert.equal(response.kind, 'next');
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow', pathname);
+  }
+});
+
+test('ALLOW (demo): llms.txt, mcp.json, sitemap, OG and robots responses carry it once the map is warm', async () => {
+  serveLifecycle({ lifecycleState: 'demo' });
+  await run('/about'); // warms the map, as any page view does
+  for (const pathname of NON_DOCUMENT_PATHS) {
+    const response = await run(pathname);
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow', pathname);
+  }
+});
+
+test('ALLOW (demo): a fail-safe lifecycle value (null, "", "Demo") is a demo here too', async () => {
+  for (const lifecycleState of [null, '', 'Demo']) {
+    __resetEdgeSiteMapCacheForTests();
+    serveLifecycle({ lifecycleState });
+    assert.equal((await run('/about')).headers.get('x-robots-tag'), 'noindex, nofollow', JSON.stringify(lifecycleState));
+  }
+});
+
+test('REFUSE (live): no response on a live site carries X-Robots-Tag', async () => {
+  serveLifecycle({ lifecycleState: 'live' });
+  await run('/about');
+  for (const pathname of ['/', '/about', ...NON_DOCUMENT_PATHS]) {
+    assert.equal((await run(pathname)).headers.get('x-robots-tag'), null, pathname);
+  }
+});
+
+test('REFUSE (pre-lifecycle site): an ABSENT lifecycleState is not a demo, so no header', async () => {
+  delete process.env.SITE_LIFECYCLE;
+  serveLifecycle({});
+  assert.equal((await run('/about')).headers.get('x-robots-tag'), null);
+});
+
+test('REFUSE (demo): hashed build assets under /_next/static are not stamped', async () => {
+  serveLifecycle({ lifecycleState: 'demo' });
+  await run('/about');
+  assert.equal((await run('/_next/static/chunks/main-app.js')).headers.get('x-robots-tag'), null);
+});
+
+test('REFUSE (demo, cold map): a non-document path never waits for the map, so middleware adds nothing', async () => {
+  // Layer 2 covers this case (the route handlers stamp it themselves). The
+  // point here is the other half: llms.txt must not start blocking on a read.
+  serveLifecycle({ lifecycleState: 'demo' });
+  const response = await run('/llms.txt');
+  assert.equal(response.kind, 'next');
+  assert.equal(response.headers.get('x-robots-tag'), null);
+  assert.ok(fetchCalls.some((url) => url.includes('/tenant/siteDetails')), 'the peek armed a background refresh');
+});

@@ -353,7 +353,7 @@ test('a rolled-back cutover (canonicalUrl kept, lifecycleState back to demo) wit
     ),
   );
   const pages = makePages();
-  assert.deepEqual(buildRobotsPolicy(siteData).rules, [{ userAgent: '*', disallow: '/' }]);
+  assert.deepEqual(buildRobotsPolicy(siteData).rules, [{ userAgent: '*', allow: '/' }]);
   assert.equal(buildRobotsPolicy(siteData).sitemap, undefined);
   assert.deepEqual(buildSiteMapForSite(siteData, pages), []);
   assert.equal(resolveRouteCanonical(siteData, '/'), undefined);
@@ -427,7 +427,7 @@ test('DEMO SAFETY: a demo store still emits a COMPLETELY empty sitemap, not a ch
     rawResponse({ lifecycleState: 'demo' }, { domainInformation: { live_url: 'https://demo-store.vivreal.io' } }),
   );
   assert.deepEqual(buildSiteMapForSite(siteData, makeCheckoutPages()), []);
-  assert.deepEqual(buildRobotsPolicy(siteData).rules, [{ userAgent: '*', disallow: '/' }]);
+  assert.deepEqual(buildRobotsPolicy(siteData).rules, [{ userAgent: '*', allow: '/' }]);
   assert.equal(buildRobotsPolicy(siteData).sitemap, undefined);
 });
 

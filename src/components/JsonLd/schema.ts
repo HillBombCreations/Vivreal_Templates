@@ -87,6 +87,22 @@ function httpsLink(value: unknown): string | undefined {
 }
 
 /**
+ * The site node's `@id`, `<origin>/#organization`, or `undefined` when the
+ * site has no durable public origin (a demo, or no domain yet).
+ *
+ * Discovery batch 3.1/3.2/3.6: an Event's `organizer` and an article's
+ * `author`/`publisher` point at the site node BY REFERENCE, so the business is
+ * described once, in the root layout, and every page agrees with it. Same
+ * origin rule as the site node's own `url`, so the reference can never name a
+ * node that is not on the page.
+ */
+export function siteOrganizationId(siteData: SiteData): string | undefined {
+  if (isDemoSite(siteData)) return undefined;
+  const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
+  return origin ? `${origin}/#organization` : undefined;
+}
+
+/**
  * Build the site-level JSON-LD payload (Organization or LocalBusiness +
  * WebSite). Emitted from root layout so it appears on every page.
  *
@@ -133,9 +149,12 @@ export function buildSiteJsonLd(
   );
   const isLocal = hasAddress || hoursSpec.length > 0;
 
+  const organizationId = siteOrganizationId(siteData);
+
   const orgBase: Record<string, unknown> = {
     '@context': 'https://schema.org',
     '@type': isLocal ? 'LocalBusiness' : 'Organization',
+    ...(organizationId ? { '@id': organizationId } : {}),
     name: siteName,
     ...(url ? { url } : {}),
     ...(description ? { description } : {}),
@@ -177,8 +196,9 @@ export function buildSiteJsonLd(
 
 /**
  * Build JSON-LD for a single content detail page. Discriminates on the page
- * `format` to pick the most appropriate schema.org type. Falls back to
- * `Article` for unknown formats so we always emit something useful.
+ * `format` to pick the most appropriate schema.org type. Show pages have their
+ * own builder (`./eventSchema.ts`), because an Event needs the site's time zone
+ * and address to be valid at all.
  */
 export interface DetailJsonLdInput {
   format?: string;
@@ -186,9 +206,20 @@ export interface DetailJsonLdInput {
   description?: string;
   imageUrl?: string;
   url?: string;
-  // Event-specific
-  startDate?: string;
-  location?: string;
+  // Content-item specific (discovery batch 3.2): what decides BlogPosting,
+  // Article or no item node for an item with no publishable price.
+  /**
+   * The item's long-form text, HTML as authored (`raw.body`, else its
+   * description). Only whether any VISIBLE text is left decides anything; the
+   * text itself is never emitted.
+   */
+  bodyText?: string;
+  /** An `author` field on the item itself, published as a `Person`. */
+  itemAuthor?: string;
+  /** The site node's `@id` (`siteOrganizationId`), for `author`/`publisher`. */
+  organizationId?: string;
+  /** The business name, the author when there is neither of the two above. */
+  organizationName?: string;
   // Product-specific
   /**
    * The authored price. `objectValue` is Mongo Mixed, so this is whatever the
@@ -317,8 +348,9 @@ function asPublishDate(value: string | undefined): string | undefined {
  * `asPublishDate` makes for "Autumn 2026": ranges and prefixes ("From $12",
  * "$9-$12"), units ("$12.75/unit", "9 USD"), words, other currency symbols, a
  * space after the `$`, and misplaced commas ("9,00" is a European decimal, not
- * nine hundred). A rejected price falls back to `Thing`, the branch a product
- * with no price at all already takes: no rich result, but a valid document.
+ * nine hundred). A rejected price takes the branch a product with no price at
+ * all already takes (an article, or no item node): no rich result, but a valid
+ * document.
  */
 export function asOfferPrice(value: number | string | undefined): string | undefined {
   if (typeof value === 'number') {
@@ -405,9 +437,65 @@ function buildArticleJsonLd(
   };
 }
 
+/** Google truncates a longer `headline`; schema.org has no limit of its own. */
+const HEADLINE_MAX = 110;
+
+/**
+ * Whether authored HTML leaves any visible text once its tags are gone. A
+ * cleared editor stores `<p></p>`, and an item made of nothing but that is not
+ * an article.
+ */
+function hasVisibleText(html: string | undefined): boolean {
+  if (typeof html !== 'string') return false;
+  return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;|&#160;/gi, ' ').trim().length > 0;
+}
+
+/**
+ * Discovery batch 3.2: the node for an item with NO publishable price.
+ *
+ * It used to be `{ '@type': 'Thing' }`, which tells a search engine nothing
+ * and reads as a broken product. Now: body text and a publish date give a
+ * `BlogPosting`, body text alone gives an `Article`, and anything else gives no
+ * item node at all (the page keeps its BreadcrumbList). `Thing` is never
+ * emitted.
+ *
+ * The author is the item's own `author` field as a `Person`, else the business
+ * by reference to the site node, else the business by name. The publisher is
+ * the site node by reference, when the site has a public origin to name it by.
+ */
+function buildContentItemJsonLd(
+  base: Record<string, unknown>,
+  input: DetailJsonLdInput,
+): Record<string, unknown> | null {
+  if (!hasVisibleText(input.bodyText)) return null;
+  const datePublished = asPublishDate(input.datePublished);
+  const author = input.itemAuthor?.trim()
+    ? { '@type': 'Person', name: input.itemAuthor.trim() }
+    : input.organizationId
+      ? { '@id': input.organizationId }
+      : input.organizationName
+        ? { '@type': 'Organization', name: input.organizationName }
+        : undefined;
+  return {
+    ...base,
+    '@type': datePublished ? 'BlogPosting' : 'Article',
+    headline: input.title.slice(0, HEADLINE_MAX),
+    ...(datePublished ? { datePublished } : {}),
+    ...(input.dateModified ? { dateModified: input.dateModified } : {}),
+    ...(author ? { author } : {}),
+    ...(input.organizationId ? { publisher: { '@id': input.organizationId } } : {}),
+    ...(input.url ? { mainEntityOfPage: input.url } : {}),
+  };
+}
+
+/**
+ * The detail page's own node, or `null` when the item has nothing a search
+ * engine can use (see `buildContentItemJsonLd`). A `null` is not an error: the
+ * page still carries its BreadcrumbList (`withDetailBreadcrumbs`).
+ */
 export function buildDetailJsonLd(
   input: DetailJsonLdInput
-): Record<string, unknown> {
+): Record<string, unknown> | null {
   // Strip CloudFront signing params from imageUrl before embedding —
   // signed URLs expire after 300s but JSON-LD is crawler-cached for days.
   // See ./unsignMediaUrl.ts for the full rationale.
@@ -421,20 +509,11 @@ export function buildDetailJsonLd(
   };
 
   switch (input.format) {
-    case 'shows':
-      return {
-        ...base,
-        '@type': 'Event',
-        ...(input.startDate ? { startDate: input.startDate } : {}),
-        ...(input.location
-          ? { location: { '@type': 'Place', name: input.location } }
-          : {}),
-      };
-
     case 'products':
     case 'collection-list': {
       // Only emit Product schema if we have a PUBLISHABLE price, otherwise
-      // it'll fail Google's Rich Results validator. Fall back to base Thing.
+      // it'll fail Google's Rich Results validator. Without one the item is
+      // judged as content instead (`buildContentItemJsonLd`).
       //
       // The gate used to be `input.price !== undefined`, which let an authored
       // "$9.00" through into `String(...)` and emitted exactly the invalid
@@ -466,7 +545,7 @@ export function buildDetailJsonLd(
           },
         };
       }
-      return { ...base, '@type': 'Thing' };
+      return buildContentItemJsonLd(base, input);
     }
 
     case 'recipes': {

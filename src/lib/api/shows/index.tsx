@@ -32,6 +32,11 @@ function showsPath(collectionId: string, limit: number, skip: number): string {
   return `/tenant/collectionObjects?collectionId=${encodeURIComponent(collectionId)}&limit=${limit}&skip=${skip}&sort=publishDate:desc`;
 }
 
+/** A non-empty string field, or `undefined` (objectValue is Mongo Mixed). */
+function textField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
 function mapShow(item: CMSShowData): ShowData {
   return {
     title: item.objectValue.title,
@@ -40,6 +45,9 @@ function mapShow(item: CMSShowData): ShowData {
     date: item.objectValue.date,
     time: item.objectValue.time,
     location: item.objectValue.location,
+    // Discovery batch 3.1: the venue's street address, when the content type
+    // has one, so the Event JSON-LD can name a real place.
+    address: textField(item.objectValue.address) ?? textField(item.objectValue.venueAddress),
     ticketsUrl: item.objectValue.tickets_url,
     image: getSignedUrl(item.objectValue.poster),
     imageUrl: getSignedUrl(item.objectValue.poster),

@@ -45,7 +45,7 @@ function ruleFor(userAgent: string): RobotsRule {
 // that names it, so these agents never see the wildcard list at all. Their
 // own rules must therefore keep `/llms.txt` reachable on their own.
 const LIVE_ACTION_AGENTS = ['ChatGPT-User', 'OAI-SearchBot', 'PerplexityBot', 'Claude-User', 'Claude-Web'];
-const TRAINING_CRAWLERS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'CCBot'];
+const TRAINING_CRAWLERS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'CCBot', 'Applebot-Extended', 'meta-externalagent'];
 
 // Owner decision 2026-10-22: Google-Extended also gates Gemini app and Vertex
 // grounding, so it is allowed like a normal crawler. Having NO group of its
@@ -72,12 +72,37 @@ test('REFUSE (owner 2026-10-22): every other rule is unchanged, the full live ru
     { userAgent: 'ClaudeBot', disallow: '/' },
     { userAgent: 'anthropic-ai', disallow: '/' },
     { userAgent: 'CCBot', disallow: '/' },
+    { userAgent: 'Applebot-Extended', disallow: '/' },
+    { userAgent: 'meta-externalagent', disallow: '/' },
   ]);
 });
 
-test('REFUSE (owner 2026-10-22): a demo site still locks out every crawler, Google-Extended included, with no sitemap', () => {
+test('ALLOW (discovery 3.4): a demo site lets every crawler in, so each one reads the noindex, and still advertises no sitemap', () => {
   const policy = buildRobotsPolicy({ ...LIVE_SITE, lifecycleState: 'demo' } as SiteData);
-  assert.deepEqual(policy, { rules: [{ userAgent: '*', disallow: '/' }] });
+  assert.deepEqual(policy, { rules: [{ userAgent: '*', allow: '/' }] });
+});
+
+// D2 (owner 2026-10-22): Apple's and Meta's TRAINING agents are blocked, their
+// search and link-preview agents are not.
+test('REFUSE (D2): Applebot-Extended and meta-externalagent each have their own Disallow: / group on a live site', () => {
+  for (const userAgent of ['Applebot-Extended', 'meta-externalagent']) {
+    const rule = ruleFor(userAgent);
+    assert.deepEqual(toList(rule.disallow), ['/'], `${userAgent} is denied the whole site`);
+    assert.deepEqual(toList(rule.allow), [], `${userAgent} is granted nothing`);
+  }
+});
+
+test('ALLOW (D2): Applebot, Meta-WebIndexer, OAI-SearchBot, PerplexityBot and Google-Extended still reach an allow', () => {
+  // A crawler with no group of its own obeys the wildcard (RFC 9309 2.2.1).
+  const rules = liveRules();
+  for (const userAgent of ['Applebot', 'Meta-WebIndexer', 'facebookexternalhit', 'Meta-ExternalFetcher', 'Google-Extended']) {
+    const named = rules.filter((rule) => toList(rule.userAgent).some((ua) => ua.toLowerCase() === userAgent.toLowerCase()));
+    assert.deepEqual(named, [], `${userAgent} has no group, so it obeys the wildcard allow`);
+  }
+  assert.deepEqual(toList(ruleFor('*').allow), ['/']);
+  for (const userAgent of ['OAI-SearchBot', 'PerplexityBot']) {
+    assert.deepEqual(toList(ruleFor(userAgent).allow), ['/'], `${userAgent} keeps its own allow`);
+  }
 });
 
 test('ALLOW (v5 R4): /llms.txt is no longer disallowed for generic crawlers, so the file the site serves is not contradicted', () => {
