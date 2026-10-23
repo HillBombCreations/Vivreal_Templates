@@ -30,7 +30,13 @@ type RobotsSiteData = Pick<
  *   - OpenAI: `ChatGPT-User` + `OAI-SearchBot` (live), `GPTBot` (training)
  *   - Perplexity: `PerplexityBot` (live)
  *   - Common Crawl: `CCBot` (training / dataset)
- *   - Google: `Google-Extended` (training opt-out token)
+ *   - Google: `Google-Extended` is deliberately NOT listed, so it falls
+ *     through to the wildcard rule like any normal crawler. It was denied
+ *     (2026-05-25, d8c7acb) as a training opt-out, but Google's crawler docs
+ *     (updated 2026-10-15) say the same token also controls grounding in the
+ *     Gemini app and Vertex AI, so denying it kept every site out of Gemini
+ *     answers. Owner decision 2026-10-22: allow it on every site (customer
+ *     sites, vivreal.io, help.vivreal.io), accepting the training trade-off.
  *
  * Crawlers not listed fall through to the wildcard `*` rule, which allows
  * indexing of public content and disallows `/private/` + agent endpoints
@@ -99,7 +105,6 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
       { userAgent: 'ClaudeBot', disallow: '/' },
       { userAgent: 'anthropic-ai', disallow: '/' },
       { userAgent: 'CCBot', disallow: '/' },
-      { userAgent: 'Google-Extended', disallow: '/' },
     ],
     // A subdomain-only site has no custom domainName, which is the fleet
     // majority; before the resolver took over this line those sites advertised
