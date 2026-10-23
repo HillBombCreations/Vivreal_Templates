@@ -342,6 +342,142 @@ export function buildContactRecipientFailureCapture({
   };
 }
 
+/**
+ * Fingerprint root for "a contact or migration form submission was refused,
+ * so it was neither stored nor emailed" (vivreal-hq
+ * research-admin-inbound-2026-10-21.md: this used to happen with no trace at
+ * all). One Issue fleet wide; `stage`, `formType` and `siteId` are tags.
+ */
+export const CONTACT_REJECTED_FINGERPRINT = 'templates.contact.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const CONTACT_REJECTED_MESSAGE =
+  'contact-form submission rejected, not stored or emailed';
+
+/**
+ * Capture context for a refused submission. Carries field NAMES and the
+ * upstream status only, never a submitted value or the upstream body: these
+ * are people's names, addresses and messages, and a VR_Client_API validation
+ * error can quote the value it refused.
+ *
+ * `missing-fields` is this route's own check (`missing` lists the names);
+ * `upstream-rejected` is a non-2xx from VR_Client_API, which answers 2xx
+ * whenever it stored the submission, so a non-2xx means nothing was kept.
+ */
+export function buildContactRejectionCapture({
+  siteId,
+  formType,
+  stage,
+  missingFields,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  formType: 'contact' | 'migration';
+  stage: 'missing-fields' | 'upstream-rejected';
+  missingFields?: readonly ('name' | 'customerEmail' | 'message')[];
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [CONTACT_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage,
+      formType,
+      ...(missingFields?.length ? { missing: missingFields.join(',') } : {}),
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
+/**
+ * Fingerprint root for "a newsletter sign-up was refused, so the subscriber
+ * was not stored" (vivreal-hq review-templates204-2026-10-21.md, Fold in:
+ * `/api/subscribe` used to log this and nothing else, so an owner never
+ * learned sign-ups were being lost). One Issue fleet wide; `stage`, `status`
+ * and `siteId` are tags.
+ */
+export const SUBSCRIBE_REJECTED_FINGERPRINT = 'templates.subscribe.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const SUBSCRIBE_REJECTED_MESSAGE = 'newsletter sign-up rejected, subscriber not stored';
+
+/**
+ * Capture context for a refused sign-up. Stage and upstream status only,
+ * never the address or the upstream body: a VR_Client_API validation error
+ * can quote the value it refused.
+ *
+ * `missing-collection` is the route's own check (only a stale or broken
+ * client reaches it, the current one refuses before posting);
+ * `upstream-rejected` is a failed `/tenant/definedCollectionObject` write,
+ * with `status` absent when no HTTP answer came back at all.
+ */
+export function buildSubscribeRejectionCapture({
+  siteId,
+  stage,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  stage: 'missing-collection' | 'upstream-rejected';
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [SUBSCRIBE_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage,
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
+/**
+ * Fingerprint root for "a visitor's review was refused, so it was not
+ * stored" (vivreal-hq review-templates204-delta-2026-10-21.md: `/api/review`
+ * logged this and nothing else, the same silent loss `/api/subscribe` had).
+ * One Issue fleet wide; `status` and `siteId` are tags.
+ */
+export const REVIEW_REJECTED_FINGERPRINT = 'templates.review.rejected';
+
+/** Message body for the capture (there is no error object). */
+export const REVIEW_REJECTED_MESSAGE = 'site review rejected, review not stored';
+
+/**
+ * Capture context for a refused review: a failed
+ * `/tenant/definedCollectionObject` write, with `status` absent when no HTTP
+ * answer came back at all. Status only, never the email, the name, the text
+ * or the upstream body. VR_Client_API answers a honeypot or malformed review
+ * with a silent 2xx, so a non-2xx (a 429 rate limit, a 5xx) is a review a
+ * real visitor lost.
+ */
+export function buildReviewRejectionCapture({
+  siteId,
+  upstreamStatus,
+  suppressed,
+}: {
+  siteId: string | undefined;
+  upstreamStatus?: number;
+  suppressed?: number;
+}): SentryCaptureContext {
+  return {
+    level: 'error',
+    fingerprint: [REVIEW_REJECTED_FINGERPRINT],
+    tags: {
+      siteId: siteId || UNKNOWN_SITE_ID,
+      stage: 'upstream-rejected',
+      ...(upstreamStatus !== undefined ? { status: String(upstreamStatus) } : {}),
+    },
+    ...(suppressed ? { extra: { suppressedSinceLastCapture: suppressed } } : {}),
+  };
+}
+
 export function buildDegradedRefusalCapture({
   siteId,
   format,

@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { subscribeUser } from "@/lib/api/subscribe";
+import { SUBSCRIBE_REJECTED_MESSAGE, buildSubscribeRejectionCapture } from "@/lib/api/errorCapture";
+import { createCaptureThrottle } from "@/lib/api/captureThrottle";
+import { captureWithoutRequestPayload } from "@/lib/api/scrubbedCapture";
 import { mergeAttributionFields } from "@/lib/leadAttribution";
 import { isValidEmail } from "@/lib/emailShape";
 
@@ -22,6 +25,30 @@ function sanitizeFields(raw: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+/**
+ * At most one Sentry capture per process per 5 minutes for each kind of
+ * refused sign-up (stage and upstream status), the same throttle the contact
+ * route uses. Module scope so it outlives a request.
+ */
+const SUBSCRIBE_REJECTION_CAPTURES = createCaptureThrottle();
+
+/**
+ * Tell Sentry a sign-up was refused, by stage and status only, flushed before
+ * the caller responds. Never the address: the shared helper strips the
+ * request body and the console breadcrumbs the SDK would otherwise attach.
+ */
+async function reportRejection(details: {
+  stage: "missing-collection" | "upstream-rejected";
+  upstreamStatus?: number;
+}): Promise<void> {
+  const gate = SUBSCRIBE_REJECTION_CAPTURES.take(`${details.stage}:${details.upstreamStatus ?? ""}`);
+  if (!gate.capture) return;
+  await captureWithoutRequestPayload(
+    SUBSCRIBE_REJECTED_MESSAGE,
+    buildSubscribeRejectionCapture({ ...details, siteId: process.env.SITE_ID, suppressed: gate.suppressed }),
+  );
+}
+
 export async function POST(req: Request) {
   try {
     const { email, collectionId, fields } = await req.json();
@@ -30,6 +57,7 @@ export async function POST(req: Request) {
     // this site controls. `isValidEmail` is the same rule VR_Client_API applies
     // at the write boundary (src/shared/contactGuards.js EMAIL_SHAPE); see
     // src/lib/emailShape.ts for why it is stated in both places.
+    // Not reported: a visitor can correct it, and it is mostly bot noise.
     if (!isValidEmail(email)) {
       return NextResponse.json(
         { success: false, message: "Invalid email." },
@@ -43,6 +71,9 @@ export async function POST(req: Request) {
     const address = email.trim();
 
     if (!collectionId) {
+      // The current client refuses before posting, so only a stale or broken
+      // one reaches this, and every sign-up from it is lost.
+      await reportRejection({ stage: "missing-collection" });
       return NextResponse.json(
         { success: false, message: "Missing collectionId." },
         { status: 400 }
@@ -64,8 +95,9 @@ export async function POST(req: Request) {
     const cookieHeader = req.headers.get("cookie");
     const attributedFields = mergeAttributionFields(sanitizeFields(fields), cookieHeader, process.env.SITE_ID);
 
-    const ok = await subscribeUser(address, collectionId, attributedFields);
-    if (!ok) {
+    const result = await subscribeUser(address, collectionId, attributedFields);
+    if (!result.ok) {
+      await reportRejection({ stage: "upstream-rejected", upstreamStatus: result.status });
       return NextResponse.json(
         { success: false, message: "Subscribe failed." },
         { status: 500 }

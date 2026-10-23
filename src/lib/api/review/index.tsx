@@ -1,6 +1,6 @@
 import 'server-only';
 import type { ReviewData, ReviewDisplay } from '@/types/Reviews';
-import { clientFetch, clientFetchSafe } from '@/lib/api/client';
+import { ApiError, clientFetch, clientFetchSafe } from '@/lib/api/client';
 
 interface CMSReviewObject {
   _id: string;
@@ -39,7 +39,15 @@ export async function getReviews(collectionId?: string): Promise<ReviewDisplay[]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-export async function createReview(data: ReviewData): Promise<boolean> {
+/**
+ * `status` is the upstream HTTP status when VR_Client_API answered, absent
+ * when no answer came back (a network failure). The caller reports it; this
+ * function must not swallow it, or a failing write loses every review with
+ * nothing in Sentry (review-templates204-delta-2026-10-21.md).
+ */
+export type CreateReviewResult = { ok: true } | { ok: false; status?: number };
+
+export async function createReview(data: ReviewData): Promise<CreateReviewResult> {
   try {
     await clientFetch<unknown>('/tenant/definedCollectionObject', {
       method: 'POST',
@@ -61,9 +69,9 @@ export async function createReview(data: ReviewData): Promise<boolean> {
         },
       }),
     });
-    return true;
+    return { ok: true };
   } catch (error) {
     console.error('[createReview] error:', error);
-    return false;
+    return error instanceof ApiError ? { ok: false, status: error.status } : { ok: false };
   }
 }
