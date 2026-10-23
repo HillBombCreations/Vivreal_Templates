@@ -45,7 +45,40 @@ function ruleFor(userAgent: string): RobotsRule {
 // that names it, so these agents never see the wildcard list at all. Their
 // own rules must therefore keep `/llms.txt` reachable on their own.
 const LIVE_ACTION_AGENTS = ['ChatGPT-User', 'OAI-SearchBot', 'PerplexityBot', 'Claude-User', 'Claude-Web'];
-const TRAINING_CRAWLERS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'CCBot', 'Google-Extended'];
+const TRAINING_CRAWLERS = ['GPTBot', 'ClaudeBot', 'anthropic-ai', 'CCBot'];
+
+// Owner decision 2026-10-22: Google-Extended also gates Gemini app and Vertex
+// grounding, so it is allowed like a normal crawler. Having NO group of its
+// own is what makes it obey the wildcard rule (RFC 9309 section 2.2.1).
+test('ALLOW (owner 2026-10-22): Google-Extended has no rule of its own on a live site, so it obeys the wildcard allow like a normal crawler', () => {
+  const named = liveRules().filter((rule) => toList(rule.userAgent).some((ua) => ua.toLowerCase() === 'google-extended'));
+  assert.deepEqual(named, [], 'no rule may name Google-Extended, in any casing');
+  assert.deepEqual(toList(ruleFor('*').allow), ['/'], 'the wildcard rule it falls through to allows the site');
+});
+
+test('REFUSE (owner 2026-10-22): every other rule is unchanged, the full live rule list is pinned exactly', () => {
+  assert.deepEqual(liveRules(), [
+    {
+      userAgent: '*',
+      allow: '/',
+      disallow: ['/private/', '/mcp', '/.well-known/mcp.json', '/.well-known/llms.txt'],
+    },
+    { userAgent: 'ChatGPT-User', allow: '/' },
+    { userAgent: 'OAI-SearchBot', allow: '/' },
+    { userAgent: 'PerplexityBot', allow: '/' },
+    { userAgent: 'Claude-User', allow: '/' },
+    { userAgent: 'Claude-Web', allow: '/' },
+    { userAgent: 'GPTBot', disallow: '/' },
+    { userAgent: 'ClaudeBot', disallow: '/' },
+    { userAgent: 'anthropic-ai', disallow: '/' },
+    { userAgent: 'CCBot', disallow: '/' },
+  ]);
+});
+
+test('REFUSE (owner 2026-10-22): a demo site still locks out every crawler, Google-Extended included, with no sitemap', () => {
+  const policy = buildRobotsPolicy({ ...LIVE_SITE, lifecycleState: 'demo' } as SiteData);
+  assert.deepEqual(policy, { rules: [{ userAgent: '*', disallow: '/' }] });
+});
 
 test('ALLOW (v5 R4): /llms.txt is no longer disallowed for generic crawlers, so the file the site serves is not contradicted', () => {
   const wildcard = ruleFor('*');
