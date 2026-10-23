@@ -113,7 +113,15 @@ export interface Businessinfo {
      * absent value to `true` (v5 `withResolvedShowEmail`); only an explicit
      * `false` hides it.
      */
-    showEmail?: boolean
+    showEmail?: boolean,
+    /**
+     * Discovery batch 3.6 (Schemas 1.62.0): "What kind of business", one of
+     * VR_Secure_API's allowlist. Absent means unset; read only through
+     * `resolveBusinessType`.
+     */
+    businessType?: string,
+    /** Discovery batch 3.6: "Customers don't visit this address". */
+    hideStreetAddress?: boolean
 }
 
 export interface SocialLink {
@@ -788,6 +796,12 @@ export interface SiteData {
      * when the site claims no list.
      */
     subscribersCollectionId?: string | null;
+    /**
+     * Discovery batch 3.7: the Google Search Console "HTML tag" code
+     * (`siteDetails.values.googleSiteVerification`, normalised by
+     * VR_Secure_API). Absent means no verification tag at all.
+     */
+    googleSiteVerification?: string | null;
     /**
      * F-C19: which product lists cannot sell right now. `state` is the
      * strongest over every list, `lists` maps a collection id to `'paused'`

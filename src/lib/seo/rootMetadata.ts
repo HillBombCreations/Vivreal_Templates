@@ -10,6 +10,18 @@ import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 import { resolveServableFavicon } from './faviconGuard.ts';
 
 /**
+ * Discovery batch 3.7: the code from Google Search Console's "HTML tag" choice,
+ * as VR_Secure_API stores it (bare, already extracted from a pasted tag). The
+ * same shape Secure validates; anything else is never put in the page.
+ */
+const GOOGLE_VERIFICATION_CODE = /^[A-Za-z0-9_-]{20,100}$/;
+
+/** `{ verification: { google } }` for a well-formed code, else nothing at all. */
+export function googleVerificationMetadata(code: unknown): Pick<Metadata, 'verification'> {
+  return typeof code === 'string' && GOOGLE_VERIFICATION_CODE.test(code) ? { verification: { google: code } } : {};
+}
+
+/**
  * Compose the root layout's `generateMetadata()` result from an already-
  * fetched `siteData`. Extracted out of `layout.tsx` (which contains JSX and
  * so cannot be `import`ed by the plain-Node test runner) so this composition
@@ -40,6 +52,11 @@ import { resolveServableFavicon } from './faviconGuard.ts';
  * nothing, so none is emitted: comparing hosts would trust the stored
  * `canonicalUrl` the origin resolver reads first, which is the field a demo
  * carries stale. A non-demo adds neither key and is byte-identical to before.
+ *
+ * Search Console verification (discovery batch 3.7): the owner's code becomes
+ * `<meta name="google-site-verification">` on every page (Google checks the
+ * home page; Next escapes the attribute). No code, or a malformed one, adds no
+ * key, byte-identical to before.
  */
 export function buildRootMetadata(siteData: SiteData): Metadata {
   const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
@@ -73,5 +90,6 @@ export function buildRootMetadata(siteData: SiteData): Metadata {
     ...(origin && { metadataBase: new URL(origin) }),
     ...(favicon && { icons: { icon: favicon } }),
     ...(demo && { robots: { index: false, follow: false } }),
+    ...googleVerificationMetadata(siteData.googleSiteVerification),
   };
 }
