@@ -797,12 +797,6 @@ export interface SiteData {
      */
     subscribersCollectionId?: string | null;
     /**
-     * Discovery batch 3.7: the Google Search Console "HTML tag" code
-     * (`siteDetails.values.googleSiteVerification`, normalised by
-     * VR_Secure_API). Absent means no verification tag at all.
-     */
-    googleSiteVerification?: string | null;
-    /**
      * F-C19: which product lists cannot sell right now. `state` is the
      * strongest over every list, `lists` maps a collection id to `'paused'`
      * or `'moving'`; a list absent from it is selling. Always present from
@@ -812,6 +806,12 @@ export interface SiteData {
         state: 'selling' | 'paused' | 'moving';
         lists: Record<string, 'paused' | 'moving'>;
     };
+    /**
+     * Discovery batch 3.7: the Google Search Console "HTML tag" code
+     * (`siteDetails.values.googleSiteVerification`, normalised by
+     * VR_Secure_API). Absent means no verification tag at all.
+     */
+    googleSiteVerification?: string | null;
     /**
      * Set ONLY by `FALLBACK_SITE_DATA`. This object is not a site, it is the
      * placeholder returned when VR_Client_API could not be read at all.
