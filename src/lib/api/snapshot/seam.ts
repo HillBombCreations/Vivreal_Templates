@@ -32,8 +32,6 @@ export interface FloorSeamDeps {
   readonly floor: SnapshotFloor;
   readonly recorder: SnapshotRecorder;
   readonly now: () => number;
-  /** True inside an ISR regeneration, null when that cannot be read. For the log line only. */
-  readonly revalidation: () => boolean | null;
 }
 
 export interface FloorSeamRead<T> {
@@ -60,7 +58,7 @@ export async function readCachedWithFloor<T>(deps: FloorSeamDeps, req: FloorSeam
     if (req.floorOptOut) return undefined;
     const found = deps.floor.lookup<T>(req.path);
     if (!found.hit) return undefined;
-    deps.floor.noteAnswer(req.path, { reason, revalidation: deps.revalidation(), elapsedMs });
+    deps.floor.noteAnswer(req.path, { reason, elapsedMs });
     return found.value;
   };
 

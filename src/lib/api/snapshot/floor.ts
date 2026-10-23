@@ -65,10 +65,17 @@ export type FloorMissReason =
 
 export type FloorLookup<T> = { hit: true; value: T } | { hit: false; reason: FloorMissReason };
 
-/** What a structured floor line carries besides the path. */
+/**
+ * What a structured floor line carries besides the path.
+ *
+ * No `revalidation` flag (plan 5.5 listed one): Next exposes no public way to
+ * ask "is this render an ISR regeneration", and the internal field that said
+ * so in 16.3.8 (`WorkStore.isStaticGeneration`) is gone in 16.4.1, which
+ * rides the same promote (#214). Reading it failed the 16.4.1 type-check, i.e.
+ * every site's build. `elapsedMs` still shows a read that straddled a freeze.
+ */
 export interface FloorAnswerContext {
   readonly reason: FloorReason;
-  readonly revalidation: boolean | null;
   readonly elapsedMs: number | null;
 }
 
@@ -234,7 +241,6 @@ export function createSnapshotFloor(deps: SnapshotFloorDeps): SnapshotFloor {
       const fields = {
         ...baseFields(path),
         reason: ctx.reason,
-        revalidation: ctx.revalidation,
         elapsedMs: ctx.elapsedMs,
         builtAt: loaded?.builtAt ?? headBuiltAt,
       };

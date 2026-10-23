@@ -7,10 +7,6 @@
 import 'server-only';
 import { cookies, draftMode, headers } from 'next/headers';
 import { unstable_cache } from 'next/cache';
-// Next's own work store, read ONLY to say whether a floor answer was given
-// inside an ISR regeneration (the `revalidation` field of
-// `site.snapshot.floor`). Nothing decides on it; an absent store reads null.
-import { workAsyncStorage } from 'next/dist/server/app-render/work-async-storage.external';
 import * as Sentry from '@sentry/nextjs';
 import { BOT_VERDICT_HEADER } from '../botVerdict';
 import { buildFetchFailureCapture, stripQueryString, upstreamFallbackLine } from './errorCapture';
@@ -124,19 +120,8 @@ export const SNAPSHOT_RECORDER = createSnapshotRecorder({ siteId: SITE_ID });
 export function floorAnswerFor<T>(path: string, reason: 'values_missing'): T | undefined {
   const found = SNAPSHOT_FLOOR.lookup<T>(path);
   if (!found.hit) return undefined;
-  SNAPSHOT_FLOOR.noteAnswer(path, { reason, revalidation: inRevalidation(), elapsedMs: null });
+  SNAPSHOT_FLOOR.noteAnswer(path, { reason, elapsedMs: null });
   return found.value;
-}
-
-/** Whether the current render is an ISR regeneration, for the floor log line only. */
-function inRevalidation(): boolean | null {
-  try {
-    const store = workAsyncStorage.getStore();
-    return store ? store.isStaticGeneration : null;
-  } catch {
-    // Reading Next's store is best effort; the line carries null instead.
-    return null;
-  }
 }
 
 /**
@@ -357,7 +342,6 @@ export async function clientFetchCached<T>(
       floor: SNAPSHOT_FLOOR,
       recorder: SNAPSHOT_RECORDER,
       now: Date.now,
-      revalidation: inRevalidation,
     },
     {
       path,

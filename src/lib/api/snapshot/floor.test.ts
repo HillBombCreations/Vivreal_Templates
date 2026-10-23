@@ -119,10 +119,9 @@ test('rich-text images that are dead or dying are pruned from the clone a floor 
 test('noteAnswer logs site.snapshot.floor with the reason, the build time, and no query values', () => {
   const h = floorHarness({ siteId: SITE, file: snapshotOf(SITE, ENTRIES) });
   h.floor.lookup(MENU);
-  h.floor.noteAnswer(MENU, { reason: 'own_read', revalidation: true, elapsedMs: 61_000 });
+  h.floor.noteAnswer(MENU, { reason: 'own_read', elapsedMs: 61_000 });
   const [line] = h.events('site.snapshot.floor');
   assert.equal(line.reason, 'own_read');
-  assert.equal(line.revalidation, true);
   assert.equal(line.elapsedMs, 61_000);
   assert.equal(line.builtAt, '2026-10-24T01:23:45.000Z');
   assert.equal(line.path, '/tenant/collectionObjects');

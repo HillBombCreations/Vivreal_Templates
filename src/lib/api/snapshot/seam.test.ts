@@ -31,7 +31,6 @@ function seam(siteId: string, file: SnapshotFile | null) {
     floor: h.floor,
     recorder: { active: true, record: (path, value) => recorded.push({ path, value }), writeManifest: () => {} },
     now: Date.now,
-    revalidation: () => false,
   };
   let upstreamCalls = 0;
   const failures: unknown[] = [];
