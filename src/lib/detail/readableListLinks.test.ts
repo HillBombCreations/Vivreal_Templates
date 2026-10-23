@@ -263,3 +263,59 @@ test('SOURCE PIN: product cards are titled and priced at the size quick add bags
   const bridge = readFileSync(new URL('../api/composition/productBridge.ts', import.meta.url), 'utf8');
   assert.ok(bridge.includes('const defaultVariant = offerVariantKey(product.usingVariant, product.notForSaleVariants);'));
 });
+
+/* ── The shows page template (renderer 1.89.1 links it via itemSegment) ── */
+
+const showsTemplate = (variant?: 'compact') => ({
+  id: variant ? 'blk_home_shows' : 'blk_shows_tpl',
+  order: 0,
+  enabled: true,
+  type: { kind: 'page-template', dispatchId: 'shows' },
+  config: { bindings: [{ collectionId: 'shows1', ...(variant ? { sectionConfig: { variant } } : {}) }] },
+});
+
+/** Every /shows/ href on the page resolves, without a redirect, to the show its card names. */
+function assertEachCardItsOwnShow(html: string, shows: typeof showDocs) {
+  const list = detailShows(shows);
+  const links = hrefs(html, '/shows/');
+  assert.ok(links.length >= shows.length, `sanity: every show is linked (${links.length})`);
+  for (const href of links) {
+    const resolved = readable.resolveReadableSegment(list, decodeURIComponent(href.slice('/shows/'.length)));
+    assert.equal(resolved?.redirect, false, `${href} is served without a redirect`);
+  }
+  // Right item: the anchor wrapping a show's title links that show.
+  let matched = 0;
+  for (const show of shows) {
+    const title = show.objectValue.title as string;
+    const anchors = [...html.matchAll(/<a\b[^>]*href="(\/shows\/[^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].filter((m) => m[2].includes(title.replace(/'/g, '&#x27;')));
+    for (const m of anchors) {
+      const resolved = readable.resolveReadableSegment(list, decodeURIComponent(m[1].slice('/shows/'.length)));
+      assert.equal(resolved?.item.id, show._id, `the "${title}" card links its own show`);
+      matched += 1;
+    }
+  }
+  assert.ok(matched >= shows.length, `sanity: a titled card was matched for every show (${matched})`);
+}
+
+test('ALLOW: the shows page template links each show at its readable address, its own item', () => {
+  const page = pageOf({ name: 'Shows', slug: 'shows', format: 'shows', blocks: [showsTemplate()], detailPage: { enabled: true } });
+  const pages = [homePage, page, teamPage];
+  assert.equal(plan(page, pages).get('shows1'), 'shows', 'control: the template lands on the readable route');
+  const { html } = composeReadable(page, pages);
+  assert.ok(hrefs(html, '/shows/').includes('/shows/hotshots-2fb644'), hrefs(html, '/shows/').join(' '));
+  assertEachCardItsOwnShow(html, showDocs);
+});
+
+test("ALLOW: the home page's compact shows template links into the shows page at the readable address", () => {
+  const home = pageOf({ name: 'Home', slug: 'home', format: 'home', blocks: [showsTemplate('compact')] });
+  const page = pageOf({ name: 'Shows', slug: 'shows', format: 'shows', blocks: [showsTemplate()], detailPage: { enabled: true } });
+  const pages = [home, page, teamPage];
+  const { html } = composeReadable(home, pages);
+  assertEachCardItsOwnShow(html, showDocs);
+});
+
+test('REFUSE: a page key field on the shows page does not send the template to an address the route ignores', () => {
+  const page = pageOf({ name: 'Shows', slug: 'shows', format: 'shows', blocks: [showsTemplate()], detailPage: { enabled: true, itemKeyField: 'Url Slug' } });
+  const { html } = composeReadable(page, [homePage, page, teamPage]);
+  assertEachCardItsOwnShow(html, showDocs);
+});
