@@ -25,7 +25,7 @@
 import type { Businessinfo, PageConfig } from '@/types/SiteData';
 import { plainMeta } from './plainMeta.ts';
 import { seedFreeMeta } from './seedFreeText.ts';
-import { resolveBusinessType } from './businessTypeSchema.ts';
+import { resolveSiteBusinessType } from './businessTypeSchema.ts';
 
 /** Google shows roughly this much of a summary; longer is cut, so we cut first. */
 export const SUMMARY_MAX_CHARS = 160;
@@ -48,7 +48,7 @@ export interface BusinessFacts {
   serviceArea: string[];
   /**
    * Discovery batch 3.10 item 16: what the business is, in words ("a bakery"),
-   * from the owner's "What kind of business". Absent when unset, and then every
+   * from the owner's "What kind of business", else the template industry. Absent when neither, and then every
    * summary reads exactly as it did before.
    */
   kind?: string;
@@ -60,6 +60,8 @@ const nonEmpty = (value: unknown): string | undefined =>
 export function readBusinessFacts(
   businessInfo: Businessinfo | undefined,
   fallbackName: string | undefined,
+  // Design 3.6: the template industry names the kind when no type is saved.
+  siteInfo?: Record<string, unknown>,
 ): BusinessFacts {
   return {
     name: nonEmpty(businessInfo?.name) ?? nonEmpty(fallbackName) ?? '',
@@ -71,12 +73,12 @@ export function readBusinessFacts(
     serviceArea: (Array.isArray(businessInfo?.serviceArea) ? businessInfo.serviceArea : [])
       .map(nonEmpty)
       .filter((town): town is string => !!town),
-    ...kindOf(businessInfo),
+    ...kindOf(businessInfo, siteInfo),
   };
 }
 
-function kindOf(businessInfo: Businessinfo | undefined): Pick<BusinessFacts, 'kind'> {
-  const words = resolveBusinessType(businessInfo?.businessType)?.words;
+function kindOf(businessInfo: Businessinfo | undefined, siteInfo: Record<string, unknown> | undefined): Pick<BusinessFacts, 'kind'> {
+  const words = resolveSiteBusinessType(businessInfo?.businessType, siteInfo)?.words;
   return words ? { kind: words } : {};
 }
 

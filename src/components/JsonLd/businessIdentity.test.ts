@@ -108,3 +108,41 @@ test('the map holds exactly VR_Secure_API’s allowlist (src/shared/businessType
   ];
   assert.deepEqual(Object.keys(mod.BUSINESS_TYPE_SCHEMA).sort(), [...SECURE_ALLOWLIST].sort());
 });
+
+// Design 3.6 industry fallback, restored by owner decision 2026-10-23: the
+// byte-for-byte rule covers only "no saved type AND no mapped industry".
+const withIndustry = (industry: string, businessInfo: Record<string, unknown> = { address: ADDRESS }) =>
+  site(businessInfo, { siteInfo: { template: { industry } } });
+
+test('ALLOW (3.6): a bakery template site with no saved type is a Bakery', () => {
+  assert.equal(org(withIndustry('bakery'))['@type'], 'Bakery');
+  assert.equal(org(withIndustry('salon'))['@type'], 'HairSalon');
+  assert.equal(org(withIndustry('wedding-venue'))['@type'], 'EventVenue');
+});
+
+test('ALLOW (3.6): a saved type wins over the template industry', () => {
+  assert.equal(org(withIndustry('bakery', { businessType: 'cafe', address: ADDRESS }))['@type'], 'CafeOrCoffeeShop');
+});
+
+test('REFUSE (3.6, byte for byte): no saved type and no industry, or an unmapped industry (taproom, live-events), keeps today’s output', () => {
+  const today = org(site({ address: ADDRESS }));
+  assert.equal(today['@type'], 'LocalBusiness');
+  for (const industry of ['taproom', 'live-events', 'spaceship', '']) {
+    assert.deepEqual(org(withIndustry(industry)), today, industry);
+  }
+  assert.deepEqual(org(site({ address: ADDRESS }, { siteInfo: { templateType: 'showcase' } })), today, 'siteInfo without a template');
+});
+
+test('the industry map points only at real business types, and covers every industry the portal offers but two', async () => {
+  const mod = (await import('../../lib/seo/businessTypeSchema.ts').catch(() => null)) as {
+    INDUSTRY_BUSINESS_TYPE?: Record<string, string>;
+    BUSINESS_TYPE_SCHEMA?: Record<string, unknown>;
+  } | null;
+  assert.ok(mod?.INDUSTRY_BUSINESS_TYPE, 'INDUSTRY_BUSINESS_TYPE exists');
+  for (const [industry, type] of Object.entries(mod.INDUSTRY_BUSINESS_TYPE)) {
+    assert.ok(mod.BUSINESS_TYPE_SCHEMA && type in mod.BUSINESS_TYPE_SCHEMA, `${industry} -> ${type}`);
+  }
+  // The portal template picker's industries (Vivreal_Portal_Mobile origin/main, industryConfig.ts).
+  const PORTAL = ['bakery', 'barber', 'live-events', 'med-spa', 'musician', 'resale', 'salon', 'taproom', 'wedding-venue'];
+  assert.deepEqual(PORTAL.filter((i) => !(i in mod.INDUSTRY_BUSINESS_TYPE!)), ['live-events', 'taproom']);
+});

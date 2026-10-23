@@ -23,7 +23,7 @@ import { isDemoSite } from '../../lib/seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
 import { footerHours } from '../../lib/footerHours.ts';
 import { seedFreeMeta } from '../../lib/seo/seedFreeText.ts';
-import { resolveBusinessType } from '../../lib/seo/businessTypeSchema.ts';
+import { resolveSiteBusinessType } from '../../lib/seo/businessTypeSchema.ts';
 import { brandLogoUrl, jsonLdImage } from '../../lib/media/stableImage.ts';
 
 const SCHEMA_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
@@ -151,10 +151,11 @@ export function buildSiteJsonLd(
   const hasAddress = Boolean(
     address?.street1 || address?.city || address?.state || address?.zip
   );
-  // Discovery batch 3.6: "What kind of business", when the owner set it, names
-  // the type (Bakery, Brewery, Organization...). Unset keeps today's heuristic
-  // exactly: an address or hours makes a LocalBusiness. See businessTypeSchema.ts.
-  const businessType = resolveBusinessType(siteData.businessInfo?.businessType);
+  // Discovery batch 3.6: "What kind of business" names the type (Bakery,
+  // Brewery, Organization...): the saved one, else the template industry's.
+  // Neither keeps today's heuristic exactly: an address or hours makes a
+  // LocalBusiness. See businessTypeSchema.ts.
+  const businessType = resolveSiteBusinessType(siteData.businessInfo?.businessType, siteData.siteInfo);
   const isLocal = businessType ? businessType.local : hasAddress || hoursSpec.length > 0;
   // "Customers don't visit this address": the town and region stay (and the
   // towns served), the street and postcode are never published.
