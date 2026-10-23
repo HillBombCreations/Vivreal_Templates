@@ -157,6 +157,32 @@ test('REFUSE (d): an original over the limit is never buffered into the response
   }
 });
 
+test('REFUSE (d): an oversized original with NO Content-Length header is measured after reading: 302, and no card proxy on OG', async () => {
+  const { MAX_PROXIED_IMAGE_BYTES } = api();
+  // A stream body: undici never derives a Content-Length for one, so this is
+  // exactly the upstream that skips the header check.
+  const unannounced = () =>
+    new Response(new Blob([new Uint8Array(MAX_PROXIED_IMAGE_BYTES + 1)]).stream(), { headers: { 'Content-Type': 'image/jpeg' } });
+  assert.equal(unannounced().headers.has('content-length'), false, 'control: the upstream sends no Content-Length');
+  const stable = await api().stableImageResponse(SIGNED, fakeFetch(unannounced()).impl);
+  assert.equal(stable.status, 302);
+  assert.equal(stable.headers.get('location'), SIGNED);
+  assert.equal(stable.headers.get('cache-control'), 'private, no-store');
+  assert.equal(await api().proxyImage(SIGNED, { cacheControl: 'x', mediaOnly: false, oversize: 'none', fetchImpl: fakeFetch(unannounced()).impl }), null);
+  // A WRONG (understated) Content-Length is caught the same way.
+  const understated = new Response(new Blob([new Uint8Array(MAX_PROXIED_IMAGE_BYTES + 1)]).stream(), { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': '1024' } });
+  assert.equal((await api().stableImageResponse(SIGNED, fakeFetch(understated).impl)).status, 302);
+});
+
+test('ALLOW (d): an original at the limit with no Content-Length header is still served from the site', async () => {
+  const { MAX_PROXIED_IMAGE_BYTES } = api();
+  const atLimit = new Response(new Blob([new Uint8Array(MAX_PROXIED_IMAGE_BYTES)]).stream(), { headers: { 'Content-Type': 'image/jpeg' } });
+  assert.equal(atLimit.headers.has('content-length'), false, 'control: no Content-Length');
+  const res = await api().stableImageResponse(SIGNED, fakeFetch(atLimit).impl);
+  assert.equal(res.status, 200);
+  assert.equal((await res.arrayBuffer()).byteLength, MAX_PROXIED_IMAGE_BYTES);
+});
+
 test('REFUSE (d, OG): an oversized original on the share card route is no redirect, the card is drawn instead', async () => {
   const big = new Response('tiny', { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(api().MAX_PROXIED_IMAGE_BYTES + 1) } });
   assert.equal(await api().proxyImage(SIGNED, { cacheControl: 'x', mediaOnly: false, oversize: 'none', fetchImpl: fakeFetch(big).impl }), null);

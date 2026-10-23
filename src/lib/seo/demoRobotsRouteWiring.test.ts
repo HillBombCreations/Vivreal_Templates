@@ -13,7 +13,9 @@ const routeSource = (relative: string) => readFileSync(new URL(relative, import.
 for (const [route, marker] of [
   ['../../app/llms.txt/route.ts', 'edgeRouteIsDemo()'],
   ['../../app/.well-known/mcp.json/route.ts', 'edgeRouteIsDemo()'],
-  ['../../app/feeds/schedule.ics/route.ts', 'withDemoRobotsHeader(feed, isDemo)'],
+  // The RETURNED response is the stamped one (T1 to T4 review): a call whose
+  // result is dropped would leave this pin green and the feed unstamped.
+  ['../../app/feeds/schedule.ics/route.ts', 'return withDemoRobotsHeader(feed, isDemo)'],
   ['../../app/sitemap.xml/route.ts', 'withDemoRobotsHeader('],
   ['../../app/sitemaps/[file]/route.ts', 'withDemoRobotsHeader('],
   ['../../app/og/[slug]/route.tsx', 'withDemoRobotsHeader('],
