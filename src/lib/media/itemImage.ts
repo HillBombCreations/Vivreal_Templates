@@ -1,4 +1,5 @@
 import 'server-only';
+import { collectRichTextImageKeys } from '@hillbombcreations/site-renderer';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import { getPageCollectionId } from '@/lib/api/siteData';
 import { getShowsRead } from '@/lib/api/shows';
@@ -6,6 +7,7 @@ import { getTeamMembersRead } from '@/lib/api/team';
 import { lookupDetailItem } from '@/lib/detail/lookupItem';
 import { resolveStorefrontItemSummary } from '@/lib/detail/storefrontItem';
 import { resolveReadableSegment } from '@/lib/detail/readableSegment';
+import { richTextKeyForFile } from '@/lib/media/richTextImage';
 
 /**
  * The signed URL of one item's primary picture, found ONLY in this site's own
@@ -34,4 +36,23 @@ export async function itemImageSignedUrl(
     if (summary) return summary.imageUrl;
   }
   return (await lookupDetailItem(siteData, page, itemId))?.item?.imageUrl || undefined;
+}
+
+/**
+ * The signed URL of one picture in a post body (BLOG2, `./richTextImage.ts`),
+ * found ONLY among the keys stored in that item's own body, on the page the
+ * route names, through the same lookup the detail page uses. `undefined` when
+ * the item or the file addresses nothing.
+ */
+export async function richTextImageSignedUrl(
+  siteData: SiteData,
+  page: PageConfig,
+  itemId: string,
+  file: string,
+): Promise<string | undefined> {
+  const lookup = await lookupDetailItem(siteData, page, itemId);
+  const item = lookup?.item;
+  if (!lookup || !item) return undefined;
+  const key = richTextKeyForFile(item.raw, file, collectRichTextImageKeys);
+  return key ? lookup.richTextImageUrls[key] : undefined;
 }

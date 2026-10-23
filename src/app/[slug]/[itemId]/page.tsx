@@ -47,7 +47,7 @@ import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } f
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
-import { itemSegment, resolvePattern } from "@hillbombcreations/site-renderer";
+import { collectRichTextImageKeys, itemSegment, resolvePattern, stableRichTextImageUrl } from "@hillbombcreations/site-renderer";
 // The renderer's own inventory helpers, imported rather than reimplemented so
 // the "Out of stock" button and the JSON-LD availability claim on the same page
 // cannot disagree. Their contract: `tracked: false` means untracked, not zero.
@@ -63,6 +63,7 @@ import { resolveItem, isDoorwayMiss } from "@/lib/detail/resolveItem";
 import { lookupDetailItem } from "@/lib/detail/lookupItem";
 import { detailFieldMap, enterDetailItems } from "@/lib/detail/detailItems";
 import RichTextImages from "@/components/RichTextImages";
+import { stableRichTextImageMap } from "@/lib/media/richTextImage";
 import { decideDetailItemMiss, type DetailItemReads } from "@/lib/detail/itemMiss";
 import { offerVariantKey, offerFieldValue, offerInStock } from "@/lib/detail/productOffer";
 import { refuseUnknownItemExistence } from "@/lib/degradedPageRefusal";
@@ -794,6 +795,18 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       return answerItemMissing(item);
     }
 
+    // BLOG2: this item's own body pictures at their stable address
+    // (`/img/<slug>/<id>/<file>`, served by `src/app/img/[slug]/[itemId]/[file]`),
+    // over the signed map, so every other key keeps its signed URL. Built from
+    // the looked-up item, the one that route finds by the same lookup.
+    const postImages = {
+      ...richTextImages,
+      ...stableRichTextImageMap(slug, item.id, item.raw, {
+        collect: collectRichTextImageKeys,
+        stableUrl: stableRichTextImageUrl,
+      }),
+    };
+
     // §7.2 step 8 — resolve ONE context object (e.g. the location this page
     // is scoped to). Unresolvable ⇒ undefined; render without context
     // rather than 404 (a broken join must degrade, not delete a page).
@@ -878,7 +891,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
         <>
           <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
           <Navbar hasMasthead={false} />
-          <RichTextImages map={richTextImages}>
+          <RichTextImages map={postImages}>
           <ProductDetailRenderer
             item={{ ...collectionProduct, imageUrl: collectionProduct.imageUrl || siteLogo }}
             siteData={siteData}
@@ -922,7 +935,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       <>
         <JsonLd schema={withDetailBreadcrumbs(itemJsonLd, { siteData, page: pageConfig, slug, itemSegment: itemId, itemName: effectiveItem.title || undefined })} />
         <Navbar hasMasthead={false} />
-        <RichTextImages map={richTextImages}>
+        <RichTextImages map={postImages}>
           {renderItemDetail({
             Template: DetailPageTemplate,
             resolveSections: resolveDetailSections,
