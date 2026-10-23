@@ -47,10 +47,11 @@ export async function loadDisplayFont(text: string): Promise<ArrayBuffer | null>
  * caller falls through to the generated card.
  */
 export async function proxyImageBytes(signedUrl: string): Promise<Response | null> {
-  // Review 2026-10-23: the shared proxy adds nosniff, the SVG sandbox and the
-  // oversize 302 (`@/lib/media/stableImage`). OG keeps its own reach (any host
-  // a signed media field points at, any content type), as before.
-  return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false });
+  // Review 2026-10-23: the shared proxy adds nosniff and the SVG sandbox
+  // (`@/lib/media/stableImage`). OG keeps its own reach (any host a signed
+  // media field points at, any content type), as before, and an oversized
+  // original falls back to the generated card rather than a redirect.
+  return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false, oversize: 'none' });
 }
 
 /** Generate the branded card. */

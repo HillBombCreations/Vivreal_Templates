@@ -99,8 +99,25 @@ function oversizeRedirect(signedUrl: string): Response {
  */
 export async function proxyImage(
   signedUrl: string | undefined,
-  { cacheControl, mediaOnly, fetchImpl = fetch }: { cacheControl: string; mediaOnly: boolean; fetchImpl?: typeof fetch },
+  {
+    cacheControl,
+    mediaOnly,
+    oversize,
+    fetchImpl = fetch,
+  }: {
+    cacheControl: string;
+    mediaOnly: boolean;
+    /**
+     * An original over `MAX_PROXIED_IMAGE_BYTES`: `'redirect'` answers the
+     * 302 (the stable routes); `'none'` answers `null`, so the OG route draws
+     * its generated card and keeps its rule that a share card never hands a
+     * crawler the expiring signed URL.
+     */
+    oversize: 'redirect' | 'none';
+    fetchImpl?: typeof fetch;
+  },
 ): Promise<Response | null> {
+  const tooLarge = () => (oversize === 'redirect' ? oversizeRedirect(signedUrl as string) : null);
   if (!signedUrl || (mediaOnly && !isMediaUrl(signedUrl))) return null;
   try {
     const upstream = await fetchImpl(signedUrl, { cache: 'no-store', redirect: 'follow' });
@@ -109,10 +126,10 @@ export async function proxyImage(
     if (mediaOnly && !declared?.startsWith('image/')) return null;
     const contentType = declared || 'image/jpeg';
     const length = Number(upstream.headers.get('content-length'));
-    if (Number.isFinite(length) && length > MAX_PROXIED_IMAGE_BYTES) return oversizeRedirect(signedUrl);
+    if (Number.isFinite(length) && length > MAX_PROXIED_IMAGE_BYTES) return tooLarge();
     const body = await upstream.arrayBuffer();
     // No (or a wrong) Content-Length: measured after reading instead.
-    if (body.byteLength > MAX_PROXIED_IMAGE_BYTES) return oversizeRedirect(signedUrl);
+    if (body.byteLength > MAX_PROXIED_IMAGE_BYTES) return tooLarge();
     return new Response(body, {
       status: 200,
       headers: { 'Content-Type': contentType, 'Cache-Control': cacheControl, ...IMAGE_SAFETY_HEADERS },
@@ -144,7 +161,7 @@ export async function stableImageResponse(
   signedUrl: string | undefined,
   fetchImpl: typeof fetch = fetch,
 ): Promise<Response> {
-  const proxied = await proxyImage(signedUrl, { cacheControl: STABLE_IMAGE_CACHE_CONTROL, mediaOnly: true, fetchImpl });
+  const proxied = await proxyImage(signedUrl, { cacheControl: STABLE_IMAGE_CACHE_CONTROL, mediaOnly: true, oversize: 'redirect', fetchImpl });
   return (
     proxied ??
     new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=300' } })

@@ -118,13 +118,13 @@ test('ALLOW (c): every proxied picture carries nosniff and the SVG sandbox, on t
   assert.equal(typeof api().proxyImage, 'function', 'the shared proxy exists');
   const svg = () => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', { headers: { 'Content-Type': 'image/svg+xml' } });
   const stable = await api().stableImageResponse(SIGNED, fakeFetch(svg()).impl);
-  const og = await api().proxyImage('https://media.vivreal.io/og.svg', { cacheControl: 'public, max-age=60', mediaOnly: false, fetchImpl: fakeFetch(svg()).impl });
+  const og = await api().proxyImage('https://media.vivreal.io/og.svg', { cacheControl: 'public, max-age=60', mediaOnly: false, oversize: 'none', fetchImpl: fakeFetch(svg()).impl });
   for (const res of [stable, og]) {
     assert.ok(res);
     for (const [name, value] of Object.entries(SAFETY)) assert.equal(res.headers.get(name), value, name);
   }
   const ogRender = src('../og/ogCardRender.tsx');
-  assert.ok(ogRender.includes("return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false });"), 'the OG proxy answers through the shared proxy');
+  assert.ok(ogRender.includes("return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false, oversize: 'none' });"), 'the OG proxy answers through the shared proxy');
 });
 
 test('REFUSE (c): the 404 answer carries no image headers (nothing was proxied)', async () => {
@@ -155,4 +155,9 @@ test('REFUSE (d): an original over the limit is never buffered into the response
     assert.equal(res.headers.get('location'), SIGNED);
     assert.equal(res.headers.get('cache-control'), 'private, no-store');
   }
+});
+
+test('REFUSE (d, OG): an oversized original on the share card route is no redirect, the card is drawn instead', async () => {
+  const big = new Response('tiny', { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(api().MAX_PROXIED_IMAGE_BYTES + 1) } });
+  assert.equal(await api().proxyImage(SIGNED, { cacheControl: 'x', mediaOnly: false, oversize: 'none', fetchImpl: fakeFetch(big).impl }), null);
 });
