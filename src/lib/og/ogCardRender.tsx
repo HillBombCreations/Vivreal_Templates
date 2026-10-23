@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 import { OG_CACHE_CONTROL, OG_SIZE, isLightColor } from './ogCard';
+import { proxyImage } from '@/lib/media/stableImage';
 
 /**
  * The rendering half of the OG card, shared by `/og/[slug]` and
@@ -46,18 +47,10 @@ export async function loadDisplayFont(text: string): Promise<ArrayBuffer | null>
  * caller falls through to the generated card.
  */
 export async function proxyImageBytes(signedUrl: string): Promise<Response | null> {
-  try {
-    const res = await fetch(signedUrl, { cache: 'no-store' });
-    if (!res.ok) return null;
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    const body = await res.arrayBuffer();
-    return new Response(body, {
-      status: 200,
-      headers: { 'Content-Type': contentType, 'Cache-Control': OG_CACHE_CONTROL },
-    });
-  } catch {
-    return null;
-  }
+  // Review 2026-10-23: the shared proxy adds nosniff, the SVG sandbox and the
+  // oversize 302 (`@/lib/media/stableImage`). OG keeps its own reach (any host
+  // a signed media field points at, any content type), as before.
+  return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false });
 }
 
 /** Generate the branded card. */

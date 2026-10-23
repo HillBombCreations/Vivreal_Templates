@@ -20,7 +20,7 @@ import { isPageTurnedOff } from "@/lib/pages/pageEnabled";
 import { getSeedOnlyPaths } from "@/lib/seo/getSeedOnlyPaths";
 import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 import { getShows, getShowsRead } from "@/lib/api/shows";
-import { resolveReadableSegment } from "@/lib/detail/readableSegment";
+import { readableRedirectTarget, resolveReadableSegment } from "@/lib/detail/readableSegment";
 import { itemImageUrl, jsonLdImage, stableImageOrigin } from "@/lib/media/stableImage";
 import { getTeamMembers, getTeamMembersRead } from "@/lib/api/team";
 import { getProductByIdRead } from "@/lib/api/products";
@@ -404,7 +404,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // (`readableSegment.ts`); its id address, and a readable address from
     // before a title edit, redirect there permanently.
     const resolvedShow = resolveReadableSegment(shows, itemId);
-    if (resolvedShow?.redirect) permanentRedirect(`/${slug}/${resolvedShow.segment}`);
+    if (resolvedShow?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedShow.segment, (await searchParams) ?? {}));
     const show = resolvedShow?.item ?? null;
     const showSegment = resolvedShow?.segment ?? itemId;
 
@@ -481,7 +481,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     Object.assign(richTextImages, richTextImageUrls);
     // Discovery batch 3.10 item 13, as for shows above.
     const resolvedMember = resolveReadableSegment(teamMembers, itemId);
-    if (resolvedMember?.redirect) permanentRedirect(`/${slug}/${resolvedMember.segment}`);
+    if (resolvedMember?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedMember.segment, (await searchParams) ?? {}));
     const member = resolvedMember?.item;
     const memberSegment = resolvedMember?.segment ?? itemId;
 

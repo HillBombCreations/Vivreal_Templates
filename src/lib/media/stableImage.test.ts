@@ -101,3 +101,58 @@ test('SOURCE PIN: neither image route reads a URL, query or header from the requ
 test('SOURCE PIN (item 17): getSiteData is memoised per request, so site data is serialized once', () => {
   assert.ok(src('../api/siteData/index.tsx').includes('export const getSiteData = cache(async (): Promise<SiteData> => {'));
 });
+
+// ---------------------------------------------------------------------------
+// Review 2026-10-23
+// ---------------------------------------------------------------------------
+
+test('REFUSE (a): a picture that is not on a Vivreal media host keeps its own link in JSON-LD', () => {
+  const pasted = 'https://images.unsplash.com/photo-1.jpg';
+  assert.equal(api().jsonLdImage('https://a.com', 'https://a.com/img/shows/abc', pasted), pasted);
+  assert.equal(api().jsonLdImage('https://a.com', 'https://a.com/img/shows/abc', SIGNED), 'https://a.com/img/shows/abc', 'control: a media URL still moves');
+});
+
+const SAFETY = { 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox" };
+
+test('ALLOW (c): every proxied picture carries nosniff and the SVG sandbox, on the stable routes and the OG proxy alike', async () => {
+  assert.equal(typeof api().proxyImage, 'function', 'the shared proxy exists');
+  const svg = () => new Response('<svg xmlns="http://www.w3.org/2000/svg"/>', { headers: { 'Content-Type': 'image/svg+xml' } });
+  const stable = await api().stableImageResponse(SIGNED, fakeFetch(svg()).impl);
+  const og = await api().proxyImage('https://media.vivreal.io/og.svg', { cacheControl: 'public, max-age=60', mediaOnly: false, fetchImpl: fakeFetch(svg()).impl });
+  for (const res of [stable, og]) {
+    assert.ok(res);
+    for (const [name, value] of Object.entries(SAFETY)) assert.equal(res.headers.get(name), value, name);
+  }
+  const ogRender = src('../og/ogCardRender.tsx');
+  assert.ok(ogRender.includes("return proxyImage(signedUrl, { cacheControl: OG_CACHE_CONTROL, mediaOnly: false });"), 'the OG proxy answers through the shared proxy');
+});
+
+test('REFUSE (c): the 404 answer carries no image headers (nothing was proxied)', async () => {
+  const res = await api().stableImageResponse('https://evil.example/x.svg', fakeFetch(new Response('x')).impl);
+  assert.equal(res.status, 404);
+  assert.equal(res.headers.get('content-security-policy'), null);
+});
+
+test('ALLOW (d): an original under the limit is served from the site, bytes and all', async () => {
+  const body = new Uint8Array(1024);
+  const res = await api().stableImageResponse(SIGNED, fakeFetch(new Response(body, { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': '1024' } })).impl);
+  assert.equal(res.status, 200);
+  assert.equal((await res.arrayBuffer()).byteLength, 1024);
+});
+
+test('REFUSE (d): an original over the limit is never buffered into the response: 302 to the signed URL, uncached', async () => {
+  const { MAX_PROXIED_IMAGE_BYTES } = api();
+  const declared = await api().stableImageResponse(
+    SIGNED,
+    fakeFetch(new Response('tiny', { headers: { 'Content-Type': 'image/jpeg', 'Content-Length': String(MAX_PROXIED_IMAGE_BYTES + 1) } })).impl,
+  );
+  const undeclared = await api().stableImageResponse(
+    SIGNED,
+    fakeFetch(new Response(new Uint8Array(MAX_PROXIED_IMAGE_BYTES + 1), { headers: { 'Content-Type': 'image/jpeg' } })).impl,
+  );
+  for (const res of [declared, undeclared]) {
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), SIGNED);
+    assert.equal(res.headers.get('cache-control'), 'private, no-store');
+  }
+});

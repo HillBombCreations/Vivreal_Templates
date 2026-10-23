@@ -19,6 +19,8 @@
  * Pure (no `next/*`, no renderer import), so it runs under `node --test`.
  */
 
+import { publicSearch } from '../redirects.ts';
+
 /** A readable item, in the shape both readers produce. */
 export interface ReadableItem {
   id: string;
@@ -47,6 +49,25 @@ export function cmsSlugOf(objectValue: Record<string, unknown> | undefined): str
 export function cmsSlugField(objectValue: Record<string, unknown> | undefined): { cmsSlug?: string } {
   const cmsSlug = cmsSlugOf(objectValue);
   return cmsSlug ? { cmsSlug } : {};
+}
+
+/**
+ * The readable address to redirect an id (or pre-rename) address to, WITH the
+ * request's query string (review 2026-10-23): the `utm_*` tags on links
+ * shared before the change must survive the hop. `_rsc` is dropped through
+ * `publicSearch`, the same rule middleware applies to its 301s, so a router
+ * cache key never rides a permanent redirect.
+ */
+export function readableRedirectTarget(
+  slug: string,
+  segment: string,
+  query: Readonly<Record<string, string | string[] | undefined>>,
+): string {
+  const url = new URL('https://readable.invalid/');
+  for (const [key, value] of Object.entries(query)) {
+    for (const one of Array.isArray(value) ? value : value === undefined ? [] : [value]) url.searchParams.append(key, one);
+  }
+  return `/${slug}/${segment}${publicSearch(url)}`;
 }
 
 const MONGO_ID = /^[0-9a-f]{24}$/;

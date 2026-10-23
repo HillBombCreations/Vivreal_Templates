@@ -94,8 +94,26 @@ const route = readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.
 const siteData = readFileSync(new URL('../api/siteData/index.tsx', import.meta.url), 'utf8');
 
 test('SOURCE PIN: both arms redirect an id address permanently, and the sitemap lists readable addresses', () => {
-  assert.ok(route.includes('if (resolvedShow?.redirect) permanentRedirect(`/${slug}/${resolvedShow.segment}`);'));
-  assert.ok(route.includes('if (resolvedMember?.redirect) permanentRedirect(`/${slug}/${resolvedMember.segment}`);'));
+  assert.ok(route.includes('if (resolvedShow?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedShow.segment, (await searchParams) ?? {}));'));
+  assert.ok(route.includes('if (resolvedMember?.redirect) permanentRedirect(readableRedirectTarget(slug, resolvedMember.segment, (await searchParams) ?? {}));'));
   assert.ok(siteData.includes('segment: showSegments.get(show.id) ?? show.id'));
   assert.ok(siteData.includes('segment: memberSegments.get(member.id) ?? member.id'));
+});
+
+test('ALLOW (review 2026-10-23): the readable redirect keeps the query string, utm tags and all', () => {
+  assert.equal(typeof api().readableRedirectTarget, 'function', 'readableRedirectTarget exists');
+  assert.equal(
+    api().readableRedirectTarget('shows', 'hotshots-2fb644', { utm_source: 'instagram', utm_campaign: 'fall show', ref: ['a', 'b'] }),
+    '/shows/hotshots-2fb644?utm_source=instagram&utm_campaign=fall+show&ref=a&ref=b',
+  );
+});
+
+test('REFUSE (review 2026-10-23): a router cache key (_rsc) never rides the permanent redirect, and no query adds no "?"', () => {
+  assert.equal(typeof api().readableRedirectTarget, 'function', 'readableRedirectTarget exists');
+  assert.equal(api().readableRedirectTarget('shows', 'hotshots-2fb644', { _rsc: 'x1', utm_medium: 'social' }), '/shows/hotshots-2fb644?utm_medium=social');
+  assert.equal(api().readableRedirectTarget('team', 'will-cunnington-9c484d', {}), '/team/will-cunnington-9c484d');
+});
+
+test('cleanup (review 2026-10-23): the shows reader no longer names the removed getShowById', () => {
+  assert.ok(!readFileSync(new URL('../api/shows/index.tsx', import.meta.url), 'utf8').includes('getShowById'));
 });

@@ -70,8 +70,9 @@ function byEventDateDesc(shows: ShowData[]): ShowData[] {
 /**
  * The whole show list, CACHED and TAGGED.
  *
- * ISR migration Phase 2 (plan.md, Blocker 5): this read backs `getShowById`
- * and therefore every show DETAIL page. It used to go through the uncached
+ * ISR migration Phase 2 (plan.md, Blocker 5): this read backs every show
+ * DETAIL page (read whole so the readable address resolves, discovery batch
+ * 3.10 item 13). It used to go through the uncached
  * `clientFetchSafe`, which meant a show detail page re-hit VR_Client_API on
  * every render (billing the customer's quota for crawler traffic) AND carried
  * no cache tag, so a Studio edit to that show had nothing to invalidate. It
@@ -116,8 +117,8 @@ export async function getShowsRead(
 /**
  * Shows only. The value-only view of `getShowsRead`, for the callers that only
  * render what came back. Anything that turns "not in this list" into a verdict
- * must use the read above: `getShowById` returning `null` from a degraded read
- * is how the detail route 404'd a live show.
+ * must use the read above: a by-id lookup returning `null` from a degraded
+ * read is how the detail route once 404'd a live show.
  *
  * Its caller is the show detail route's metadata, which resolves the show's
  * readable address over the whole list (discovery batch 3.10 item 13). The
