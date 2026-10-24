@@ -83,10 +83,11 @@ export default function SiteConsent({
    */
   analytics?: ConsentGaConfig | null;
   /**
-   * The site's stored privacy policy page, resolved once by the root layout
-   * (`resolvePrivacyPolicyHref`, the same value the email popup gets), or
-   * `undefined` when it stores none. Absent drops the banner's "See our
-   * Privacy Policy." sentence instead of linking to a 404. See ./bannerPolicy.ts.
+   * The policy the banner links, resolved once by the root layout with
+   * `resolveBannerPrivacyHref`: the site's stored policy page, else on
+   * Vivreal's own sites `https://vivreal.io/privacy`. Absent drops the
+   * banner's "See our Privacy Policy." sentence instead of linking to a 404.
+   * See ./bannerPolicy.ts.
    */
   privacyHref?: string;
 }) {

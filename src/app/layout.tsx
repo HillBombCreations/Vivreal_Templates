@@ -38,6 +38,7 @@ import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
 import AttributionCapture from '@/components/AttributionCapture';
 import SiteConsent from '@/components/SiteConsent';
+import { resolveBannerPrivacyHref } from '@/components/SiteConsent/bannerPolicy';
 import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
@@ -322,7 +323,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       vivrealOwnSite={vivrealOwnSite}
                       additional={siteData.analytics?.additional}
                       analytics={siteData.analytics}
-                      privacyHref={privacyHref}
+                      privacyHref={resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)}
                   />
               </Providers>
           </body>
