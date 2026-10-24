@@ -63,13 +63,21 @@ export const SIZE_TRIM_BYTES = 25 * 1024 * 1024;
 /**
  * Secret-shaped strings that must never be in the file. Named, so a refusal
  * prints the NAME and never the match.
+ *
+ * Each pattern needs the key BODY, not just the prefix: help.vivreal.io's
+ * Stripe articles say "It starts with `rk_live_`", and a bare prefix refused
+ * its build. Stripe documents the prefixes but no fixed length; real keys
+ * carry 24 or more characters after the prefix (whsec_ 32 from the
+ * dashboard, 64 hex from the CLI), so 16 is a conservative floor that no
+ * real key falls under. whsec_ also admits base64 `+` and `/`, which
+ * non-Stripe signing secrets with the same prefix use.
  */
 export const SECRET_PATTERNS = Object.freeze([
   ['aws-access-key-id', /AKIA[0-9A-Z]{16}/],
-  ['pem-block', /-----BEGIN/],
-  ['stripe-live-secret', /sk_live_/],
-  ['stripe-live-restricted', /rk_live_/],
-  ['webhook-signing-secret', /whsec_/],
+  ['pem-block', /-----BEGIN [A-Z0-9 ]+-----/],
+  ['stripe-live-secret', /sk_live_[A-Za-z0-9]{16,}/],
+  ['stripe-live-restricted', /rk_live_[A-Za-z0-9]{16,}/],
+  ['webhook-signing-secret', /whsec_[A-Za-z0-9+/]{16,}/],
 ]);
 
 export class SnapshotRefusal extends Error {
