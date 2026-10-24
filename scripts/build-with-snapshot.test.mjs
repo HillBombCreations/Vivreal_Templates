@@ -155,7 +155,6 @@ for (const [name, entries, check] of [
   ['siteDetails with values: {}', { [siteDetailsPath(SITE)]: { siteDetails: { values: {} } } }, 'site-details'],
   ['a planted API_KEY value', { [siteDetailsPath(SITE)]: { ...SHELL, leaked: `x${API_KEY}x` } }, 'secret-value'],
   ['an AWS access key id', { [siteDetailsPath(SITE)]: { ...SHELL, note: 'AKIAABCDEFGHIJKLMNOP' } }, 'secret-pattern'],
-  ['a webhook signing secret', { [siteDetailsPath(SITE)]: { ...SHELL, note: 'whsec_abc' } }, 'secret-pattern'],
   ['a provider-product key', { [siteDetailsPath(SITE)]: SHELL, '/tenant/integrationObjects?limit=100&type=stripe': { items: [] } }, 'provider-product'],
 ]) {
   test(`T11 REFUSE: ${name} fails the build, naming the check and never the value`, async () => {
@@ -166,6 +165,65 @@ for (const [name, entries, check] of [
       assert.match(errors.join('\n'), new RegExp(`REFUSED \\(${check}\\)`));
       assert.ok(!errors.join('\n').includes(API_KEY), 'the secret value is never printed');
       assert.ok(!errors.join('\n').includes('AKIAABCDEFGHIJKLMNOP'));
+      assert.equal(fs.existsSync(files(root)[0]), false, 'nothing is written');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+/*
+ * The secret sweep matches key-SHAPED strings only. help.vivreal.io's Stripe
+ * articles say "It starts with `rk_live_`" in prose, and the bare-prefix
+ * patterns refused its production build (stripe-live-restricted). The keys
+ * below are assembled with join() so no full key literal sits in the source.
+ */
+const fakeKey = (prefix, body) => [prefix, body].join('_');
+const KEY_BODY = 'AbCdEfGhIjKlMnOpQrStUvWx';
+
+for (const [name, note] of [
+  ['an article naming the rk_live_ prefix in a code span', 'Paste your restricted key. It starts with `rk_live_`.'],
+  ['an article naming the sk_live_ prefix with an ellipsis', 'Never share a secret key (sk_live_...) with anyone.'],
+  ['an article naming the whsec_ prefix in prose', 'Your signing secret begins with whsec_ and lives in Stripe.'],
+  ['an article naming every prefix in code spans', '`sk_live_`, `rk_live_` and `whsec_` keys stay in Stripe.'],
+  ['a short non-key after a prefix', 'whsec_abc and rk_live_test are not keys.'],
+  ['an article naming a PEM header in prose', 'A certificate file starts with -----BEGIN and ends with -----END.'],
+]) {
+  test(`secret sweep REFUSE (no false positive): ${name} does not fail the build`, async () => {
+    const root = tempRoot();
+    try {
+      const entries = {
+        [siteDetailsPath(SITE)]: SHELL,
+        [MENU]: { items: [{ title: 'Connect Stripe', body: note }] },
+      };
+      const { code, errors } = await run(root, { spawnBuild: fakeBuild({ entries }) });
+      assert.deepEqual(errors, []);
+      assert.equal(code, 0);
+      assert.equal(fs.existsSync(files(root)[0]), true, 'the snapshot is written');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const [name, secret, check] of [
+  ['stripe-live-secret', fakeKey('sk_live', KEY_BODY), 'stripe-live-secret'],
+  ['stripe-live-restricted', fakeKey('rk_live', KEY_BODY), 'stripe-live-restricted'],
+  ['webhook-signing-secret (Stripe dashboard shape)', fakeKey('whsec', KEY_BODY + '12345678'), 'webhook-signing-secret'],
+  ['webhook-signing-secret (base64 shape)', fakeKey('whsec', 'MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw'), 'webhook-signing-secret'],
+  ['pem-block', ['-----BEGIN', 'PRIVATE KEY-----'].join(' ') + '\nMIIEvQ', 'pem-block'],
+]) {
+  test(`secret sweep ALLOW (refused): a real-shaped ${name} in a collection item fails the build`, async () => {
+    const root = tempRoot();
+    try {
+      const entries = {
+        [siteDetailsPath(SITE)]: SHELL,
+        [MENU]: { items: [{ title: 'Oops', body: `Use ${secret} here.` }] },
+      };
+      const { code, errors } = await run(root, { spawnBuild: fakeBuild({ entries }) });
+      assert.equal(code, 1);
+      assert.match(errors.join('\n'), new RegExp(`REFUSED \\(secret-pattern\\): ${check}$`, 'm'));
+      assert.ok(!errors.join('\n').includes(secret), 'the key is never printed');
       assert.equal(fs.existsSync(files(root)[0]), false, 'nothing is written');
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
