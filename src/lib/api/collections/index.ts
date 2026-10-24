@@ -12,6 +12,7 @@ import { readOrDegrade } from '../degradedRead';
 import { readRichTextImageUrls } from '../richTextImageUrls';
 import { toContentItem } from './mapItem';
 import { readAllPages } from '../readAllPages';
+import { collectionObjectsPath, integrationObjectsPath, type ListReadOpts } from '../readPaths';
 import { isSocialPostPlatform, toSocialPostItems } from './socialPost';
 import { canonicalIntegrationType } from './socialBand';
 import type { ContentItem } from '@/types/ContentItem';
@@ -35,13 +36,7 @@ interface PaginatedResponse {
   richTextImageUrls?: Record<string, string>;
 }
 
-interface FetchOpts {
-  limit?: number;
-  skip?: number;
-  sort?: string;
-  search?: string;
-  filters?: Record<string, string>;
-}
+type FetchOpts = ListReadOpts;
 
 interface FetchResult {
   items: ContentItem[];
@@ -83,6 +78,12 @@ interface FetchResult {
    */
   degraded: boolean;
   /**
+   * True when the live read failed and these items are the build-time
+   * snapshot of this read. Not degraded (they render), but never grounds for
+   * a "this does not exist" verdict. See `../degradedRead.ts`.
+   */
+  fromFloor: boolean;
+  /**
    * H177 - the inline rich-text image map for `items`, key to signed URL.
    * Always an object. A caller merges it with the maps from every other read
    * on the page and hands the result to the renderer's resolver.
@@ -123,21 +124,6 @@ function unwrap(raw: PaginatedResponse | Record<string, unknown>[]): {
   };
 }
 
-/** Build common URLSearchParams from FetchOpts. */
-function buildParams(opts: FetchOpts | undefined): URLSearchParams {
-  const params = new URLSearchParams();
-  if (opts?.limit != null) params.set('limit', String(opts.limit));
-  if (opts?.skip != null) params.set('skip', String(opts.skip));
-  if (opts?.sort) params.set('sort', opts.sort);
-  if (opts?.search) params.set('search', opts.search);
-  if (opts?.filters) {
-    for (const [key, val] of Object.entries(opts.filters)) {
-      if (key && val) params.set(`filters[${key}]`, val);
-    }
-  }
-  return params;
-}
-
 /* ------------------------------------------------------------------ */
 /*  Public API                                                         */
 /* ------------------------------------------------------------------ */
@@ -152,14 +138,13 @@ export async function getCollectionItems(
   collectionId: string,
   opts?: FetchOpts
 ): Promise<FetchResult> {
-  const params = buildParams(opts);
-  params.set('collectionId', collectionId);
-
-  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+  // The path comes from the one builder the build's fill pass also uses, so
+  // the snapshot key and the runtime key cannot differ (../readPaths.ts).
+  const { value: raw, degraded, fromFloor } = await readOrDegrade<PaginatedResponse>(
     emptyPage,
     (fallback) =>
       clientFetchCached<PaginatedResponse>(
-        `/tenant/collectionObjects?${params}`,
+        collectionObjectsPath(collectionId, opts),
         fallback,
         SITE_CACHE_TTL_SECONDS,
         undefined,
@@ -173,6 +158,7 @@ export async function getCollectionItems(
     totalCount,
     sourceCount: items.length,
     degraded,
+    fromFloor,
     richTextImageUrls,
   };
 }
@@ -186,10 +172,12 @@ export async function getCollectionItems(
 export async function getAllCollectionItems(collectionId: string): Promise<FetchResult & { truncated: boolean }> {
   const richTextImageUrls: Record<string, string> = {};
   let sourceCount = 0;
+  let fromFloor = false;
   const all = await readAllPages<ContentItem>(async (skip, limit) => {
     const page = await getCollectionItems(collectionId, { limit, skip });
     Object.assign(richTextImageUrls, page.richTextImageUrls);
     sourceCount += page.sourceCount;
+    fromFloor ||= page.fromFloor;
     return { items: page.items, totalCount: page.totalCount, degraded: page.degraded };
   });
   return {
@@ -197,6 +185,7 @@ export async function getAllCollectionItems(collectionId: string): Promise<Fetch
     totalCount: all.totalCount,
     sourceCount,
     degraded: all.degraded,
+    fromFloor,
     richTextImageUrls,
     truncated: all.truncated,
   };
@@ -239,14 +228,12 @@ export async function getIntegrationItems(
   opts?: FetchOpts
 ): Promise<FetchResult> {
   const storedType = canonicalIntegrationType(type);
-  const params = buildParams(opts);
-  params.set('type', storedType);
 
-  const { value: raw, degraded } = await readOrDegrade<PaginatedResponse>(
+  const { value: raw, degraded, fromFloor } = await readOrDegrade<PaginatedResponse>(
     emptyPage,
     (fallback) =>
       clientFetchCached<PaginatedResponse>(
-        `/tenant/integrationObjects?${params}`,
+        integrationObjectsPath(storedType, opts),
         fallback,
         SITE_CACHE_TTL_SECONDS,
         undefined,
@@ -262,6 +249,7 @@ export async function getIntegrationItems(
     totalCount,
     sourceCount: items.length,
     degraded,
+    fromFloor,
     richTextImageUrls,
   };
 }

@@ -1,7 +1,7 @@
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteData } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
 import { nestedItemRoute } from "@/lib/pages/nestedItemRoute";
 import DynamicItemPage, { generateMetadata as itemMetadata } from "../[slug]/[itemId]/page";
 
@@ -74,6 +74,8 @@ export default async function DeepRedirectCatchAll({ params, searchParams }: Pro
   const path = `/${segments.join("/")}`;
   const redirectTarget = resolveMissingItemRedirect(siteData.redirects, path);
   if (redirectTarget) permanentRedirect(redirectTarget);
+  // Not from build-time floor data: a page created after the build is not ruled out.
+  refuseNegativeClaimFromFloor(siteData);
   return notFound();
 }
 

@@ -33,12 +33,12 @@ interface PaginatedResponse<T> {
  */
 export async function getTeamMembersRead(
   collectionId?: string
-): Promise<{ members: TeamData[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ members: TeamData[]; degraded: boolean; fromFloor: boolean; richTextImageUrls: Record<string, string> }> {
   const id = collectionId || TEAMMEMBERS_ID;
   // No roster collection configured. An answer, not a silence: this page's
   // member URLs genuinely address nothing.
-  if (!id) return { members: [], degraded: false, richTextImageUrls: {} };
-  const { value: res, degraded } = await readOrDegrade<PaginatedResponse<CMSTeamData>>(
+  if (!id) return { members: [], degraded: false, fromFloor: false, richTextImageUrls: {} };
+  const { value: res, degraded, fromFloor } = await readOrDegrade<PaginatedResponse<CMSTeamData>>(
     () => ({ items: [], totalCount: 0 }),
     (fallback) =>
       clientFetchCached<PaginatedResponse<CMSTeamData>>(
@@ -68,7 +68,7 @@ export async function getTeamMembersRead(
     ...cmsSlugField(item.objectValue),
   }, item));
 
-  return { members, degraded, richTextImageUrls: readRichTextImageUrls(res) };
+  return { members, degraded, fromFloor, richTextImageUrls: readRichTextImageUrls(res) };
 }
 
 /**

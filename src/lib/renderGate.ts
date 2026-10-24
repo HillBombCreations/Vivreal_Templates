@@ -42,7 +42,10 @@ export function enforceDynamicUnlessIsr(): Promise<void> {
  * WHERE THIS IS CALLED FROM, AND WHY IT IS ONE PLACE AND NOT SEVEN
  * ---------------------------------------------------------------
  * `getSiteData()` (`src/lib/api/siteData/index.tsx`), on the branch that returns
- * `FALLBACK_SITE_DATA`. That is the one place the degraded value is PRODUCED,
+ * `FALLBACK_SITE_DATA`. Since the render floor that branch is reached only when
+ * the build-time snapshot has no site shell either (a render answered from the
+ * floor is NOT degraded, renders the site as of its last build, and caches
+ * like any other). That is the one place the degraded value is PRODUCED,
  * so every route that renders from it is covered by construction: `/`,
  * `/[slug]`, `/[slug]/[itemId]`, `/[...segments]`, `robots.txt`, `icon`,
  * `apple-icon`, the root layout, and the Navbar / Footer / StaticPage server

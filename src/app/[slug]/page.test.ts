@@ -65,7 +65,7 @@ test('the robots policy is no longer decided inline in the route module', () => 
 // can carry: that it reaches that predicate, and WHERE.
 
 test('the route refuses to serve a page the owner turned off', () => {
-  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) return notFound\(\);/);
+  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) \{\s*\/\/ "Off" at the last build[^\n]*\s*refuseNegativeClaimFromFloor\(siteData\);\s*return notFound\(\);/);
   assert.match(
     source,
     /import \{ isPageTurnedOff \} from "@\/lib\/pages\/pageEnabled"/,
@@ -87,7 +87,7 @@ test('the route refuses to serve a page the owner turned off', () => {
 test('REFUSE: with no stored page the route 404s every slug, privacy and terms included', () => {
   assert.match(
     source,
-    /if \(!pageConfig\) \{[\s\S]{0,1600}?resolveMissingItemRedirect\(siteData\.redirects, `\/\$\{slug\}`\);[\s\S]{0,120}?return notFound\(\);/,
+    /if \(!pageConfig\) \{[\s\S]{0,1600}?resolveMissingItemRedirect\(siteData\.redirects, `\/\$\{slug\}`\);[\s\S]{0,400}?refuseNegativeClaimFromFloor\(siteData\);\s*return notFound\(\);/,
     'a missing page goes to the redirect check and then notFound(), with no exemption in the condition',
   );
   for (const retired of ['STATIC_SLUGS', 'STATIC_PAGE_TITLES', '"Privacy Policy"', '"Terms of Service"']) {
@@ -102,7 +102,7 @@ test('REFUSE: metadata titles a missing privacy or terms page Not Found, like an
 test('the off and seed-only guards still run before the missing-page 404', () => {
   // A stored policy page the owner switched off, or one that is still all
   // kit seed, 404s through its own guard; the order keeps that explicit.
-  const off = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  const off = source.indexOf('// "Off" at the last build is not "off" now: on floor data, refuse.');
   const seed = source.indexOf('if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();');
   const missing = source.indexOf('if (!pageConfig) {');
   assert.ok(off > 0 && seed > 0 && missing > 0);
@@ -121,7 +121,7 @@ test('the off guard runs AFTER the degraded-read guard, so an upstream wobble ca
   // what makes that reasoning safe to rely on, so it is pinned rather than
   // assumed.
   const healthy = source.indexOf('assertUpstreamHealthy(siteData);');
-  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  const guard = source.indexOf('// "Off" at the last build is not "off" now: on floor data, refuse.');
   assert.ok(healthy > 0 && guard > 0);
   assert.ok(healthy < guard, 'the health assertion must come first');
 });
@@ -163,7 +163,7 @@ test('the built-in pages are resolved BEFORE the off guard reads the result', ()
   // A stored page is returned as stored, so an owner's off switch still 404s
   // it; the guard has to see the resolver's answer to keep that true.
   const resolve = source.indexOf('const pageConfig = resolvePageForSlug(siteData.pageConfigs, slug);');
-  const guard = source.indexOf('if (isPageTurnedOff(pageConfig)) return notFound();');
+  const guard = source.indexOf('// "Off" at the last build is not "off" now: on floor data, refuse.');
   assert.ok(resolve > 0 && guard > 0);
   assert.ok(resolve < guard);
 });

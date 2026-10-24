@@ -12,8 +12,19 @@ import { BOT_VERDICT_HEADER } from '../botVerdict';
 import { buildFetchFailureCapture, stripQueryString, upstreamFallbackLine } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
-import { createFailureMemo, readWithFailureMemo } from './failureMemo';
+import { createFailureMemo } from './failureMemo';
 import { createCaptureThrottle } from './captureThrottle';
+import { RECORD_DIR_ENV } from './snapshot/constants';
+import { createSnapshotFloor, type SnapshotFloor } from './snapshot/floor';
+import { createSnapshotRecorder } from './snapshot/recorder';
+import { readCachedWithFloor } from './snapshot/seam';
+import {
+  hashSnapshotPath,
+  readSnapshotFile,
+  readSnapshotHead,
+  snapshotFilePath,
+  statSnapshotFile,
+} from './snapshot/snapshotFile';
 
 export { ApiError, isQuotaError };
 
@@ -49,18 +60,85 @@ const CLIENT_API: ClientApiConfig = { baseUrl: CLIENT_API_URL, apiKey: API_KEY }
 const SITE_ID = process.env.SITE_ID || '';
 
 /**
+ * One Sentry event per process per 5 minutes for each floor signal and path,
+ * the same window as the fetch failure captures. The structured log lines
+ * (`site.snapshot.floor`, `.miss`, `.missing`) still print every time; this
+ * only keeps a long outage answered from the floor from costing an event per
+ * page view. The fingerprint carries no tenant, so one Issue spans the fleet.
+ */
+const FLOOR_SIGNAL_CAPTURES = createCaptureThrottle();
+
+/**
+ * The build-time site snapshot this deployment answers from when a live read
+ * and the data cache both produce nothing. Module scope: loaded once per
+ * instance, lazily, on the first read that needs it. See ./snapshot/floor.ts.
+ */
+export const SNAPSHOT_FLOOR: SnapshotFloor = createSnapshotFloor({
+  siteId: SITE_ID,
+  filePath: snapshotFilePath,
+  readFile: readSnapshotFile,
+  statFile: statSnapshotFile,
+  readHead: readSnapshotHead,
+  // Inside `next build` there is no snapshot yet (the wrapper writes it after
+  // the build exits), so the floor stays out of every build-time render.
+  isBuild: () => process.env.NEXT_PHASE === 'phase-production-build' || !!process.env[RECORD_DIR_ENV],
+  now: Date.now,
+  log: (line) => console.log(line),
+  logError: (line) => console.error(line),
+  hashPath: hashSnapshotPath,
+  report: (signal, fields) => {
+    const gate = FLOOR_SIGNAL_CAPTURES.take(`${signal}:${String(fields.path ?? '')}`);
+    if (!gate.capture) return;
+    const message =
+      signal === 'floor'
+        ? 'site.snapshot.floor: a page answered from the build-time snapshot'
+        : signal === 'miss'
+          ? 'site.snapshot.miss: an eligible read has no snapshot entry'
+          : 'site.snapshot.missing: this deployment has no usable snapshot';
+    Sentry.captureMessage(message, {
+      level: signal === 'missing' ? 'error' : 'warning',
+      fingerprint: [`site.snapshot.${signal}`],
+      tags: { siteId: SITE_ID || 'unknown', snapshotSignal: signal },
+      extra: { ...fields, suppressedSinceLastCapture: gate.suppressed },
+    });
+  },
+});
+
+/**
+ * Build-only: records every successful eligible read for the snapshot. Inert
+ * unless the build wrapper set the record directory. See ./snapshot/recorder.ts.
+ */
+export const SNAPSHOT_RECORDER = createSnapshotRecorder({ siteId: SITE_ID });
+
+/**
+ * The floor answer for `path` with the given reason, logged as
+ * `site.snapshot.floor`, or undefined when the snapshot has none. For a caller
+ * that decides on a value the seam already returned (a siteDetails read that
+ * "succeeded" with no `values`, research 2.3), never for a failed read: the
+ * seam answers those itself.
+ */
+export function floorAnswerFor<T>(path: string, reason: 'values_missing'): T | undefined {
+  const found = SNAPSHOT_FLOOR.lookup<T>(path);
+  if (!found.hit) return undefined;
+  SNAPSHOT_FLOOR.noteAnswer(path, { reason, elapsedMs: null });
+  return found.value;
+}
+
+/**
  * Per-site cache TTL (seconds) for cached public reads (site chrome + content).
  *
- * Read once from `SITE_CACHE_TTL_SECONDS` with a SAFE default of 60. Default 60
- * keeps this merge fully inert: behaviour is identical to the prior hardcoded
- * 60s chrome cache, and content reads (newly cached) get the same short TTL that
- * stays well under VR_Client_API's 300s signed media-URL TTL — so no cached
- * payload can ever carry an expired CDN link at the default.
+ * Read once from `SITE_CACHE_TTL_SECONDS` with a SAFE default of 60.
  *
- * Enabling the long cache is an ops step (per site, AFTER raising the signed-URL
- * TTL to ~24h in VR_Client_API): set this env to `86400`. With on-demand
- * `revalidateTag` invalidation wired (see /api/revalidate), the time TTL is then
- * only a backstop for missed webhooks + scheduled publish-date go-lives.
+ * The 300 s signed media-URL TTL this default used to be sized against is gone
+ * (P0C): page images now arrive as stable `client.vivreal.io/media` links that
+ * sign fresh per request, and the only signed URLs left in a payload are
+ * inline rich-text images, signed for 24 h (`VR_Client_API`
+ * `richTextImageUrls.js`). The build-time floor prunes those it serves when
+ * they are within 15 minutes of expiry (./snapshot/richTextExpiry.ts).
+ *
+ * With on-demand `revalidateTag` invalidation wired (see /api/revalidate), a
+ * longer TTL is only a backstop for missed webhooks + scheduled publish-date
+ * go-lives; raising it is a per-site ops step (`86400`).
  *
  * Invalid/absent/non-positive values fall back to 60 — never crash a render on a
  * bad env value, never silently disable caching.
@@ -236,13 +314,10 @@ export async function clientFetchCached<T>(
   fallback: T,
   revalidateSeconds: number,
   init?: RequestInit,
-  tags?: string[]
+  tags?: string[],
+  opts?: { floor?: boolean }
 ): Promise<T> {
   const previewToken = await readPreviewToken();
-  if (previewToken) {
-    // Never cache preview traffic.
-    return clientFetchSafe<T>(path, fallback, init);
-  }
 
   const cached = unstable_cache(
     async () => doClientFetch<T>(CLIENT_API, path, null, init),
@@ -250,30 +325,54 @@ export async function clientFetchCached<T>(
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
 
-  // V2: a read whose failures have REPEATED in the last 5 s answers its
-  // fallback without going upstream again, so an outage costs one call per page
-  // request rather than two. Failures only, and never after a single one-off
-  // failure (D7). F-C13: concurrent reads of one path share the one in
-  // flight, so the handler below (and its Sentry capture) runs once per failed
-  // call, not once per reader. See ./failureMemo.ts.
-  return readWithFailureMemo(FAILED_READS, path, cached, fallback, (err) => {
-    // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
-    // never cache it, and never memoise it (a throw here records nothing).
-    if (err instanceof ApiError && err.status === 402) {
-      throw err;
-    }
-    // Same reasoning as clientFetchSafe above - capture at the swallow, while
-    // the ApiError is still intact. 402 re-throws above and is never captured.
-    // V7.319: same per-path window as clientFetchSafe (one throttle for both).
-    const gate = FETCH_FAILURE_CAPTURES.take(stripQueryString(path));
-    if (gate.capture) {
-      Sentry.captureException(
-        err,
-        buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID, suppressed: gate.suppressed })
-      );
-    }
-    console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
-    console.error(upstreamFallbackLine({ source: 'clientFetchCached', path, siteId: SITE_ID, err }));
-    return fallback;
-  });
+  // V2: a read whose failures have REPEATED in the last 5 s answers without
+  // going upstream again, so an outage costs one call per page request rather
+  // than two. Failures only, and never after a single one-off failure (D7).
+  // F-C13: concurrent reads of one path share the one in flight, so the
+  // handler below (and its Sentry capture) runs once per failed call, not once
+  // per reader. See ./failureMemo.ts.
+  //
+  // The render floor (vivreal-hq docs/bugs/site-first-read-fallback): when the
+  // live read and the data cache both produce nothing, the answer is the
+  // build-time snapshot of this exact path, and the fallback only when there is
+  // none. See ./snapshot/seam.ts for the order.
+  return readCachedWithFloor<T>(
+    {
+      memo: FAILED_READS,
+      floor: SNAPSHOT_FLOOR,
+      recorder: SNAPSHOT_RECORDER,
+      now: Date.now,
+    },
+    {
+      path,
+      fallback,
+      floorOptOut: opts?.floor === false,
+      // Never cache preview traffic, and never answer it from the floor.
+      preview: previewToken ? () => clientFetchSafe<T>(path, fallback, init) : null,
+      read: cached,
+      onFailure: (err) => {
+        // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
+        // never cache it, and never memoise it (a throw here records nothing).
+        if (err instanceof ApiError && err.status === 402) {
+          throw err;
+        }
+        // Same reasoning as clientFetchSafe above - capture at the swallow, while
+        // the ApiError is still intact. 402 re-throws above and is never captured.
+        // V7.319: same per-path window as clientFetchSafe (one throttle for both).
+        // Sent whether or not the floor then answers: a failed live read is the
+        // signal (TEMPLATES-6, -7, -F); the floor only changes what renders.
+        const gate = FETCH_FAILURE_CAPTURES.take(stripQueryString(path));
+        if (gate.capture) {
+          Sentry.captureException(
+            err,
+            buildFetchFailureCapture({ source: 'clientFetchCached', path, siteId: SITE_ID, suppressed: gate.suppressed })
+          );
+        }
+      },
+      onFallback: (err) => {
+        console.error(`[clientFetchCached] returning fallback for ${path}:`, err);
+        console.error(upstreamFallbackLine({ source: 'clientFetchCached', path, siteId: SITE_ID, err }));
+      },
+    },
+  );
 }

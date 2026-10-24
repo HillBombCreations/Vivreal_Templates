@@ -7,7 +7,7 @@
     "dev": "next dev --turbopack",
     "dev:linked": "node ../vivreal-site-renderer/scripts/dev-sync.js && next dev --turbopack",
     "prebuild": "node checks/assert-no-renderer-overlay.mjs",
-    "build": "next build --turbopack",
+    "build": "node scripts/build-with-snapshot.mjs",
     "start": "next start",
     "lint": "eslint",
     "pretest": "node checks/assert-no-renderer-overlay.mjs",

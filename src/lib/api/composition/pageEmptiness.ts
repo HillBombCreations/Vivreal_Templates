@@ -140,6 +140,11 @@ export interface PageDataRead {
   readonly sourceCount: number;
   /** See `../degradedRead.ts`. `[]` is the same value either way. */
   readonly degraded: boolean;
+  /**
+   * Answered from the build-time snapshot. Never grounds for "this page is
+   * empty" (a 404): the items may have been added after the build.
+   */
+  readonly fromFloor: boolean;
 }
 
 /**
@@ -155,9 +160,9 @@ export interface PageDataRead {
  * `items.length` has to rename the field to do it.
  */
 export function pageDataReads(
-  results: readonly { readonly sourceCount: number; readonly degraded: boolean }[],
+  results: readonly { readonly sourceCount: number; readonly degraded: boolean; readonly fromFloor: boolean }[],
 ): PageDataRead[] {
-  return results.map(({ sourceCount, degraded }) => ({ sourceCount, degraded }));
+  return results.map(({ sourceCount, degraded, fromFloor }) => ({ sourceCount, degraded, fromFloor }));
 }
 
 /**
@@ -377,8 +382,9 @@ export function decidePageEmptiness(args: {
   if (!everyReadEmpty) return { isEmpty: false, emptinessUnknown: false };
 
   // Nothing came back from anything. Now, and only now, does it matter whether
-  // that is an answer or a silence.
-  if (args.reads.some((read) => read.degraded)) {
+  // that is an answer or a silence. A build-time floor answer is a silence here
+  // too (plan section 5.5): empty at build is not empty now.
+  if (args.reads.some((read) => read.degraded || read.fromFloor)) {
     return { isEmpty: false, emptinessUnknown: true };
   }
 

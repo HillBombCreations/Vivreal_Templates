@@ -1,7 +1,14 @@
 import type { SiteData } from '@/types/SiteData';
 
 /**
- * What `getSiteData()` returns when VR_Client_API gives us nothing.
+ * What `getSiteData()` returns when NEITHER VR_Client_API nor the build-time
+ * site snapshot gives us anything.
+ *
+ * Since the render floor (vivreal-hq docs/bugs/site-first-read-fallback), a
+ * failed or empty siteDetails read is answered from the snapshot the deploy
+ * build wrote (`../snapshot/floor.ts`), so this constant is reached only when
+ * that file is missing from the deployment (`site.snapshot.missing`) or holds
+ * no siteDetails entry. Everything below describes that remaining case.
  *
  * Lives in its own plain `.ts` module (not `./index.tsx`, which is `server-only`
  * and carries JSX and so cannot be loaded by the plain-Node test runner) purely

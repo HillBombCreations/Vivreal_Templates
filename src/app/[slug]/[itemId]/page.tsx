@@ -6,7 +6,7 @@ import { DetailPageTemplate, resolveDetailSections } from "@hillbombcreations/si
 import type { SiteData as RendererSiteData } from "@hillbombcreations/site-renderer";
 import { getSiteData, getPageCollectionId } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
-import { assertUpstreamHealthy, isDegradedSiteData } from "@/lib/api/siteData/degraded";
+import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
 import type { SiteData } from "@/types/SiteData";
 import {
   resolveSiteOrigin,
@@ -258,7 +258,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // `sitemap.xml` drops the same page through the same predicate, and it
     // lists these by their joined slug, so the file and the route agree here
     // too.
-    if (isPageTurnedOff(nestedPage)) return notFound();
+    if (isPageTurnedOff(nestedPage)) {
+      refuseNegativeClaimFromFloor(siteData);
+      return notFound();
+    }
     // W25 review C2: a nested page whose body is entirely kit seed 404s, as in
     // `[slug]/page.tsx` (see src/lib/seo/seedOnlyPaths.ts).
     if (isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) return notFound();
@@ -317,6 +320,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // of reaching `permanentRedirect()` unvalidated.
     const redirectTarget = resolveMissingItemRedirect(siteData.redirects, `/${slug}/${itemId}`);
     if (redirectTarget) permanentRedirect(redirectTarget);
+    // Not from build-time floor data: a page created after the build is not ruled out.
+    refuseNegativeClaimFromFloor(siteData);
     return notFound();
   }
 
@@ -330,7 +335,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Distinct from the `detailPage.enabled` guard directly below it, which is a
   // different switch with a different subject: that one says "this page has no
   // per-item pages", this one says "this page is not live at all".
-  if (isPageTurnedOff(pageConfig)) return notFound();
+  if (isPageTurnedOff(pageConfig)) {
+    refuseNegativeClaimFromFloor(siteData);
+    return notFound();
+  }
 
   // Guard: if detail pages are explicitly disabled for this page, return 404
   if (pageConfig.detailPage?.enabled === false) return notFound();
@@ -398,8 +406,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Show/event detail
   if (pageConfig.format === "shows") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || "");
-    const { shows, degraded, richTextImageUrls } = await getShowsRead(collectionId);
-    reads.push({ source: "shows", degraded });
+    const { shows, degraded, fromFloor, richTextImageUrls } = await getShowsRead(collectionId);
+    reads.push({ source: "shows", degraded, fromFloor });
     Object.assign(richTextImages, richTextImageUrls);
     // Discovery batch 3.10 item 13: a show answers at its readable address
     // (`readableSegment.ts`); its id address, and a readable address from
@@ -477,8 +485,8 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // Team member detail
   if (pageConfig.format === "team") {
     const collectionId = getPageCollectionId(siteData, pageConfig.name, process.env.TEAMMEMBERS_ID || "");
-    const { members: teamMembers, degraded, richTextImageUrls } = await getTeamMembersRead(collectionId);
-    reads.push({ source: "team", degraded });
+    const { members: teamMembers, degraded, fromFloor, richTextImageUrls } = await getTeamMembersRead(collectionId);
+    reads.push({ source: "team", degraded, fromFloor });
     Object.assign(richTextImages, richTextImageUrls);
     // Discovery batch 3.10 item 13, as for shows above.
     const resolvedMember = resolveReadableSegment(teamMembers, itemId);
@@ -572,7 +580,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // degraded products read has to still be accountable when one of those arms
   // reaches its own miss: the item may well have been in the list that failed.
   if (productRead) {
-    reads.push({ source: "products", degraded: productRead.degraded });
+    reads.push({ source: "products", degraded: productRead.degraded, fromFloor: productRead.fromFloor });
     Object.assign(richTextImages, productRead.richTextImageUrls);
   }
   // A products page with no collection behind it has no other arm that could
@@ -771,7 +779,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // shared helper rather than straight to `redirectOrNotFound`.
     if (!lookup) return answerItemMissing(undefined);
     const { collectionId, unscopedItems, item } = lookup;
-    reads.push({ source: "collection", degraded: lookup.degraded });
+    reads.push({ source: "collection", degraded: lookup.degraded, fromFloor: lookup.fromFloor });
     Object.assign(richTextImages, lookup.richTextImageUrls);
     const itemKeyField = scopedDetailPage?.itemKeyField;
 
@@ -1008,10 +1016,10 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     if (itemsCollectionId) {
       // Every item, not the first 100 (v5 search R4).
       const read = await getAllCollectionItems(itemsCollectionId);
-      const { degraded, richTextImageUrls } = read;
+      const { degraded, fromFloor, richTextImageUrls } = read;
       // `_system` readable, then the binding's field map (lib/detail/detailItems).
       const items = enterDetailItems(read.items, detailFieldMap(pageConfig, itemsCollectionId));
-      reads.push({ source: "menu-items", degraded });
+      reads.push({ source: "menu-items", degraded, fromFloor });
       Object.assign(richTextImages, richTextImageUrls);
       item = resolveItem(items, itemId, menuItemKeyField);
       if (item) {
@@ -1022,9 +1030,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     if (!item) {
       for (const cid of siblingCollectionIds) {
         const read = await getAllCollectionItems(cid);
-        const { degraded, richTextImageUrls } = read;
+        const { degraded, fromFloor, richTextImageUrls } = read;
         const items = enterDetailItems(read.items, detailFieldMap(pageConfig, cid));
-        reads.push({ source: "menu-sibling", degraded });
+        reads.push({ source: "menu-sibling", degraded, fromFloor });
         Object.assign(richTextImages, richTextImageUrls);
         const hit = resolveItem(items, itemId, menuItemKeyField);
         if (hit) {

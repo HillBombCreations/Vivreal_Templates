@@ -123,12 +123,12 @@ test('the collection products render hands a look page the item fields and the p
 // src/lib/pages/pageEnabled.test.ts.
 
 test('a nested page the owner turned off is not served', () => {
-  assert.match(source, /if \(isPageTurnedOff\(nestedPage\)\) return notFound\(\);/);
+  assert.match(source, /if \(isPageTurnedOff\(nestedPage\)\) \{\s*refuseNegativeClaimFromFloor\(siteData\);\s*return notFound\(\);/);
   assert.match(source, /import \{ isPageTurnedOff \} from "@\/lib\/pages\/pageEnabled"/);
 });
 
 test('the nested off guard runs before the format allowlist, so no format can serve an off page', () => {
-  const guard = source.indexOf('if (isPageTurnedOff(nestedPage)) return notFound();');
+  const guard = source.indexOf('if (isPageTurnedOff(nestedPage)) {');
   const formats = source.indexOf('NON_NESTABLE_FORMATS.has(nestedPage.format)');
   assert.ok(guard > 0 && formats > 0);
   assert.ok(guard < formats, 'the off guard must come first');
@@ -137,7 +137,7 @@ test('the nested off guard runs before the format allowlist, so no format can se
 test('an item under a page the owner turned off is not served either', () => {
   // Otherwise the page 404s while every item under it keeps serving, which
   // publishes the collection one URL at a time.
-  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) return notFound\(\);/);
+  assert.match(source, /if \(isPageTurnedOff\(pageConfig\)\) \{\s*refuseNegativeClaimFromFloor\(siteData\);\s*return notFound\(\);/);
 });
 
 test('the page switch did not replace the detail-page switch: both guards stand', () => {

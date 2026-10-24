@@ -87,13 +87,13 @@ function byEventDateDesc(shows: ShowData[]): ShowData[] {
  */
 export async function getShowsRead(
   collectionId?: string
-): Promise<{ shows: ShowData[]; degraded: boolean; richTextImageUrls: Record<string, string> }> {
+): Promise<{ shows: ShowData[]; degraded: boolean; fromFloor: boolean; richTextImageUrls: Record<string, string> }> {
   const id = collectionId || SHOWS_ID;
   // No shows collection configured at all. That is an answer, not a silence:
   // the page is misconfigured and its detail URLs genuinely address nothing.
-  if (!id) return { shows: [], degraded: false, richTextImageUrls: {} };
+  if (!id) return { shows: [], degraded: false, fromFloor: false, richTextImageUrls: {} };
 
-  const { value: res, degraded } = await readOrDegrade<PaginatedResponse<CMSShowData>>(
+  const { value: res, degraded, fromFloor } = await readOrDegrade<PaginatedResponse<CMSShowData>>(
     () => ({ items: [], totalCount: 0 }),
     (fallback) =>
       clientFetchCached<PaginatedResponse<CMSShowData>>(
@@ -110,6 +110,7 @@ export async function getShowsRead(
     // sitemap (`withRecordDate`).
     shows: byEventDateDesc(res.items.map((item) => withRecordDate(mapShow(item), item))),
     degraded,
+    fromFloor,
     richTextImageUrls: readRichTextImageUrls(res),
   };
 }

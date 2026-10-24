@@ -76,6 +76,8 @@
  * `./composition/degradedCollectionRead.test.ts` rather than argued for in prose.
  */
 
+import { isFloorValue } from './snapshot/floorValue.ts';
+
 /** A read's value, plus whether it actually happened. */
 export interface ReadOutcome<T> {
   /** What to render with. The caller's own empty shape on a failed read. */
@@ -86,6 +88,15 @@ export interface ReadOutcome<T> {
    * catalogue is empty) MUST branch on this first.
    */
   readonly degraded: boolean;
+  /**
+   * True when the live read failed and `value` is the BUILD-TIME snapshot of
+   * this read (`./snapshot/floor.ts`). Such a read is not degraded: it renders
+   * and caches like any other. But it is build-time data, so a page or item
+   * created after the build is absent from it, and a caller about to conclude
+   * that something does NOT exist must refuse rather than 404 when this is set
+   * (plan section 5.5, "Negative claims are never made from the floor").
+   */
+  readonly fromFloor: boolean;
 }
 
 /**
@@ -109,5 +120,5 @@ export async function readOrDegrade<T extends object>(
 ): Promise<ReadOutcome<T>> {
   const sentinel = Object.freeze(emptyResult());
   const value = await read(sentinel);
-  return { value, degraded: Object.is(value, sentinel) };
+  return { value, degraded: Object.is(value, sentinel), fromFloor: isFloorValue(value) };
 }
