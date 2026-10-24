@@ -36,7 +36,7 @@ test('status is 503, so a transient billing problem does not cost the customer r
   assert.equal(FROZEN_STATUS, 503);
 });
 
-test('Retry-After is present, numeric, and matches the edge staleness ceiling', () => {
+test('Retry-After is present, numeric, and one hour (a crawler back-off, no longer the edge ceiling; see frozenGate.ts)', () => {
   assert.equal(FROZEN_RETRY_AFTER_SECONDS, 3600);
   assert.equal(FROZEN_HEADERS['Retry-After'], '3600');
   assert.ok(

@@ -193,12 +193,24 @@ export async function optOutOfPrerenderUnlessIsr(
  *     outage involved. Not fixed here: it is a property of `HARD_INVALIDATION`
  *     itself, a separate, already-reviewed tradeoff (a customer must never see
  *     stale bytes even once after their own edit) that predates and is out of
- *     scope for the idle-socket fix. What the idle-socket fix DOES do is
- *     remove the single most common trigger for "that regeneration's data
- *     fetch failing" in the first place (`./api/fetchWithReconnect.ts`'s
- *     awake-time backoff), so the compound case — a purge racing a
- *     regeneration failure — drops with it, without redesigning either side
- *     on its own.
+ *     scope for the idle-socket fix.
+ *
+ *     CORRECTED 2026-10-21. This used to say the idle-socket fix's awake-time
+ *     backoff (`./api/fetchWithReconnect.ts`) removed "the single most common
+ *     trigger for that regeneration's data fetch failing". It did not. The
+ *     most common trigger was Amplify freezing a BACKGROUND regeneration with
+ *     the response that started it (vivreal-hq
+ *     research-stale-nostore-2026-10-21.md: 1,825 of 1,830 failures fleet wide
+ *     from 10-07 were in flight across a freeze), and no retry schedule fixes
+ *     that. What removes it is foreground regeneration: `next.config.ts` sets
+ *     `expireTime` to `min(ISR_REVALIDATE_SECONDS, SITE_CACHE_TTL_SECONDS)`,
+ *     so a time-based regeneration runs inside the visitor's own request and
+ *     completes. The one exception is the residual window after a FAILED
+ *     render, when Next re-stores the old page with revalidate 3..30 against
+ *     the same expire and a background regeneration can still start. A
+ *     hard drop was already foreground, so this compound case (a purge, then
+ *     a failed render, then a 500) is unchanged by that; it is just rarer
+ *     because the failures behind it are.
  *
  * An app ROUTE (`robots.txt`, `icon`, `apple-icon`, `sitemap.xml`) has no E132
  * branch (`build/templates/app-route.js`), so it simply renders uncached.

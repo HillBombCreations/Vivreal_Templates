@@ -116,6 +116,14 @@ const { connection } = await import('next/dist/server/request/connection.js');
  */
 const { getCacheControlHeader } = await import('next/dist/server/lib/cache-control.js');
 
+/**
+ * The SHIPPED config, the default export after `withSentryConfig`, the same
+ * object `turbopackCacheConfig.test.ts` reads. Imported here, after the
+ * `AsyncLocalStorage` assignment above, for the same hoisting reason as the
+ * Next imports.
+ */
+const { default: nextConfig } = await import('../../next.config.ts');
+
 /** The gate, wired the way `renderGate.ts` wires it. */
 const enforceDynamicUnlessIsr = () => optOutOfPrerenderUnlessIsr(connection);
 
@@ -331,8 +339,19 @@ test('gate OFF does not throw on a real request — it only blocks prerendering'
  * GOOD entry with a 3..30s revalidate. Either way the degraded render is not
  * stored, which is the property. Measured both ways in
  * `docs/projects/isr-migration/phase4-blockers-result.md` (vivreal-hq).
+ *
+ * `CONFIGURED_EXPIRE_TIME` is read from the shipped `next.config.ts`, not
+ * restated, so these header assertions follow the real config.
  */
-const CONFIGURED_EXPIRE_TIME = 3600;
+const CONFIGURED_EXPIRE_TIME = readConfiguredExpireTime();
+
+function readConfiguredExpireTime(): number {
+  const value = nextConfig.expireTime;
+  if (typeof value !== 'number') {
+    throw new Error(`next.config.ts must set expireTime to a number, got ${String(value)}`);
+  }
+  return value;
+}
 
 test('a FALLBACK_SITE_DATA render collects revalidate 0, which is Next\'s "do not store"', async () => {
   // Seeded the way the route's `export const revalidate = 300` literal seeds it,
@@ -368,7 +387,7 @@ test('a HEALTHY render is still cacheable, so the fix does not cost the ISR win'
 
   assert.equal(
     emittedCacheControl(prerenderRevalidate, CONFIGURED_EXPIRE_TIME),
-    `s-maxage=${ISR_REVALIDATE_SECONDS}, stale-while-revalidate=${CONFIGURED_EXPIRE_TIME - ISR_REVALIDATE_SECONDS}`,
+    `s-maxage=${ISR_REVALIDATE_SECONDS}`,
   );
 });
 
@@ -558,26 +577,120 @@ test('getSiteMap imports the bail from the one place it is bound to real Next', 
   );
 });
 
-test('next.config.ts pins expireTime, so nobody inherits Next\'s one-year default', () => {
-  // Phase 4 blocker 2. Next's default `expireTime` is 31536000, and
-  // `getCacheControlHeader` emits `expire - revalidate`, which is where the
-  // fleet's `stale-while-revalidate=31535700` came from. CloudFront honours it:
-  // an `s-maxage=300` object was measured being served at `Age: 599`.
+/**
+ * True when an `expireTime` leaves a window in which Next serves STALE and
+ * regenerates in the BACKGROUND. On Amplify compute that regeneration is frozen
+ * with the response and starves (research-stale-nostore-2026-10-21.md,
+ * vivreal-hq). Read off Next's real header composer, which appends
+ * `stale-while-revalidate` exactly when `revalidate < expire`, the same
+ * comparison that makes the incremental cache answer `isStale = true` rather
+ * than the blocking `-1`.
+ */
+function opensBackgroundWindow(revalidate: number, expireTime: number): boolean {
+  return /stale-while-revalidate/.test(
+    getCacheControlHeader({ revalidate, expire: expireTime }),
+  );
+}
+
+/**
+ * The SHIPPED config's `expireTime`, evaluated with `SITE_CACHE_TTL_SECONDS`
+ * set to `ttl` (or unset). The query string makes Node evaluate a fresh
+ * instance of `next.config.ts`, which reads the env once at evaluation, the
+ * same way `next build` does. The env is restored afterwards so no other test
+ * sees it.
+ */
+async function shippedExpireTimeAt(ttl: string | undefined): Promise<number> {
+  const prior = process.env.SITE_CACHE_TTL_SECONDS;
+  if (ttl === undefined) delete process.env.SITE_CACHE_TTL_SECONDS;
+  else process.env.SITE_CACHE_TTL_SECONDS = ttl;
+  try {
+    // A template-literal import is typed as a module of unknown shape; the
+    // value is checked below rather than trusted.
+    const fresh: { default: { expireTime?: unknown } } = await import(
+      `../../next.config.ts?ttl=${ttl ?? 'unset'}`
+    );
+    const value = fresh.default.expireTime;
+    if (typeof value !== 'number') {
+      throw new Error(`next.config.ts must set expireTime to a number, got ${String(value)}`);
+    }
+    return value;
+  } finally {
+    if (prior === undefined) delete process.env.SITE_CACHE_TTL_SECONDS;
+    else process.env.SITE_CACHE_TTL_SECONDS = prior;
+  }
+}
+
+/**
+ * A page's effective `revalidate` is the LOWEST of the route literal
+ * (`ISR_REVALIDATE_SECONDS`) and every cached read it makes, and every cached
+ * read uses the one `SITE_CACHE_TTL_SECONDS` (60 when unset or invalid). The
+ * expected values are written out, not computed, so the test does not share
+ * the implementation's arithmetic.
+ */
+const EXPIRE_BY_TTL: ReadonlyArray<{ ttl: string | undefined; effectiveRevalidate: number; expireTime: number }> = [
+  { ttl: undefined, effectiveRevalidate: 60, expireTime: 60 },
+  { ttl: '60', effectiveRevalidate: 60, expireTime: 60 },
+  { ttl: '300', effectiveRevalidate: 300, expireTime: 300 },
+  { ttl: '86400', effectiveRevalidate: 300, expireTime: 300 },
+];
+
+test('REFUSE: next.config.ts expireTime never exceeds the page\'s effective revalidate, at SITE_CACHE_TTL_SECONDS unset, 60, 300 and 86400', async () => {
+  // 2026-10-21. Between `revalidate` and `expireTime`, Next answers STALE and
+  // regenerates in the background, which Amplify freezes mid flight; past
+  // `expireTime` it regenerates in the visitor's own request, which completes.
+  // A data TTL below 300 lowers the page's `revalidate`, so `expireTime` has to
+  // follow it down or the 60..300 s background window reopens (measured: the
+  // build listed `/` as Revalidate 1m, Expire 5m). This reads the SHIPPED
+  // config. It does not cover Next's own error re-store
+  // (`response-cache/index.js`), which after a FAILED render briefly stores
+  // revalidate 3..30 against the same expire.
+  for (const { ttl, effectiveRevalidate, expireTime } of EXPIRE_BY_TTL) {
+    const label = `SITE_CACHE_TTL_SECONDS=${ttl ?? 'unset'}`;
+    const shipped = await shippedExpireTimeAt(ttl);
+    assert.equal(shipped, expireTime, `expireTime at ${label}`);
+    assert.equal(opensBackgroundWindow(effectiveRevalidate, shipped), false, label);
+    assert.equal(
+      getCacheControlHeader({ revalidate: effectiveRevalidate, expire: shipped }),
+      `s-maxage=${effectiveRevalidate}`,
+      label,
+    );
+  }
+});
+
+test('next.config.ts derives expireTime from the constant and the same TTL parse the data reads use, so they cannot drift', () => {
+  // A literal would pass the value test above today and drift the day the
+  // cadence or the TTL parse moves. client.ts must take its TTL from the same
+  // parser, or the page's effective revalidate and expireTime could disagree.
   const configSource = fs.readFileSync(new URL('../../next.config.ts', import.meta.url), 'utf8');
   assert.match(
     configSource,
-    new RegExp(`^\\s*expireTime: ${CONFIGURED_EXPIRE_TIME},$`, 'm'),
-    'next.config.ts must set expireTime explicitly',
+    /^\s*expireTime: Math\.min\(ISR_REVALIDATE_SECONDS, parseSiteCacheTtlSeconds\(process\.env\.SITE_CACHE_TTL_SECONDS\)\),$/m,
   );
+  assert.match(
+    configSource,
+    /^import \{ ISR_REVALIDATE_SECONDS \} from "\.\/src\/lib\/renderMode\.ts";$/m,
+  );
+  assert.match(
+    configSource,
+    /^import \{ parseSiteCacheTtlSeconds \} from "\.\/src\/lib\/siteCacheTtl\.ts";$/m,
+  );
+  const clientSource = fs.readFileSync(new URL('./api/client.ts', import.meta.url), 'utf8');
+  assert.match(
+    clientSource,
+    /^export const SITE_CACHE_TTL_SECONDS = parseSiteCacheTtlSeconds\(process\.env\.SITE_CACHE_TTL_SECONDS\);$/m,
+  );
+});
 
-  // The value is only meaningful through the header it produces.
+test('CONTROL: every expireTime above revalidate opens a background window, including the old 3600, Next\'s default and the unclamped 300 over a 60 s data TTL', () => {
+  // Without this the REFUSE test's `false` could come from a predicate that
+  // never answers true.
+  for (const expireTime of [ISR_REVALIDATE_SECONDS + 1, 3600, 31536000]) {
+    assert.equal(opensBackgroundWindow(ISR_REVALIDATE_SECONDS, expireTime), true, `expireTime ${expireTime}`);
+  }
+  assert.equal(opensBackgroundWindow(60, ISR_REVALIDATE_SECONDS), true, 'revalidate 60, expireTime 300');
   assert.equal(
-    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
+    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: 3600 }),
     's-maxage=300, stale-while-revalidate=3300',
-  );
-  assert.notEqual(
-    getCacheControlHeader({ revalidate: ISR_REVALIDATE_SECONDS, expire: CONFIGURED_EXPIRE_TIME }),
-    's-maxage=300, stale-while-revalidate=31535700',
   );
 });
 

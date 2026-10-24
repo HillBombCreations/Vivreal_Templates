@@ -36,6 +36,19 @@
  * freeze is already overdue the instant the process thaws — the same defect
  * `../awakeTimeout.ts` exists to fix in `edgeSiteMap.ts`.
  *
+ * CORRECTION 2026-10-21, this justification is weakened. The 10-04
+ * classification above predates `elapsedMs` logging. With it, 1,825 of 1,830
+ * failures fleet wide from 10-07 were connections opened BEFORE a freeze, not
+ * after a thaw, so most of what the "post-thaw window" measured was probably
+ * background ISR regeneration being frozen mid flight (an inference, stated as
+ * one in vivreal-hq research-stale-nostore-2026-10-21.md). No backoff can fix
+ * that: an attempt started in a short invocation is frozen with it whatever
+ * its schedule. The backoff stays because it is harmless and still covers a
+ * real dead-socket case. What removed the freeze-killed regeneration is
+ * `expireTime` no greater than the page's `revalidate` in `next.config.ts`
+ * (see the LOGGING
+ * correction below).
+ *
  * WHAT IS RETRIED, AND WHAT NEVER IS
  * ---------------------------------
  *  - Only a rejection of `fetch()` itself, and only a `TypeError`. The fetch
@@ -60,14 +73,27 @@
  * -------
  * Every attempt that fails (whether retried or finally thrown) is logged here,
  * once, as a small structured line: attempt number, elapsed ms since this call
- * started (awake time by construction — nothing can freeze mid-request, only
- * between requests), the network error code, and `bytesWritten`/`bytesRead`
+ * started, the network error code, and `bytesWritten`/`bytesRead`
  * when undici attached them (it does for `UND_ERR_SOCKET`). Never the query
  * string: every call site here puts a tenant identifier (`siteId`,
  * `collectionId`) there, never a secret, but logging it anyway would mint one
  * log line per tenant and make a fleet-wide pattern unreadable. A successful
  * attempt (first try, or a retry that lands) logs nothing, to keep this quiet
  * on a healthy fleet.
+ *
+ * CORRECTED 2026-10-21: `elapsedMs` is WALL CLOCK (`Date.now()`), not awake
+ * time. This used to say "awake time by construction, nothing can freeze
+ * mid-request, only between requests". That is false for a call made inside a
+ * BACKGROUND ISR regeneration, which outlives the response that triggered it
+ * and is frozen with it (vivreal-hq research-stale-nostore-2026-10-21.md:
+ * 1,825 of 1,830 failure lines fleet wide from 10-07 had `elapsedMs` over
+ * 10 s). So `elapsedMs` includes any freeze the call was in flight across, and
+ * a value above about 10 s means exactly that, not a slow upstream. Since
+ * `next.config.ts` capped `expireTime` at the page's `revalidate`, steady
+ * state regeneration is foreground and such a line should only come from the
+ * window after a FAILED regeneration (Next re-stores the old page with a 30 s
+ * revalidate but keeps its later expiry, which reopens a background window).
+ * Count them: each one is that residual.
  *
  * PER-MODULE-INSTANCE SHORT-CIRCUIT (review-templates-183.md, concern 3)
  * ------------------------------------------------------------------
@@ -129,7 +155,9 @@ export const DEFAULT_BACKOFF_MS: readonly number[] = [150, 500];
  * short-circuited one). That is not a universal guarantee, though — a
  * background ISR regeneration that outlives the response it was triggered by
  * can itself be frozen mid-flight, between two calls inside what is still
- * logically one invocation (pass 1, B2) — but the consequence is the same
+ * logically one invocation (pass 1, B2; and see the 2026-10-21 correction
+ * under LOGGING above, which states the same freeze model) — but the
+ * consequence is the same
  * fail-safe direction either way: the window either expires across the
  * freeze (short-circuit lost, full backoff resumes) or it does not (window
  * still armed, nothing worse than today's short-circuited wait). Nothing
