@@ -12,6 +12,7 @@ import {
 } from '@/lib/consent';
 import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorTags';
 import { resolveConsentGaScripts, type ConsentGaConfig } from '@/lib/gaConsentLoad';
+import { bannerPolicySentence } from './bannerPolicy';
 
 /**
  * The vivreal.io cookie-consent surface (G13 / C2) — banner + persistent
@@ -59,6 +60,7 @@ export default function SiteConsent({
   vivrealOwnSite,
   additional,
   analytics,
+  privacyHref,
 }: {
   /**
    * `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Required, so
@@ -80,6 +82,14 @@ export default function SiteConsent({
    * (`lib/gaConsentLoad.ts`).
    */
   analytics?: ConsentGaConfig | null;
+  /**
+   * The policy the banner links, resolved once by the root layout with
+   * `resolveBannerPrivacyHref`: the site's stored policy page, else on
+   * Vivreal's own sites `https://vivreal.io/privacy`. Absent drops the
+   * banner's "See our Privacy Policy." sentence instead of linking to a 404.
+   * See ./bannerPolicy.ts.
+   */
+  privacyHref?: string;
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
   // Fail-closed inside: an unknown provider or a non-matching id yields
@@ -155,15 +165,8 @@ export default function SiteConsent({
               accept, we turn on Google Analytics, which counts visits, and Microsoft Clarity,
               which shows us how people move around a page, with anything you type hidden.
               Reject, and neither runs. You can change your mind any time under Cookie
-              settings at the bottom of the page. See our{' '}
-              <Link
-                href="/privacy"
-                className="underline"
-                style={{ color: 'var(--primary, inherit)' }}
-              >
-                Privacy Policy
-              </Link>
-              .
+              settings at the bottom of the page.
+              {bannerPolicySentence(privacyHref, Link)}
             </p>
           </div>
           <div className="mt-4 flex justify-end gap-2">

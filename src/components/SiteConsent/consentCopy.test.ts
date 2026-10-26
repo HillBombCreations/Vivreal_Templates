@@ -13,7 +13,11 @@ import fs from 'node:fs';
 import { installDom, type DomHarness } from '../../lib/__testing__/domHarness.ts';
 import { COOKIE_CONSENT_KEY, denyConsent, grantConsent, resetConsentApplied, runConsentMount, withdrawConsent } from '../../lib/consent.ts';
 import { mergeAttributionCustomFields } from '../../lib/leadAttribution.ts';
-import { VIVREAL_MARKETING_SITE_ID } from '../../lib/vivrealApex.ts';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { isVivrealOwnSite, VIVREAL_HELP_SITE_ID, VIVREAL_MARKETING_SITE_ID } from '../../lib/vivrealApex.ts';
+import { resolvePrivacyPolicyHref } from '../../lib/pages/policyPage.ts';
+import { bannerPolicySentence, resolveBannerPrivacyHref } from './bannerPolicy.ts';
 import { CLARITY_MASK_SNIPPET, resolveVendorScripts } from '../../lib/vendorTags.ts';
 import { resolveConsentGaScripts } from '../../lib/gaConsentLoad.ts';
 import { runAttributionCapture } from '../../lib/attributionCapture.ts';
@@ -41,12 +45,43 @@ function bannerParagraphText(): string {
     .trim();
 }
 
-test('the banner text is the owner-approved sentence, exactly', () => {
-  assert.equal(bannerParagraphText(), BANNER_TEXT);
+// The paragraph ends in `{bannerPolicySentence(privacyHref, Link)}`, and the
+// layout passes `resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)`
+// (./bannerPolicy.ts). The banner renders only on Vivreal's own two sites, so
+// the closing is rendered for real for each of them, as the layout resolves it.
+const POLICY_CALL = '{bannerPolicySentence(privacyHref, Link)}';
+
+/** What each Vivreal site stores (read-only check 2026-10-21, PR #202) and the link its banner must carry. */
+const OWN_SITES = [
+  { site: 'vivreal.io', siteId: VIVREAL_MARKETING_SITE_ID, pages: ['pricing', 'privacy'], href: '/privacy' },
+  { site: 'help.vivreal.io', siteId: VIVREAL_HELP_SITE_ID, pages: ['getting-started', 'terms'], href: 'https://vivreal.io/privacy' },
+];
+
+function renderOwnSiteClosing(siteId: string, slugs: string[]): string {
+  const pages = slugs.map((slug) => ({ name: slug, slug, format: 'static', collectionId: null, labels: {} }));
+  const href = resolveBannerPrivacyHref(resolvePrivacyPolicyHref(pages, []), isVivrealOwnSite(siteId));
+  return renderToStaticMarkup(createElement('p', null, bannerPolicySentence(href, 'a')));
+}
+
+test('the banner text is the owner-approved sentence, exactly, on both Vivreal sites', () => {
+  const text = bannerParagraphText();
+  assert.ok(text.endsWith(POLICY_CALL), 'the policy sentence closes the paragraph');
+  const base = text.slice(0, -POLICY_CALL.length).trim();
+  for (const { site, siteId, pages } of OWN_SITES) {
+    const closing = renderOwnSiteClosing(siteId, pages).replace(/<[^>]*>/g, '');
+    assert.equal(`${base}${closing}`, BANNER_TEXT, site);
+  }
 });
 
-test('the Privacy Policy link and the Cookie settings control are still there', () => {
-  assert.match(source, /<Link\s+href="\/privacy"[\s\S]*?>\s*Privacy Policy\s*<\/Link>/);
+test('the Privacy Policy link points at the real policy on each Vivreal site, and Cookie settings is still there', () => {
+  for (const { site, siteId, pages, href } of OWN_SITES) {
+    assert.match(
+      renderOwnSiteClosing(siteId, pages),
+      new RegExp(`<a href="${href.replace(/[.]/g, '[.]')}"[^>]*>Privacy Policy</a>`),
+      site,
+    );
+  }
+  assert.ok(source.includes(POLICY_CALL));
   assert.match(source, /onClick=\{onWithdraw\}[\s\S]*?>\s*Cookie settings\s*<\/button>/);
 });
 
@@ -156,6 +191,56 @@ test('REFUSE: GA never loads on a customer site through the controller', () => {
   grantConsent(false, VENDORS, GA);
   runConsentMount(false, VENDORS, GA);
   assert.deepEqual(gaScripts(), []);
+});
+
+/* ── The banner renders nothing on a customer site (review of 20f26ce, a gap since G13) ── */
+
+/**
+ * index.tsx renders `null` unless `state.gated`, and its state only ever comes
+ * from INERT or from these four controller calls with the layout's
+ * `vivrealOwnSite`. The component cannot load under this runner (JSX, and the
+ * repo has no DOM renderer), so the source is pinned to that shape and the
+ * controller is driven through every state a customer visitor can reach.
+ */
+test('REFUSE: the banner and Cookie settings render nothing on a customer site, whatever the visitor stored', () => {
+  const customer = isVivrealOwnSite('0123456789abcdef01234567');
+  assert.equal(customer, false, 'control: a customer site id');
+  const nothing = { gated: false, showBanner: false, showWithdraw: false };
+  const shown = (s: { gated: boolean; showBanner: boolean; showWithdraw: boolean }) =>
+    ({ gated: s.gated, showBanner: s.showBanner, showWithdraw: s.showWithdraw });
+  for (const stored of [null, 'accepted', 'rejected']) {
+    for (const gpc of [false, true]) {
+      const label = `stored=${stored} gpc=${gpc}`;
+      nextPage();
+      dom.storage.delete(COOKIE_CONSENT_KEY);
+      if (stored) dom.storage.set(COOKIE_CONSENT_KEY, stored);
+      dom.setGpc(gpc);
+      assert.deepEqual(shown(runConsentMount(customer, VENDORS, GA)), nothing, `mount ${label}`);
+      assert.deepEqual(shown(grantConsent(customer, VENDORS, GA)), nothing, `accept ${label}`);
+      assert.deepEqual(shown(denyConsent(customer)), nothing, `reject ${label}`);
+      assert.deepEqual(shown(withdrawConsent(customer, () => {})), nothing, `withdraw ${label}`);
+      assert.deepEqual(dom.scripts().map((s) => s.id).filter(Boolean), [], `nothing injected ${label}`);
+    }
+  }
+  nextPage();
+  dom.storage.delete(COOKIE_CONSENT_KEY);
+  assert.equal(runConsentMount(true, VENDORS, GA).showBanner, true, 'control: the same mount shows the banner on a Vivreal site');
+});
+
+test('the component renders null before anything else unless gated, and takes its state only from the controller', () => {
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /const INERT: ConsentState = \{\s*gated: false,/);
+  assert.ok(code.includes('useState<ConsentState>(INERT)'));
+  const gate = code.indexOf('if (!state.gated) return null;');
+  const firstJsx = code.indexOf('return (');
+  assert.ok(gate > 0 && firstJsx > gate, 'the gate comes before any rendered markup');
+  const setters = code.match(/setState\([^;]*/g) ?? [];
+  assert.deepEqual(setters.map((s) => s.match(/^setState\((\w+)\(vivrealOwnSite\b/)?.[1]), [
+    'runConsentMount',
+    'grantConsent',
+    'denyConsent',
+    'withdrawConsent',
+  ]);
 });
 
 test('the layout renders no head GA tag on the Vivreal site, and hands GA to the consent controller', () => {
