@@ -312,3 +312,57 @@ test('REFUSE: undecided consent writes NO vr_attr; the landing page is held in s
   assert.equal(document.cookie, '');
   assert.match(dom.session.get('vr_attr_pending') ?? '', /utm_campaign=undecided/);
 });
+
+// ── gbraid and wbraid (marketing-measurement T4) ────────────────────────────
+//
+// Google sends gbraid / wbraid instead of gclid on iOS app-to-web clicks. Both
+// are additive optional keys on the v2 touch: VERSION stays 2, so every cookie
+// already in a browser keeps reading.
+
+test('ALLOW: a gbraid landing writes first.gbraid; a later wbraid-only hit overwrites last', () => {
+  dom.setUrl('/?gbraid=abc');
+  captureAttribution();
+  let attr = getAttribution()!;
+  assert.equal(attr.first.gbraid, 'abc');
+  assert.equal(attr.last.gbraid, 'abc');
+
+  dom.setUrl('/pricing?wbraid=xyz');
+  captureAttribution();
+  attr = getAttribution()!;
+  assert.equal(attr.first.gbraid, 'abc', 'first touch is frozen');
+  assert.equal(attr.first.wbraid, undefined);
+  assert.equal(attr.last.wbraid, 'xyz', 'a wbraid alone is a signal that refreshes last');
+  assert.equal(attr.last.gbraid, undefined);
+});
+
+test('REFUSE: GPC writes nothing, even with a gbraid', () => {
+  dom.setGpc(true);
+  dom.setUrl('/?gbraid=abc&wbraid=xyz');
+  captureAttribution();
+  assert.equal(dom.cookie(COOKIE_NAME), null);
+});
+
+test('REFUSE: a 513-character gbraid or wbraid is truncated to 512', () => {
+  const long = 'g'.repeat(513);
+  dom.setUrl(`/?gbraid=${long}&wbraid=${long}`);
+  captureAttribution();
+  const attr = getAttribution()!;
+  assert.equal(attr.first.gbraid?.length, 512);
+  assert.equal(attr.first.wbraid?.length, 512);
+});
+
+test('an existing v2 cookie without gbraid or wbraid still reads, and a gbraid hit refreshes last only', () => {
+  const existing = {
+    v: 2,
+    first: { source: 'direct', landing_path: '/', first_seen_at: 1 },
+    last: { source: 'direct', landing_path: '/', first_seen_at: 1 },
+  };
+  document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(existing))}; Path=/`;
+  assert.deepEqual(getAttribution(), existing);
+
+  dom.setUrl('/?gbraid=t1');
+  captureAttribution();
+  const attr = getAttribution()!;
+  assert.deepEqual(attr.first, existing.first);
+  assert.equal(attr.last.gbraid, 't1');
+});
