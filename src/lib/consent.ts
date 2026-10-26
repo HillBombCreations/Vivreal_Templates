@@ -273,9 +273,24 @@ export function applyConsentedState(vendors: readonly VendorScript[] = [], ga: r
   // Google Analytics loads HERE and nowhere else on Vivreal's own site
   // (`lib/gaConsentLoad.ts`): its init defines `gtag` default-denied, and the
   // update below grants it. Before a choice, or after a reject, it never loads.
+  //
+  // `ad_storage` and `ad_user_data` are granted alongside `analytics_storage`
+  // because Vivreal runs its own paid Google Ads landing on vivreal.io: both
+  // are Consent Mode v2's requirement for Google to persist the click id
+  // (`gclid`) in the `_gcl` cookie across the session and attribute a later
+  // signup to the ad. Without them GA4 falls back to Direct and Google Ads
+  // reports zero conversions. The grant happens HERE (the update), not in the
+  // init default (`gaInitScript.ts`), so that default stays denied and
+  // byte-identical for customer sites that opt into consent mode. We do NOT
+  // grant `ad_personalization`: it governs building a personalized/remarketing
+  // ad profile, a separate and more sensitive decision not taken here.
   for (const script of ga) injectVendorScript(script);
   if (typeof window !== 'undefined') {
-    window.gtag?.('consent', 'update', { analytics_storage: 'granted' });
+    window.gtag?.('consent', 'update', {
+      analytics_storage: 'granted',
+      ad_storage: 'granted',
+      ad_user_data: 'granted',
+    });
   }
 
   // GPC is a standing refusal for third parties even when a stored 'accepted'
@@ -350,7 +365,14 @@ export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void): C
   resetConsentApplied();
   withdrawAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
-    window.gtag?.('consent', 'update', { analytics_storage: 'denied' });
+    // Downgrade every signal the accept path granted, so withdrawal is complete
+    // on the current page before the reload. `ad_personalization` was never
+    // granted, so it is not named here.
+    window.gtag?.('consent', 'update', {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+    });
     window.gtag?.('event', 'cookie_consent_withdraw', { event_category: 'Privacy' });
   }
   const doReload =
