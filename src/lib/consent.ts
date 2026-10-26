@@ -45,14 +45,20 @@
  */
 
 import { acceptAttribution, rejectAttribution, withdrawAttribution } from './attributionCapture.ts';
+import { COOKIE_CONSENT_KEY, CONSENT_COOKIE_NAME } from './consentKeys.ts';
+
+// Defined in the leaf `consentKeys.ts` so the GA init (also server-loaded) can
+// read them without importing this client module; re-exported so every
+// existing importer is unchanged.
+export { COOKIE_CONSENT_KEY, CONSENT_COOKIE_NAME };
 
 /**
  * The stored choice. v2 since 2026-10-12: an accept given under the old banner
  * wording (which described a visitor-identification service) is not consent to
  * the current one, so every visitor is asked again. The v1 key is ignored and
- * removed on the first mount (`LEGACY_CONSENT_KEYS`).
+ * removed on the first mount (`LEGACY_CONSENT_KEYS`). The key itself,
+ * `COOKIE_CONSENT_KEY`, lives in `consentKeys.ts`.
  */
-export const COOKIE_CONSENT_KEY = 'cookie_consent_v2';
 /** Earlier keys, never read as consent, removed on mount. */
 export const LEGACY_CONSENT_KEYS: readonly string[] = Object.freeze(['cookie_consent_v1']);
 
@@ -62,9 +68,9 @@ export const LEGACY_CONSENT_KEYS: readonly string[] = Object.freeze(['cookie_con
  * deleted on reject, withdrawal and any mount without a stored accept. The two
  * lead routes attach `vr_attr` only when it reads `accepted`
  * (`lib/leadAttribution.ts`). Recording a consent choice is strictly
- * necessary, and this one exists only for a visitor who accepted.
+ * necessary, and this one exists only for a visitor who accepted. Its name,
+ * `CONSENT_COOKIE_NAME`, lives in `consentKeys.ts`.
  */
-export const CONSENT_COOKIE_NAME = 'vr_consent';
 const CONSENT_COOKIE_MAX_AGE = 180 * 24 * 60 * 60;
 
 function writeConsentCookie(accepted: boolean): void {
@@ -271,25 +277,31 @@ export function applyConsentedState(vendors: readonly VendorScript[] = [], ga: r
   consentApplied = true;
 
   // Google Analytics loads HERE and nowhere else on Vivreal's own site
-  // (`lib/gaConsentLoad.ts`): its init defines `gtag` default-denied, and the
-  // update below grants it. Before a choice, or after a reject, it never loads.
+  // (`lib/gaConsentLoad.ts`). Before a choice, or after a reject, it never
+  // loads. Its init sets the consent default from the STORED choice before
+  // `config` (`gaInitScript.ts`, `consentFromStoredChoice`), so the first
+  // page_view already goes out granted; the choice is stored before this runs
+  // on both the click and the restore path. The update below is the fallback
+  // for a browser where the init could not read the stored choice (storage and
+  // cookies blocked): there the first hit is denied and later hits granted.
   //
   // `ad_storage` and `ad_user_data` are granted alongside `analytics_storage`
   // because Vivreal runs its own paid Google Ads landing on vivreal.io: both
   // are Consent Mode v2's requirement for Google to persist the click id
   // (`gclid`) in the `_gcl` cookie across the session and attribute a later
   // signup to the ad. Without them GA4 falls back to Direct and Google Ads
-  // reports zero conversions. The grant happens HERE (the update), not in the
-  // init default (`gaInitScript.ts`), so that default stays denied and
-  // byte-identical for customer sites that opt into consent mode. We do NOT
-  // grant `ad_personalization`: it governs building a personalized/remarketing
-  // ad profile, a separate and more sensitive decision not taken here.
+  // reports zero conversions. Customer sites that opt into consent mode keep
+  // their fixed denied default byte for byte; only Vivreal's own init reads
+  // the stored choice. `ad_personalization` is stated as DENIED, never
+  // granted: it governs building a personalized/remarketing ad profile, a
+  // separate and more sensitive decision not taken here (basic consent mode).
   for (const script of ga) injectVendorScript(script);
   if (typeof window !== 'undefined') {
     window.gtag?.('consent', 'update', {
       analytics_storage: 'granted',
       ad_storage: 'granted',
       ad_user_data: 'granted',
+      ad_personalization: 'denied',
     });
   }
 

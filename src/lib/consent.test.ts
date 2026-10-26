@@ -6,7 +6,8 @@
  *
  * ★ C2-AC1 is the load-bearing one: with `cookie_consent_v1 === 'accepted'`
  * pre-seeded and NO banner interaction at all, `gtag('consent','update',
- * {analytics_storage:'granted', ad_storage:'granted', ad_user_data:'granted'})`
+ * {analytics_storage:'granted', ad_storage:'granted', ad_user_data:'granted',
+ * ad_personalization:'denied'})`
  * must be observed and every configured vendor
  * script must be in the DOM. **This test must fail against a click-only
  * implementation** — that is the entire point of it. The mirror cases

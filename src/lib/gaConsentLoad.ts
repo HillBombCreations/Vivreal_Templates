@@ -30,9 +30,12 @@ export interface ConsentGaConfig {
 
 /**
  * The GA scripts to inject on consent: the `gtag.js` loader and its init, or
- * none when the site has no valid GA4 id. The init declares consent
- * default-denied first; the controller upgrades it to granted right after it
- * injects these, so no hit is ever sent in a state the visitor did not choose.
+ * none when the site has no valid GA4 id. The init sets the consent default
+ * from the STORED choice, before `config` (`consentFromStoredChoice`): this is
+ * injected only after an accept, and `config` sends the first page_view
+ * synchronously, before the controller's update could run, so a fixed denied
+ * default sent every first hit denied. The controller's update still follows
+ * as the fallback when storage cannot be read.
  */
 export function resolveConsentGaScripts(analytics: ConsentGaConfig | null | undefined): VendorScript[] {
   if (analytics?.provider !== 'google_analytics') return [];
@@ -40,6 +43,6 @@ export function resolveConsentGaScripts(analytics: ConsentGaConfig | null | unde
   if (!id || !GA4_ID_PATTERN.test(id)) return [];
   return [
     { domId: 'vr-ga-gtag', src: `https://www.googletagmanager.com/gtag/js?id=${id}`, innerHTML: '' },
-    { domId: 'vr-ga-init', innerHTML: buildGaInitScript(id, { consentMode: true }) },
+    { domId: 'vr-ga-init', innerHTML: buildGaInitScript(id, { consentMode: true, consentFromStoredChoice: true }) },
   ];
 }
