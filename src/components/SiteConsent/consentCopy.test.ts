@@ -26,6 +26,8 @@ import { getAttribution } from '../../lib/attribution.ts';
 const BANNER_TEXT =
   'We use cookies to see how people use this site and to make it better. If you accept, we turn on Google Analytics, ' +
   'which counts visits, and Microsoft Clarity, which shows us how people move around a page, with anything you type hidden. ' +
+  'Accepting also lets Google measure whether a visit that began with one of our ads led to a signup, so we can see which ' +
+  'ads are worth running. It does not build a personalized ad profile of you. ' +
   'Reject, and neither runs. You can change your mind any time under Cookie settings at the bottom of the page. ' +
   'See our Privacy Policy.';
 
@@ -112,7 +114,11 @@ test('REFUSE: Accept loads Clarity and grants Google Analytics, and loads no ide
   assert.ok(bodies.includes('clarity.ms/tag/'), 'control: the search reads the injected script bodies');
   for (const needle of ['rb2b', 'reb2b', 'b2bjsstore', 'clearbit']) assert.equal(bodies.includes(needle), false, needle);
   const granted = dom.gtagCalls().filter((c) => c[0] === 'consent' && c[1] === 'update');
-  assert.deepEqual(granted, [['consent', 'update', { analytics_storage: 'granted' }]], 'Google Analytics is upgraded to granted');
+  assert.deepEqual(
+    granted,
+    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }]],
+    'Google Analytics and the ad-measurement signals are upgraded to granted',
+  );
 });
 
 test('REFUSE: Reject injects nothing and grants nothing', () => {
@@ -173,7 +179,9 @@ test('ALLOW: GA loads after an accept, then is granted; a stored accept loads it
   assert.deepEqual(gaScripts(), ['vr-ga-gtag', 'vr-ga-init']);
   const order = dom.scripts().map((s) => s.id);
   assert.ok(order.indexOf('vr-ga-init') < order.indexOf('vr-vendor-clarity'), 'GA is injected before the grant and the vendors');
-  assert.deepEqual(dom.gtagCalls().filter((c) => c[1] === 'update'), [['consent', 'update', { analytics_storage: 'granted' }]]);
+  assert.deepEqual(dom.gtagCalls().filter((c) => c[1] === 'update'), [
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }],
+  ]);
   nextPage();
   runConsentMount(true, VENDORS, GA);
   assert.deepEqual(gaScripts(), ['vr-ga-gtag', 'vr-ga-init'], 'restored without the banner');

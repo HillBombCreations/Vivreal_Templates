@@ -6,7 +6,8 @@
  *
  * ★ C2-AC1 is the load-bearing one: with `cookie_consent_v1 === 'accepted'`
  * pre-seeded and NO banner interaction at all, `gtag('consent','update',
- * {analytics_storage:'granted'})` must be observed and every configured vendor
+ * {analytics_storage:'granted', ad_storage:'granted', ad_user_data:'granted'})`
+ * must be observed and every configured vendor
  * script must be in the DOM. **This test must fail against a click-only
  * implementation** — that is the entire point of it. The mirror cases
  * ('rejected' and absent) are mandatory, not optional: a restore path that
@@ -142,7 +143,7 @@ test("★ C2-AC1: stored 'accepted' + NO interaction ⇒ consent upgraded AND ve
   assert.equal(state.vendorsAllowed, true);
   assert.deepEqual(
     consentUpdates(),
-    [['consent', 'update', { analytics_storage: 'granted' }]],
+    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }]],
     'GA4 must be upgraded out of the denied default on RESTORE, not only on click',
   );
   assert.deepEqual(
@@ -200,13 +201,31 @@ test('Accept stores the choice, upgrades consent, injects vendors and measures t
   assert.equal(dom.storage.get(COOKIE_CONSENT_KEY), COOKIE_CONSENT_ACCEPTED);
   assert.equal(state.showBanner, false);
   assert.equal(state.showWithdraw, true);
-  assert.deepEqual(consentUpdates(), [['consent', 'update', { analytics_storage: 'granted' }]]);
+  assert.deepEqual(consentUpdates(), [
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }],
+  ]);
   assert.deepEqual(injectedIds(), ['fake-vendor-a', 'fake-vendor-b']);
   assert.deepEqual(
     dom.gtagCalls().filter((c) => c[1] === 'cookie_consent_accept'),
     [['event', 'cookie_consent_accept', { event_category: 'Privacy' }]],
     'the click path — and only the click path — measures the act of choosing',
   );
+});
+
+test('Accept grants ad_storage and ad_user_data for Google Ads attribution, but never ad_personalization', () => {
+  // Consent Mode v2: without ad_storage + ad_user_data granted, Google will not
+  // persist the gclid across the session, so a visit that began with a paid ad
+  // click is reported as Direct and the signup is never attributed to the ad.
+  // ad_personalization governs building a personalized/remarketing ad profile —
+  // a separate, more sensitive decision — and must stay denied (i.e. never
+  // appear in the update).
+  grantConsent(VIVREAL_SITE, FAKE_VENDORS);
+  const update = consentUpdates().at(-1)?.[2] as Record<string, string> | undefined;
+  assert.ok(update, 'an accept emits a consent update');
+  assert.equal(update.ad_storage, 'granted', 'ad_storage must be granted so gclid persists');
+  assert.equal(update.ad_user_data, 'granted', 'ad_user_data must be granted (v2 requirement)');
+  assert.equal(update.analytics_storage, 'granted', 'analytics stays granted');
+  assert.equal('ad_personalization' in update, false, 'ad_personalization is never granted here');
 });
 
 test('Reject stores the refusal and injects nothing', () => {
@@ -287,8 +306,8 @@ test('★ withdrawal clears the choice, downgrades consent and reloads', () => {
   assert.equal(state.showWithdraw, false);
   assert.deepEqual(
     consentUpdates().at(-1),
-    ['consent', 'update', { analytics_storage: 'denied' }],
-    'GA4 is downgraded immediately',
+    ['consent', 'update', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied' }],
+    'GA4 and the ad-measurement signals are all downgraded immediately',
   );
 });
 

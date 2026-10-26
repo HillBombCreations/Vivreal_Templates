@@ -164,6 +164,9 @@ export default function SiteConsent({
               We use cookies to see how people use this site and to make it better. If you
               accept, we turn on Google Analytics, which counts visits, and Microsoft Clarity,
               which shows us how people move around a page, with anything you type hidden.
+              Accepting also lets Google measure whether a visit that began with one of our ads
+              led to a signup, so we can see which ads are worth running. It does not build a
+              personalized ad profile of you.
               Reject, and neither runs. You can change your mind any time under Cookie
               settings at the bottom of the page.
               {bannerPolicySentence(privacyHref, Link)}
