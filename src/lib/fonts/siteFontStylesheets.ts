@@ -33,7 +33,18 @@
  * The renderer functions are passed in rather than imported: the package
  * barrel pulls `next/link`, which plain Node cannot resolve, and this module is
  * exercised by `node --test` (see `siteFontStylesheets.test.ts`).
+ *
+ * THE MONOSPACE SHEET (owner find 3, renderer 1.90.0). Every Type pack names
+ * `'JetBrains Mono', ui-monospace, monospace`, and before this nothing loaded
+ * that face, so a correct `--font-mono` still drew the system monospace. The
+ * layout passes the resolved family (`resolveMonoFamily`, the same rule the
+ * theme builder stamps) and the renderer's `monoFontHref` names its sheet: a
+ * curated mono head gets one, anything else (`Menlo`, a system stack) gets
+ * none. Imported directly, because the `./theme` subpath is React-free and
+ * loads in plain Node. Appended last, so no existing site's list changes.
  */
+import { monoFontHref } from '@hillbombcreations/site-renderer/theme';
+
 export type LiteralFontSheets = {
   /** The renderer's `siteFontsHref`. Called with no argument it covers every literal family. */
   sheetFor: (families?: readonly string[]) => string;
@@ -51,6 +62,8 @@ export type SiteFontsInUse = {
   body?: ResolvedSiteFont;
   /** True when the site carries a Studio typography preset with a family in it. */
   typographyPreset?: boolean;
+  /** `resolveMonoFamily(siteData)`: the site's monospace `font-family` value, if any. */
+  mono?: string | null;
 };
 
 /** The first family in a `font-family` value, unquoted. `var(...)` heads come back as-is. */
@@ -74,5 +87,7 @@ export function siteFontStylesheets(fonts: SiteFontsInUse, literal: LiteralFontS
     if (drawsLiteralFamily && coveredByBase.has(href)) continue;
     hrefs.push(href);
   }
+  const monoHref = monoFontHref(fonts.mono);
+  if (monoHref && !hrefs.includes(monoHref)) hrefs.push(monoHref);
   return hrefs;
 }

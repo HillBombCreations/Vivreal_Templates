@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster as AppToaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { SiteData } from '@/types/SiteData';
-import { readableAccentOnWhite } from '@/lib/theme/readableAccent';
+import { themeVarStyle } from '@/lib/theme/themeVarStyle';
 import '@/styles/globals.css';
 import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
@@ -37,22 +37,23 @@ const Providers = ({
 }) => {
 
     useEffect(() => {
+        // Owner find 3 (renderer 1.90.0): the SAME builder the root layout
+        // server-renders onto <html>, so after load the root carries exactly
+        // what the first paint did. This used to stamp EVERY string field of
+        // siteData as `--<key>` (`--favicon`, a data URI, `--chrome`,
+        // `--canonicalUrl` and the rest, none of which anything reads) plus the
+        // accent rule from a Templates copy; the keys something reads are all on
+        // the builder's whitelist, proved over the fleet by themeParity.test.ts.
         if (siteData?.primary) {
-            Object.entries(siteData).forEach(([key, value]) => {
-                if (typeof value === 'string') {
-                    document.documentElement.style.setProperty(`--${key}`, value);
-                }
-            });
-            // Derived token (mirrors layout.tsx SSR emission): the AA-on-white
-            // accent variant for rich-text links / accent-as-text surfaces.
-            const readable = readableAccentOnWhite(siteData.primary);
-            if (readable) {
-                document.documentElement.style.setProperty('--accent-readable', readable);
+            const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>) ?? {}; // SiteData is a closed interface; the builder reads it as a plain record
+            for (const [property, value] of Object.entries(themeStyle)) {
+                document.documentElement.style.setProperty(property, String(value));
             }
         }
-        // Typography is an object (skipped by the string loop above) — map the
-        // Studio's Branding preset onto the font CSS vars consumed by
-        // globals.css (body / .font-brand) and the renderer's headings.
+        // Typography is an object. Map the Studio's Branding preset onto the
+        // font CSS vars consumed by globals.css (body / .font-brand) and the
+        // renderer's headings. Its `monoFamily` reaches `--font-mono` through
+        // the builder above (resolveMonoFamily), not here.
         const typography = (siteData as { typography?: { displayFamily?: string; bodyFamily?: string } }).typography;
         if (typography?.displayFamily) {
             document.documentElement.style.setProperty('--font-display', typography.displayFamily);

@@ -28,6 +28,7 @@ import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { siteFontStylesheets } from '@/lib/fonts/siteFontStylesheets';
 import { themeVarStyle } from '@/lib/theme/themeVarStyle';
+import { resolveMonoFamily } from '@hillbombcreations/site-renderer/theme';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
@@ -138,6 +139,8 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
             display: siteFont,
             body: siteFontBody,
             typographyPreset: [typography?.displayFamily, typography?.bodyFamily].some((f) => typeof f === 'string' && f.trim() !== ''),
+            // Owner find 3: the face `--font-mono` names, by the builder's own rule.
+            mono: resolveMonoFamily(siteData as unknown as Record<string, unknown>), // SiteData is a closed interface; the resolver reads it as a plain record
         },
         { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
     );

@@ -44,10 +44,24 @@ import NavbarChrome from './NavbarChrome';
  * `true` ⇒ the fixed header, byte-identical. Item-18 lockstep: the Studio
  * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
  * the same derivation.
+ *
+ * Owner find 3 (renderer 1.90.0): on a Mood dark site ONLY, the shell passes
+ * the stored `surface-alt` twice. As `surfaceAlt`, so the renderer decides the
+ * dark ground (the site's own colour when it already carries light text, the
+ * dark literal when it is light) in the server render with no DOM read. And as
+ * the second argument of `resolveMastheadTone`, so a media-less page top the
+ * renderer now paints dark answers `'dark'` and the header is not told "light
+ * top" over it. Every other site gets the one-argument call and no
+ * `surfaceAlt`, byte-identical to 1.89.1. The Studio preview wrapper threads
+ * the same two inputs (item-18 lockstep).
  */
 const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null; hasMasthead?: boolean } = {}) => {
   const siteData = await getSiteData();
-  const mastheadTone = resolveMastheadTone(page ?? null);
+  const darkSite =
+    siteData?.chrome === 'dark'
+      ? { chrome: siteData.chrome, surfaceAlt: typeof siteData['surface-alt'] === 'string' ? siteData['surface-alt'] : undefined }
+      : null;
+  const mastheadTone = darkSite ? resolveMastheadTone(page ?? null, darkSite) : resolveMastheadTone(page ?? null);
   const pinned = resolveHeaderPinned(page ?? null);
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
@@ -164,6 +178,7 @@ const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null;
       barHeightMobile={siteData?.navigation?.barHeightMobile ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
+      surfaceAlt={darkSite?.surfaceAlt}
       // Site-level announcement strip — rendered by the renderer INSIDE the
       // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
       announcement={siteData?.announcement ?? null}
