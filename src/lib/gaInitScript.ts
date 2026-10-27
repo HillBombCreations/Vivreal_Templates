@@ -108,6 +108,11 @@ export function buildGaInitScript(id: string, opts?: GaInitOptions): string {
  * `ad_personalization` is always denied: an accept here does not cover
  * personalised advertising (basic consent mode, owner decision M1).
  *
+ * Global Privacy Control keeps `ad_storage` and `ad_user_data` denied even
+ * after an accept (owner approved 2026-10-26): GPC opts out of sharing, and a
+ * cookie Accept is not a sharing opt-in. `analytics_storage` still follows
+ * the accept. The same rule is in the controller's update (`consent.ts`).
+ *
  * Same `[ ]*` character class as the vr_internal read, for the same reason.
  */
 function storedChoiceConsentDefault(): string {
@@ -116,6 +121,8 @@ function storedChoiceConsentDefault(): string {
     `try{vrGranted=window.localStorage.getItem('${COOKIE_CONSENT_KEY}')==='accepted';}catch(e){}`,
     `if(!vrGranted){try{vrGranted=/(^|;[ ]*)${CONSENT_COOKIE_NAME}=accepted(;|$)/.test(document.cookie);}catch(e){}}`,
     "var vrS=vrGranted?'granted':'denied';",
-    "gtag('consent','default',{ad_storage:vrS,analytics_storage:vrS,ad_user_data:vrS,ad_personalization:'denied'});",
+    'var vrGpc=false;try{vrGpc=navigator.globalPrivacyControl===true;}catch(e){}',
+    "var vrA=(vrGranted&&!vrGpc)?'granted':'denied';",
+    "gtag('consent','default',{ad_storage:vrA,analytics_storage:vrS,ad_user_data:vrA,ad_personalization:'denied'});",
   ].join('');
 }

@@ -212,8 +212,10 @@ export function isGpcEnabled(): boolean {
  * visitor who actively clicks Accept still gets GA4's `analytics_storage`
  * upgrade — a first-party measurement signal they affirmatively asked for.
  * What GPC categorically suppresses is `vr_attr` (in attribution.ts's own
- * unconditional early return) and every registry VENDOR (`vendorsAllowed`
- * below), which are the person-level and third-party exposures.
+ * unconditional early return), every registry VENDOR (`vendorsAllowed`
+ * below), and Google's ad signals (`ad_storage`, `ad_user_data`,
+ * `ad_personalization` stay denied in both the GA init default and the
+ * update), which are the person-level, third-party and sharing exposures.
  */
 export function resolveConsentState(vivrealOwnSite: boolean): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
@@ -295,12 +297,18 @@ export function applyConsentedState(vendors: readonly VendorScript[] = [], ga: r
   // the stored choice. `ad_personalization` is stated as DENIED, never
   // granted: it governs building a personalized/remarketing ad profile, a
   // separate and more sensitive decision not taken here (basic consent mode).
+  //
+  // Under Global Privacy Control the ad signals stay DENIED even on an accept
+  // (owner approved 2026-10-26): GPC opts out of sharing, and a cookie Accept
+  // is not a sharing opt-in. Analytics is still granted. The init default
+  // applies the same rule (`gaInitScript.ts`).
   for (const script of ga) injectVendorScript(script);
   if (typeof window !== 'undefined') {
+    const ads = isGpcEnabled() ? 'denied' : 'granted';
     window.gtag?.('consent', 'update', {
       analytics_storage: 'granted',
-      ad_storage: 'granted',
-      ad_user_data: 'granted',
+      ad_storage: ads,
+      ad_user_data: ads,
       ad_personalization: 'denied',
     });
   }

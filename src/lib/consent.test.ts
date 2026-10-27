@@ -434,8 +434,14 @@ test('REFUSE: GPC plus Accept grants analytics only; ad signals denied in the de
     ad_user_data: 'denied',
     ad_personalization: 'denied',
   };
-  assert.deepEqual(consentUpdates(), [['consent', 'update', expected]], 'the update never grants ad signals under GPC');
+  // The executed init replaced the harness spy with the real gtag, so the
+  // update lands in the dataLayer alongside the default.
   const entries = layer();
+  assert.deepEqual(
+    entries.filter((e) => e[0] === 'consent' && e[1] === 'update'),
+    [['consent', 'update', expected]],
+    'the update never grants ad signals under GPC',
+  );
   const configAt = entries.findIndex((e) => e[0] === 'config');
   const defaultEntry = entries.find((e) => e[0] === 'consent' && e[1] === 'default');
   assert.notEqual(configAt, -1, 'control: the init ran');
