@@ -260,3 +260,61 @@ test('gaInitScript.ts imports nothing but consentKeys.ts (it is also loaded by a
   const specifiers = Array.from(source.matchAll(/^import[^;]*from\s+'([^']+)';/gm), (m) => m[1]);
   assert.deepEqual(specifiers, ['./consentKeys.ts']);
 });
+
+// ── Global Privacy Control (owner approved 2026-10-26, review of PR #218) ──
+//
+// GPC opts the visitor out of sharing, and an Accept click is not a sharing
+// opt-in. Under GPC the ad signals stay denied; analytics is still granted on
+// accept, as the privacy page describes.
+
+const GPC_ACCEPTED = {
+  analytics_storage: 'granted',
+  ad_storage: 'denied',
+  ad_user_data: 'denied',
+  ad_personalization: 'denied',
+};
+
+test('REFUSE: GPC plus a stored accept denies the three ad signals, analytics granted, before config', () => {
+  const dom = installDom();
+  try {
+    dom.setGpc(true);
+    dom.storage.set('cookie_consent_v2', 'accepted');
+    assertDefaultBeforeConfig(runInit(storedChoiceInit()), GPC_ACCEPTED);
+  } finally {
+    dom.restore();
+  }
+});
+
+test('REFUSE: GPC plus only the vr_consent cookie also denies the ad signals', () => {
+  const dom = installDom();
+  try {
+    dom.setGpc(true);
+    globalThis.document.cookie = 'vr_consent=accepted';
+    assertDefaultBeforeConfig(runInit(storedChoiceInit()), GPC_ACCEPTED);
+  } finally {
+    dom.restore();
+  }
+});
+
+test('ALLOW: GPC false or absent plus a stored accept keeps the plan default (ad_storage, ad_user_data granted)', () => {
+  for (const gpc of [false, undefined]) {
+    const dom = installDom();
+    try {
+      dom.setGpc(gpc);
+      dom.storage.set('cookie_consent_v2', 'accepted');
+      assertDefaultBeforeConfig(runInit(storedChoiceInit()), ALL_GRANTED);
+    } finally {
+      dom.restore();
+    }
+  }
+});
+
+test('REFUSE: GPC with no stored choice stays all denied', () => {
+  const dom = installDom();
+  try {
+    dom.setGpc(true);
+    assertDefaultBeforeConfig(runInit(storedChoiceInit()), ALL_DENIED);
+  } finally {
+    dom.restore();
+  }
+});

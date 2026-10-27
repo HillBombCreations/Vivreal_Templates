@@ -418,3 +418,38 @@ test('REFUSE: Reject injects no GA and pushes nothing to the dataLayer', () => {
   assert.deepEqual(injectedIds(), []);
   assert.deepEqual(layer(), []);
 });
+
+// ── Global Privacy Control on Accept (owner approved 2026-10-26, review of PR #218) ──
+
+test('REFUSE: GPC plus Accept grants analytics only; ad signals denied in the default AND the update; no Clarity, no vr_attr', () => {
+  dom.setGpc(true);
+  const layer = executeInlineScriptsOnAppend();
+  const ga = resolveConsentGaScripts({ provider: 'google_analytics', trackingId: 'G-TEST1' });
+
+  grantConsent(VIVREAL_SITE, FAKE_VENDORS, ga);
+
+  const expected = {
+    analytics_storage: 'granted',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+  };
+  assert.deepEqual(consentUpdates(), [['consent', 'update', expected]], 'the update never grants ad signals under GPC');
+  const entries = layer();
+  const configAt = entries.findIndex((e) => e[0] === 'config');
+  const defaultEntry = entries.find((e) => e[0] === 'consent' && e[1] === 'default');
+  assert.notEqual(configAt, -1, 'control: the init ran');
+  assert.deepEqual(defaultEntry?.[2], expected, 'the init default never grants ad signals under GPC');
+  assert.ok(entries.indexOf(defaultEntry as unknown[]) < configAt, 'still before config');
+  assert.deepEqual(injectedIds(), ['vr-ga-gtag', 'vr-ga-init'], 'no registry vendor (Clarity) loads under GPC');
+  assert.equal(dom.cookie('vr_attr'), null, 'vr_attr is never set under GPC');
+});
+
+test('ALLOW: no GPC plus Accept keeps the plan update (analytics, ad_storage, ad_user_data granted)', () => {
+  dom.setGpc(false);
+  grantConsent(VIVREAL_SITE, FAKE_VENDORS);
+  assert.deepEqual(consentUpdates(), [
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }],
+  ]);
+  assert.deepEqual(injectedIds(), ['fake-vendor-a', 'fake-vendor-b']);
+});
