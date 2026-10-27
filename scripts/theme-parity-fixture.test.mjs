@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toFixtureSiteData, REDACTED } from './theme-parity-fixture.mjs';
+import { toFixtureSiteData, REDACTED, buildFixture, rawFromDbValues } from './theme-parity-fixture.mjs';
 
 const RAW = {
   name: 'Cobalt Bakery',
@@ -58,4 +58,35 @@ test('REFUSE: the chrome fields come from the top level only, as getSiteData bui
 
 test('REFUSE: a response with no siteDetails.values is refused, not turned into an empty site', () => {
   assert.throws(() => toFixtureSiteData({ name: 'x' }), /no siteDetails\.values/);
+});
+
+/* ── a site whose Client API fetch failed, from a read-only DB read ────────── */
+
+const FAILED = '68adda65762dfc328d91382d';
+const DB_DOC = { _id: { $oid: FAILED }, siteDetails: { values: { primary: '#2e5e3a', border: '#d9d2c0', canonicalUrl: 'https://grain.example', chrome: 'light' } } };
+
+test('ALLOW: a failed fetch is filled from the DB document, marked, redacted, and leaves notFetched', () => {
+  const fixture = buildFixture({ a1: { raw: RAW }, [FAILED]: { error: 'fetch failed' } }, { [FAILED]: DB_DOC });
+  assert.deepEqual(fixture.notFetched, []);
+  const site = fixture.sites.find((s) => s.id === FAILED);
+  assert.equal(site.source, 'db');
+  assert.equal(site.siteData.primary, '#2e5e3a');
+  assert.equal(site.siteData.border, '#d9d2c0');
+  assert.equal(site.siteData.canonicalUrl, REDACTED);
+  assert.equal(fixture.sites.find((s) => s.id === 'a1').source, undefined, 'a fetched site is not marked as a DB read');
+  // The bare values object is accepted too.
+  assert.deepEqual(rawFromDbValues(DB_DOC.siteDetails.values), { siteDetails: { values: DB_DOC.siteDetails.values } });
+});
+
+test('ALLOW: without a DB read the failed site stays listed as not fetched', () => {
+  const fixture = buildFixture({ a1: { raw: RAW }, [FAILED]: { error: 'fetch failed' } });
+  assert.deepEqual(fixture.notFetched, [FAILED]);
+  assert.equal(fixture.sites.length, 1);
+});
+
+test('REFUSE: a DB read never replaces settings the Client API returned, and a non-site document is refused', () => {
+  assert.throws(() => buildFixture({ a1: { raw: RAW } }, { a1: DB_DOC }), /already has its settings/);
+  for (const bad of [{}, [], { siteDetails: { values: { name: 'x' } } }, null]) {
+    assert.throws(() => rawFromDbValues(bad), /no string primary/, JSON.stringify(bad));
+  }
 });

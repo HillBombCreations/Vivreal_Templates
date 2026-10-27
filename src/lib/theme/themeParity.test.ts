@@ -23,10 +23,11 @@ import { themeTokenStyle, resolveMonoFamily, THEME_TOKEN_KEYS } from '@hillbombc
  *  - after load, every property something reads is identical (group (i)'s new
  *    `--font-mono` is the one stated delta, since applying the pack's face is
  *    the point of BLOCK 4);
- *  - a property that disappears must have no reader. The reader search is a
- *    literal `var(--<key>` (or a quoted `'--<key>'`) over Templates `src` and
- *    the installed renderer, comments stripped. Review-2 found no dynamic
- *    `var(--${...})` reader in either, which is what makes a literal search sound.
+ *  - a property that disappears must have no reader. The reader search is the
+ *    whole token `--<key>` anywhere (`var(--k)`, Tailwind `bg-(--k)` and
+ *    `[--k]`, a quoted `'--k'`) over Templates `src` and the installed
+ *    renderer, comments stripped. Review-2 found no dynamic `var(--${...})`
+ *    reader in either, which is what makes a literal search sound.
  *
  * Fleet data: `__fixtures__/fleetThemeSettings.json`, built by
  * `scripts/theme-parity-fixture.mjs` from the Client API responses the gate
@@ -182,8 +183,12 @@ function makeHasReader(corpus: string[]): (property: string) => boolean {
   return (property) => {
     const hit = cache.get(property);
     if (hit !== undefined) return hit;
+    // A whole token, not only `var(--k`: Tailwind reads a custom property as
+    // `bg-(--k)` or `[--k]`, and a JS reader names it in a string. Bounded by
+    // anything that cannot continue a custom-property name, so `--k` never
+    // matches `--k-start` or `--xk`.
     const name = escapeRegExp(property);
-    const pattern = new RegExp(`var\\(\\s*${name}\\s*[,)]|['"\`]${name}['"\`]`);
+    const pattern = new RegExp(`(?<![A-Za-z0-9_-])${name}(?![A-Za-z0-9_-])`);
     const found = corpus.some((source) => pattern.test(source));
     cache.set(property, found);
     return found;
@@ -266,6 +271,19 @@ test('the reader search reads both trees and finds readers it must find', () => 
   for (const property of ['--primary', '--surface-alt', '--border', '--accent-readable', '--font-mono', '--contact-button-radius']) {
     assert.ok(hasReader(property), `${property} has no reader; the search is blind`);
   }
+});
+
+test('ALLOW: the reader search catches every reader form, Tailwind included', () => {
+  for (const source of ['color: var(--x-probe);', 'color: var( --x-probe , red);', 'className="bg-(--x-probe)"', "className='text-[--x-probe]'", "getPropertyValue('--x-probe')"]) {
+    assert.equal(makeHasReader([source])('--x-probe'), true, source);
+  }
+});
+
+test('REFUSE: the reader search does not count a longer or prefixed name, or a comment', () => {
+  for (const source of ['var(--x-probe-start)', 'var(--xx-probe)', 'bg-(--x-probe2)', 'a--x-probe']) {
+    assert.equal(makeHasReader([source])('--x-probe'), false, source);
+  }
+  assert.equal(makeHasReader([stripComments('/* reads var(--x-probe) */\n// var(--x-probe)\nconst a = 1;')])('--x-probe'), false);
 });
 
 test('every stored string key with a reader is on the builder whitelist', () => {

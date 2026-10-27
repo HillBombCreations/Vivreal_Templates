@@ -178,7 +178,10 @@ const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null;
       barHeightMobile={siteData?.navigation?.barHeightMobile ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
-      surfaceAlt={darkSite?.surfaceAlt}
+      // Spread, not `surfaceAlt={undefined}`: an undefined prop still travels in
+      // the RSC payload to this client bridge, so a non-Dark site would not be
+      // byte-identical to 1.89.1. A Dark site always carries the key.
+      {...(darkSite ? { surfaceAlt: darkSite.surfaceAlt } : {})}
       // Site-level announcement strip — rendered by the renderer INSIDE the
       // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
       announcement={siteData?.announcement ?? null}

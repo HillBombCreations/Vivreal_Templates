@@ -42,9 +42,20 @@ test('REFUSE: a site that is not Dark gets the one-argument masthead question an
 
 test('ALLOW: a Dark site passes its stored surface-alt to the renderer header, from the same Dark-only object', () => {
   const src = navbar();
-  const props = src.match(/\bsurfaceAlt=\{[^}]*\}/g) ?? [];
-  assert.deepEqual(props, ['surfaceAlt={darkSite?.surfaceAlt}']);
   assert.match(src, /chrome=\{siteData\?\.chrome as 'dark' \| 'light' \| undefined\}/, 'parsed the shell but the chrome prop is missing');
+  const spreads = src.match(/\{\.\.\.\(darkSite \? \{ surfaceAlt: darkSite\.surfaceAlt \} : \{\}\)\}/g) ?? [];
+  assert.equal(spreads.length, 1);
+});
+
+test('REFUSE: a non-Dark site carries no surfaceAlt key at all, not even an undefined one (RSC payload byte-identical)', () => {
+  const src = navbar();
+  // No JSX attribute form, which would send `surfaceAlt: undefined` across the client boundary.
+  assert.deepEqual(src.match(/\bsurfaceAlt=\{/g) ?? [], []);
+  // The spread's non-Dark arm adds no key: evaluate both arms as the shell does.
+  const props = (darkSite: { surfaceAlt?: string } | null) => ({ chrome: 'light', ...(darkSite ? { surfaceAlt: darkSite.surfaceAlt } : {}) });
+  assert.deepEqual(Object.keys(props(null)), ['chrome']);
+  assert.equal(JSON.stringify(props(null)), '{"chrome":"light"}');
+  assert.deepEqual(Object.keys(props({ surfaceAlt: undefined })), ['chrome', 'surfaceAlt'], 'control: the Dark arm does add the key');
 });
 
 const PRICING = { hero: { variant: 'statement', headline: 'Pricing' } };
