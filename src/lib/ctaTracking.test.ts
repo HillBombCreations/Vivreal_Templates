@@ -198,3 +198,38 @@ test('a second install is a no-op; uninstall removes the listener', () => {
   first();
   assert.equal(f.listeners.length, 0);
 });
+
+// ── multi-line link text (PR #218 review): markup line breaks must not turn a sign-up into a log-in ──
+
+test('ALLOW ctaIntent: a multi-line "Start Free" is still a sign-up', () => {
+  assert.equal(ctaIntent('login', 'Start\n      Free'), 'signup');
+  assert.equal(ctaIntent('login', '\n  Start\t\tFree\n'), 'signup');
+});
+
+test('REFUSE ctaIntent: collapsing whitespace does not widen the match', () => {
+  assert.equal(ctaIntent('login', 'Start\n      Freely'), 'login');
+  assert.equal(ctaIntent('login', 'Log\n  in'), 'login');
+});
+
+test('install: multi-line link text is sent as one line with intent signup', () => {
+  const f = fakeWindow();
+  const uninstall = installCtaClickTracking(true, f.win);
+  try {
+    f.listeners[0]?.handler(clickOn('/app/login', '\n        Start\n        Free\n      ', ['header']));
+    assert.deepEqual(f.gtagCalls, [
+      [
+        'event',
+        'cta_click',
+        {
+          cta_destination: 'login',
+          cta_intent: 'signup',
+          cta_location: 'header',
+          cta_text: 'Start Free',
+          transport_type: 'beacon',
+        },
+      ],
+    ]);
+  } finally {
+    uninstall();
+  }
+});
