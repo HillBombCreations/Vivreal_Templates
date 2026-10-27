@@ -37,6 +37,7 @@ import { contactButtonsSiteData } from '@/lib/contactButtons';
 import SiteAnalytics from '@/components/SiteAnalytics';
 import SiteBeacon from '@/components/SiteBeacon';
 import AttributionCapture from '@/components/AttributionCapture';
+import CtaClickTracking from '@/components/CtaClickTracking';
 import SiteConsent from '@/components/SiteConsent';
 import { resolveBannerPrivacyHref } from '@/components/SiteConsent/bannerPolicy';
 import { isVivrealOwnSite } from '@/lib/vivrealApex';
@@ -293,7 +294,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   {/* Vivreal first-party analytics beacon (cookieless). Fires only
                       on real deployed sites (SITE_ID set + != 'preview'); collection
                       is ON by default for every site (basic analytics is bundled). */}
-                  <SiteBeacon siteId={process.env.SITE_ID ?? ''} />
+                  <SiteBeacon siteId={process.env.SITE_ID ?? ''} vivrealOwnSite={vivrealOwnSite} />
                   {/* Vivreal campaign attribution (G12/C1) and Vivreal cookie
                       consent (G13/C2). BOTH are gated on the SITE ID, resolved
                       right here because `SITE_ID` is server only and a client
@@ -319,6 +320,8 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       the withdrawal affordance sits below the page footer
                       rather than floating over content. */}
                   <AttributionCapture vivrealOwnSite={vivrealOwnSite} />
+                  {/* GA4 cta_click on Vivreal's own sites only, same gate. */}
+                  <CtaClickTracking vivrealOwnSite={vivrealOwnSite} />
                   <SiteConsent
                       vivrealOwnSite={vivrealOwnSite}
                       additional={siteData.analytics?.additional}

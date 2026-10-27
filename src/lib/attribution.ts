@@ -1,21 +1,24 @@
 /**
  * vr_attr attribution snippet — CANONICAL SOURCE (v2 contract).
  *
- * Copy this file VERBATIM into each property as `src/lib/attribution.ts`:
+ * Two LIVE copies, kept byte-identical as `src/lib/attribution.ts`:
+ *   - Vivreal_Templates      (vivreal.io and help.vivreal.io, site-id-gated mount)
  *   - Vivreal_Portal_Mobile  (vivreal.io/app)
- *   - Vivreal_SSR_Landing    (vivreal.io)
- *   - Vivreal_Docs           (vivreal.io/help)
- *   - Vivreal_Templates      (vivreal.io, post-origin-swap — apex-gated mount)
+ * Vivreal_SSR_Landing and Vivreal_Docs also carry a copy, but neither serves
+ * vivreal.io any more, so they are not re-synced.
  *
  * Contract + decisions: docs/designs/signup-attribution-tracking/design.md §13.
- * If you change this file, re-sync ALL four copies and bump VERSION.
+ * If you change this file, re-sync both live copies. Bump VERSION only for a
+ * change an older reader cannot handle: a bump makes every cookie already in a
+ * browser unreadable (`readCookie` drops a wrong version). Additive optional
+ * touch keys (gbraid and wbraid, marketing-measurement T4) do NOT bump it.
  *
  * Behaviour:
  *   - First-party cookie `vr_attr` on `Domain=.vivreal.io` (omitted on localhost),
  *     Path=/, Max-Age 90d, SameSite=Lax, Secure on https.
  *   - First touch: written once on the first vivreal.io page hit, never overwritten.
  *   - Last touch: overwritten ONLY when the hit carries a meaningful signal
- *     (any utm_*, gclid/fbclid, or an external referrer). Internal vivreal.io
+ *     (any utm_*, gclid/gbraid/wbraid/fbclid, or an external referrer). Internal vivreal.io
  *     navigation never clobbers `last`.
  *   - Honors Global Privacy Control: never writes when GPC is on.
  *   - Optional consent gate: pass { consentDenied: true } to skip writing
@@ -32,7 +35,7 @@ const MAX_AGE_SECONDS = 90 * 24 * 60 * 60; // 90 days
 const APEX_DOMAIN = 'vivreal.io';
 
 const UTM_MAX = 256;
-const LONG_MAX = 512; // referrer, landing_path, gclid, fbclid
+const LONG_MAX = 512; // referrer, landing_path, gclid, gbraid, wbraid, fbclid
 const SOURCE_MAX = 64;
 
 export interface AttributionTouch {
@@ -42,6 +45,10 @@ export interface AttributionTouch {
   utm_term?: string;
   utm_content?: string;
   gclid?: string;
+  /** Google click id for iOS app-to-web clicks (in place of gclid). */
+  gbraid?: string;
+  /** Google click id for iOS web-to-app clicks (in place of gclid). */
+  wbraid?: string;
   fbclid?: string;
   referrer?: string;
   landing_path?: string;
@@ -152,6 +159,10 @@ function buildTouch(page?: AttributionPage): { touch: AttributionTouch; hasSigna
 
   const gclid = params.get('gclid');
   if (gclid) touch.gclid = truncate(gclid, LONG_MAX);
+  const gbraid = params.get('gbraid');
+  if (gbraid) touch.gbraid = truncate(gbraid, LONG_MAX);
+  const wbraid = params.get('wbraid');
+  if (wbraid) touch.wbraid = truncate(wbraid, LONG_MAX);
   const fbclid = params.get('fbclid');
   if (fbclid) touch.fbclid = truncate(fbclid, LONG_MAX);
 
@@ -175,7 +186,13 @@ function buildTouch(page?: AttributionPage): { touch: AttributionTouch; hasSigna
   touch.source = deriveSource(touch.utm_source, referrerHost);
   touch.first_seen_at = page ? page.at : Date.now();
 
-  const hasSignal = hasUtm || Boolean(touch.gclid) || Boolean(touch.fbclid) || externalReferrer;
+  const hasSignal =
+    hasUtm ||
+    Boolean(touch.gclid) ||
+    Boolean(touch.gbraid) ||
+    Boolean(touch.wbraid) ||
+    Boolean(touch.fbclid) ||
+    externalReferrer;
   return { touch, hasSignal };
 }
 

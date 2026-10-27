@@ -37,7 +37,12 @@
  * against the per-provider pattern first (<SiteAnalytics> does; that is the
  * pre-existing fail-closed contract this function inherits rather than
  * relaxes).
+ *
+ * IMPORTS: `consentKeys.ts` and nothing else. This module is loaded by the
+ * server component <SiteAnalytics>, so it must never import the client consent
+ * controller (`consent.ts`). A test pins the import list.
  */
+import { COOKIE_CONSENT_KEY, CONSENT_COOKIE_NAME } from './consentKeys.ts';
 
 export interface GaInitOptions {
   /**
@@ -45,6 +50,15 @@ export interface GaInitOptions {
    * `vr_internal` staff-traffic cookie. Absent/false ⇒ today's exact literal.
    */
   consentMode?: boolean;
+  /**
+   * Only with `consentMode`. Set the consent default from the visitor's STORED
+   * choice instead of a fixed denied default. Vivreal's own site injects the
+   * init only after an accept (`gaConsentLoad.ts`), and the init pushes
+   * `config` synchronously, before the controller's `consent update` runs.
+   * With a fixed denied default, `config`'s automatic page_view went out
+   * denied (gcs=G100, a throwaway client id). Customer sites never set this.
+   */
+  consentFromStoredChoice?: boolean;
 }
 
 /**
@@ -58,6 +72,9 @@ function legacyInit(id: string): string {
 
 export function buildGaInitScript(id: string, opts?: GaInitOptions): string {
   if (!opts?.consentMode) return legacyInit(id);
+  const consentDefault = opts.consentFromStoredChoice
+    ? storedChoiceConsentDefault()
+    : "gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied'});";
 
   // Mirrors Vivreal_SSR_Landing/src/app/layout.tsx's gtag-init, minified:
   //   consent default (denied)  ->  vr_internal read  ->  config
@@ -76,9 +93,36 @@ export function buildGaInitScript(id: string, opts?: GaInitOptions): string {
     'window.dataLayer=window.dataLayer||[];',
     'function gtag(){dataLayer.push(arguments);}',
     "gtag('js',new Date());",
-    "gtag('consent','default',{ad_storage:'denied',analytics_storage:'denied'});",
+    consentDefault,
     'var vrInternal=false;',
     'try{vrInternal=/(^|;[ ]*)vr_internal=/.test(document.cookie);}catch(e){vrInternal=false;}',
     `gtag('config','${id}',vrInternal?{traffic_type:'internal'}:{});`,
+  ].join('');
+}
+
+/**
+ * The consent default read from the stored choice, in the init itself so it
+ * lands before `config`. Granted only on the exact stored value `'accepted'`
+ * (localStorage first, then the `vr_consent` cookie mirror when storage is
+ * blocked); anything else, including a read that throws, stays denied.
+ * `ad_personalization` is always denied: an accept here does not cover
+ * personalised advertising (basic consent mode, owner decision M1).
+ *
+ * Global Privacy Control keeps `ad_storage` and `ad_user_data` denied even
+ * after an accept (owner approved 2026-10-26): GPC opts out of sharing, and a
+ * cookie Accept is not a sharing opt-in. `analytics_storage` still follows
+ * the accept. The same rule is in the controller's update (`consent.ts`).
+ *
+ * Same `[ ]*` character class as the vr_internal read, for the same reason.
+ */
+function storedChoiceConsentDefault(): string {
+  return [
+    'var vrGranted=false;',
+    `try{vrGranted=window.localStorage.getItem('${COOKIE_CONSENT_KEY}')==='accepted';}catch(e){}`,
+    `if(!vrGranted){try{vrGranted=/(^|;[ ]*)${CONSENT_COOKIE_NAME}=accepted(;|$)/.test(document.cookie);}catch(e){}}`,
+    "var vrS=vrGranted?'granted':'denied';",
+    'var vrGpc=false;try{vrGpc=navigator.globalPrivacyControl===true;}catch(e){}',
+    "var vrA=(vrGranted&&!vrGpc)?'granted':'denied';",
+    "gtag('consent','default',{ad_storage:vrA,analytics_storage:vrS,ad_user_data:vrA,ad_personalization:'denied'});",
   ].join('');
 }

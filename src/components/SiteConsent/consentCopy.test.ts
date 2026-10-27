@@ -116,7 +116,7 @@ test('REFUSE: Accept loads Clarity and grants Google Analytics, and loads no ide
   const granted = dom.gtagCalls().filter((c) => c[0] === 'consent' && c[1] === 'update');
   assert.deepEqual(
     granted,
-    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }]],
+    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }]],
     'Google Analytics and the ad-measurement signals are upgraded to granted',
   );
 });
@@ -152,7 +152,9 @@ function nextPage(): void {
 test('the GA scripts resolve from a valid GA4 id only', () => {
   assert.deepEqual(GA.map((s) => s.domId), ['vr-ga-gtag', 'vr-ga-init']);
   assert.equal(GA[0].src, 'https://www.googletagmanager.com/gtag/js?id=G-TEST1234');
-  assert.match(GA[1].innerHTML, /gtag\('consent','default',\{ad_storage:'denied',analytics_storage:'denied'\}\);.*gtag\('config','G-TEST1234'/);
+  // The own-site init sets its consent default from the stored choice, still before config
+  // (marketing-measurement T1; the executed ordering is pinned in gaInitScript.test.ts).
+  assert.match(GA[1].innerHTML, /gtag\('consent','default',\{ad_storage:vrA,analytics_storage:vrS,ad_user_data:vrA,ad_personalization:'denied'\}\);.*gtag\('config','G-TEST1234'/);
   for (const bad of [null, {}, { provider: 'plausible', trackingId: 'G-TEST1234' }, { provider: 'google_analytics', trackingId: "G-1');alert(1);//" }]) {
     assert.deepEqual(resolveConsentGaScripts(bad), [], JSON.stringify(bad));
   }
@@ -180,7 +182,7 @@ test('ALLOW: GA loads after an accept, then is granted; a stored accept loads it
   const order = dom.scripts().map((s) => s.id);
   assert.ok(order.indexOf('vr-ga-init') < order.indexOf('vr-vendor-clarity'), 'GA is injected before the grant and the vendors');
   assert.deepEqual(dom.gtagCalls().filter((c) => c[1] === 'update'), [
-    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }],
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }],
   ]);
   nextPage();
   runConsentMount(true, VENDORS, GA);

@@ -6,7 +6,8 @@
  *
  * ★ C2-AC1 is the load-bearing one: with `cookie_consent_v1 === 'accepted'`
  * pre-seeded and NO banner interaction at all, `gtag('consent','update',
- * {analytics_storage:'granted', ad_storage:'granted', ad_user_data:'granted'})`
+ * {analytics_storage:'granted', ad_storage:'granted', ad_user_data:'granted',
+ * ad_personalization:'denied'})`
  * must be observed and every configured vendor
  * script must be in the DOM. **This test must fail against a click-only
  * implementation** — that is the entire point of it. The mirror cases
@@ -22,6 +23,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { installDom, type DomHarness } from './__testing__/domHarness.ts';
+import { resolveConsentGaScripts } from './gaConsentLoad.ts';
 import {
   COOKIE_CONSENT_KEY,
   COOKIE_CONSENT_ACCEPTED,
@@ -143,7 +145,7 @@ test("★ C2-AC1: stored 'accepted' + NO interaction ⇒ consent upgraded AND ve
   assert.equal(state.vendorsAllowed, true);
   assert.deepEqual(
     consentUpdates(),
-    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }]],
+    [['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }]],
     'GA4 must be upgraded out of the denied default on RESTORE, not only on click',
   );
   assert.deepEqual(
@@ -202,7 +204,7 @@ test('Accept stores the choice, upgrades consent, injects vendors and measures t
   assert.equal(state.showBanner, false);
   assert.equal(state.showWithdraw, true);
   assert.deepEqual(consentUpdates(), [
-    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted' }],
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }],
   ]);
   assert.deepEqual(injectedIds(), ['fake-vendor-a', 'fake-vendor-b']);
   assert.deepEqual(
@@ -212,20 +214,21 @@ test('Accept stores the choice, upgrades consent, injects vendors and measures t
   );
 });
 
-test('Accept grants ad_storage and ad_user_data for Google Ads attribution, but never ad_personalization', () => {
+test('Accept grants ad_storage and ad_user_data for Google Ads attribution, and states ad_personalization denied', () => {
   // Consent Mode v2: without ad_storage + ad_user_data granted, Google will not
   // persist the gclid across the session, so a visit that began with a paid ad
   // click is reported as Direct and the signup is never attributed to the ad.
   // ad_personalization governs building a personalized/remarketing ad profile —
-  // a separate, more sensitive decision — and must stay denied (i.e. never
-  // appear in the update).
+  // a separate, more sensitive decision. It is stated as denied in the update
+  // (marketing-measurement T1) so the update is complete on its own when the
+  // init's stored-choice default could not be read (storage blocked).
   grantConsent(VIVREAL_SITE, FAKE_VENDORS);
   const update = consentUpdates().at(-1)?.[2] as Record<string, string> | undefined;
   assert.ok(update, 'an accept emits a consent update');
   assert.equal(update.ad_storage, 'granted', 'ad_storage must be granted so gclid persists');
   assert.equal(update.ad_user_data, 'granted', 'ad_user_data must be granted (v2 requirement)');
   assert.equal(update.analytics_storage, 'granted', 'analytics stays granted');
-  assert.equal('ad_personalization' in update, false, 'ad_personalization is never granted here');
+  assert.equal(update.ad_personalization, 'denied', 'ad_personalization is never granted here');
 });
 
 test('Reject stores the refusal and injects nothing', () => {
@@ -363,5 +366,96 @@ test('unreadable storage leaves the visitor in the denied default', () => {
 
   // A click still applies for THIS page view even though it cannot be stored.
   assert.doesNotThrow(() => grantConsent(VIVREAL_SITE, FAKE_VENDORS));
+  assert.deepEqual(injectedIds(), ['fake-vendor-a', 'fake-vendor-b']);
+});
+
+// ── marketing-measurement T1: no GA `config` before a granted consent entry ──
+
+/**
+ * Make the harness behave like a browser for INLINE scripts: run the body on
+ * append, and let a top-level `function gtag` become `window.gtag`, as a
+ * classic script's function declaration does. Loader scripts (`src`) are not
+ * fetched. Returns the dataLayer entries as plain arrays.
+ */
+function executeInlineScriptsOnAppend(): () => unknown[][] {
+  const win = (globalThis as unknown as { window: { dataLayer: unknown[]; gtag?: unknown } }).window; // the harness window, typed for this emulation
+  const head = globalThis.document.head as unknown as { appendChild(el: { src: string; innerHTML: string }): unknown }; // the harness container, typed for this wrap
+  const original = head.appendChild.bind(head);
+  head.appendChild = (el) => {
+    const result = original(el);
+    if (!el.src && el.innerHTML) {
+      win.gtag = new Function('window', 'document', 'dataLayer', `${el.innerHTML};return gtag;`)(
+        win,
+        globalThis.document,
+        win.dataLayer,
+      );
+    }
+    return result;
+  };
+  return () => win.dataLayer.map((entry) => Array.from(entry as ArrayLike<unknown>));
+}
+
+test('★ Accept: GA config never runs before a GRANTED consent entry (the gcs=G100 first hit)', () => {
+  const layer = executeInlineScriptsOnAppend();
+  const ga = resolveConsentGaScripts({ provider: 'google_analytics', trackingId: 'G-TEST1' });
+  assert.equal(ga.length, 2, 'control: the GA loader and init resolve');
+
+  grantConsent(VIVREAL_SITE, [], ga);
+
+  const entries = layer();
+  const configAt = entries.findIndex((e) => e[0] === 'config');
+  const grantedAt = entries.findIndex(
+    (e) => e[0] === 'consent' && (e[2] as { analytics_storage?: string } | undefined)?.analytics_storage === 'granted',
+  );
+  assert.notEqual(configAt, -1, 'control: the init ran and pushed config');
+  assert.notEqual(grantedAt, -1, 'a granted consent entry is pushed');
+  assert.ok(grantedAt < configAt, 'config must not run while consent is still denied');
+});
+
+test('REFUSE: Reject injects no GA and pushes nothing to the dataLayer', () => {
+  const layer = executeInlineScriptsOnAppend();
+  denyConsent(VIVREAL_SITE);
+  assert.deepEqual(injectedIds(), []);
+  assert.deepEqual(layer(), []);
+});
+
+// ── Global Privacy Control on Accept (owner approved 2026-10-26, review of PR #218) ──
+
+test('REFUSE: GPC plus Accept grants analytics only; ad signals denied in the default AND the update; no Clarity, no vr_attr', () => {
+  dom.setGpc(true);
+  const layer = executeInlineScriptsOnAppend();
+  const ga = resolveConsentGaScripts({ provider: 'google_analytics', trackingId: 'G-TEST1' });
+
+  grantConsent(VIVREAL_SITE, FAKE_VENDORS, ga);
+
+  const expected = {
+    analytics_storage: 'granted',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+  };
+  // The executed init replaced the harness spy with the real gtag, so the
+  // update lands in the dataLayer alongside the default.
+  const entries = layer();
+  assert.deepEqual(
+    entries.filter((e) => e[0] === 'consent' && e[1] === 'update'),
+    [['consent', 'update', expected]],
+    'the update never grants ad signals under GPC',
+  );
+  const configAt = entries.findIndex((e) => e[0] === 'config');
+  const defaultEntry = entries.find((e) => e[0] === 'consent' && e[1] === 'default');
+  assert.notEqual(configAt, -1, 'control: the init ran');
+  assert.deepEqual(defaultEntry?.[2], expected, 'the init default never grants ad signals under GPC');
+  assert.ok(entries.indexOf(defaultEntry as unknown[]) < configAt, 'still before config');
+  assert.deepEqual(injectedIds(), ['vr-ga-gtag', 'vr-ga-init'], 'no registry vendor (Clarity) loads under GPC');
+  assert.equal(dom.cookie('vr_attr'), null, 'vr_attr is never set under GPC');
+});
+
+test('ALLOW: no GPC plus Accept keeps the plan update (analytics, ad_storage, ad_user_data granted)', () => {
+  dom.setGpc(false);
+  grantConsent(VIVREAL_SITE, FAKE_VENDORS);
+  assert.deepEqual(consentUpdates(), [
+    ['consent', 'update', { analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'denied' }],
+  ]);
   assert.deepEqual(injectedIds(), ['fake-vendor-a', 'fake-vendor-b']);
 });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import { shouldSendBeacon } from '@/lib/beaconPolicy';
 
 /**
  * Vivreal first-party analytics beacon — cookieless page-view collection for
@@ -20,17 +21,44 @@ import { usePathname } from 'next/navigation';
  * Gated on a real deployed site: prod Amplify sets SITE_ID to the site's id;
  * local dev/preview uses SITE_ID='preview' → the beacon never fires, so no
  * dev/preview traffic pollutes production data.
+ *
+ * On Vivreal's OWN sites it is also not sent for staff (`vr_internal`), off the
+ * vivreal.io and help.vivreal.io hosts, or from a next.vivreal.io referrer
+ * (`lib/beaconPolicy.ts`). Customer sites keep exactly the rule above.
  */
 
 const DEFAULT_ENDPOINT = 'https://collect.vivreal.io/e';
 
-export default function SiteBeacon({ siteId }: { siteId?: string }) {
+export default function SiteBeacon({
+  siteId,
+  vivrealOwnSite,
+}: {
+  siteId?: string;
+  /** `isVivrealOwnSite(process.env.SITE_ID)` from the root layout. Required, so a mount that forgets it does not compile. */
+  vivrealOwnSite: boolean;
+}) {
   const pathname = usePathname();
   const lastSent = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!siteId || siteId === 'preview') return;
     if (typeof window === 'undefined' || !window.navigator) return;
+    let cookie = '';
+    try {
+      cookie = document.cookie;
+    } catch {
+      // Cookies unreadable (sandboxed frame): no staff flag can be seen, so the view counts.
+    }
+    if (
+      !shouldSendBeacon({
+        siteId: siteId ?? '',
+        vivrealOwnSite,
+        hostname: window.location.hostname,
+        referrer: document.referrer || '',
+        cookie,
+      })
+    ) {
+      return;
+    }
     const endpoint = process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT || DEFAULT_ENDPOINT;
     if (!endpoint) return;
 
@@ -67,7 +95,7 @@ export default function SiteBeacon({ siteId }: { siteId?: string }) {
     } catch {
       /* swallow — analytics must never break the site */
     }
-  }, [siteId, pathname]);
+  }, [siteId, vivrealOwnSite, pathname]);
 
   return null;
 }
