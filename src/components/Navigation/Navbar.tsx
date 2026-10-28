@@ -1,5 +1,5 @@
 import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcreations/site-renderer';
-import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
+import type { HeroSection, PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
@@ -54,12 +54,28 @@ import NavbarChrome from './NavbarChrome';
  * top" over it. Every other site gets the one-argument call and no
  * `surfaceAlt`, byte-identical to 1.89.1. The Studio preview wrapper threads
  * the same two inputs (item-18 lockstep).
+ *
+ * `renderedHero` (renderer 1.92.0): the hero as `composePage` will render it,
+ * from `renderedHeroFor`. A mount passes it only on a Dark site and only where
+ * it already holds the page's compose input before the header renders (today
+ * the home route, see `darkRenderedHero.ts`). It joins the Dark-only object,
+ * so a `feature-item` hero with no qualifying item, which falls through to the
+ * plain panel on the dark ground, gets a header that matches its top. Absent:
+ * the stored hero decides, as before. Never read on a non-Dark site.
  */
-const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null; hasMasthead?: boolean } = {}) => {
+const Navbar = async ({
+  page,
+  hasMasthead,
+  renderedHero,
+}: { page?: RendererPageConfig | null; hasMasthead?: boolean; renderedHero?: HeroSection | null } = {}) => {
   const siteData = await getSiteData();
   const darkSite =
     siteData?.chrome === 'dark'
-      ? { chrome: siteData.chrome, surfaceAlt: typeof siteData['surface-alt'] === 'string' ? siteData['surface-alt'] : undefined }
+      ? {
+          chrome: siteData.chrome,
+          surfaceAlt: typeof siteData['surface-alt'] === 'string' ? siteData['surface-alt'] : undefined,
+          ...(renderedHero ? { renderedHero } : {}),
+        }
       : null;
   const mastheadTone = darkSite ? resolveMastheadTone(page ?? null, darkSite) : resolveMastheadTone(page ?? null);
   const pinned = resolveHeaderPinned(page ?? null);

@@ -5,11 +5,12 @@ import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
-import { composePage } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
+import { darkRenderedHero } from "@/components/Navigation/darkRenderedHero";
 import Footer from "@/components/Footer";
 import HomeLoading from "@/components/HomeLoading";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
@@ -61,6 +62,12 @@ async function Resolved() {
     isHome: true,
   });
 
+  // Owner find 3 (renderer 1.92.0): on a Mood dark site only, the hero as it
+  // will render, so the header's page-top answer matches a feature-item hero
+  // that falls through to the plain dark panel. Spread, so a non-Dark site
+  // passes no prop at all. See src/components/Navigation/darkRenderedHero.ts.
+  const renderedHero = darkRenderedHero(siteData.chrome, input, renderedHeroFor);
+
   // CC9: the email-subscribe popup moved to the shared layout (app/layout.tsx)
   // so it can target any route. The EmailPopup wrapper self-gates — absent
   // config it stays home-only + on-iff-subscribers-collection (legacy), so this
@@ -68,7 +75,10 @@ async function Resolved() {
 
   return (
     <>
-      <Navbar page={homePageConfig as unknown as RendererPageConfig} />
+      <Navbar
+        page={homePageConfig as unknown as RendererPageConfig}
+        {...(renderedHero ? { renderedHero } : {})}
+      />
       {/* RW4-6: a failed list read must not be page-cached. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
       {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are

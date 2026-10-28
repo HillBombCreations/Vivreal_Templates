@@ -37,7 +37,7 @@ test('REFUSE: a site that is not Dark gets the one-argument masthead question an
     /const mastheadTone = darkSite \? resolveMastheadTone\(page \?\? null, darkSite\) : resolveMastheadTone\(page \?\? null\);/,
   );
   // The Dark inputs exist only when the stored Mood is exactly 'dark'; otherwise null.
-  assert.match(src, /const darkSite =\s*siteData\?\.chrome === 'dark'\s*\?\s*\{ chrome: siteData\.chrome, surfaceAlt: typeof siteData\['surface-alt'\] === 'string' \? siteData\['surface-alt'\] : undefined \}\s*:\s*null;/);
+  assert.match(src, /const darkSite =\s*siteData\?\.chrome === 'dark'\s*\?\s*\{\s*chrome: siteData\.chrome,\s*surfaceAlt: typeof siteData\['surface-alt'\] === 'string' \? siteData\['surface-alt'\] : undefined,\s*\.\.\.\(renderedHero \? \{ renderedHero \} : \{\}\),\s*\}\s*:\s*null;/);
 });
 
 test('ALLOW: a Dark site passes its stored surface-alt to the renderer header, from the same Dark-only object', () => {
