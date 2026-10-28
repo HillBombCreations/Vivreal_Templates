@@ -178,28 +178,173 @@ test('REFUSE: a non-Dark page, or a Dark page whose hero reads no collection, do
   }
 });
 
-/** Every hero variant the installed renderer names, read from its own dist. */
+/*
+ * RE-RUN ON EVERY RENDERER BUMP. The two derivations below read the installed
+ * renderer, so a bump that adds a hero variant, or a hero field that binds a
+ * collection, changes what they find. If the exactness test then fails, the
+ * gate (`COLLECTION_READING_HERO_VARIANTS`) is out of date: a Dark page with
+ * that hero would stream a header that does not match its top.
+ */
+
+const RENDERER_DIST = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/', import.meta.url);
+
+/** Every hero variant the installed renderer names, read from its own dist (identifiers: letters, digits, dashes). */
 function rendererHeroVariants(): string[] {
-  const dist = new URL('../../../node_modules/@hillbombcreations/site-renderer/dist/', import.meta.url);
   const names = new Set<string>();
   for (const file of ['components/heroArm.js', 'composition/resolveHero.js', 'components/PageHero.js']) {
-    const source = fs.readFileSync(new URL(file, dist), 'utf8');
-    for (const m of source.matchAll(/variant\s*===\s*'([a-z-]+)'|case '([a-z-]+)':/g)) names.add(m[1] ?? m[2]);
+    const source = fs.readFileSync(new URL(file, RENDERER_DIST), 'utf8');
+    for (const m of source.matchAll(/variant\s*===\s*'([A-Za-z0-9-]+)'|case '([A-Za-z0-9-]+)':/g)) names.add(m[1] ?? m[2]);
   }
   return [...names].sort();
 }
 
-test("COLLECTION_READING_HERO_VARIANTS is exact: the renderer's answer moves with collection data for those variants and no other", () => {
+/** One step of a path from the hero to an object that carries `collectionId`; `array` when the field holds a list. */
+type PathStep = { field: string; array: boolean };
+
+/**
+ * Every path from the renderer's declared `PageHero` type to an object with a
+ * `collectionId` property, walked through the installed `dist/types/*.d.ts`
+ * (named interfaces and type aliases, inline object types, arrays), so a
+ * future hero field that binds a collection is fed without anyone listing it.
+ */
+function rendererTypeDeclarations(): string {
+  const typesDir = new URL('types/', RENDERER_DIST);
+  return fs
+    .readdirSync(typesDir)
+    .filter((f) => f.endsWith('.d.ts'))
+    .map((f) => fs.readFileSync(new URL(f, typesDir), 'utf8'))
+    .join('\n');
+}
+
+function heroCollectionPaths(declarationText: string, minHeroMembers: number): PathStep[][] {
+  const source = declarationText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  /** The text of a balanced `{...}` starting at `open`. */
+  const braced = (text: string, open: number): string => {
+    let depth = 0;
+    for (let i = open; i < text.length; i += 1) {
+      if (text[i] === '{') depth += 1;
+      else if (text[i] === '}' && (depth -= 1) === 0) return text.slice(open + 1, i);
+    }
+    throw new Error('unbalanced type declaration');
+  };
+  const declarations = new Map<string, string>();
+  for (const m of source.matchAll(/export (?:interface (\w+)(?:<[^>{]*>)?(?: extends [^{]+)? \{|type (\w+)(?:<[^>=]*>)? = )/g)) {
+    const name = m[1] ?? m[2];
+    const at = (m.index ?? 0) + m[0].length;
+    declarations.set(name, m[1] ? braced(source, at - 1) : source.slice(at, source.indexOf(';\n', at)));
+  }
+
+  /** Top-level `name?: type` members of an object body. */
+  const members = (body: string): Array<[string, string]> => {
+    const out: Array<[string, string]> = [];
+    const flush = (text: string) => {
+      const m = /^(?:readonly\s+)?["']?([\w-]+)["']?\??:\s*([\s\S]+)$/.exec(text.trim());
+      if (m) out.push([m[1], m[2]]);
+    };
+    let depth = 0;
+    let current = '';
+    let previous = '';
+    for (const ch of body) {
+      if ('{([<'.includes(ch)) depth += 1;
+      // `=>` in a function type is not a closing bracket.
+      if ('})]'.includes(ch) || (ch === '>' && previous !== '=')) depth -= 1;
+      previous = ch;
+      if ((ch === ';' || ch === '\n' || ch === ',') && depth === 0) {
+        flush(current);
+        current = '';
+      } else current += ch;
+    }
+    flush(current); // the last member of a one-line body has no terminator
+    return out;
+  };
+
+  /** The top-level `{...}` bodies in a type, and the text outside them (where named types are referenced). */
+  const splitTopLevel = (type: string): { inlineBodies: string[]; outside: string } => {
+    const inlineBodies: string[] = [];
+    let outside = '';
+    for (let i = 0; i < type.length; i += 1) {
+      if (type[i] === '{') {
+        const body = braced(type, i);
+        inlineBodies.push(body);
+        i += body.length + 1;
+      } else outside += type[i];
+    }
+    return { inlineBodies, outside };
+  };
+
+  const paths: PathStep[][] = [];
+  const walk = (body: string, prefix: PathStep[], seen: Set<string>) => {
+    for (const [field, type] of members(body)) {
+      if (field === 'collectionId') {
+        if (prefix.length > 0) paths.push(prefix);
+        continue;
+      }
+      const array = /\[\]|Array</.test(type);
+      const step = { field, array };
+      // Top-level inline object types, then every named type referenced outside them.
+      const { inlineBodies, outside } = splitTopLevel(type);
+      for (const body of inlineBodies) walk(body, [...prefix, step], seen);
+      for (const name of new Set(outside.match(/\b[A-Z]\w*\b/g) ?? [])) {
+        const declared = declarations.get(name);
+        if (!declared || seen.has(name)) continue;
+        const inner = declared.trimStart().startsWith('{') ? braced(declared, declared.indexOf('{')) : declared;
+        walk(inner, [...prefix, step], new Set([...seen, name]));
+      }
+    }
+  };
+  const hero = declarations.get('PageHero');
+  assert.ok(hero && members(hero).length >= minHeroMembers, `PageHero was not parsed (${hero ? members(hero).length : 0} members)`);
+  walk(hero, [], new Set(['PageHero']));
+  return paths;
+}
+
+/** A hero value with `leaf` placed at the end of `path`. */
+function placeAt(path: PathStep[], leaf: Record<string, unknown>): Record<string, unknown> {
+  let value: unknown = leaf;
+  for (const step of [...path].reverse()) value = { [step.field]: step.array ? [value] : value };
+  return value as Record<string, unknown>; // built as an object at every level above
+}
+
+test('control: the type walk finds a collectionId through a named type, an array, an inline object and an alias, and nothing else', () => {
+  const synthetic = [
+    'export interface PageHero {',
+    '    title?: string;',
+    '    direct?: Direct;',
+    '    listed?: Listed[];',
+    '    inline?: { inner?: { collectionId?: string } };',
+    '    aliased?: Aliased;',
+    '    plain?: Plain;',
+    '    /** collectionId mentioned only in a comment */',
+    '    commented?: string;',
+    '}',
+    'export interface Direct { collectionId: string; select?: string; }',
+    'export interface Listed { label?: string; collectionId?: string }',
+    'export type Aliased = { deep?: Direct };',
+    'export interface Plain { label?: string; }',
+  ].join('\n');
+  const found = heroCollectionPaths(synthetic, 1).map((p) => p.map((s) => s.field + (s.array ? '[]' : '')).join('.'));
+  assert.deepEqual(found.sort(), ['aliased.deep', 'direct', 'inline.inner', 'listed[]']);
+  assert.deepEqual(placeAt([{ field: 'listed', array: true }, { field: 'x', array: false }], { collectionId: 'c' }), { listed: [{ x: { collectionId: 'c' } }] });
+});
+
+test("COLLECTION_READING_HERO_VARIANTS is exact: the renderer's answer moves with collection data for those variants and no other", (t) => {
   const variants = rendererHeroVariants();
   assert.ok(variants.length >= 15 && variants.includes('feature-item') && variants.includes('statement'), `parsed ${variants.length} variants: ${variants}`);
+  const paths = heroCollectionPaths(rendererTypeDeclarations(), 30);
+  assert.ok(
+    paths.some((p) => p.length === 1 && p[0].field === 'featureItem'),
+    `the walk did not find hero.featureItem.collectionId; it proves nothing (found: ${JSON.stringify(paths)})`,
+  );
+  t.diagnostic(`${variants.length} variants; collection paths: ${paths.map((p) => p.map((s) => s.field + (s.array ? '[]' : '')).join('.')).join(', ')}`);
   const filled = { 'c-shows': [{ id: 's1', title: 'Jazz night', source: 'collection', raw: {} }] };
   const moved: string[] = [];
   for (const variant of variants) {
-    // Every collection-bearing field a stored hero can carry, with and without a designed empty state, and a partners binding.
-    const heroes = [
-      { title: 'Live at the Hall', variant, featureItem: { collectionId: 'c-shows', select: 'first' } },
-      { title: 'Live at the Hall', variant, featureItem: { collectionId: 'c-shows', select: 'first', empty: { title: 'Nothing on' } } },
-    ];
+    // Every collection-binding field the hero type declares, with and without a designed empty state, and a partners binding.
+    const heroes = paths.flatMap((path) => [
+      { title: 'Live at the Hall', variant, ...placeAt(path, { collectionId: 'c-shows', select: 'first' }) },
+      { title: 'Live at the Hall', variant, ...placeAt(path, { collectionId: 'c-shows', select: 'first', empty: { title: 'Nothing on' } }) },
+    ]);
     let differs = false;
     for (const hero of heroes) {
       const answer = (items: Record<string, unknown[]>) => {
