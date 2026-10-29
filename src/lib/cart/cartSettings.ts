@@ -29,6 +29,13 @@ export const NOTE_MAX = 250;
 const PICKUP_NOTICE_MINUTES: ReadonlySet<number> = new Set([30, 60, 120, 240, 1440]);
 
 export interface CartSettings {
+  /**
+   * Whether the owner has saved cart settings at all (review B3, owner
+   * decision 2026-10-29: opt-in). Until then the cart is exactly today's: no
+   * Pickup, Delivery or Ship choice, and Buy now goes straight to checkout,
+   * whatever Local delivery says.
+   */
+  saved: boolean;
   title: string;
   emptyText: string;
   checkoutLabel: string;
@@ -62,6 +69,7 @@ export function readCartSettings(raw: unknown): CartSettings {
       : 7;
   const min = typeof c.minimumOrder === 'number' && Number.isFinite(c.minimumOrder) && c.minimumOrder > 0 ? c.minimumOrder : null;
   return {
+    saved: isRecord(raw),
     title: text(c.title, 40, CART_DEFAULTS.title),
     emptyText: text(c.emptyText, 80, CART_DEFAULTS.emptyText),
     checkoutLabel: text(c.checkoutLabel, 30, CART_DEFAULTS.checkoutLabel),
@@ -87,17 +95,94 @@ export function minimumLine(totalDollars: number, minimumOrder: number | null): 
   return `Minimum order ${usd(minimumOrder)}. Add ${usd(shortCents / 100)} more.`;
 }
 
-export type FulfilmentKind = 'pickup' | 'delivery';
+export type FulfilmentKind = 'ship' | 'pickup' | 'delivery';
 
-/** The ways the cart offers. Delivery when Local delivery is on and shown; pickup always. */
-export function fulfilmentChoices(settings: CartSettings, deliveryOn: boolean): FulfilmentKind[] {
-  return settings.showDelivery && deliveryOn ? ['pickup', 'delivery'] : ['pickup'];
+export interface ShopWays {
+  /** Local delivery is switched on (`deliveryConfigOf`). */
+  deliveryOn: boolean;
+  /** The shop ships orders (`shipsOrders(businessInfo)`). */
+  ships: boolean;
 }
 
-/** Whether checkout from the quick "Added to bag" card must open the cart first. */
-export function cartNeedsChoices(settings: CartSettings, deliveryOn: boolean): boolean {
-  return settings.note.on || settings.pickup.on || settings.minimumOrder !== null || fulfilmentChoices(settings, deliveryOn).length > 1;
+/** The words on each choice. */
+export const FULFILMENT_LABELS: Readonly<Record<FulfilmentKind, string>> = Object.freeze({
+  ship: 'Ship it to me',
+  pickup: 'Pickup',
+  delivery: 'Delivery',
+});
+
+/**
+ * The ways the cart offers, first one the default. None at all until the
+ * owner has saved cart settings (review B3): that cart is today's. Once
+ * saved: "Ship it to me" first when the shop ships, then Pickup, then
+ * Delivery when Local delivery is on and shown.
+ */
+export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): FulfilmentKind[] {
+  if (!settings.saved) return [];
+  return [
+    ...(ways.ships ? (['ship'] as const) : []),
+    'pickup' as const,
+    ...(settings.showDelivery && ways.deliveryOn ? (['delivery'] as const) : []),
+  ];
 }
+
+/** Whether checkout from the quick "Added to bag" card or Buy now must open the cart first. */
+export function cartNeedsChoices(settings: CartSettings, ways: ShopWays): boolean {
+  if (!settings.saved) return false;
+  return settings.note.on || settings.pickup.on || settings.minimumOrder !== null || fulfilmentChoices(settings, ways).length > 1;
+}
+
+/** The shopper's current way: their pick when it is still offered, else the default (the first). */
+export function currentKind(choices: readonly FulfilmentKind[], picked: FulfilmentKind | null): FulfilmentKind | null {
+  return picked && choices.includes(picked) ? picked : choices[0] ?? null;
+}
+
+/**
+ * What the cart sends, from the cart's state (the dialog calls this, so the
+ * rule is tested by calling it). The way is sent only when the shopper had a
+ * choice, or when it is Pickup with pickup times on; a cart with no saved
+ * settings therefore sends nothing new at all.
+ */
+export function checkoutChoice(input: {
+  settings: CartSettings;
+  choices: readonly FulfilmentKind[];
+  kind: FulfilmentKind | null;
+  note: string;
+  pickupAt: string | null;
+  zip: string;
+}): CheckoutChoice {
+  const { settings, choices, kind } = input;
+  const sendKind = kind !== null && (choices.length > 1 || (kind === 'pickup' && settings.pickup.on));
+  return {
+    note: settings.saved && settings.note.on ? input.note : '',
+    kind: sendKind ? kind : undefined,
+    pickupAt: input.pickupAt ?? undefined,
+    zip: input.zip,
+  };
+}
+
+/**
+ * What still blocks checkout for the chosen way, or null. Shown, never
+ * guessed past: VR_Client_API decides at checkout. Pickup with pickup times
+ * on needs a time, and when no time is offered at all says so (review note 2:
+ * otherwise every checkout would be refused).
+ */
+export function choiceBlock(input: {
+  settings: CartSettings;
+  kind: FulfilmentKind | null;
+  pickupOffered: boolean;
+  pickupAt: string | null;
+  deliveryInArea: boolean;
+}): 'no-pickup-times' | 'pick-a-time' | 'check-zip' | null {
+  if (input.kind === 'delivery' && !input.deliveryInArea) return 'check-zip';
+  if (input.kind === 'pickup' && input.settings.pickup.on) {
+    if (!input.pickupOffered) return 'no-pickup-times';
+    if (!input.pickupAt) return 'pick-a-time';
+  }
+  return null;
+}
+
+export const NO_PICKUP_TIMES = 'No pickup times right now.';
 
 const ZIP = /^\d{5}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
@@ -133,6 +218,8 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
   if (note) out.note = note;
   if (choice.kind === 'delivery' && typeof choice.zip === 'string' && ZIP.test(choice.zip)) {
     out.fulfilment = { kind: 'delivery', zip: choice.zip };
+  } else if (choice.kind === 'ship') {
+    out.fulfilment = { kind: 'ship' };
   } else if (choice.kind === 'pickup') {
     out.fulfilment = typeof choice.pickupAt === 'string' && ISO.test(choice.pickupAt) ? { kind: 'pickup', pickupAt: choice.pickupAt } : { kind: 'pickup' };
   }
@@ -150,7 +237,7 @@ export function forwardedCheckoutExtras(body: unknown, siteIdPresent: boolean): 
   const f = isRecord(body.fulfilment) ? body.fulfilment : {};
   return checkoutExtras({
     note: body.note,
-    kind: f.kind === 'pickup' || f.kind === 'delivery' ? f.kind : undefined,
+    kind: f.kind === 'pickup' || f.kind === 'delivery' || f.kind === 'ship' ? f.kind : undefined,
     pickupAt: typeof f.pickupAt === 'string' ? f.pickupAt : undefined,
     zip: typeof f.zip === 'string' ? f.zip : undefined,
   } as CheckoutChoice);

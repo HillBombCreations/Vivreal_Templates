@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { pickupWindows, slotWhenLabel, type PickupDay } from "@hillbombcreations/site-renderer";
-import { cleanZip, NOTE_MAX, type CartSettings, type DeliveryQuote, type FulfilmentKind } from "@/lib/cart/cartSettings";
+import {
+  cleanZip,
+  FULFILMENT_LABELS,
+  NO_PICKUP_TIMES,
+  NOTE_MAX,
+  type CartSettings,
+  type DeliveryQuote,
+  type FulfilmentKind,
+} from "@/lib/cart/cartSettings";
 
 /**
  * The shopper's choices in the cart (owner ideas 2026-10-29, plan 3.9, 3.10;
@@ -26,13 +34,14 @@ export default function CartChoices({
   timeZone,
   pickupAt,
   onPickupAt,
+  noPickupTimes,
   note,
   onNote,
   disabled,
 }: {
   settings: CartSettings;
   choices: FulfilmentKind[];
-  kind: FulfilmentKind;
+  kind: FulfilmentKind | null;
   onKind: (kind: FulfilmentKind) => void;
   radiusMiles: number | null;
   zip: string;
@@ -44,6 +53,8 @@ export default function CartChoices({
   timeZone?: string;
   pickupAt: string | null;
   onPickupAt: (iso: string | null) => void;
+  /** Pickup with pickup times on, and no time offered at all. */
+  noPickupTimes: boolean;
   note: string;
   onNote: (note: string) => void;
   disabled: boolean;
@@ -64,7 +75,12 @@ export default function CartChoices({
   return (
     <div className="mb-3 space-y-3">
       {choices.length > 1 ? (
-        <div role="radiogroup" aria-label="How you get your order" className="grid grid-cols-2 gap-2">
+        <div
+          role="radiogroup"
+          aria-label="How you get your order"
+          className="grid gap-2"
+          style={{ gridTemplateColumns: `repeat(${choices.length}, minmax(0, 1fr))` }}
+        >
           {choices.map((option) => (
             <button
               key={option}
@@ -76,7 +92,7 @@ export default function CartChoices({
               className="h-10 cursor-pointer rounded-xl border text-sm font-semibold disabled:opacity-60"
               style={kind === option ? { borderColor: "var(--primary,#365b99)", color: "var(--primary,#365b99)" } : { borderColor: "rgba(0,0,0,0.1)" }}
             >
-              {option === "pickup" ? "Pickup" : "Delivery"}
+              {FULFILMENT_LABELS[option]}
             </button>
           ))}
         </div>
@@ -120,6 +136,12 @@ export default function CartChoices({
               {delivery.inArea ? delivery.words : `${delivery.words} Pickup is available.`}
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {noPickupTimes ? (
+        <div className="text-xs font-medium" role="status">
+          {NO_PICKUP_TIMES}
         </div>
       ) : null}
 

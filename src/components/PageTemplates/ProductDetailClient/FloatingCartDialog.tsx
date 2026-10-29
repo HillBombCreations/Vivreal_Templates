@@ -59,7 +59,7 @@ export default function FloatingCartDialog({
     // Owner ideas T13/T15: with a note, a pickup time, a minimum or a choice
     // of pickup and delivery, the shopper decides in the cart, so this quick
     // card opens it instead of skipping straight past those choices.
-    if (cartNeedsChoices(readCartSettings(siteData?.cart), deliveryConfigOf(siteData?.pageConfigs)?.enabled === true)) {
+    if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
       handleOpenCart();
       return;
     }

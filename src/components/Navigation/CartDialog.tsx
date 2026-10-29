@@ -7,8 +7,11 @@ import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide
 import { BrandMark, deliveryConfigOf, pickupWindows } from "@hillbombcreations/site-renderer";
 import CartChoices from "./CartChoices";
 import {
+  checkoutChoice,
   checkoutExtras,
+  choiceBlock,
   cleanZip,
+  currentKind,
   deliveryTotalLine,
   fulfilmentChoices,
   minimumLine,
@@ -96,8 +99,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
   const deliveryOn = deliveryConfig?.enabled === true;
   const radiusMiles = deliveryOn ? Number(deliveryConfig?.config?.deliveryRadiusMiles) || 25 : null;
-  const choices = fulfilmentChoices(settings, deliveryOn);
-  const [kind, setKind] = useState<FulfilmentKind>("pickup");
+  // Review B3: no choice at all until the owner saves cart settings; then
+  // "Ship it to me" first (and the default) when the shop ships.
+  const choices = fulfilmentChoices(settings, { deliveryOn, ships: shipsOrders(businessInfo) });
+  const [pickedKind, setKind] = useState<FulfilmentKind | null>(null);
+  const kind = currentKind(choices, pickedKind);
   const [zip, setZip] = useState("");
   const [delivery, setDelivery] = useState<DeliveryQuote | null>(null);
   const [checkingZip, setCheckingZip] = useState(false);
@@ -160,8 +166,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const belowMinimum = minimumLine(total, settings.minimumOrder);
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
   // What still blocks checkout, shown, never guessed past: the server decides.
-  const choiceMissing =
-    (kind === "delivery" && !delivery?.inArea) || (kind === "pickup" && pickupOffered && !pickupAt);
+  const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
+  const choiceMissing = blocked !== null;
 
   const onCheckZip = async () => {
     const clean = cleanZip(zip);
@@ -320,12 +326,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras({
-          note: settings.note.on ? note : "",
-          kind: choices.length > 1 || settings.pickup.on ? kind : undefined,
-          pickupAt: pickupAt ?? undefined,
-          zip,
-        }),
+        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip })),
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -565,6 +566,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
               hours={businessInfo?.hours}
               timeZone={siteData?.timezone}
               pickupAt={pickupAt}
+              noPickupTimes={blocked === "no-pickup-times"}
               onPickupAt={setPickupAt}
               note={note}
               onNote={setNote}

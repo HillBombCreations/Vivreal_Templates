@@ -8,7 +8,12 @@ import fs from 'node:fs';
 import {
   CART_DEFAULTS,
   cartNeedsChoices,
+  checkoutChoice,
   checkoutExtras,
+  choiceBlock,
+  currentKind,
+  FULFILMENT_LABELS,
+  NO_PICKUP_TIMES,
   cleanNote,
   deliveryTotalLine,
   forwardedCheckoutExtras,
@@ -32,7 +37,8 @@ test('REFUSE: absent settings are today\'s cart, word for word', () => {
   assert.equal(s.minimumOrder, null);
   assert.equal(s.showPromo, true);
   assert.deepEqual(checkoutExtras({ note: '', zip: '' }), {}, 'no choice sends nothing: today\'s checkout body');
-  assert.equal(cartNeedsChoices(s, false), false, 'the quick card checks out as before');
+  assert.equal(cartNeedsChoices(s, { deliveryOn: true, ships: true }), false, 'the quick card and Buy now check out as before');
+  assert.equal(s.saved, false);
   // The dialog draws those values, nowhere a second literal.
   for (const word of [CART_DEFAULTS.title, CART_DEFAULTS.emptyText, CART_DEFAULTS.checkoutLabel]) {
     assert.ok(!dialog.includes(`>${word}<`), `"${word}" is no longer hard-coded in the dialog`);
@@ -86,7 +92,9 @@ test('REFUSE: checkout never forwards a fee, and nothing without a site id', () 
   assert.deepEqual(out, { note: 'hi', fulfilment: { kind: 'delivery', zip: '60614' } });
   assert.ok(!/fee/i.test(JSON.stringify(out)));
   assert.deepEqual(forwardedCheckoutExtras(browser, false), {});
-  assert.deepEqual(forwardedCheckoutExtras({ fulfilment: { kind: 'ship' } }, true), {});
+  // Review B3: ship is a real choice now; an unknown kind is still dropped.
+  assert.deepEqual(forwardedCheckoutExtras({ fulfilment: { kind: 'ship' } }, true), { fulfilment: { kind: 'ship' } });
+  assert.deepEqual(forwardedCheckoutExtras({ fulfilment: { kind: 'drone' } }, true), {});
   const route = fs.readFileSync(new URL('../../app/api/checkout/route.ts', import.meta.url), 'utf8');
   assert.match(route, /const extras = forwardedCheckoutExtras\(body, Boolean\(siteId\)\);/);
   assert.match(route, /\.\.\.extras,/);
@@ -105,12 +113,63 @@ test('ALLOW: the cart shows the server\'s delivery words and total line; REFUSE:
   assert.match(choices, /delivery\.inArea \? delivery\.words : `\$\{delivery\.words\} Pickup is available\.`/);
 });
 
-test('ALLOW: pickup and delivery are offered together only when Local delivery is on and shown', () => {
+test('ALLOW: once saved, pickup and delivery are offered together only when Local delivery is on and shown', () => {
   const s = readCartSettings({});
-  assert.deepEqual(fulfilmentChoices(s, true), ['pickup', 'delivery']);
-  assert.deepEqual(fulfilmentChoices(s, false), ['pickup']);
-  assert.deepEqual(fulfilmentChoices(readCartSettings({ showDelivery: false }), true), ['pickup']);
-  assert.equal(cartNeedsChoices(s, true), true, 'the quick card opens the cart to choose');
+  assert.deepEqual(fulfilmentChoices(s, { deliveryOn: true, ships: false }), ['pickup', 'delivery']);
+  assert.deepEqual(fulfilmentChoices(s, { deliveryOn: false, ships: false }), ['pickup']);
+  assert.deepEqual(fulfilmentChoices(readCartSettings({ showDelivery: false }), { deliveryOn: true, ships: false }), ['pickup']);
+  assert.equal(cartNeedsChoices(s, { deliveryOn: true, ships: false }), true, 'the quick card opens the cart to choose');
+});
+
+/* ── review B3 (owner decision 2026-10-29: opt-in, plus Ship) ──────────── */
+
+const ON = { deliveryOn: true, ships: true };
+
+test('REFUSE (B3): no values.cart, delivery on, ships: the checkout body is today\'s and nothing else', () => {
+  const settings = readCartSettings(undefined);
+  const choices = fulfilmentChoices(settings, ON);
+  assert.deepEqual(choices, [], 'no choice radio at all');
+  const kind = currentKind(choices, null);
+  assert.equal(kind, null);
+  // Whatever the shopper's state holds, nothing new is sent.
+  const extras = checkoutExtras(checkoutChoice({ settings, choices, kind, note: 'typed anyway', pickupAt: '2026-11-04T21:00:00.000Z', zip: '60614' }));
+  assert.deepEqual(extras, {});
+  assert.equal(cartNeedsChoices(settings, ON), false, 'Buy now checks out as today');
+  assert.equal(choiceBlock({ settings, kind, pickupOffered: false, pickupAt: null, deliveryInArea: false }), null, 'nothing blocks checkout');
+  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip \}\)\)/, 'the dialog sends exactly this');
+  assert.match(dialog, /const kind = currentKind\(choices, pickedKind\);/);
+});
+
+test('ALLOW (B3): saved settings and a shop that ships default to "Ship it to me", which sends kind ship', () => {
+  const settings = readCartSettings({ title: 'Your bag' });
+  const choices = fulfilmentChoices(settings, ON);
+  assert.deepEqual(choices, ['ship', 'pickup', 'delivery']);
+  const kind = currentKind(choices, null);
+  assert.equal(kind, 'ship');
+  assert.equal(FULFILMENT_LABELS.ship, 'Ship it to me');
+  assert.deepEqual(checkoutExtras(checkoutChoice({ settings, choices, kind, note: '', pickupAt: null, zip: '' })), { fulfilment: { kind: 'ship' } });
+  assert.equal(choiceBlock({ settings, kind, pickupOffered: false, pickupAt: null, deliveryInArea: false }), null);
+  assert.deepEqual(forwardedCheckoutExtras({ fulfilment: { kind: 'ship', fee: 9 } }, true), { fulfilment: { kind: 'ship' } }, 'the route forwards ship, never a fee');
+});
+
+test('ALLOW (B3): Pickup works when chosen, with a time when pickup times are on', () => {
+  const settings = readCartSettings({ pickup: { on: true, noticeMinutes: 60, daysAhead: 3 } });
+  const choices = fulfilmentChoices(settings, ON);
+  const kind = currentKind(choices, 'pickup');
+  assert.equal(kind, 'pickup');
+  assert.equal(choiceBlock({ settings, kind, pickupOffered: true, pickupAt: null, deliveryInArea: false }), 'pick-a-time');
+  const extras = checkoutExtras(checkoutChoice({ settings, choices, kind, note: '', pickupAt: '2026-11-04T21:00:00.000Z', zip: '' }));
+  assert.deepEqual(extras, { fulfilment: { kind: 'pickup', pickupAt: '2026-11-04T21:00:00.000Z' } });
+  assert.equal(currentKind(['pickup'], 'delivery'), 'pickup', 'a pick no longer offered falls back to the default');
+});
+
+test('REFUSE (review note 2): pickup times on with none offered says so and blocks, never a doomed checkout', () => {
+  const settings = readCartSettings({ pickup: { on: true } });
+  assert.equal(choiceBlock({ settings, kind: 'pickup', pickupOffered: false, pickupAt: null, deliveryInArea: false }), 'no-pickup-times');
+  assert.equal(NO_PICKUP_TIMES, 'No pickup times right now.');
+  const choicesSrc = fs.readFileSync(new URL('../../components/Navigation/CartChoices.tsx', import.meta.url), 'utf8');
+  assert.match(choicesSrc, /\{noPickupTimes \? \(/);
+  assert.match(dialog, /noPickupTimes=\{blocked === "no-pickup-times"\}/);
 });
 
 test('REFUSE: a shop rule keeps the cart open with its own words; an unknown code does not pass', () => {
@@ -127,7 +186,7 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {
   for (const rel of ['../../components/PageTemplates/ProductDetailClient/FloatingCartDialog.tsx', '../cartAdapter.ts']) {
     const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
-    const ask = src.indexOf('if (cartNeedsChoices(readCartSettings(siteData?.cart), deliveryConfigOf(siteData?.pageConfigs)?.enabled === true)) {');
+    const ask = src.indexOf('if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {');
     assert.ok(ask > 0, `${rel} asks first`);
     assert.ok(ask < src.indexOf('await handleCheckout('), `${rel} asks before checking out`);
   }

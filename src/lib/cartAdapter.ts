@@ -68,7 +68,7 @@ export function useCartAdapter(): CartAdapter | null {
         // Owner ideas T13/T15: with a note, a pickup time, a minimum or a
         // choice of pickup and delivery, the shopper decides in the cart, so
         // Buy now adds the item and opens it rather than skipping past them.
-        if (cartNeedsChoices(readCartSettings(siteData?.cart), deliveryConfigOf(siteData?.pageConfigs)?.enabled === true)) {
+        if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
           const added = handleAddToCart({ product: templatesProduct, selectedVariant: variant, quantity, cart, setCart });
           if (added) cartCtx.setOpenCartMenu(true);
           else toast({ variant: "destructive", ...addRefusal(templatesProduct, variant), duration: FAILURE_TOAST_MS });
