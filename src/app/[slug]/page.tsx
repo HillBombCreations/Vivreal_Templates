@@ -53,6 +53,7 @@ import type { PageConfig, SiteData } from "@/types/SiteData";
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { slugsForStaticParams } from "@/lib/pages/staticParams";
+import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
 
 // ISR migration Phase 3. Both values MUST be literals — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -63,8 +64,13 @@ import { slugsForStaticParams } from "@/lib/pages/staticParams";
 //
 // `dynamicParams = true` is Next's default and is stated explicitly because it
 // is load-bearing here: `generateStaticParams` below emits the slugs known at
-// build time, and a page added in Studio afterwards must still render (then
-// cache) on first request rather than 404.
+// build time, and a page added in Studio afterwards must still render rather
+// than 404. It renders DYNAMIC and UNCACHED (200, `no-store`) until the next
+// fleet build lists it, never "render then cache": the checkout result slugs
+// always bail at build (they read the query), so this route gets no fallback
+// entry, and a path with no fallback renders plain dynamic (Next 16.4.1
+// `build/index.js:2239`; owner ideas plan 3.8, D46 records why an "add page"
+// triggers no rebuild).
 export const revalidate = 300;
 export const dynamicParams = true;
 
@@ -590,7 +596,12 @@ export default async function DynamicPage({
         // no-op (first live Square E2E: the catalog-format Shop page).
         // Overrides only fire when composePage renders a storefront arm, so
         // storefront-less pages are unaffected.
-        const sp = (await searchParams) ?? {};
+        // Owner ideas T10 (plan 3.8): the query is read ONLY when the page can
+        // use it. Reading it bails the whole slug to dynamic, which is what
+        // kept every composed inner page `no-store`. A page with no
+        // storefront, lookup or schedule gets the empty query and caches
+        // like the home page. See src/lib/pages/pageReadsQuery.ts.
+        const sp = pageReadsQuery(composedPage) ? ((await searchParams) ?? {}) : {};
         return renderComposedPage({
           siteData,
           composedPage,
@@ -601,13 +612,15 @@ export default async function DynamicPage({
       }
     }
 
-    // Products controlled query — parsed for EVERY composed format (not just
-    // format:'products'): a storefront group is composable on ANY page under
-    // the universal page model, and its toolbar round-trips filter/sort/search
-    // through these URL params, so the server must honor them wherever the
-    // grid can render. Harmless for pages without a storefront (buildPageContext
-    // ignores the query when no products arm resolves).
-    const sp = (await searchParams) ?? {};
+    // Products controlled query — honored wherever a storefront can render:
+    // a storefront group is composable on ANY page under the universal page
+    // model, and its toolbar round-trips filter/sort/search through these URL
+    // params. It is NOT harmless to read it for a page without one: reading
+    // `searchParams` bails the slug to dynamic, which kept every composed
+    // inner page `no-store` (owner ideas T10, plan 3.8). So it is read only
+    // when `pageReadsQuery` says the page can use it; the checkout result
+    // slugs always do, which keeps this route free of a build fallback.
+    const sp = pageReadsQuery(composedPage) ? ((await searchParams) ?? {}) : {};
     const productQuery = parseProductQuery(sp);
 
     // Components override: the live storefront wrappers (BOTH products
@@ -901,6 +914,10 @@ export async function generateMetadata({
   // verdict, same query, same cache entries, and no read at all for a page whose
   // config already holds authored content.
   //
+  // Owner ideas T10: and only when the page can use it (`pageReadsQuery`),
+  // the same query the render uses, so a page that cannot (a blog index) is
+  // not bailed to dynamic by its head.
+  //
   // `searchParams` is awaited ONLY behind the config-only check. Reading it
   // bails the route to dynamic, and a stored static page (privacy, terms) never
   // reads it in the render either, so on an ISR site it must stay prerendered.
@@ -910,7 +927,7 @@ export async function generateMetadata({
     (await composedPageIsEmpty({
       siteData,
       composedPage: pageConfig,
-      productQuery: parseProductQuery((await searchParams) ?? {}),
+      productQuery: parseProductQuery(pageReadsQuery(pageConfig) ? ((await searchParams) ?? {}) : {}),
     }))
   ) {
     return buildEmptyPageMetadata(siteName);

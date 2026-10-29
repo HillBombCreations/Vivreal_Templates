@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { HARD_INVALIDATION } from "@/lib/cacheInvalidation";
+import { tagsForEvent } from "@/lib/revalidateTags";
 import crypto from "node:crypto";
 
 // MUST be the Node.js runtime, not edge: revalidateTag drives the Next.js Data
@@ -52,40 +53,6 @@ function safeEqualHex(a: string, b: string): boolean {
   return crypto.timingSafeEqual(ab, bb);
 }
 
-/**
- * Derive the cache tags to invalidate from a webhook event. Returns the set of
- * tags whose cached entries should be dropped. Always includes the site-chrome
- * tag for site-level events; content/collection events also drop the specific
- * collection tag so a single edit invalidates exactly the affected reads.
- */
-function tagsForEvent(event: string, data: Record<string, unknown> | undefined): string[] {
-  const tags = new Set<string>();
-  const siteTag = SITE_ID ? `site:${SITE_ID}` : null;
-
-  if (event.startsWith("site.")) {
-    if (siteTag) tags.add(siteTag);
-  }
-
-  if (event.startsWith("collection.") || event.startsWith("content.")) {
-    // collectionObj.refID is the collection group id the object belongs to.
-    const refID =
-      (data?.collectionObj as Record<string, unknown> | undefined)?.refID ??
-      data?.refID ??
-      data?.collectionId ??
-      (data?._id as unknown);
-    if (typeof refID === "string" && refID) tags.add(`collection:${refID}`);
-    // Collection structure changes can affect nav/labels shown in chrome.
-    if (event.startsWith("collection.") && siteTag) tags.add(siteTag);
-  }
-
-  if (event.startsWith("integration.")) {
-    const type = data?.type;
-    if (typeof type === "string" && type) tags.add(`integration:${type}`);
-  }
-
-  return [...tags];
-}
-
 export async function POST(request: NextRequest) {
   const secret = process.env.REVALIDATE_WEBHOOK_SECRET;
   if (!secret) {
@@ -115,7 +82,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ revalidated: false, error: "Missing event" }, { status: 400 });
   }
 
-  const tags = tagsForEvent(event, body.data);
+  const tags = tagsForEvent(event, body.data, SITE_ID);
   for (const tag of tags) {
     // HARD_INVALIDATION ({ expire: 0 }) drops the entry outright. The previous
     // 'max' profile was stale-while-revalidate, which left the customer's own
