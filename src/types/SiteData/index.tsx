@@ -741,6 +741,17 @@ export interface SiteData {
          */
         consentMode?: boolean;
         /**
+         * Owner ideas 2026-10-29 (3.3, T6): the owner's own Google Ads code and
+         * conversion label, and the results counted as conversions. Written by
+         * VR_Secure_API's analytics validator (Pro to add or change, removal
+         * always allowed), which also forces `consentMode: true` on connect. A
+         * valid `AW-` code makes the site ask its visitors first and loads only
+         * after Accept (`lib/adsTag.ts`); an invalid one emits nothing.
+         */
+        adsTagId?: string | null;
+        adsConversionLabel?: string | null;
+        adsConversionEvents?: Array<'message' | 'booking' | 'purchase'> | null;
+        /**
          * Named-vendor tag registry (change item C9) — extra marketing tags as
          * `{provider, id}` against a HARD-CODED snippet in
          * `src/lib/vendorTags.ts`. Never a URL and never a script body. An

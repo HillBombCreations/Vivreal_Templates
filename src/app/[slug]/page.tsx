@@ -30,6 +30,7 @@ import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
 import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
+import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
@@ -833,6 +834,8 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <OrderConfirmationTrigger />}
       {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
       {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
+      {/* Owner ideas T5/T6: the purchase result, once per confirmed order. */}
+      {format === "checkout-success" && <RecordPurchaseGoal />}
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.

@@ -45,6 +45,7 @@ import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import { resolvePrivacyPolicyHref } from '@/lib/pages/policyPage';
+import { customerConsentTags } from '@/lib/adsTag';
 
 /**
  * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
@@ -101,6 +102,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // variable already. False on every customer site, and false whenever
     // SITE_ID is unset or unrecognised, which is the safe direction.
     const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
+    // Owner ideas T6 (D20): a customer site that connected a Google tag asks
+    // its visitors first; null on every other customer site (no banner, head
+    // tag unchanged) and always null on Vivreal's own site, which has its own.
+    const customerTags = vivrealOwnSite ? null : customerConsentTags(siteData.analytics);
     // The popup's consent line and the cookie banner link only to a policy
     // page this site stores and the route would serve (see
     // lib/pages/policyPage.ts): there is no built-in /privacy any more, so a
@@ -170,7 +175,10 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   (byte-identical no-op for every existing site). NOT on
                   Vivreal's own site: there GA loads only after the visitor
                   accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
-              {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
+              {/* Owner ideas T6: on a customer site that asks first about Google
+                  Analytics, GA moves to <SiteConsent> too ("Reject, and none of
+                  this runs"). Every other customer site renders exactly as before. */}
+              {!vivrealOwnSite && !customerTags?.analytics && <SiteAnalytics analytics={siteData.analytics} />}
               {/* C1: the literal families (Inter, Outfit, ...) load from a
                   <link>, not from a globals.css @import, which the Turbopack
                   build drops, and only on a site that draws one. See
@@ -327,6 +335,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   <CtaClickTracking vivrealOwnSite={vivrealOwnSite} />
                   <SiteConsent
                       vivrealOwnSite={vivrealOwnSite}
+                      customerTags={customerTags}
                       additional={siteData.analytics?.additional}
                       analytics={siteData.analytics}
                       privacyHref={resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)}
