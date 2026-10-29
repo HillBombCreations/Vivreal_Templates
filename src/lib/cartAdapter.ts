@@ -14,6 +14,8 @@ import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/l
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import { toast } from "@/hooks/use-toast";
 import { shipsOrders } from "@/lib/shipping";
+import { deliveryConfigOf } from "@hillbombcreations/site-renderer";
+import { cartNeedsChoices, readCartSettings } from "@/lib/cart/cartSettings";
 
 /** How long a refusal stays up. Longer than a confirmation: it has to be read. */
 const FAILURE_TOAST_MS = 8000;
@@ -63,6 +65,15 @@ export function useCartAdapter(): CartAdapter | null {
         // hand it straight to handleCheckout (VR_Client_API resolves the
         // payments provider server-side and returns the hosted checkout URL).
         const templatesProduct = rendererProductToTemplates(product);
+        // Owner ideas T13/T15: with a note, a pickup time, a minimum or a
+        // choice of pickup and delivery, the shopper decides in the cart, so
+        // Buy now adds the item and opens it rather than skipping past them.
+        if (cartNeedsChoices(readCartSettings(siteData?.cart), deliveryConfigOf(siteData?.pageConfigs)?.enabled === true)) {
+          const added = handleAddToCart({ product: templatesProduct, selectedVariant: variant, quantity, cart, setCart });
+          if (added) cartCtx.setOpenCartMenu(true);
+          else toast({ variant: "destructive", ...addRefusal(templatesProduct, variant), duration: FAILURE_TOAST_MS });
+          return;
+        }
         const resolvedVariant = resolveVariant(variant, templatesProduct) ?? "default";
         const priceID = resolveVariantableString(templatesProduct.checkoutIdentifier ?? templatesProduct.default_price, variant) ?? "";
         const name = getSafeFieldValue(templatesProduct, "name", variant) ?? "";

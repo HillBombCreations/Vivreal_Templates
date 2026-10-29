@@ -124,6 +124,15 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
   assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(err\.message\);\s*return;/, 'the code and choices are kept');
 });
 
+test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {
+  for (const rel of ['../../components/PageTemplates/ProductDetailClient/FloatingCartDialog.tsx', '../cartAdapter.ts']) {
+    const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    const ask = src.indexOf('if (cartNeedsChoices(readCartSettings(siteData?.cart), deliveryConfigOf(siteData?.pageConfigs)?.enabled === true)) {');
+    assert.ok(ask > 0, `${rel} asks first`);
+    assert.ok(ask < src.indexOf('await handleCheckout('), `${rel} asks before checking out`);
+  }
+});
+
 test('REFUSE: the cart quote forwards only a cleaned ZIP and this site\'s id, never a fee', () => {
   const route = fs.readFileSync(new URL('../../app/api/cart-quote/route.ts', import.meta.url), 'utf8');
   assert.match(route, /cleanZip\(rawFulfilment\.zip\)/);
