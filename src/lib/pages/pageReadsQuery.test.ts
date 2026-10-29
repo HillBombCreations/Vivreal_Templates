@@ -30,6 +30,8 @@ test('REFUSE: a storefront anywhere keeps the page reading the query, switched o
   const nested = { type: { kind: 'group' }, config: { children: [{ type: { kind: 'group' }, config: { children: [block('products-grid')] } }] } };
   assert.equal(pageReadsQuery({ slug: 'deep', format: 'standard', blocks: [nested] }), true);
   assert.equal(pageReadsQuery({ slug: 'off', format: 'standard', blocks: [{ ...block('products'), enabled: false }] }), true);
+  // The coordination flag alone says storefront, whatever children are stored yet.
+  assert.equal(pageReadsQuery({ slug: 'g', format: 'standard', blocks: [{ type: { kind: 'group' }, config: { coordinated: 'products' } }] }), true);
 });
 
 test('REFUSE: checkout result slugs, lookup, schedule, products and legacy block-less pages read it', () => {

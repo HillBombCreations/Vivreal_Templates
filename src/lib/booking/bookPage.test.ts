@@ -48,6 +48,8 @@ test('REFUSE: booking off 404s, and so does any mode word but the two exact ones
     const site = { pageConfigs: [ABOUT], ...readBooking({ booking: { mode } }) };
     assert.deepEqual(decideBookPage(site), { kind: 'not-found' }, String(mode));
     assert.equal('booking' in site, false, `readBooking drops mode ${String(mode)}`);
+    // And the page's own rule refuses it too, whatever reaches it.
+    assert.deepEqual(decideBookPage({ pageConfigs: [ABOUT], booking: { mode } }), { kind: 'not-found' }, `raw ${String(mode)}`);
   }
 });
 
