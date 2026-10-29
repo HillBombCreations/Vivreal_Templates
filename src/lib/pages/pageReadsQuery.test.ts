@@ -47,7 +47,8 @@ test('REFUSE: checkout result slugs, lookup, schedule, products and legacy block
 test('REFUSE: the route never awaits searchParams except behind pageReadsQuery', () => {
   const source = fs.readFileSync(new URL('../../app/[slug]/page.tsx', import.meta.url), 'utf8');
   const reads = source.match(/await searchParams/g) ?? [];
-  const gated = source.match(/pageReadsQuery\((composedPage|pageConfig)\) \? \(\(await searchParams\) \?\? \{\}\) : \{\}/g) ?? [];
+  // Review B2: each read is also behind mayReadQuery (src/lib/queryReadGate.ts).
+  const gated = source.match(/pageReadsQuery\((composedPage|pageConfig)\) && mayReadQuery\(\) \? \(\(await searchParams\) \?\? \{\}\) : \{\}/g) ?? [];
   assert.equal(reads.length, 3, 'the generic arm, the format arm, and metadata');
   assert.equal(gated.length, reads.length, 'every read is gated');
   assert.ok(!/"render \(then cache\) on first request|render \(then\s*\/\/ cache\) on first request/.test(source), 'the wrong docblock line is gone');

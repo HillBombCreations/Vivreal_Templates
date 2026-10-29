@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 // The renderer's own link helper, by path (its root entry imports next/link).
 import { itemSegment } from '../../../node_modules/@hillbombcreations/site-renderer/dist/lib/itemSegment.js';
+import { isReservedPageSlug } from '../../../node_modules/@hillbombcreations/site-renderer/dist/lib/reservedPageSlugs.js';
 import {
   DETAIL_SENTINEL,
   PER_PAGE_LIMIT,
@@ -42,6 +43,7 @@ function deps(serving = new Set(['blog'])) {
         return ITEMS[id] ?? Array.from({ length: 150 }, (_, i) => ({ id: `${id}-${i}`, raw: {} }));
       },
       segmentOf: (item: ListedItem, key: string | undefined) => itemSegment(item, key),
+      isReservedSlug: (slug: string) => isReservedPageSlug(slug),
     },
   };
 }
@@ -66,6 +68,13 @@ test('REFUSE: pages that do not serve collection detail, turned off, detail off 
   const { deps: d, reads } = deps(serving);
   assert.deepEqual(await listStaticItemParams(pages, d), []);
   assert.deepEqual(reads, [], 'and reads nothing for them');
+});
+
+test('REFUSE (review B1): a page under a fixed route lists no items', async () => {
+  const { deps: d, reads } = deps(new Set(['book', 'Booking', 'blog']));
+  const out = await listStaticItemParams([{ slug: 'book', collection: 'posts' }, { slug: 'Booking', collection: 'posts' }] as Page[], d);
+  assert.deepEqual(out, []);
+  assert.deepEqual(reads, []);
 });
 
 test('REFUSE: a failed read lists nothing for that page and never throws', async () => {
@@ -105,7 +114,8 @@ test('the sentinel is never a real page and the route bails on it before any rea
 
 test('REFUSE: the nested page arm reads searchParams only behind pageReadsQuery', () => {
   const source = fs.readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.meta.url), 'utf8');
-  assert.match(source, /const sp = pageReadsQuery\(nestedPage\) \? \(\(await searchParams\) \?\? \{\}\) : \{\};/);
+  // Review B2: and only where reading it cannot 500 (src/lib/queryReadGate.ts).
+  assert.match(source, /const sp = pageReadsQuery\(nestedPage\) && mayReadQuery\(\) \? \(\(await searchParams\) \?\? \{\}\) : \{\};/);
   // The two redirect reads stay (show and team id addresses), safe only because
   // of the sentinel above.
   assert.equal((source.match(/readableRedirectTarget\(slug, [a-zA-Z.]+, \(await searchParams\) \?\? \{\}\)/g) ?? []).length, 2);

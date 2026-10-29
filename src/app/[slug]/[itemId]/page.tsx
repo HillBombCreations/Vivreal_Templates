@@ -47,7 +47,7 @@ import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } f
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
-import { collectRichTextImageKeys, itemSegment, resolvePattern, stableRichTextImageUrl } from "@hillbombcreations/site-renderer";
+import { collectRichTextImageKeys, itemSegment, resolvePattern, stableRichTextImageUrl, isReservedPageSlug } from "@hillbombcreations/site-renderer";
 // The renderer's own inventory helpers, imported rather than reimplemented so
 // the "Out of stock" button and the JSON-LD availability claim on the same page
 // cannot disagree. Their contract: `tracked: false` means untracked, not zero.
@@ -86,6 +86,7 @@ import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { connection } from "next/server";
 import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
+import { mayReadQuery } from "@/lib/queryReadGate";
 import { DETAIL_SENTINEL_PARAMS, isDetailSentinel, listStaticItemParams } from "@/lib/detail/staticItemParams";
 
 // ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
@@ -129,6 +130,7 @@ export async function generateStaticParams(): Promise<{ slug: string; itemId: st
     // The same cached 100-row read the build's fill pass makes for the page list.
     readItems: async (collectionId) => (await getCollectionItems(collectionId, { limit: 100 })).items,
     segmentOf: (item, itemKeyField) => itemSegment(item, itemKeyField),
+    isReservedSlug: (slug) => isReservedPageSlug(slug),
   });
   return [...items, { ...DETAIL_SENTINEL_PARAMS }];
 }
@@ -315,7 +317,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // generic arm — a nested sub-page can compose a storefront group too, and
     // without the overrides its grid renders the bare (CartAdapter-less) arm.
     // Owner ideas T10/T11: read only when the nested page can use it.
-    const sp = pageReadsQuery(nestedPage) ? ((await searchParams) ?? {}) : {};
+    const sp = pageReadsQuery(nestedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
     return renderComposedPage({
       siteData,
       composedPage: nestedPage,

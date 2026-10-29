@@ -62,6 +62,8 @@ export interface StaticItemDeps<P extends ListedPage> {
   /** The cached list read; resolves to `[]` on a failed read (never throws to here). */
   readItems: (collectionId: string) => Promise<readonly ListedItem[]>;
   segmentOf: (item: ListedItem, itemKeyField: string | undefined) => string;
+  /** The renderer's `isReservedPageSlug`: a page under a fixed route is never listed (review B1). */
+  isReservedSlug: (slug: string) => boolean;
 }
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,199}$/;
@@ -77,6 +79,7 @@ export async function listStaticItemParams<P extends ListedPage>(
     const slug = page?.slug;
     // A nested page slug (`features/ai-sites`) is not a [slug] segment.
     if (typeof slug !== 'string' || !slug || slug.includes('/') || slug === DETAIL_SENTINEL) continue;
+    if (deps.isReservedSlug(slug)) continue;
     if (deps.isPageTurnedOff(page) || page.detailPage?.enabled === false) continue;
     if (!deps.servesCollectionDetail(page)) continue;
     const collectionId = deps.collectionIdOf(page);

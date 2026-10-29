@@ -34,7 +34,7 @@ import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -54,6 +54,7 @@ import type { ScheduleView } from "@hillbombcreations/site-renderer";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { slugsForStaticParams } from "@/lib/pages/staticParams";
 import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
+import { mayReadQuery } from "@/lib/queryReadGate";
 
 // ISR migration Phase 3. Both values MUST be literals — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -126,9 +127,16 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
   // explains is the difference between a working fleet and a 500. Privacy and
   // terms used to be here and are not: a site with no stored policy page now
   // answers 404 for them (owner decision 2026-10-14, no invented legal text).
-  return slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS).map(
-    (slug) => ({ slug }),
-  );
+  //
+  // Review B1 (owner ideas PR 11): never a reserved name. A fixed route
+  // (`/book`, `/booking/manage`, `/api`, ...) and this list claiming the same
+  // path made the build write `/book` as an ISR page of THIS route, and the
+  // fixed `force-dynamic` route then answered 500 on it. An owner's own `book`
+  // page is served by `src/app/book/page.tsx` (it hands it to this route's
+  // render, dynamic) and `booking` by this route on request.
+  return slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS)
+    .filter((slug) => !isReservedPageSlug(slug))
+    .map((slug) => ({ slug }));
 }
 
 // Formats migrated to the unified composePage() pipeline (Plan 4). Migrated one
@@ -601,7 +609,7 @@ export default async function DynamicPage({
         // kept every composed inner page `no-store`. A page with no
         // storefront, lookup or schedule gets the empty query and caches
         // like the home page. See src/lib/pages/pageReadsQuery.ts.
-        const sp = pageReadsQuery(composedPage) ? ((await searchParams) ?? {}) : {};
+        const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
         return renderComposedPage({
           siteData,
           composedPage,
@@ -620,7 +628,7 @@ export default async function DynamicPage({
     // inner page `no-store` (owner ideas T10, plan 3.8). So it is read only
     // when `pageReadsQuery` says the page can use it; the checkout result
     // slugs always do, which keeps this route free of a build fallback.
-    const sp = pageReadsQuery(composedPage) ? ((await searchParams) ?? {}) : {};
+    const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
     const productQuery = parseProductQuery(sp);
 
     // Components override: the live storefront wrappers (BOTH products
@@ -927,7 +935,7 @@ export async function generateMetadata({
     (await composedPageIsEmpty({
       siteData,
       composedPage: pageConfig,
-      productQuery: parseProductQuery(pageReadsQuery(pageConfig) ? ((await searchParams) ?? {}) : {}),
+      productQuery: parseProductQuery(pageReadsQuery(pageConfig) && mayReadQuery() ? ((await searchParams) ?? {}) : {}),
     }))
   ) {
     return buildEmptyPageMetadata(siteName);

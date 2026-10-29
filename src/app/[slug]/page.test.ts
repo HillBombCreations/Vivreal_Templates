@@ -205,6 +205,15 @@ test('the subscribe fallback resolves its list through the tested helper', () =>
   assert.doesNotMatch(source, /collections\?\.\[0\]/, 'no inline read of the legacy mirror');
 });
 
+// ── review B1: no reserved name in the build list ─────────────────────────
+test('the build list never claims a fixed route\'s path', () => {
+  assert.match(
+    source,
+    /return slugsForStaticParams\(siteData\.pageConfigs, CHECKOUT_RESULT_SLUGS\)\s*\.filter\(\(slug\) => !isReservedPageSlug\(slug\)\)/,
+    'an owner page called book would be prerendered by this route and 500 at /book',
+  );
+});
+
 // ── owner ideas T7: the link page ─────────────────────────────────────────
 test('the link page is a recognised format AND takes the plain delegation', () => {
   // Without the Set entry a links page 404s (the /shop lesson). Without the
