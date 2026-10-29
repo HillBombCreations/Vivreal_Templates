@@ -141,3 +141,104 @@ export function planOgItemCard(
   }
   return { kind: 'card', heading };
 }
+
+/**
+ * What the generated card's top slot shows.
+ *
+ * `image` carries a `data:` URI built from bytes already fetched, so the card
+ * renderer never fetches the logo a second time. `name` carries no source at
+ * all: the card draws the site name as its own text instead.
+ */
+export type OgLogoPlan = { kind: 'image'; src: string } | { kind: 'name' };
+
+/**
+ * Same ceiling the stable logo proxy applies (`MAX_PROXIED_IMAGE_BYTES` in
+ * `@/lib/media/stableImage`, not imported so this file stays loadable by
+ * `node --test`). A logo past it is drawn as the site name rather than base64
+ * encoded into the render.
+ */
+export const MAX_OG_LOGO_BYTES = 4 * 1024 * 1024;
+
+/** A hung media fetch must not hang the whole card. */
+const OG_LOGO_FETCH_TIMEOUT_MS = 5000;
+
+/** Any element named `text`, namespaced or not, in any case. */
+const SVG_TEXT_ELEMENT = /<(?:[a-z][\w.-]*:)?text[\s/>]/i;
+
+/**
+ * Leading whitespace (JS `\s` includes the BOM), then any XML prolog, doctype
+ * or comments, then `<svg`. Catches an SVG served without an SVG content type.
+ */
+const SVG_SNIFF = /^\s*(?:<\?xml[\s\S]*?\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE[\s\S]*?>\s*)*<svg[\s>]/i;
+
+function looksLikeSvg(contentType: string | null, body: string): boolean {
+  return /svg/i.test(contentType ?? '') || SVG_SNIFF.test(body.slice(0, 2048));
+}
+
+/**
+ * True when a logo is an SVG that draws text.
+ *
+ * VR_Secure_API mints kit wordmarks as an SVG holding one `<text>` element
+ * (`kitIdentity.js`). The OG renderer (Satori, then resvg) rasterises an
+ * embedded SVG's text with whatever fonts the HOST has, and the hosting
+ * compute has none of the wordmark families, so every glyph came out as a
+ * missing-glyph box. Windows has the fonts, which is why it only showed in
+ * production. Any `<text>` at all, mixed with paths or not, decides true: that
+ * text would be boxes too.
+ */
+export function isTextWordmarkSvg(contentType: string | null, body: string): boolean {
+  return looksLikeSvg(contentType, body) && SVG_TEXT_ELEMENT.test(body);
+}
+
+/**
+ * Raster types Satori can embed, by magic bytes. Sniffed rather than read
+ * from `content-type` because Satori parses the MIME out of a `data:` URI and
+ * an unknown one (for example `application/octet-stream`) throws mid-render.
+ */
+function sniffRasterMime(bytes: Uint8Array): string | null {
+  const starts = (sig: readonly number[], at = 0) => sig.every((b, i) => bytes[at + i] === b);
+  if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
+  if (starts([0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (starts([0x47, 0x49, 0x46, 0x38])) return 'image/gif';
+  if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
+  return null;
+}
+
+/**
+ * Decide the card's top slot from the logo's own bytes.
+ *
+ * Fail-closed: anything that is not a verified drawable image (no URL, a
+ * failed or slow fetch, an oversized body, an unknown format, a text
+ * wordmark) plans `name`, so an SVG is only ever handed to the image element
+ * after it has been read and found to hold no text. The signed URL is never
+ * logged: it carries a CloudFront signature.
+ */
+export async function resolveOgLogo(
+  logoSrc: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<OgLogoPlan> {
+  if (!logoSrc.startsWith('http')) return { kind: 'name' };
+
+  let res: Response;
+  try {
+    res = await fetchImpl(logoSrc, { signal: AbortSignal.timeout(OG_LOGO_FETCH_TIMEOUT_MS) });
+  } catch {
+    // Network error or timeout. The card still renders, with the site name in
+    // the top slot; before this, Satori's own fetch failure left the slot blank.
+    return { kind: 'name' };
+  }
+  if (!res.ok) return { kind: 'name' };
+
+  const length = Number(res.headers.get('content-length'));
+  if (Number.isFinite(length) && length > MAX_OG_LOGO_BYTES) return { kind: 'name' };
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_OG_LOGO_BYTES) return { kind: 'name' };
+
+  const contentType = res.headers.get('content-type');
+  const raster = sniffRasterMime(bytes);
+  if (raster) return { kind: 'image', src: `data:${raster};base64,${Buffer.from(bytes).toString('base64')}` };
+
+  const text = new TextDecoder().decode(bytes);
+  if (!looksLikeSvg(contentType, text) || isTextWordmarkSvg(contentType, text)) return { kind: 'name' };
+  return { kind: 'image', src: `data:image/svg+xml;base64,${Buffer.from(bytes).toString('base64')}` };
+}
