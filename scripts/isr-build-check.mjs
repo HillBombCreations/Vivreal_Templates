@@ -26,6 +26,7 @@
  * manifests, so a green run here cannot be a check that never fails.
  */
 import { spawn } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -35,11 +36,34 @@ export const SITE_ID = '6a0000000000000000000a01';
 export const POSTS = '6a0000000000000000000c01';
 const UPSTREAM_PORT = 4711;
 const APP_PORT = 4712;
+/** The fixture site's revalidate webhook secret (never a real one). */
+const REVALIDATE_SECRET = 'fixture-revalidate-secret';
 
 const block = (id, dispatchId, config = {}, order = 0) => ({ id, type: { kind: 'page-template', dispatchId }, order, enabled: true, config });
 
-/** The fixture site: one page per behaviour the check needs. */
-export function fixtureSiteDetails() {
+/** The owner's own page at the fixed route's address (review B1). */
+export const OWNER_BOOK_TEXT = 'Book a table with the fixture bakery';
+
+/** A coordinated storefront group, the shape a Studio "add a shop section" writes. */
+const storefrontGroup = (id) => ({
+  id,
+  type: { kind: 'group' },
+  order: 5,
+  enabled: true,
+  config: {
+    coordinated: 'products',
+    children: [block(`${id}-grid`, 'products-grid', { bindings: [{ collectionId: POSTS, role: 'primary' }] })],
+  },
+});
+
+/**
+ * The fixture site: one page per behaviour the check needs. `state.aboutStorefront`
+ * is flipped after the build to model an owner adding a shop section to a page
+ * that was prerendered (review B2).
+ */
+export function fixtureSiteDetails(state = {}) {
+  const aboutBlocks = [block('a1', 'section-header', { labels: { title: 'About us', subtitle: 'Our story' } })];
+  if (state.aboutStorefront) aboutBlocks.push(storefrontGroup('a2'));
   return {
     name: 'Fixture Bakery',
     domainName: 'fixture.example',
@@ -48,7 +72,18 @@ export function fixtureSiteDetails() {
     socialLinks: [],
     pages: [
       { slug: 'home', name: 'Home', format: 'home', blocks: [block('h1', 'section-header', { labels: { title: 'Welcome' } })] },
-      { slug: 'about', name: 'About', format: 'about', blocks: [block('a1', 'section-header', { labels: { title: 'About us', subtitle: 'Our story' } })] },
+      { slug: 'about', name: 'About', format: 'about', blocks: aboutBlocks },
+      // Review B1: owner pages at the two booking addresses, booking off.
+      { slug: 'book', name: 'Book', format: 'about', blocks: [block('b1', 'section-header', { labels: { title: OWNER_BOOK_TEXT } })] },
+      { slug: 'booking', name: 'Booking', format: 'about', blocks: [block('b2', 'section-header', { labels: { title: 'Booking info' } })] },
+      // A standard page with a coordinated storefront, a schedule and a lookup:
+      // each must stay dynamic.
+      { slug: 'menu', name: 'Menu', format: 'standard', blocks: [block('m1', 'section-header', { labels: { title: 'Menu' } }), storefrontGroup('m2')] },
+      { slug: 'events', name: 'Events', format: 'schedule', blocks: [block('e1', 'section-header', { labels: { title: 'Events' } })] },
+      {
+        slug: 'faq', name: 'FAQ', format: 'lookup',
+        blocks: [block('f1', 'collection', { bindings: [{ collectionId: POSTS, role: 'primary', sectionConfig: { queryFields: ['title'] } }] })],
+      },
       {
         slug: 'links', name: 'Links', format: 'links',
         blocks: [
@@ -68,7 +103,7 @@ export const FIXTURE_ITEMS = [
 ];
 
 /** The fixture upstream. Logs every path it is asked for (never a header). */
-export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITEMS, log = () => {} } = {}) {
+export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITEMS, log = () => {}, state = {} } = {}) {
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://fixture');
     log(`${req.method} ${url.pathname}`);
@@ -76,7 +111,7 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(status < 300 ? { success: true, data } : { success: false, data: null, error: 'Not found' }));
     };
-    if (url.pathname === '/tenant/siteDetails') return send(200, fixtureSiteDetails());
+    if (url.pathname === '/tenant/siteDetails') return send(200, fixtureSiteDetails(state));
     if (url.pathname === '/tenant/collectionObjects') {
       const list = url.searchParams.get('collectionId') === POSTS ? items : [];
       return send(200, { items: list, totalCount: list.length });
@@ -110,7 +145,7 @@ export function checkManifest(manifest, { gateOn }) {
       const seconds = manifest.routes[route]?.initialRevalidateSeconds;
       if (seconds !== 300) failures.push(`${route} is not prerendered with revalidate 300 (got ${JSON.stringify(seconds)})`);
     }
-    for (const route of ['/shop', '/checkoutsuccess', '/book', '/booking/manage']) {
+    for (const route of ['/shop', '/checkoutsuccess', '/book', '/booking', '/booking/manage', '/menu', '/events', '/faq']) {
       if (route in manifest.routes) failures.push(`${route} was prerendered; it must stay dynamic`);
     }
   } else {
@@ -139,16 +174,19 @@ export function checkResponses(reads, { gateOn }) {
   for (const r of reads) {
     if (r.second.status >= 500) failures.push(`${r.path} answered ${r.second.status}`);
   }
-  const expectStatus = { '/about': 200, '/links': 200, '/blog/first-loaf': 200, '/blog/6a0000000000000000000d02': 200, '/shop': 200, '/book': 404 };
+  // `/book` is the owner's own page while booking is off (T14, review B1).
+  const expectStatus = { '/about': 200, '/links': 200, '/blog/first-loaf': 200, '/blog/6a0000000000000000000d02': 200, '/shop': 200, '/book': 200, '/booking': 200 };
   for (const [p, status] of Object.entries(expectStatus)) {
     const r = byPath.get(p);
     if (!r) failures.push(`${p} was not read`);
     else if (r.second.status !== status) failures.push(`${p} answered ${r.second.status}, expected ${status}`);
   }
+  const book = byPath.get('/book');
+  if (book && !(book.second.body ?? '').includes(OWNER_BOOK_TEXT)) failures.push('/book does not show the owner\'s own book page');
   const cached = gateOn ? ['/about', '/links', '/blog/first-loaf'] : [];
   const uncached = gateOn
-    ? ['/shop', '/checkoutsuccess?session_id=cs_test_abc', '/book', '/blog/6a0000000000000000000d02']
-    : ['/about', '/links', '/blog/first-loaf', '/shop'];
+    ? ['/shop', '/checkoutsuccess?session_id=cs_test_abc', '/book', '/booking', '/blog/6a0000000000000000000d02', '/menu', '/menu?sort=price', '/events', '/faq?q=loaf']
+    : ['/about', '/links', '/blog/first-loaf', '/shop', '/book', '/menu'];
   // The target is the HOME page's behaviour (plan 3.8, D43): a cached HIT with
   // the same s-maxage the home page is served with. (Measured 2026-10-29: a
   // fresh worktree served 300 for `/` and every cached inner page; one reused
@@ -169,8 +207,25 @@ export function checkResponses(reads, { gateOn }) {
 
 export const READ_PATHS = [
   '/', '/about', '/links', '/blog/first-loaf', '/blog/6a0000000000000000000d02', '/shop',
-  '/checkoutsuccess?session_id=cs_test_abc', '/book', '/booking/manage',
+  '/checkoutsuccess?session_id=cs_test_abc', '/book', '/booking', '/booking/manage',
+  '/menu', '/menu?sort=price', '/events', '/faq?q=loaf',
 ];
+
+/**
+ * Review B2: after the build, the owner adds a shop section to the cached
+ * `/about`, the save sends a signed `site.updated`, and `/about` is read again.
+ * It must never answer 500 (it renders the storefront unfiltered until the
+ * next build). `flip` is the revalidate answer, `after` every read after it.
+ */
+export function checkAfterFlip(flip, after) {
+  const failures = [];
+  if (flip.status !== 200 || !/"revalidated":true/.test(flip.body ?? '')) failures.push(`the signed site.updated was not accepted (${flip.status})`);
+  if (after.length === 0) failures.push('nothing was read after the flip');
+  for (const r of after) {
+    if (r.status >= 500 || r.status === 0) failures.push(`${r.path} answered ${r.status} after the owner added a storefront`);
+  }
+  return failures;
+}
 
 function run(cmd, args, opts) {
   return new Promise((resolve) => {
@@ -185,9 +240,29 @@ function run(cmd, args, opts) {
 function get(p) {
   return new Promise((resolve) => {
     http.get({ host: '127.0.0.1', port: APP_PORT, path: p }, (res) => {
-      res.resume();
-      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers }));
-    }).on('error', () => resolve({ status: 0, headers: {} }));
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (d) => { body += d; });
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, headers: res.headers, body }));
+    }).on('error', () => resolve({ status: 0, headers: {}, body: '' }));
+  });
+}
+
+function postSigned(p, payload) {
+  const raw = JSON.stringify(payload);
+  const signature = crypto.createHmac('sha256', REVALIDATE_SECRET).update(raw).digest('hex');
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: '127.0.0.1', port: APP_PORT, path: p, method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Vivreal-Signature': `sha256=${signature}`, 'X-Vivreal-Event': payload.event } },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    req.on('error', () => resolve({ status: 0, body: '' }));
+    req.end(raw);
   });
 }
 
@@ -203,7 +278,8 @@ async function main() {
   const gateOn = !process.argv.includes('--gate-off');
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const seen = new Set();
-  const upstream = await startFixtureUpstream({ log: (line) => seen.add(line) });
+  const state = { aboutStorefront: false };
+  const upstream = await startFixtureUpstream({ log: (line) => seen.add(line), state });
   const env = {
     ...process.env,
     NEXT_PUBLIC_CLIENT_API: `http://127.0.0.1:${UPSTREAM_PORT}`,
@@ -215,6 +291,7 @@ async function main() {
     // What the provisioner sets on every site (src/lib/siteCacheTtl.ts); the 60 s default would cap every page at 60.
     SITE_CACHE_TTL_SECONDS: '300',
     NEXT_PUBLIC_ANALYTICS_ENDPOINT: `http://127.0.0.1:${UPSTREAM_PORT}/beacon`,
+    REVALIDATE_WEBHOOK_SECRET: REVALIDATE_SECRET,
   };
   if (gateOn) env.SITE_RENDER_MODE = 'isr';
   else delete env.SITE_RENDER_MODE;
@@ -253,6 +330,18 @@ async function main() {
           console.log(`  ${String(second.status).padEnd(4)} ${(second.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${(second.headers['cache-control'] ?? '').toString().padEnd(60)} ${p}`);
         }
         failures.push(...checkResponses(reads, { gateOn }));
+
+        // Review B2: the owner adds a shop section to the cached /about.
+        state.aboutStorefront = true;
+        const flip = await postSigned('/api/revalidate', { id: 'evt1', event: 'site.updated', timestamp: new Date().toISOString(), data: { siteId: SITE_ID, slug: 'about' } });
+        const after = [];
+        for (const p of ['/about', '/about', '/about', '/about?sort=price', '/about']) {
+          const r = await get(p);
+          after.push({ path: p, status: r.status });
+          console.log(`  after flip: ${String(r.status).padEnd(4)} ${(r.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${p}`);
+          await new Promise((res) => setTimeout(res, 300));
+        }
+        failures.push(...checkAfterFlip(flip, after));
       }
     } finally {
       if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});

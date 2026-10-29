@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkManifest, checkResponses, routeTable } from './isr-build-check.mjs';
+import { OWNER_BOOK_TEXT, checkAfterFlip, checkManifest, checkResponses, routeTable } from './isr-build-check.mjs';
 
 const GOOD = {
   routes: {
@@ -32,13 +32,21 @@ test('REFUSE: the base shape (no inner page prerendered) fails, and so does a st
   assert.deepEqual(checkManifest(null, { gateOn: true }), ['no prerender manifest was parsed']);
 });
 
-const ok = (headers, status = 200) => ({ status, headers });
+test('REFUSE (review B1): /book or /booking in the build list fails', () => {
+  for (const route of ['/book', '/booking', '/menu', '/events', '/faq']) {
+    assert.equal(checkManifest({ ...GOOD, routes: { ...GOOD.routes, [route]: { initialRevalidateSeconds: 300 } } }, { gateOn: true }).length, 1, route);
+  }
+});
+
+const ok = (headers, status = 200, body = '') => ({ status, headers, body });
 const HIT = { 'x-nextjs-cache': 'HIT', 'cache-control': 's-maxage=300, stale-while-revalidate=31535700' };
 const NO_STORE = { 'cache-control': 'private, no-cache, no-store, max-age=0, must-revalidate' };
 function reads(over = {}) {
   const base = {
     '/': ok(HIT), '/about': ok(HIT), '/links': ok(HIT), '/blog/first-loaf': ok(HIT), '/blog/6a0000000000000000000d02': ok(NO_STORE),
-    '/shop': ok(NO_STORE), '/checkoutsuccess?session_id=cs_test_abc': ok(NO_STORE), '/book': ok(NO_STORE, 404), '/booking/manage': ok(NO_STORE),
+    '/shop': ok(NO_STORE), '/checkoutsuccess?session_id=cs_test_abc': ok(NO_STORE), '/book': ok(NO_STORE, 200, `<h1>${OWNER_BOOK_TEXT}</h1>`),
+    '/booking': ok(NO_STORE), '/booking/manage': ok(NO_STORE), '/menu': ok(NO_STORE), '/menu?sort=price': ok(NO_STORE),
+    '/events': ok(NO_STORE), '/faq?q=loaf': ok(NO_STORE),
     ...over,
   };
   return Object.entries(base).map(([path, second]) => ({ path, first: second, second }));
@@ -52,11 +60,26 @@ test('ALLOW: the target responses pass; REFUSE: the base no-store about page fai
 test('REFUSE: a 500 anywhere fails, and a cached storefront fails', () => {
   assert.ok(checkResponses(reads({ '/blog/6a0000000000000000000d02': ok(NO_STORE, 500) }), { gateOn: true }).length >= 1);
   assert.equal(checkResponses(reads({ '/shop': ok(HIT) }), { gateOn: true }).length, 1);
+  assert.equal(checkResponses(reads({ '/menu?sort=price': ok(HIT) }), { gateOn: true }).length, 1);
+});
+
+test('REFUSE (review B1): /book answering 500, 404 or without the owner page fails', () => {
+  assert.ok(checkResponses(reads({ '/book': ok(NO_STORE, 500) }), { gateOn: true }).length >= 1);
+  assert.ok(checkResponses(reads({ '/book': ok(NO_STORE, 404) }), { gateOn: true }).length >= 1);
+  assert.ok(checkResponses(reads({ '/book': ok(NO_STORE, 200, 'something else') }), { gateOn: true }).length >= 1);
 });
 
 test('REFUSE: an inner page cached for less than the home page fails', () => {
   const short = { 'x-nextjs-cache': 'HIT', 'cache-control': 's-maxage=30' };
   assert.equal(checkResponses(reads({ '/links': ok(short) }), { gateOn: true }).length, 1);
+});
+
+test('ALLOW (review B2): an accepted flip and no 500 after it passes; REFUSE: any 500, or an unaccepted flip, fails', () => {
+  const flip = { status: 200, body: '{"revalidated":true,"tags":["site:x"]}' };
+  assert.deepEqual(checkAfterFlip(flip, [{ path: '/about', status: 200 }]), []);
+  assert.equal(checkAfterFlip(flip, [{ path: '/about', status: 200 }, { path: '/about', status: 500 }]).length, 1);
+  assert.equal(checkAfterFlip({ status: 401, body: '' }, [{ path: '/about', status: 200 }]).length, 1);
+  assert.equal(checkAfterFlip(flip, []).length, 1, 'nothing read is not a pass');
 });
 
 test('route table rows', () => {
