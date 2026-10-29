@@ -110,3 +110,32 @@ test('REFUSE: globals.css carries no Google Fonts @import (Turbopack drops it; u
   assert.match(css, /@import "tailwindcss";/, 'globals.css parsed but the control import is missing');
   assert.doesNotMatch(css, /@import\s+url\(\s*['"]?https:\/\/fonts\.googleapis\.com/);
 });
+
+/* ── Owner find 3: the monospace sheet ─────────────────────────────────────── */
+
+const PACK_MONO = "'JetBrains Mono', ui-monospace, monospace";
+
+test('ALLOW (find 3): a site whose mono is JetBrains Mono requests the JetBrains Mono sheet', () => {
+  const sheets = siteFontStylesheets({ display: null, body: null, mono: PACK_MONO }, LITERAL);
+  assert.equal(sheets[0], BASE, 'the base sheet moved; the mono sheet must be appended, not replace it');
+  const mono = sheets.filter((s) => s.includes('family=JetBrains+Mono'));
+  assert.equal(mono.length, 1, JSON.stringify(sheets));
+  assert.doesNotMatch(BASE, /JetBrains/, 'the base sheet grew a mono family; the separate sheet proves nothing');
+  // Also on a self-hosted display face, which links no base sheet.
+  const geist = resolveSiteFont('Geist', TEMPLATES_VARS);
+  assert.deepEqual(siteFontStylesheets({ display: geist, mono: PACK_MONO }, LITERAL), mono);
+});
+
+test('REFUSE (find 3): an uncurated mono head requests no sheet and does not throw; no mono is today\'s list', () => {
+  for (const mono of ['Menlo, monospace', 'ui-monospace, monospace', "var(--font-geist-mono), monospace", '', null, undefined]) {
+    assert.deepEqual(siteFontStylesheets({ display: null, body: null, mono }, LITERAL), [BASE], String(mono));
+  }
+  const cabin = href('Cabin');
+  assert.deepEqual(siteFontStylesheets({ display: resolveSiteFont('Cabin'), mono: 'Menlo' }, LITERAL), [cabin]);
+});
+
+test('the layout feeds the mono by the builder\'s own rule', () => {
+  const layout = read('../../app/layout.tsx');
+  assert.match(layout, /mono: resolveMonoFamily\(siteData as unknown as Record<string, unknown>\),/);
+  assert.match(layout, /import \{ resolveMonoFamily \} from '@hillbombcreations\/site-renderer\/theme';/);
+});

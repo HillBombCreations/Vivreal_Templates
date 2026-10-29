@@ -1,5 +1,5 @@
 import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcreations/site-renderer';
-import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
+import type { HeroSection, PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
@@ -44,10 +44,40 @@ import NavbarChrome from './NavbarChrome';
  * `true` ⇒ the fixed header, byte-identical. Item-18 lockstep: the Studio
  * preview wrapper (Vivreal_Portal_Mobile/.../preview-shell/page.tsx) threads
  * the same derivation.
+ *
+ * Owner find 3 (renderer 1.90.0): on a Mood dark site ONLY, the shell passes
+ * the stored `surface-alt` twice. As `surfaceAlt`, so the renderer decides the
+ * dark ground (the site's own colour when it already carries light text, the
+ * dark literal when it is light) in the server render with no DOM read. And as
+ * the second argument of `resolveMastheadTone`, so a media-less page top the
+ * renderer now paints dark answers `'dark'` and the header is not told "light
+ * top" over it. Every other site gets the one-argument call and no
+ * `surfaceAlt`, byte-identical to 1.89.1. The Studio preview wrapper threads
+ * the same two inputs (item-18 lockstep).
+ *
+ * `renderedHero` (renderer 1.92.0): the hero as `composePage` will render it,
+ * from `renderedHeroFor`. A mount passes it only on a Dark site and only where
+ * it already holds the page's compose input before the header renders (today
+ * the home route, see `darkRenderedHero.ts`). It joins the Dark-only object,
+ * so a `feature-item` hero with no qualifying item, which falls through to the
+ * plain panel on the dark ground, gets a header that matches its top. Absent:
+ * the stored hero decides, as before. Never read on a non-Dark site.
  */
-const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null; hasMasthead?: boolean } = {}) => {
+const Navbar = async ({
+  page,
+  hasMasthead,
+  renderedHero,
+}: { page?: RendererPageConfig | null; hasMasthead?: boolean; renderedHero?: HeroSection | null } = {}) => {
   const siteData = await getSiteData();
-  const mastheadTone = resolveMastheadTone(page ?? null);
+  const darkSite =
+    siteData?.chrome === 'dark'
+      ? {
+          chrome: siteData.chrome,
+          surfaceAlt: typeof siteData['surface-alt'] === 'string' ? siteData['surface-alt'] : undefined,
+          ...(renderedHero ? { renderedHero } : {}),
+        }
+      : null;
+  const mastheadTone = darkSite ? resolveMastheadTone(page ?? null, darkSite) : resolveMastheadTone(page ?? null);
   const pinned = resolveHeaderPinned(page ?? null);
 
   const businessName = siteData?.businessInfo?.name || siteData?.name || '';
@@ -164,6 +194,10 @@ const Navbar = async ({ page, hasMasthead }: { page?: RendererPageConfig | null;
       barHeightMobile={siteData?.navigation?.barHeightMobile ?? null}
       cartIcon={siteData?.navigation?.cartIcon ?? null}
       chrome={siteData?.chrome as 'dark' | 'light' | undefined}
+      // Spread, not `surfaceAlt={undefined}`: an undefined prop still travels in
+      // the RSC payload to this client bridge, so a non-Dark site would not be
+      // byte-identical to 1.89.1. A Dark site always carries the key.
+      {...(darkSite ? { surfaceAlt: darkSite.surfaceAlt } : {})}
       // Site-level announcement strip — rendered by the renderer INSIDE the
       // fixed header (spacer accounts for it automatically). Absent ⇒ nothing.
       announcement={siteData?.announcement ?? null}

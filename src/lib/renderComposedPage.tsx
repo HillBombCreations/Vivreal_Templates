@@ -2,10 +2,12 @@ import 'server-only';
 import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navigation/Navbar';
+import { darkRenderedHero, needsHeroInputAbove } from '@/components/Navigation/darkRenderedHero';
 import Footer from '@/components/Footer';
 import {
   composePage,
   ComposedPageSkeleton,
+  renderedHeroFor,
   TitleBand,
   shouldRenderTitleBand,
 } from '@hillbombcreations/site-renderer';
@@ -196,6 +198,23 @@ export async function renderComposedPage({
     if (context.isEmpty) notFound();
   }
 
+  // Owner find 3 (renderer 1.92.0): a Mood dark page whose stored hero reads
+  // collections (a `feature-item`) also reads above the boundary, so the header
+  // can be told what top the hero will actually render. It reuses the read
+  // above when there was one, and the body is handed the same context, so the
+  // page is still read once. Every other page is unchanged: no extra await.
+  // See src/components/Navigation/darkRenderedHero.ts.
+  const heroInputAbove = needsHeroInputAbove(siteData.chrome, composedPage);
+  if (heroInputAbove && !context) {
+    context = await buildPageContext({
+      siteData,
+      page: composedPage,
+      isHome: false,
+      productQuery,
+    });
+  }
+  const renderedHero = heroInputAbove && context ? darkRenderedHero(siteData.chrome, context.input, renderedHeroFor) : null;
+
   // F-C7: one event per render when a block's displayAs and type disagree.
   // Cast: the Templates page mirror and the renderer's block page differ only
   // in presentation fields the reading never touches.
@@ -238,7 +257,10 @@ export async function renderComposedPage({
 
   return (
     <>
-      <Navbar page={composedPage as unknown as RendererPageConfig} />
+      <Navbar
+        page={composedPage as unknown as RendererPageConfig}
+        {...(renderedHero ? { renderedHero } : {})}
+      />
       {showTransitionalTitleBand && (
         // The band's markup, both the light-chrome layout and the dark
         // full-width gradient, is the renderer's `TitleBand`. It was carried

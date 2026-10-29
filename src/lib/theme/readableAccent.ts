@@ -1,16 +1,14 @@
 /**
  * src/lib/theme/readableAccent.ts
  *
- * WCAG-AA readable variant of the brand accent for TEXT-ON-LIGHT surfaces —
- * the value emitted as the `--accent-readable` CSS var (layout.tsx SSR +
- * Providers client effect). The renderer's `styles/content-grid.css` consumes
- * it for rich-text links (`.vr-rich a`), falling back to `--primary` when a
- * consumer doesn't emit it.
+ * The ink to put on an accent-filled button (`inkOnAccentIfFailsAA`), for the
+ * item page's action button.
  *
- * Deliberate SMALL LOCAL DUPLICATE of `readableAccentOnWhite` from
- * `@hillbombcreations/site-renderer/src/lib/contrast.ts` (the package exposes
- * no server-lean lib subpath; house convention accepts per-file duplicates —
- * see the usePosterOnly precedent). Keep the math in sync with the renderer.
+ * Owner find 3 (renderer 1.90.0): this file used to also hold a copy of the
+ * AA-on-white accent rule behind `--accent-readable`. That rule now lives once,
+ * in the renderer's `themeTokenStyle` (the builder `themeVarStyle.ts`
+ * re-exports), so the copy is gone. The colour helpers below stay because the
+ * button-ink rule needs them and the renderer does not export its own.
  */
 
 /** Parse `#rgb` / `#rrggbb` to [r,g,b] in [0,1]. Returns null on garbage. */
@@ -43,33 +41,6 @@ function wcagContrast(l1: number, l2: number): number {
   const hi = Math.max(l1, l2);
   const lo = Math.min(l1, l2);
   return (hi + 0.05) / (lo + 0.05);
-}
-
-function toHex(r: number, g: number, b: number): string {
-  const c = (v: number) =>
-    Math.round(Math.min(1, Math.max(0, v)) * 255)
-      .toString(16)
-      .padStart(2, '0');
-  return `#${c(r)}${c(g)}${c(b)}`;
-}
-
-/**
- * Return the accent itself when it already reads AA (≥4.5:1) as text on white,
- * else a hue-preserving darkened variant that does; near-black as a last
- * resort. Non-hex input (CSS vars, rgb()) → null: the caller simply doesn't
- * emit the var and the CSS falls back to `--primary`.
- */
-export function readableAccentOnWhite(accent: string | undefined): string | null {
-  const rgb = accent ? parseHex(accent) : null;
-  if (!rgb) return null;
-  let [r, g, b] = rgb;
-  for (let i = 0; i < 12; i += 1) {
-    if (wcagContrast(1, colorLuminance(r, g, b)) >= 4.5) return toHex(r, g, b);
-    r *= 0.85;
-    g *= 0.85;
-    b *= 0.85;
-  }
-  return '#111111';
 }
 
 /** WCAG AA for normal-size text. */

@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
+import { darkRenderedHero, needsHeroInputAbove } from "@/components/Navigation/darkRenderedHero";
 import Footer from "@/components/Footer";
 import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
@@ -32,10 +33,11 @@ import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirme
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
+import type { PageContextResult } from "@/lib/api/composition/buildPageContext";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
 import { SNAPSHOT_RECORDER } from "@/lib/api/client";
@@ -653,9 +655,22 @@ export default async function DynamicPage({
       composedPage as unknown as RendererPageConfig,
     );
 
+    // Owner find 3 (renderer 1.92.0): only a Mood dark page whose stored hero
+    // reads collections waits for its reads HERE, above the boundary, so the
+    // header gets the hero as it will render. The body is handed the same
+    // context, so the page still reads once. Every other page streams exactly
+    // as before (no await). See src/components/Navigation/darkRenderedHero.ts.
+    const heroContext: PageContextResult | undefined = needsHeroInputAbove(siteData.chrome, composedPage)
+      ? await buildPageContext({ siteData, page: composedPage, isHome: false, productQuery })
+      : undefined;
+    const renderedHero = heroContext ? darkRenderedHero(siteData.chrome, heroContext.input, renderedHeroFor) : null;
+
     return (
       <>
-        <Navbar page={composedPage as unknown as RendererPageConfig} />
+        <Navbar
+          page={composedPage as unknown as RendererPageConfig}
+          {...(renderedHero ? { renderedHero } : {})}
+        />
         {showTransitionalTitleBand && (
           <TitleBand
             page={composedPage as unknown as RendererPageConfig}
@@ -685,6 +700,7 @@ export default async function DynamicPage({
             components={components}
             scheduleView={scheduleView}
             suppressSrTitle={showTransitionalTitleBand}
+            {...(heroContext ? { context: heroContext } : {})}
           />
         </Suspense>
         <Footer />
@@ -723,6 +739,7 @@ async function ComposedFormatBody({
   components,
   scheduleView,
   suppressSrTitle,
+  context,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -737,13 +754,17 @@ async function ComposedFormatBody({
    * h1 on top (mirrors renderComposedPage; lockstep contract).
    */
   suppressSrTitle?: boolean;
+  /** The context the parent already read above the boundary for a Dark data-dependent hero (owner find 3). */
+  context?: PageContextResult;
 }) {
-  const { input, isEmpty, emptinessUnknown, listReadFailed, richTextImageUrls } = await buildPageContext({
-    siteData,
-    page: composedPage,
-    isHome: false,
-    productQuery,
-  });
+  const { input, isEmpty, emptinessUnknown, listReadFailed, richTextImageUrls } =
+    context ??
+    (await buildPageContext({
+      siteData,
+      page: composedPage,
+      isHome: false,
+      productQuery,
+    }));
 
   // SP-6 Task 5 (OQ-5 complement): generic-format empty pages → notFound().
   // Mirrors the legacy guard at the old generic arm. Only applies to formats
