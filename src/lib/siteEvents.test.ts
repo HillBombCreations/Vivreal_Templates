@@ -76,6 +76,8 @@ test('ALLOW: a result event names its goal; REFUSE: anything malformed is not se
   assert.deepEqual(JSON.parse(sent[0]), { s: 'site1', h: 'h', p: '/book', k: 'gl', g: 'booking' });
   for (const bad of [{ k: 'gl', g: 'signup' }, { k: 'lt', l: 'AB' }, { k: 'lt', l: 'has space' }, { k: 'pv' }, null, 'lt']) {
     assert.equal(isValidSiteEvent(bad), false, JSON.stringify(bad));
+    // And through the send itself, so the gate inside sendSiteEvent is what refuses.
+    assert.equal(sendSiteEvent(bad as never, { hostname: 'h', path: '/' }), false, `sent ${JSON.stringify(bad)}`);
   }
   assert.equal(sent.length, 1);
 });
