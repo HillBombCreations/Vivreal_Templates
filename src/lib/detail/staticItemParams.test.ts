@@ -95,7 +95,7 @@ test('the sentinel is never a real page and the route bails on it before any rea
   assert.equal(isDetailSentinel(DETAIL_SENTINEL, DETAIL_SENTINEL), true);
   assert.equal(isDetailSentinel(DETAIL_SENTINEL, 'x'), false);
   assert.ok(DETAIL_SENTINEL.startsWith('_'), 'reserved by the underscore rule');
-  const source = fs.readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.meta.url), 'utf8');
+  const source = fs.readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.meta.url), 'utf8').split(String.fromCharCode(13)).join('');
   assert.match(source, /return \[\.\.\.items, \{ \.\.\.DETAIL_SENTINEL_PARAMS \}\];/, 'always appended');
   const render = source.slice(source.indexOf('export default async function DynamicItemPage'));
   const sentinel = render.indexOf('if (isDetailSentinel(slug, itemId)) {\n    await connection();\n    return notFound();');
