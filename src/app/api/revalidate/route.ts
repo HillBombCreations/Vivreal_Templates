@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { revalidateTag } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { HARD_INVALIDATION } from "@/lib/cacheInvalidation";
-import { tagsForEvent } from "@/lib/revalidateTags";
+import { purgesWholeSite, tagsForEvent } from "@/lib/revalidateTags";
 import crypto from "node:crypto";
 
 // MUST be the Node.js runtime, not edge: revalidateTag drives the Next.js Data
@@ -90,6 +90,10 @@ export async function POST(request: NextRequest) {
     // src/lib/cacheInvalidation.ts for the manifest-level difference.
     revalidateTag(tag, HARD_INVALIDATION);
   }
+  // A prerendered page is not always written with the data tags its reads
+  // carry, so the tag purge alone could miss it; its path tag never is. See
+  // purgesWholeSite in lib/revalidateTags.ts.
+  if (purgesWholeSite(tags)) revalidatePath("/", "layout");
 
   return NextResponse.json({ revalidated: true, event, tags, now: Date.now() });
 }

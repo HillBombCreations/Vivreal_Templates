@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { pageReadsQuery } from './pageReadsQuery.ts';
 import { CHECKOUT_RESULT_SLUGS } from './builtInPages.ts';
-import { tagsForEvent } from '../revalidateTags.ts';
+import { purgesWholeSite, tagsForEvent } from '../revalidateTags.ts';
 
 const block = (dispatchId: string, extra: Record<string, unknown> = {}) => ({ type: { kind: 'page-template', dispatchId }, config: {}, ...extra });
 const ABOUT = { slug: 'about', format: 'about', blocks: [block('section-header'), block('about')] };
@@ -60,6 +60,15 @@ test('ALLOW: a per-page save (Secure S16, site.updated with a slug) drops the ta
   assert.match(siteData, /const SITE_CHROME_TAG = SITE_ID \? \[`site:\$\{SITE_ID\}`\] : undefined;/, 'getSiteData tags its read site:<id>');
   const route = fs.readFileSync(new URL('../../app/api/revalidate/route.ts', import.meta.url), 'utf8');
   assert.match(route, /tagsForEvent\(event, body\.data, SITE_ID\)/);
+});
+
+test('ALLOW: an event that drops a tag also purges every page by path; REFUSE: one that drops nothing purges nothing', () => {
+  assert.equal(purgesWholeSite(tagsForEvent('site.updated', { slug: 'about' }, 'site123')), true);
+  assert.equal(purgesWholeSite(tagsForEvent('content.updated', { collectionObj: { refID: 'c1' } }, 'site123')), true);
+  assert.equal(purgesWholeSite(tagsForEvent('order.created', {}, 'site123')), false);
+  const route = fs.readFileSync(new URL('../../app/api/revalidate/route.ts', import.meta.url), 'utf8');
+  assert.match(route, /if \(purgesWholeSite\(tags\)\) revalidatePath\("\/", "layout"\);/);
+  assert.ok(route.indexOf('revalidatePath("/", "layout")') > route.indexOf('safeEqualHex(provided, expected)'), 'only after the signature check');
 });
 
 test('REFUSE: an unsigned-shape or unknown event drops nothing; no site id, no site tag', () => {

@@ -42,3 +42,18 @@ export function tagsForEvent(event: string, data: Record<string, unknown> | unde
 
   return [...tags];
 }
+
+/**
+ * Whether an event also purges every page of the site by PATH (owner ideas
+ * PR 11, found while proving review B2). Measured on two production builds,
+ * the base of this PR included: some prerendered pages are written WITHOUT
+ * the data tags their reads carry (`/about` with no `site:<id>`, an item page
+ * with neither `site:` nor `collection:`), so a Save that drops those tags
+ * left them serving the old copy until their 300 s timer. Every page carries
+ * Next's implicit path tags, so `revalidatePath('/', 'layout')` reaches them
+ * all. Same scope as the tag purge (the receiving instance, D43, D47), and
+ * only for an event that drops at least one tag.
+ */
+export function purgesWholeSite(tags: readonly string[]): boolean {
+  return tags.length > 0;
+}
