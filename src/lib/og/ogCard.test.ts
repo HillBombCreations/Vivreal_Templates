@@ -6,9 +6,11 @@ import {
   isLightColor,
   isTextWordmarkSvg,
   MAX_OG_LOGO_BYTES,
+  planIconMark,
   planOgItemCard,
   resolveOgLogo,
   resolvePageOgHeading,
+  siteInitial,
 } from './ogCard.ts';
 
 /**
@@ -258,4 +260,57 @@ test('isTextWordmarkSvg: text SVGs true, drawn SVGs and non-SVG bodies false', (
   // A <title> is not a <text>.
   assert.equal(isTextWordmarkSvg('image/svg+xml', PATH_LOGO.replace('<path', '<title>Mill</title><path')), false);
   assert.equal(isTextWordmarkSvg('text/html', '<html><text>x</text></html>'), false);
+});
+
+// Favicon and Apple touch icon: the same logo decision, drawn as an initial.
+
+test('REFUSE (icons): a text wordmark plans the site initial, with no image source', async () => {
+  const { impl, calls } = fakeFetch(KIT_WORDMARK, { 'content-type': 'image/svg+xml' });
+  const plan = await planIconMark(LOGO_URL, 'Indigo Studios PH', impl);
+  assert.deepEqual(plan, { kind: 'initial', initial: 'I' });
+  assert.equal('src' in plan, false);
+  assert.deepEqual(calls, [LOGO_URL]);
+});
+
+test('REFUSE (icons): a failed or thrown logo fetch plans the initial, never an image', async () => {
+  assert.deepEqual(
+    await planIconMark(LOGO_URL, 'salt + sage', fakeFetch(PNG_BYTES, { 'content-type': 'image/png' }, 500).impl),
+    { kind: 'initial', initial: 'S' },
+  );
+  // Test double: a network failure.
+  const throwing = (async () => {
+    throw new TypeError('fetch failed');
+  }) as typeof fetch;
+  assert.deepEqual(await planIconMark(LOGO_URL, 'Motel Saturn', throwing), { kind: 'initial', initial: 'M' });
+});
+
+test('REFUSE (icons): a wordmark with no usable name falls back to the plain disc, not the image', async () => {
+  const impl = fakeFetch(KIT_WORDMARK, { 'content-type': 'image/svg+xml' }).impl;
+  assert.deepEqual(await planIconMark(LOGO_URL, '', impl), { kind: 'placeholder' });
+  assert.deepEqual(await planIconMark(LOGO_URL, '+ + +', impl), { kind: 'placeholder' });
+});
+
+test('ALLOW (icons): PNG and drawn SVG logos are still drawn as images', async () => {
+  const png = await planIconMark(LOGO_URL, 'Doug', fakeFetch(PNG_BYTES, { 'content-type': 'image/png' }).impl);
+  assert.deepEqual(png, { kind: 'image', src: `data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}` });
+  const svg = await planIconMark(LOGO_URL, 'Doug', fakeFetch(PATH_LOGO, { 'content-type': 'image/svg+xml' }).impl);
+  assert.deepEqual(svg, {
+    kind: 'image',
+    src: `data:image/svg+xml;base64,${Buffer.from(PATH_LOGO, 'utf8').toString('base64')}`,
+  });
+});
+
+test('ALLOW (icons): a site with no logo keeps the disc and fetches nothing', async () => {
+  const { impl, calls } = fakeFetch(PNG_BYTES, {});
+  assert.deepEqual(await planIconMark('', 'Urbanapparel', impl), { kind: 'placeholder' });
+  assert.deepEqual(calls, []);
+});
+
+test('siteInitial: first letter or digit, upper-cased, astral-safe', () => {
+  assert.equal(siteInitial('the Old Mill'), 'T');
+  assert.equal(siteInitial('  "salt + sage"'), 'S');
+  assert.equal(siteInitial('7th Street'), '7');
+  assert.equal(siteInitial('\u{1F986} duck'), 'D');
+  assert.equal(siteInitial(undefined), '');
+  assert.equal(siteInitial('***'), '');
 });
