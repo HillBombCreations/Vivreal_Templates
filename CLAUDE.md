@@ -22,6 +22,10 @@ npm test             # `tsc --noEmit` FIRST, then the node test runner over THRE
 npm run check:free-year             # NOT in `npm test`: reads the npm registry.
                                     # Runs weekly in CI. See "The free-year sentence".
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
+node scripts/isr-build-check.mjs     # NOT in npm test (a full build, minutes). Builds against a
+                                     # fixture Client API on 127.0.0.1 and checks the route table
+                                     # and real cache headers. --gate-off checks SITE_RENDER_MODE unset.
+                                     # Run it on ANY change to [slug], [slug]/[itemId] or the layout.
 ```
 
 ### `npm test` runs `tsc --noEmit` first, and that is load-bearing
@@ -283,6 +287,7 @@ cannot tell those two audiences apart, so that case is on you (see `H36`).
 ### Analytics — Two Distinct Components
 
 - **`SiteAnalytics`** (server, in `<head>`): emits the customer's OWN third-party tag from `siteData.analytics` `{ provider: 'google_analytics' | 'plausible' | 'fathom', trackingId }`. Provider IDs are validated fail-closed (GA4 id is interpolated into an inline script). Absent config ⇒ renders nothing
+- **A customer site that connected a Google tag asks first** (owner ideas 2026-10-29, `lib/adsTag.ts`). `analytics.consentMode: true` with a valid GA id, or any valid `adsTagId` (`^AW-[0-9]{6,12}$`), turns `<SiteConsent>` on for that site in the renderer's `CONSENT_COPY` words, and then NOTHING Google loads before Accept: the head GA tag is dropped and the controller injects GA and the Ads config on Accept. Vivreal's own pieces (Clarity, `vr_attr`, `cookie_consent_*`) never run there (`ConsentOptions.ownSite`). Ads conversions fire from `recordSiteGoal` only after Accept, only for ticked results, never under GPC. Every other customer site is unchanged
 - **`SiteBeacon`** (client): Vivreal's first-party cookieless page-view beacon → `collect.vivreal.io/e` via `sendBeacon` (keepalive-fetch fallback). Fires only when `SITE_ID` is set and ≠ `'preview'`; every failure is swallowed — analytics must never break the site
 
 ### Config-Driven Extras
@@ -293,9 +298,19 @@ cannot tell those two audiences apart, so that case is on you (see `H36`).
 
 ---
 
+## Booking, the cart and preview (owner ideas 2026-10-29)
+
+- **Beacon** (`lib/siteEvents.ts`): a landing with `gclid`, `gbraid` or `wbraid` sends `a:1`, never the id; campaign tags ride as `u`; the path is always cut at `?`. Link taps (`k:'lt'`) and results (`k:'gl'`, `recordSiteGoal`) go through the page view's own gate. The contact form's success is NOT recorded: the renderer has no form-success callback.
+- **`/book`** is a fixed, always-dynamic route. Booking is on only when Client serves a top-level `booking` subset (`lib/api/siteData/booking.ts`; `getSiteData` copies top-level fields by name, so a new one needs a reader there). Booking off: the owner's own `book` page renders through `[slug]`, else 404. `/booking/manage?t=` is the cancel link; the token is taken off the address and only ever POSTed.
+- **`/api/booking/*`** forward to Client through `lib/booking/bookingProxy.ts`: 4 KB cap, field allowlist, honeypot never forwarded, the visitor's address forwarded (Client rate-limits per visitor), only the stable `errorCode` back to the browser.
+- **Reserved page names**: every top-level entry in `src/app` must be in the renderer's `RESERVED_PAGE_SLUGS`; `lib/booking/bookPage.test.ts` fails otherwise. Adding a top-level route means a renderer change first.
+- **Inner and item pages are ISR like the home page.** `[slug]` reads `searchParams` only when `pageReadsQuery(page)` says the page can use it; `[slug]/[itemId]` lists collection items in `generateStaticParams` plus a sentinel that bails. Both rules exist so the build writes NO `dynamicRoutes` fallback (an unlisted address then renders dynamic, never 500). Pages and items added after a build stay dynamic until the next fleet build. `scripts/isr-build-check.mjs` proves it.
+- **Preview** (`lib/previewGuard.ts`): enable lands on a `vr_pv` nonce, draft-mode links keep it, and an inline backstop reloads a non-draft page once when the `vr_pv_on` marker is set. `/api/preview/disable` ends it.
+- **Cart settings** (`lib/cart/cartSettings.ts`): `siteDetails.values.cart`, read defensively, absent means today's cart. The cart asks; Client decides at checkout. The checkout body never carries a fee.
+
 ## Adding New Pages
 
-Pages are Studio-authored, not hardcoded: create the page config in the portal and `[slug]/page.tsx` renders it — nav, metadata, and OG image come for free. Only touch code for a genuinely new page **format**: add it to the renderer's `composePage()` and to `COMPOSE_FORMATS` in `src/app/[slug]/page.tsx`.
+Pages are Studio-authored, not hardcoded: create the page config in the portal and `[slug]/page.tsx` renders it — nav, metadata, and OG image come for free. Only touch code for a genuinely new page **format**: add it to the renderer's `composePage()` and to `COMPOSE_FORMATS` in `src/app/[slug]/page.tsx` (and to the plain delegation chain beside `standard` when it composes like one, as `links` does). If the format can use the address query, `pageReadsQuery` must say so, or its pages will be cached unfiltered.
 
 ---
 
