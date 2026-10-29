@@ -150,10 +150,10 @@ export function checkResponses(reads, { gateOn }) {
     ? ['/shop', '/checkoutsuccess?session_id=cs_test_abc', '/book', '/blog/6a0000000000000000000d02']
     : ['/about', '/links', '/blog/first-loaf', '/shop'];
   // The target is the HOME page's behaviour (plan 3.8, D43): a cached HIT with
-  // the same s-maxage the home page is served with. (Locally `next start`
-  // serves s-maxage=60 for `/` as well even though the manifest records 300;
-  // the deployed home page measures 300. Parity is what this branch changes,
-  // and the manifest half above pins the 300.)
+  // the same s-maxage the home page is served with. (Measured 2026-10-29: a
+  // fresh worktree served 300 for `/` and every cached inner page; one reused
+  // checkout served 60 for `/` and the inner pages alike, cause not found.
+  // Parity with `/` is the claim; the manifest half above pins the 300.)
   const home = cacheVerdict(byPath.get('/')?.second.headers ?? {});
   if (gateOn && (!home.hit || !home.sMaxage)) failures.push('/ is not a cached HIT, so there is no home behaviour to match');
   for (const p of cached) {
