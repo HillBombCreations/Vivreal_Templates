@@ -1,12 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   buildOgImageUrl,
   buildOgItemImageUrl,
+  iconFallbackMark,
   isLightColor,
   isTextWordmarkSvg,
   MAX_OG_LOGO_BYTES,
+  OG_LOGO_MEDIA_HOSTS,
   planIconMark,
+  renderWithFallback,
   planOgItemCard,
   resolveOgLogo,
   resolvePageOgHeading,
@@ -168,14 +172,26 @@ const LOGO_URL = 'https://media.vivreal.io/pod_01/logo?Signature=abc';
 const BOM = String.fromCharCode(0xfeff);
 const NEWLINE = String.fromCharCode(10);
 
-function fakeFetch(body: BodyInit, headers: Record<string, string>, status = 200) {
+function fakeFetch(body: BodyInit | (() => BodyInit), headers: Record<string, string>, status = 200) {
   const calls: string[] = [];
+  const inits: Array<RequestInit | undefined> = [];
   // Test double: only the call shape resolveOgLogo uses.
-  const impl = (async (input: string | URL | Request) => {
+  const impl = (async (input: string | URL | Request, init?: RequestInit) => {
     calls.push(String(input));
-    return new Response(body, { status, headers });
+    inits.push(init);
+    return new Response(typeof body === 'function' ? body() : body, { status, headers });
   }) as typeof fetch;
-  return { impl, calls };
+  return { impl, calls, inits };
+}
+
+/** A body that sends two bytes, then breaks, as a stalled or reset read does. */
+function breakingBody(): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([0x89, 0x50]));
+      controller.error(new DOMException('The operation was aborted due to timeout', 'TimeoutError'));
+    },
+  });
 }
 
 test('REFUSE: the kit wordmark SVG plans the site name, with no image source', async () => {
@@ -313,4 +329,147 @@ test('siteInitial: first letter or digit, upper-cased, astral-safe', () => {
   assert.equal(siteInitial('\u{1F986} duck'), 'D');
   assert.equal(siteInitial(undefined), '');
   assert.equal(siteInitial('***'), '');
+});
+
+// Review of #220 at eff402b. Each check below must hold for the card AND the
+// icons, because both decide through resolveOgLogo.
+
+/** The plan, or what the call threw, so a rejection fails the assertion itself. */
+async function settle<T>(p: Promise<T>): Promise<T | { threw: string }> {
+  return p.catch((err: unknown) => ({ threw: String(err) }));
+}
+
+test('B1 REFUSE: a body that breaks mid-read plans the name (card) and the initial (icons), never throws', async () => {
+  const card = await settle(resolveOgLogo(LOGO_URL, fakeFetch(breakingBody, { 'content-type': 'image/png' }).impl));
+  assert.deepEqual(card, { kind: 'name' });
+  const icon = await settle(
+    planIconMark(LOGO_URL, 'Indigo Studios PH', fakeFetch(breakingBody, { 'content-type': 'image/png' }).impl),
+  );
+  assert.deepEqual(icon, { kind: 'initial', initial: 'I' });
+});
+
+test('B1 ALLOW: a body that reads in full is still drawn', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(() => new Blob([PNG_BYTES]), { 'content-type': 'image/png' }).impl);
+  assert.equal(plan.kind, 'image');
+});
+
+const UNSIZED_SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0h10v10H0z"/></svg>';
+const SIZED_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><path d="M0 0h10v10H0z"/></svg>';
+
+test('B2 REFUSE: an SVG with no viewBox and no width plus height plans the name and the initial', async () => {
+  const svg = { 'content-type': 'image/svg+xml' };
+  assert.deepEqual(await resolveOgLogo(LOGO_URL, fakeFetch(UNSIZED_SVG, svg).impl), { kind: 'name' });
+  const widthOnly = UNSIZED_SVG.replace('<svg ', '<svg width="10" ');
+  assert.deepEqual(await resolveOgLogo(LOGO_URL, fakeFetch(widthOnly, svg).impl), { kind: 'name' });
+  assert.deepEqual(await planIconMark(LOGO_URL, 'Blackbird Hall', fakeFetch(UNSIZED_SVG, svg).impl), {
+    kind: 'initial',
+    initial: 'B',
+  });
+});
+
+test('B2 ALLOW: an SVG sized by width and height alone is still drawn', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(SIZED_SVG, { 'content-type': 'image/svg+xml' }).impl);
+  assert.equal(plan.kind, 'image');
+});
+
+function pngResponse(body: BodyInit, headers: Record<string, string> = {}): Response {
+  return new Response(body, { status: 200, headers: { 'content-type': 'image/png', ...headers } });
+}
+
+test('B2 REFUSE: a render that breaks (stream error or throw) is re-rendered from the fallback plan', async () => {
+  const seen: string[] = [];
+  const res = await settle(
+    renderWithFallback(
+      (plan: string) => {
+        seen.push(plan);
+        return plan === 'logo' ? pngResponse(breakingBody()) : pngResponse('fallback-png', { 'cache-control': 'x' });
+      },
+      'logo',
+      'name',
+    ),
+  );
+  assert.ok(res instanceof Response, `renderWithFallback threw: ${JSON.stringify(res)}`);
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'fallback-png');
+  assert.equal(res.headers.get('cache-control'), 'x');
+  assert.deepEqual(seen, ['logo', 'name']);
+
+  const thrown = await settle(
+    renderWithFallback(
+      (plan: string) => {
+        if (plan === 'logo') throw new Error('Failed to parse SVG image: missing "viewBox"');
+        return pngResponse('fallback-png');
+      },
+      'logo',
+      'name',
+    ),
+  );
+  assert.ok(thrown instanceof Response && (await thrown.text()) === 'fallback-png');
+});
+
+test('B2 ALLOW: a render that succeeds is returned whole, with its own headers, rendered once', async () => {
+  const seen: string[] = [];
+  const res = await renderWithFallback(
+    async (plan: string) => {
+      seen.push(plan);
+      return pngResponse('logo-png', { 'cache-control': 'public, max-age=3600' });
+    },
+    'logo',
+    'name',
+  );
+  assert.equal(await res.text(), 'logo-png');
+  assert.equal(res.headers.get('content-type'), 'image/png');
+  assert.equal(res.headers.get('cache-control'), 'public, max-age=3600');
+  assert.deepEqual(seen, ['logo']);
+});
+
+test('B2: an icon re-renders with its initial, or the disc when there is none', () => {
+  assert.deepEqual(iconFallbackMark('salt + sage'), { kind: 'initial', initial: 'S' });
+  assert.deepEqual(iconFallbackMark(''), { kind: 'placeholder' });
+});
+
+test('B3 REFUSE: a logo off the media hosts is never fetched (card and icons)', async () => {
+  const offHost = [
+    'http://127.0.0.1/x.png',
+    'http://169.254.169.254/latest/meta-data',
+    'https://evil.example/x.png',
+    'http://media.vivreal.io/x.png',
+    'https://media.vivreal.io.evil.example/x.png',
+    'https://localhost/x.png',
+  ];
+  for (const url of offHost) {
+    const card = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
+    assert.deepEqual(await resolveOgLogo(url, card.impl), { kind: 'name' }, url);
+    assert.deepEqual(card.calls, [], `fetched ${url}`);
+    const icon = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
+    assert.deepEqual(await planIconMark(url, 'Doug', icon.impl), { kind: 'initial', initial: 'D' }, url);
+    assert.deepEqual(icon.calls, [], `icon fetched ${url}`);
+  }
+});
+
+test('B3 REFUSE: the logo fetch refuses redirects and is time-bounded', async () => {
+  const { impl, inits } = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
+  await resolveOgLogo(LOGO_URL, impl);
+  assert.equal(inits.length, 1);
+  assert.equal(inits[0]?.redirect, 'error');
+  assert.ok(inits[0]?.signal instanceof AbortSignal);
+});
+
+test('B3 ALLOW: both media hosts are fetched once', async () => {
+  for (const url of ['https://media.vivreal.io/a.png', 'https://client.vivreal.io/media/a.png']) {
+    const { impl, calls } = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
+    assert.equal((await resolveOgLogo(url, impl)).kind, 'image', url);
+    assert.deepEqual(calls, [url]);
+  }
+});
+
+test('parity: the media hosts and size cap match the /brand/logo proxy in stableImage.ts', () => {
+  const stable = fs.readFileSync(new URL('../media/stableImage.ts', import.meta.url), 'utf8');
+  const hosts = /const MEDIA_HOSTS[^=]*=\s*new Set\(\[([^\]]*)\]\)/.exec(stable)?.[1];
+  assert.ok(hosts, 'MEDIA_HOSTS not found in stableImage.ts');
+  const parsed = [...hosts.matchAll(/'([^']+)'/g)].map((m) => m[1]).sort();
+  assert.ok(parsed.length > 0);
+  assert.deepEqual([...OG_LOGO_MEDIA_HOSTS].sort(), parsed);
+  assert.match(stable, /export const MAX_PROXIED_IMAGE_BYTES = 4 \* 1024 \* 1024;/);
+  assert.equal(MAX_OG_LOGO_BYTES, 4 * 1024 * 1024);
 });

@@ -31,3 +31,10 @@ test('ALLOW: a planned `name` draws the site name in the card font', () => {
   assert.match(source, /loadDisplayFont\(`\$\{heading\}\$\{showSiteName \? siteName : ''\}`\)/);
   assert.match(source, /showSiteName && \(\s*<div[^>]*>\s*\{siteName\}/);
 });
+
+test('REFUSE: a render the logo breaks is redrawn with the site name, not answered broken', () => {
+  // Review of #220, B2: renderWithFallback is tested by being called in
+  // ogCard.test.ts; this pins that the card goes through it and returns it.
+  assert.match(source, /return renderWithFallback\(renderCard, resolvedLogo, \{ kind: 'name' \}\);/);
+  assert.doesNotMatch(source, /^ {2}return new ImageResponse\(/m);
+});

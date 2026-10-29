@@ -154,8 +154,8 @@ export type OgLogoPlan = { kind: 'image'; src: string } | { kind: 'name' };
 /**
  * Same ceiling the stable logo proxy applies (`MAX_PROXIED_IMAGE_BYTES` in
  * `@/lib/media/stableImage`, not imported so this file stays loadable by
- * `node --test`). A logo past it is drawn as the site name rather than base64
- * encoded into the render.
+ * `node --test`; `ogCard.test.ts` pins the two equal). A logo past it is drawn
+ * as the site name rather than base64 encoded into the render.
  */
 export const MAX_OG_LOGO_BYTES = 4 * 1024 * 1024;
 
@@ -205,42 +205,138 @@ function sniffRasterMime(bytes: Uint8Array): string | null {
 }
 
 /**
+ * Satori sizes an embedded SVG from its root `viewBox`, else from its root
+ * `width` and `height`, and throws mid-render when it has neither.
+ */
+function svgIsSizable(body: string): boolean {
+  const root = /<svg[\s>][^>]*>?/i.exec(body)?.[0] ?? '';
+  return /\sviewBox\s*=/i.test(root) || (/\swidth\s*=/i.test(root) && /\sheight\s*=/i.test(root));
+}
+
+/**
+ * The hosts VR_Client_API signs media on: the same fence `/brand/logo` puts
+ * on this same logo (`MEDIA_HOSTS` in `@/lib/media/stableImage`, restated so
+ * this file stays loadable by `node --test`; `ogCard.test.ts` pins the two
+ * equal). Before this fetch moved out of Satori, Satori refused loopback,
+ * private and link-local addresses itself; the host fence replaces that.
+ */
+export const OG_LOGO_MEDIA_HOSTS: ReadonlySet<string> = new Set(['media.vivreal.io', 'client.vivreal.io']);
+
+function isOgLogoMediaUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && OG_LOGO_MEDIA_HOSTS.has(url.hostname);
+  } catch {
+    // Not a URL: nothing to fetch.
+    return false;
+  }
+}
+
+/**
+ * One line per fallback that is a failure (not a plain wordmark), so a fleet
+ * of names or initials after a promote is diagnosable. Host only: the full
+ * URL carries a CloudFront signature and is never logged.
+ */
+function logLogoFallback(logoSrc: string, reason: string): void {
+  let host = 'invalid-url';
+  try {
+    host = new URL(logoSrc).hostname;
+  } catch {
+    // Keep 'invalid-url': the reason line is still worth having.
+  }
+  console.warn(`[og-logo] drawing the name instead of the logo: host=${host} reason=${reason}`);
+}
+
+/**
  * Decide the card's top slot from the logo's own bytes.
  *
- * Fail-closed: anything that is not a verified drawable image (no URL, a
- * failed or slow fetch, an oversized body, an unknown format, a text
- * wordmark) plans `name`, so an SVG is only ever handed to the image element
- * after it has been read and found to hold no text. The signed URL is never
- * logged: it carries a CloudFront signature.
+ * Fail-closed: anything that is not a verified drawable image (no URL, a URL
+ * off the media hosts, a redirect, a failed, slow or broken fetch or body
+ * read, an oversized body, an unknown format, an SVG Satori cannot size, a
+ * text wordmark) plans `name`, so an SVG is only ever handed to the image
+ * element after it has been read and found to hold no text. This never
+ * throws.
  */
 export async function resolveOgLogo(
   logoSrc: string,
   fetchImpl: typeof fetch = fetch,
 ): Promise<OgLogoPlan> {
   if (!logoSrc.startsWith('http')) return { kind: 'name' };
-
-  let res: Response;
-  try {
-    res = await fetchImpl(logoSrc, { signal: AbortSignal.timeout(OG_LOGO_FETCH_TIMEOUT_MS) });
-  } catch {
-    // Network error or timeout. The card still renders, with the site name in
-    // the top slot; before this, Satori's own fetch failure left the slot blank.
+  if (!isOgLogoMediaUrl(logoSrc)) {
+    logLogoFallback(logoSrc, 'not-a-media-host');
     return { kind: 'name' };
   }
-  if (!res.ok) return { kind: 'name' };
 
-  const length = Number(res.headers.get('content-length'));
-  if (Number.isFinite(length) && length > MAX_OG_LOGO_BYTES) return { kind: 'name' };
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_OG_LOGO_BYTES) return { kind: 'name' };
+  try {
+    // `redirect: 'error'`: a redirect could leave the media hosts. The timeout
+    // covers the body read as well as the headers.
+    const res = await fetchImpl(logoSrc, {
+      redirect: 'error',
+      signal: AbortSignal.timeout(OG_LOGO_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      logLogoFallback(logoSrc, `status-${res.status}`);
+      return { kind: 'name' };
+    }
 
-  const contentType = res.headers.get('content-type');
-  const raster = sniffRasterMime(bytes);
-  if (raster) return { kind: 'image', src: `data:${raster};base64,${Buffer.from(bytes).toString('base64')}` };
+    const length = Number(res.headers.get('content-length'));
+    if (Number.isFinite(length) && length > MAX_OG_LOGO_BYTES) {
+      logLogoFallback(logoSrc, 'too-large');
+      return { kind: 'name' };
+    }
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_OG_LOGO_BYTES) {
+      logLogoFallback(logoSrc, bytes.byteLength === 0 ? 'empty' : 'too-large');
+      return { kind: 'name' };
+    }
 
-  const text = new TextDecoder().decode(bytes);
-  if (!looksLikeSvg(contentType, text) || isTextWordmarkSvg(contentType, text)) return { kind: 'name' };
-  return { kind: 'image', src: `data:image/svg+xml;base64,${Buffer.from(bytes).toString('base64')}` };
+    const contentType = res.headers.get('content-type');
+    const raster = sniffRasterMime(bytes);
+    if (raster) return { kind: 'image', src: `data:${raster};base64,${Buffer.from(bytes).toString('base64')}` };
+
+    const text = new TextDecoder().decode(bytes);
+    if (!looksLikeSvg(contentType, text)) {
+      logLogoFallback(logoSrc, 'unknown-format');
+      return { kind: 'name' };
+    }
+    // A wordmark is the expected case for kit sites, not a failure: no log.
+    if (isTextWordmarkSvg(contentType, text)) return { kind: 'name' };
+    if (!svgIsSizable(text)) {
+      logLogoFallback(logoSrc, 'svg-without-size');
+      return { kind: 'name' };
+    }
+    return { kind: 'image', src: `data:image/svg+xml;base64,${Buffer.from(bytes).toString('base64')}` };
+  } catch (err) {
+    // Network error, timeout, refused redirect, or a body that broke mid-read.
+    // The card still renders, with the site name in the top slot.
+    logLogoFallback(logoSrc, err instanceof Error ? err.name : 'fetch-failed');
+    return { kind: 'name' };
+  }
+}
+
+/**
+ * Render an image, and if the render fails, render once more from a fallback
+ * plan. Satori throws on a logo it cannot parse (for example a truncated
+ * PNG), and since the logo is passed as a `data:` URI that throw is no longer
+ * swallowed by Satori's own image loader. The body is buffered so the throw
+ * happens here, not halfway down a 200 the CDN would keep for an hour. The
+ * first render's status and headers are kept.
+ */
+export async function renderWithFallback<P>(
+  render: (plan: P) => Response | Promise<Response>,
+  plan: P,
+  fallback: P,
+): Promise<Response> {
+  try {
+    const first = await render(plan);
+    const body = await first.arrayBuffer();
+    return new Response(body, { status: first.status, headers: first.headers });
+  } catch (err) {
+    console.warn(`[og-logo] render failed, drawing the fallback: ${err instanceof Error ? err.message : 'unknown'}`);
+    const second = await render(fallback);
+    const body = await second.arrayBuffer();
+    return new Response(body, { status: second.status, headers: second.headers });
+  }
 }
 
 /**
@@ -276,6 +372,14 @@ export async function planIconMark(
   if (!logoSrc.startsWith('http')) return { kind: 'placeholder' };
   const logo = await resolveOgLogo(logoSrc, fetchImpl);
   if (logo.kind === 'image') return logo;
+  return iconFallbackMark(siteName);
+}
+
+/**
+ * The icon mark when the logo cannot be drawn: also what an icon re-renders
+ * with when its logo made the render itself fail (`renderWithFallback`).
+ */
+export function iconFallbackMark(siteName: string | undefined | null): OgIconMarkPlan {
   const initial = siteInitial(siteName);
   return initial ? { kind: 'initial', initial } : { kind: 'placeholder' };
 }

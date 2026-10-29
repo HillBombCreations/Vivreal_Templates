@@ -22,10 +22,18 @@ for (const file of ICONS) {
   });
 
   test(`ALLOW (${file}): the mark is planned by the shared decision, and an initial draws in Outfit`, () => {
-    assert.match(source, /planIconMark\(logoSrc, siteData\?\.businessInfo\?\.name \|\| siteData\?\.name\)/);
+    assert.match(source, /const siteName = siteData\?\.businessInfo\?\.name \|\| siteData\?\.name/);
+    assert.match(source, /planIconMark\(logoSrc, siteName\)/);
     assert.match(source, /from '@\/lib\/og\/ogCard'/);
     assert.match(source, /loadDisplayFont\(mark\.initial\)/);
     assert.match(source, /\{mark\.initial\}/);
     assert.match(source, /fonts: \[\{ name: 'Outfit', data: fontData/);
+  });
+
+  test(`REFUSE (${file}): a render the logo breaks is redrawn with the initial, not answered broken`, () => {
+    // Review of #220, B2: renderWithFallback is tested by being called in
+    // ogCard.test.ts; this pins that the icon goes through it and returns it.
+    assert.match(source, /return renderWithFallback\(renderIcon, plannedMark, iconFallbackMark\(siteName\)\)/);
+    assert.doesNotMatch(source, /^ {2}return new ImageResponse\(/m);
   });
 }
