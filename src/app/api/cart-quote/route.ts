@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets } from "@/lib/log/redact";
 import { isCartQuoteRequestLine } from "@/lib/cartQuote";
+import { cleanZip } from "@/lib/cart/cartSettings";
+import { checkoutSiteId } from "@/lib/checkoutRequest";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -34,6 +36,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid cart line item format" }, { status: 400, headers: NO_STORE });
   }
 
+  // Owner ideas T15 (3.10): a delivery ask carries only `{ kind: 'delivery',
+  // zip }` and this deployment's own site id; any fee the browser sends is
+  // never read. Upstream answers `delivery` beside the lines.
+  const rawFulfilment = (body as { fulfilment?: { kind?: unknown; zip?: unknown } } | null)?.fulfilment;
+  const zip = rawFulfilment?.kind === "delivery" && typeof rawFulfilment.zip === "string" ? cleanZip(rawFulfilment.zip) : null;
+  const siteId = checkoutSiteId(process.env.SITE_ID);
+  const delivery = zip && siteId ? { siteId, fulfilment: { kind: "delivery", zip } } : {};
+
   const apiKey = process.env.API_KEY;
   const clientApiUrl = process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
 
@@ -43,6 +53,7 @@ export async function POST(request: NextRequest) {
       headers: { "Content-Type": "application/json", Authorization: apiKey ?? "" },
       body: JSON.stringify({
         cartLineItems: cartLineItems.map((l) => ({ price: l.price, quantity: l.quantity })),
+        ...delivery,
       }),
       cache: "no-store",
     });

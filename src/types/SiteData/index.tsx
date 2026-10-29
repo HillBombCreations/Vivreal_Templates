@@ -770,6 +770,13 @@ export interface SiteData {
      */
     booking?: import('@/lib/api/siteData/booking').SiteBookingSubset;
     /**
+     * Owner ideas 2026-10-29 (3.9, D51): the cart's words and switches,
+     * `siteDetails.values.cart`, written by VR_Secure_API's `cartSettingsRule`.
+     * Read ONLY through `readCartSettings` (lib/cart/cartSettings.ts), which
+     * treats every field as untrusted and falls back to today's cart.
+     */
+    cart?: unknown;
+    /**
      * Migration lifecycle state (SEO demo-safety). `'demo'` = a pre-cutover
      * outreach/demo deployment that must NOT be indexed — it is a near-duplicate
      * of the prospect's real site, so indexing it would create live
