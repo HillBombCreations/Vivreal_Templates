@@ -201,3 +201,8 @@ export function sendSiteEventHere(event: SiteEvent): void {
   if (typeof window === 'undefined') return;
   sendSiteEvent(event, { hostname: window.location.hostname, path: window.location.pathname });
 }
+
+/** The renderer's `onLinkTap`: one tap on a link page button (D32). */
+export function recordLinkTap(linkId: string): void {
+  sendSiteEventHere({ k: 'lt', l: linkId });
+}

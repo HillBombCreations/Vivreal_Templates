@@ -92,3 +92,18 @@ test('REFUSE: <SiteBeacon> builds its page view through buildPageViewPayload, ne
   assert.match(source, /configureSiteEvents\(/);
   assert.doesNotMatch(source, /p:\s*path/, 'the old raw path field is gone');
 });
+
+test('ALLOW: recordLinkTap sends one lt beacon at the current page', async () => {
+  const { recordLinkTap } = await import('./siteEvents.ts');
+  const sent: string[] = [];
+  configureSiteEvents({ siteId: 'site1', endpoint: 'e', transport: (_e, p) => sent.push(p) });
+  const g = globalThis as unknown as { window?: unknown };
+  const before = g.window;
+  g.window = { location: { hostname: 'shop.example', pathname: '/links' } };
+  try {
+    recordLinkTap('lnk0001');
+  } finally {
+    g.window = before;
+  }
+  assert.deepEqual(JSON.parse(sent[0]), { s: 'site1', h: 'shop.example', p: '/links', k: 'lt', l: 'lnk0001' });
+});

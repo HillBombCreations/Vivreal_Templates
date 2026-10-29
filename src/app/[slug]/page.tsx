@@ -277,6 +277,14 @@ const COMPOSE_FORMATS = new Set<string>([
   // is worse than a 404: a search that always returns everything looks like it
   // worked. The two changes are one change.
   "lookup",
+  // links → the LINK PAGE (owner ideas 2026-10-29, F5, D30): a photo, a name
+  // and a stack of buttons for an Instagram or TikTok bio. The renderer
+  // (1.93.0) composes it from `link-profile`, `link-stack` and `social-row`
+  // blocks and resolves every link at render time; a tap calls the context's
+  // `onLinkTap` (Providers sends the beacon). Route recognition is the only
+  // thing it needs here, and per the notes above omitting it 404s every
+  // link page (the /shop lesson).
+  "links",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -570,7 +578,10 @@ export default async function DynamicPage({
         // lookup (help-site kit 5.6) — the search RESULTS page. It composes
         // exactly like `collection-list`; the only thing that makes it a
         // results page is the `lookupQuery` threaded through below.
-        format === "lookup"
+        format === "lookup" ||
+        // links (owner ideas F5) — the link page. No storefront, no query:
+        // the same delegation as `standard`.
+        format === "links"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page
