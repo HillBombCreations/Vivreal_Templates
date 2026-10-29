@@ -242,3 +242,40 @@ export async function resolveOgLogo(
   if (!looksLikeSvg(contentType, text) || isTextWordmarkSvg(contentType, text)) return { kind: 'name' };
   return { kind: 'image', src: `data:image/svg+xml;base64,${Buffer.from(bytes).toString('base64')}` };
 }
+
+/**
+ * What the favicon and Apple touch icon (`src/app/icon.tsx`,
+ * `src/app/apple-icon.tsx`) draw inside their brand-colour tile.
+ *
+ * `image`       a drawable logo, as `resolveOgLogo` decided it.
+ * `initial`     the logo is a text wordmark or could not be read: the site's
+ *               first letter or digit, drawn as Satori text in Outfit. A name
+ *               will not fit in 32px, so the icons use the initial, not the name.
+ * `placeholder` no logo configured, or no usable initial: the plain disc the
+ *               icons have always drawn for a logo-less site.
+ */
+export type OgIconMarkPlan =
+  | { kind: 'image'; src: string }
+  | { kind: 'initial'; initial: string }
+  | { kind: 'placeholder' };
+
+/** The first letter or digit of a name, upper-cased; '' when there is none. */
+export function siteInitial(name: string | undefined | null): string {
+  const first = Array.from(name ?? '').find((ch) => /[\p{L}\p{N}]/u.test(ch));
+  return first ? first.toLocaleUpperCase() : '';
+}
+
+/** Decide an icon's mark. Same logo decision as the share card, one place. */
+export async function planIconMark(
+  logoSrc: string,
+  siteName: string | undefined | null,
+  fetchImpl: typeof fetch = fetch,
+): Promise<OgIconMarkPlan> {
+  // No logo at all keeps the existing disc rather than switching every
+  // logo-less site's favicon to a letter.
+  if (!logoSrc.startsWith('http')) return { kind: 'placeholder' };
+  const logo = await resolveOgLogo(logoSrc, fetchImpl);
+  if (logo.kind === 'image') return logo;
+  const initial = siteInitial(siteName);
+  return initial ? { kind: 'initial', initial } : { kind: 'placeholder' };
+}

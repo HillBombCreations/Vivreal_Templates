@@ -1,6 +1,8 @@
 import { ImageResponse } from 'next/og'
 import { getSiteData } from '@/lib/api/siteData'
 import { enforceDynamicUnlessIsr } from '@/lib/renderGate'
+import { isLightColor, planIconMark } from '@/lib/og/ogCard'
+import { loadDisplayFont } from '@/lib/og/ogCardRender'
 
 // ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -24,7 +26,10 @@ export default async function Icon() {
 
   const primaryColor = siteData?.primary || '#333333'
   const logoSrc = siteData?.logo?.currentFile?.source || ''
-  const hasAbsoluteLogo = logoSrc.startsWith('http')
+  // Never hand the logo URL to <img>: a text wordmark SVG would be drawn with
+  // host fonts the server lacks (boxes). Same decision as the share card.
+  const mark = await planIconMark(logoSrc, siteData?.businessInfo?.name || siteData?.name)
+  const fontData = mark.kind === 'initial' ? await loadDisplayFont(mark.initial) : null
 
   return new ImageResponse(
     (
@@ -40,15 +45,28 @@ export default async function Icon() {
           overflow: 'hidden',
         }}
       >
-        {hasAbsoluteLogo ? (
+        {mark.kind === 'image' ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
-            src={logoSrc}
+            src={mark.src}
             alt="Site Logo"
             width="60%"
             height="60%"
             style={{ objectFit: 'contain' }}
           />
+        ) : mark.kind === 'initial' ? (
+          <div
+            style={{
+              display: 'flex',
+              fontSize: 20,
+              fontWeight: 700,
+              lineHeight: 1,
+              color: isLightColor(primaryColor) ? '#111111' : '#ffffff',
+              fontFamily: fontData ? 'Outfit' : 'sans-serif',
+            }}
+          >
+            {mark.initial}
+          </div>
         ) : (
           <div
             style={{
@@ -61,6 +79,11 @@ export default async function Icon() {
         )}
       </div>
     ),
-    { ...size }
+    {
+      ...size,
+      ...(fontData
+        ? { fonts: [{ name: 'Outfit', data: fontData, style: 'normal' as const, weight: 700 as const }] }
+        : {}),
+    }
   )
 }
