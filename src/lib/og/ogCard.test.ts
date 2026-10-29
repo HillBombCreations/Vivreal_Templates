@@ -4,7 +4,10 @@ import {
   buildOgImageUrl,
   buildOgItemImageUrl,
   isLightColor,
+  isTextWordmarkSvg,
+  MAX_OG_LOGO_BYTES,
   planOgItemCard,
+  resolveOgLogo,
   resolvePageOgHeading,
 } from './ogCard.ts';
 
@@ -139,4 +142,120 @@ test('card text colour still flips on a light brand colour', () => {
   assert.equal(isLightColor('#0f172a'), false);
   assert.equal(isLightColor('not-a-colour'), false);
   assert.equal(isLightColor(''), false);
+});
+
+// ---------------------------------------------------------------------------
+// Share card logo: a text wordmark SVG is drawn as the site name, never as an
+// image. resvg draws an embedded SVG's <text> with host fonts, the hosting
+// compute has none of the wordmark families, and each glyph became a box.
+// ---------------------------------------------------------------------------
+
+/** Byte-for-byte the shape VR_Secure_API kitIdentity.js buildWordmark mints. */
+const KIT_WORDMARK =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="250" height="48">' +
+  '<text x="0" y="34" font-family="Archivo, sans-serif" font-weight="700" font-size="30" ' +
+  'letter-spacing="0.5" fill="#ffffff">Indigo Studios PH</text></svg>';
+const PATH_LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h10v10H0z" fill="#123"/></svg>';
+const MIXED_LOGO =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0h4v4H0z"/>' +
+  '<text x="5" y="8">Mill</text></svg>';
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+const JPEG_BYTES = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 16]);
+const LOGO_URL = 'https://media.vivreal.io/pod_01/logo?Signature=abc';
+const BOM = String.fromCharCode(0xfeff);
+const NEWLINE = String.fromCharCode(10);
+
+function fakeFetch(body: BodyInit, headers: Record<string, string>, status = 200) {
+  const calls: string[] = [];
+  // Test double: only the call shape resolveOgLogo uses.
+  const impl = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    return new Response(body, { status, headers });
+  }) as typeof fetch;
+  return { impl, calls };
+}
+
+test('REFUSE: the kit wordmark SVG plans the site name, with no image source', async () => {
+  const { impl, calls } = fakeFetch(KIT_WORDMARK, { 'content-type': 'image/svg+xml' });
+  const plan = await resolveOgLogo(LOGO_URL, impl);
+  assert.deepEqual(plan, { kind: 'name' });
+  assert.equal('src' in plan, false);
+  assert.deepEqual(calls, [LOGO_URL]);
+});
+
+test('REFUSE: a wordmark is caught with an XML prolog, upper case, a BOM, or no SVG content type', async () => {
+  const variants: Array<[string, Record<string, string>]> = [
+    [`<?xml version="1.0" encoding="UTF-8"?>${NEWLINE}${KIT_WORDMARK}`, { 'content-type': 'image/svg+xml' }],
+    [KIT_WORDMARK.replace('<text', '<TEXT').replace('</text>', '</TEXT>'), { 'content-type': 'image/svg+xml' }],
+    [KIT_WORDMARK, { 'content-type': 'image/svg+xml; charset=utf-8' }],
+    [KIT_WORDMARK, { 'content-type': 'application/octet-stream' }],
+    [`${BOM}<!-- kit -->${KIT_WORDMARK}`, {}],
+  ];
+  for (const [body, headers] of variants) {
+    const plan = await resolveOgLogo(LOGO_URL, fakeFetch(body, headers).impl);
+    assert.deepEqual(plan, { kind: 'name' }, `drew an image for: ${body.slice(0, 60)}`);
+  }
+});
+
+test('REFUSE: an SVG mixing paths and text still plans the site name', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(MIXED_LOGO, { 'content-type': 'image/svg+xml' }).impl);
+  assert.deepEqual(plan, { kind: 'name' });
+});
+
+test('REFUSE: no URL, a failed fetch, an empty, oversized or unknown body plan the site name', async () => {
+  assert.deepEqual(await resolveOgLogo('', fakeFetch(PNG_BYTES, {}).impl), { kind: 'name' });
+  assert.deepEqual(
+    await resolveOgLogo(LOGO_URL, fakeFetch(PNG_BYTES, { 'content-type': 'image/png' }, 403).impl),
+    { kind: 'name' },
+  );
+  // Test double: a network failure.
+  const throwing = (async () => {
+    throw new TypeError('fetch failed');
+  }) as typeof fetch;
+  assert.deepEqual(await resolveOgLogo(LOGO_URL, throwing), { kind: 'name' });
+  assert.deepEqual(await resolveOgLogo(LOGO_URL, fakeFetch(new Uint8Array(0), {}).impl), { kind: 'name' });
+  assert.deepEqual(
+    await resolveOgLogo(
+      LOGO_URL,
+      fakeFetch(PNG_BYTES, { 'content-type': 'image/png', 'content-length': String(MAX_OG_LOGO_BYTES + 1) }).impl,
+    ),
+    { kind: 'name' },
+  );
+  assert.deepEqual(
+    await resolveOgLogo(LOGO_URL, fakeFetch('<html>not a logo</html>', { 'content-type': 'text/html' }).impl),
+    { kind: 'name' },
+  );
+});
+
+test('ALLOW: a PNG logo is drawn as an image from the fetched bytes', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(PNG_BYTES, { 'content-type': 'image/png' }).impl);
+  assert.equal(plan.kind, 'image');
+  assert.equal(
+    plan.kind === 'image' && plan.src,
+    `data:image/png;base64,${Buffer.from(PNG_BYTES).toString('base64')}`,
+  );
+});
+
+test('ALLOW: a JPEG served with a generic content type is still drawn, typed by its bytes', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(JPEG_BYTES, { 'content-type': 'application/octet-stream' }).impl);
+  assert.ok(plan.kind === 'image' && plan.src.startsWith('data:image/jpeg;base64,'));
+});
+
+test('ALLOW: a drawn (path-only) SVG logo is drawn as an image, bytes unchanged', async () => {
+  const plan = await resolveOgLogo(LOGO_URL, fakeFetch(PATH_LOGO, { 'content-type': 'image/svg+xml' }).impl);
+  assert.equal(plan.kind, 'image');
+  assert.equal(
+    plan.kind === 'image' && plan.src,
+    `data:image/svg+xml;base64,${Buffer.from(PATH_LOGO, 'utf8').toString('base64')}`,
+  );
+});
+
+test('isTextWordmarkSvg: text SVGs true, drawn SVGs and non-SVG bodies false', () => {
+  assert.equal(isTextWordmarkSvg('image/svg+xml', KIT_WORDMARK), true);
+  assert.equal(isTextWordmarkSvg(null, KIT_WORDMARK), true);
+  assert.equal(isTextWordmarkSvg('image/svg+xml', PATH_LOGO), false);
+  // A <title> is not a <text>.
+  assert.equal(isTextWordmarkSvg('image/svg+xml', PATH_LOGO.replace('<path', '<title>Mill</title><path')), false);
+  assert.equal(isTextWordmarkSvg('text/html', '<html><text>x</text></html>'), false);
 });

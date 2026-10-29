@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { OG_CACHE_CONTROL, OG_SIZE, isLightColor } from './ogCard';
+import { OG_CACHE_CONTROL, OG_SIZE, isLightColor, resolveOgLogo } from './ogCard';
 import { proxyImage } from '@/lib/media/stableImage';
 
 /**
@@ -70,10 +70,16 @@ export async function renderBrandedOgCard({
   const textColor = light ? '#111111' : '#ffffff';
   const subColor = light ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.78)';
 
-  const hasLogo = logoSrc.startsWith('http');
   const showSiteName = !!siteName && siteName !== heading;
 
-  const fontData = await loadDisplayFont(`${heading}${showSiteName ? siteName : ''}`);
+  // The logo is read here, not handed to <img> as a URL: a text wordmark SVG
+  // would be rasterised with host fonts the server lacks (boxes), so it plans
+  // `name` and the site name is drawn in Outfit instead. See resolveOgLogo.
+  const [logo, fontData] = await Promise.all([
+    resolveOgLogo(logoSrc),
+    loadDisplayFont(`${heading}${showSiteName ? siteName : ''}`),
+  ]);
+  const hasLogo = logo.kind === 'image';
 
   return new ImageResponse(
     (
@@ -89,12 +95,12 @@ export async function renderBrandedOgCard({
           fontFamily: fontData ? 'Outfit' : 'sans-serif',
         }}
       >
-        {/* Top: logo when available, else the site name as a wordmark. */}
+        {/* Top: a drawable logo when available, else the site name as a wordmark. */}
         <div style={{ display: 'flex', alignItems: 'center' }}>
-          {hasLogo ? (
+          {logo.kind === 'image' ? (
             /* eslint-disable-next-line @next/next/no-img-element */
             <img
-              src={logoSrc}
+              src={logo.src}
               alt=""
               height={84}
               style={{ height: 84, maxWidth: 460, objectFit: 'contain' }}
