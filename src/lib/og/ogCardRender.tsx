@@ -1,5 +1,12 @@
 import { ImageResponse } from 'next/og';
-import { OG_CACHE_CONTROL, OG_SIZE, isLightColor, resolveOgLogo } from './ogCard';
+import {
+  OG_CACHE_CONTROL,
+  OG_SIZE,
+  isLightColor,
+  renderWithFallback,
+  resolveOgLogo,
+  type OgLogoPlan,
+} from './ogCard';
 import { proxyImage } from '@/lib/media/stableImage';
 
 /**
@@ -65,7 +72,7 @@ export async function renderBrandedOgCard({
   siteName: string;
   logoSrc: string;
   background: string;
-}): Promise<ImageResponse> {
+}): Promise<Response> {
   const light = isLightColor(background);
   const textColor = light ? '#111111' : '#ffffff';
   const subColor = light ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.78)';
@@ -75,72 +82,79 @@ export async function renderBrandedOgCard({
   // The logo is read here, not handed to <img> as a URL: a text wordmark SVG
   // would be rasterised with host fonts the server lacks (boxes), so it plans
   // `name` and the site name is drawn in Outfit instead. See resolveOgLogo.
-  const [logo, fontData] = await Promise.all([
+  const [resolvedLogo, fontData] = await Promise.all([
     resolveOgLogo(logoSrc),
     loadDisplayFont(`${heading}${showSiteName ? siteName : ''}`),
   ]);
-  const hasLogo = logo.kind === 'image';
 
-  return new ImageResponse(
-    (
-      <div
-        style={{
-          width: '100%',
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-between',
-          background,
-          padding: '72px 80px',
-          fontFamily: fontData ? 'Outfit' : 'sans-serif',
-        }}
-      >
-        {/* Top: a drawable logo when available, else the site name as a wordmark. */}
-        <div style={{ display: 'flex', alignItems: 'center' }}>
-          {logo.kind === 'image' ? (
-            /* eslint-disable-next-line @next/next/no-img-element */
-            <img
-              src={logo.src}
-              alt=""
-              height={84}
-              style={{ height: 84, maxWidth: 460, objectFit: 'contain' }}
-            />
-          ) : (
-            showSiteName && (
-              <div style={{ display: 'flex', fontSize: 34, fontWeight: 700, color: textColor }}>
+  // A logo Satori cannot parse throws mid-render: draw the site name instead
+  // rather than answer a broken 200 the CDN would keep.
+  return renderWithFallback(renderCard, resolvedLogo, { kind: 'name' });
+
+  function renderCard(logo: OgLogoPlan): ImageResponse {
+    const hasLogo = logo.kind === 'image';
+
+    return new ImageResponse(
+      (
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            background,
+            padding: '72px 80px',
+            fontFamily: fontData ? 'Outfit' : 'sans-serif',
+          }}
+        >
+          {/* Top: a drawable logo when available, else the site name as a wordmark. */}
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            {logo.kind === 'image' ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={logo.src}
+                alt=""
+                height={84}
+                style={{ height: 84, maxWidth: 460, objectFit: 'contain' }}
+              />
+            ) : (
+              showSiteName && (
+                <div style={{ display: 'flex', fontSize: 34, fontWeight: 700, color: textColor }}>
+                  {siteName}
+                </div>
+              )
+            )}
+          </div>
+
+          {/* Bottom: page title, with the site name below when a logo carried it. */}
+          <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '92%' }}>
+            <div
+              style={{
+                display: 'flex',
+                fontSize: 68,
+                fontWeight: 700,
+                lineHeight: 1.15,
+                color: textColor,
+              }}
+            >
+              {heading}
+            </div>
+            {showSiteName && hasLogo && (
+              <div style={{ display: 'flex', marginTop: 20, fontSize: 30, color: subColor }}>
                 {siteName}
               </div>
-            )
-          )}
-        </div>
-
-        {/* Bottom: page title, with the site name below when a logo carried it. */}
-        <div style={{ display: 'flex', flexDirection: 'column', maxWidth: '92%' }}>
-          <div
-            style={{
-              display: 'flex',
-              fontSize: 68,
-              fontWeight: 700,
-              lineHeight: 1.15,
-              color: textColor,
-            }}
-          >
-            {heading}
+            )}
           </div>
-          {showSiteName && hasLogo && (
-            <div style={{ display: 'flex', marginTop: 20, fontSize: 30, color: subColor }}>
-              {siteName}
-            </div>
-          )}
         </div>
-      </div>
-    ),
-    {
-      ...OG_SIZE,
-      ...(fontData
-        ? { fonts: [{ name: 'Outfit', data: fontData, style: 'normal' as const, weight: 700 as const }] }
-        : {}),
-      headers: { 'Cache-Control': OG_CACHE_CONTROL },
-    },
-  );
+      ),
+      {
+        ...OG_SIZE,
+        ...(fontData
+          ? { fonts: [{ name: 'Outfit', data: fontData, style: 'normal' as const, weight: 700 as const }] }
+          : {}),
+        headers: { 'Cache-Control': OG_CACHE_CONTROL },
+      },
+    );
+  }
 }
