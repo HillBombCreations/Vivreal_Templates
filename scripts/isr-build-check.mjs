@@ -211,11 +211,16 @@ export const READ_PATHS = [
   '/menu', '/menu?sort=price', '/events', '/faq?q=loaf',
 ];
 
+/** Text only the storefront the owner adds to `/about` draws (a fixture item title). */
+export const STOREFRONT_TEXT = 'First loaf';
+
 /**
  * Review B2: after the build, the owner adds a shop section to the cached
  * `/about`, the save sends a signed `site.updated`, and `/about` is read again.
- * It must never answer 500 (it renders the storefront unfiltered until the
- * next build). `flip` is the revalidate answer, `after` every read after it.
+ * It must never answer 500, AND it must show the new storefront (unfiltered)
+ * within the reads: a regeneration that fails behind a stale copy is the
+ * same defect with a 200 on it. `flip` is the revalidate answer, `after`
+ * every read after it, in order.
  */
 export function checkAfterFlip(flip, after) {
   const failures = [];
@@ -223,6 +228,9 @@ export function checkAfterFlip(flip, after) {
   if (after.length === 0) failures.push('nothing was read after the flip');
   for (const r of after) {
     if (r.status >= 500 || r.status === 0) failures.push(`${r.path} answered ${r.status} after the owner added a storefront`);
+  }
+  if (after.length > 0 && !after.some((r) => r.status === 200 && (r.body ?? '').includes(STOREFRONT_TEXT))) {
+    failures.push('/about never showed the storefront the owner added (the regeneration failed behind a stale copy)');
   }
   return failures;
 }
@@ -318,7 +326,9 @@ async function main() {
       console.log(`FAIL: ${failures.join('; ')}`);
       process.exit(1);
     }
-    const server = spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: 'ignore', shell: process.platform === 'win32' });
+    // ISR_CHECK_SERVER_LOG=<absolute path> keeps the server's own output for diagnosis.
+    const serverLog = process.env.ISR_CHECK_SERVER_LOG ? fs.openSync(process.env.ISR_CHECK_SERVER_LOG, 'w') : 'ignore';
+    const server = spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32' });
     try {
       if (!(await waitUp())) failures.push('next start did not come up');
       else {
@@ -335,11 +345,11 @@ async function main() {
         state.aboutStorefront = true;
         const flip = await postSigned('/api/revalidate', { id: 'evt1', event: 'site.updated', timestamp: new Date().toISOString(), data: { siteId: SITE_ID, slug: 'about' } });
         const after = [];
-        for (const p of ['/about', '/about', '/about', '/about?sort=price', '/about']) {
+        for (const p of ['/about', '/about', '/about?sort=price', '/about', '/about', '/about', '/about', '/about']) {
           const r = await get(p);
-          after.push({ path: p, status: r.status });
-          console.log(`  after flip: ${String(r.status).padEnd(4)} ${(r.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${p}`);
-          await new Promise((res) => setTimeout(res, 300));
+          after.push({ path: p, status: r.status, body: r.body });
+          console.log(`  after flip: ${String(r.status).padEnd(4)} ${(r.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${r.body.includes(STOREFRONT_TEXT) ? 'storefront' : 'old copy  '} ${p}`);
+          await new Promise((res) => setTimeout(res, 1000));
         }
         failures.push(...checkAfterFlip(flip, after));
       }

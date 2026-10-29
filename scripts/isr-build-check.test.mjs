@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNER_BOOK_TEXT, checkAfterFlip, checkManifest, checkResponses, routeTable } from './isr-build-check.mjs';
+import { OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkManifest, checkResponses, routeTable } from './isr-build-check.mjs';
 
 const GOOD = {
   routes: {
@@ -76,10 +76,13 @@ test('REFUSE: an inner page cached for less than the home page fails', () => {
 
 test('ALLOW (review B2): an accepted flip and no 500 after it passes; REFUSE: any 500, or an unaccepted flip, fails', () => {
   const flip = { status: 200, body: '{"revalidated":true,"tags":["site:x"]}' };
-  assert.deepEqual(checkAfterFlip(flip, [{ path: '/about', status: 200 }]), []);
-  assert.equal(checkAfterFlip(flip, [{ path: '/about', status: 200 }, { path: '/about', status: 500 }]).length, 1);
-  assert.equal(checkAfterFlip({ status: 401, body: '' }, [{ path: '/about', status: 200 }]).length, 1);
+  const fresh = { path: '/about', status: 200, body: `<li>${STOREFRONT_TEXT}</li>` };
+  const stale = { path: '/about', status: 200, body: '<h1>About us</h1>' };
+  assert.deepEqual(checkAfterFlip(flip, [stale, fresh]), []);
+  assert.equal(checkAfterFlip(flip, [fresh, { path: '/about', status: 500, body: '' }]).length, 1);
+  assert.equal(checkAfterFlip({ status: 401, body: '' }, [fresh]).length, 1);
   assert.equal(checkAfterFlip(flip, []).length, 1, 'nothing read is not a pass');
+  assert.equal(checkAfterFlip(flip, [stale, stale, stale]).length, 1, 'a failed regeneration behind a stale copy is not a pass');
 });
 
 test('route table rows', () => {
