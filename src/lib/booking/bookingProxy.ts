@@ -18,6 +18,12 @@
  *    it) is a bot: it is answered exactly as a sent request and NEVER
  *    forwarded, so it costs no rate-limit increment, no Mongo read and no
  *    email. VR_Client_API applies the same rule again behind this one.
+ *  - THE VISITOR'S ADDRESS. VR_Client_API rate-limits each booking route per
+ *    visitor per business from `x-forwarded-for` (`checkRateLimit.js`
+ *    `extractVisitorIp`). This app calls it from the server, so without the
+ *    visitor's address every visitor of a site would share ONE bucket and the
+ *    sixth request in ten minutes would be refused for the whole site. Read
+ *    the way `/api/delivery-quote` reads it (`visitorAddress`).
  *  - NO-STORE both ways. An open time or a booking is only true now.
  *  - What reaches the browser is the upstream `data` on success, and on a
  *    refusal only its stable `errorCode` (`BOOKING_OFF`, `SLOT_TAKEN`, ...),
@@ -147,6 +153,21 @@ export function mapUpstream(status: number, json: unknown): BookingAnswer {
   return { status: status >= 500 ? 502 : status, body: out };
 }
 
+/**
+ * The visitor's address, as `/api/delivery-quote` reads it: CloudFront's
+ * `CloudFront-Viewer-Address` (`ip:port`, IPv6 bracketed) first, else the
+ * incoming `x-forwarded-for`. Empty when neither is present.
+ */
+export function visitorAddress(headers: { get(name: string): string | null }): string {
+  const viewer = headers.get('cloudfront-viewer-address');
+  if (viewer) {
+    const lastColon = viewer.lastIndexOf(':');
+    const address = lastColon > 0 ? viewer.slice(0, lastColon) : viewer;
+    return address.replace(/^\[|\]$/g, '');
+  }
+  return headers.get('x-forwarded-for') ?? '';
+}
+
 const BAD_REQUEST: BookingAnswer = { status: 400, body: { errorCode: 'VALIDATION' } };
 
 /** The whole route: read, refuse or forward, map. Never throws. */
@@ -159,6 +180,8 @@ export async function handleBookingRoute(
   if (!env.apiKey) return { status: 503, body: {} };
   const upstream = UPSTREAM[route];
   const headers: Record<string, string> = { Authorization: env.apiKey };
+  const visitor = visitorAddress(request.headers);
+  if (visitor) headers['x-forwarded-for'] = visitor;
   let url = `${env.clientApiUrl}${upstream.path}`;
   let body: string | undefined;
 

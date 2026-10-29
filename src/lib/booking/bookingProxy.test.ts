@@ -45,6 +45,20 @@ test('ALLOW: a request forwards to Client API with the site key and only the val
   }, 'no groupID, no visitor siteId, no stray key, and empty optionals dropped');
 });
 
+test('ALLOW: the visitor\'s address rides to Client so its per-visitor limit is per visitor', async () => {
+  const { calls, fetchImpl } = spy();
+  await handleBookingRoute('request', post(REQUEST, { 'cloudfront-viewer-address': '[2001:db8::7]:443', 'x-forwarded-for': '10.0.0.1' }), ENV, fetchImpl);
+  assert.equal(calls[0].init.headers['x-forwarded-for'], '2001:db8::7', 'CloudFront viewer address wins, unbracketed, port dropped');
+  await handleBookingRoute('request', post(REQUEST, { 'x-forwarded-for': '203.0.113.9' }), ENV, fetchImpl);
+  assert.equal(calls[1].init.headers['x-forwarded-for'], '203.0.113.9');
+});
+
+test('REFUSE: with no visitor address no header is invented', async () => {
+  const { calls, fetchImpl } = spy();
+  await handleBookingRoute('request', post(REQUEST), ENV, fetchImpl);
+  assert.equal('x-forwarded-for' in calls[0].init.headers, false);
+});
+
 test('REFUSE: a filled honeypot is answered as sent and never forwarded', async () => {
   for (const route of ['request', 'create'] as const) {
     const { calls, fetchImpl } = spy();
