@@ -763,6 +763,13 @@ export interface SiteData {
         additional?: Array<{ provider?: string; id?: string }>;
     } | null;
     /**
+     * Owner ideas 2026-10-29 (F4): the public booking subset, from the TOP
+     * LEVEL of VR_Client_API's site details (`lib/api/siteData/booking.ts`).
+     * Absent means booking is off: the lever is off for the group, or the
+     * owner never switched requests on.
+     */
+    booking?: import('@/lib/api/siteData/booking').SiteBookingSubset;
+    /**
      * Migration lifecycle state (SEO demo-safety). `'demo'` = a pre-cutover
      * outreach/demo deployment that must NOT be indexed — it is a near-duplicate
      * of the prospect's real site, so indexing it would create live
