@@ -80,13 +80,22 @@ test("no em dash or en dash reaches the shopper from this dialog", () => {
   // quoted strings misses most of the words on the page.
   assert.ok(!code.includes(EM), "an em dash is in the cart dialog");
   assert.ok(!code.includes(EN), "an en dash is in the cart dialog");
+  // Owner ideas T13/T15: the shopper's choices and their words.
+  const choices = stripComments(fs.readFileSync(new URL("./CartChoices.tsx", import.meta.url), "utf8"));
+  assert.ok(choices.includes("Pickup time"), "the choices file was read");
+  assert.ok(!choices.includes(EM) && !choices.includes(EN), "a dash is in the cart choices");
+  const rules = stripComments(fs.readFileSync(new URL("../../lib/cart/cartSettings.ts", import.meta.url), "utf8"));
+  assert.ok(rules.includes("Your cart is empty") && !rules.includes(EM) && !rules.includes(EN), "the cart defaults");
 });
 
 test("the dash and company checks can both fail (control)", () => {
   // Proves the two checks above are reading something, and that stripping
   // comments did not simply empty the file.
-  assert.ok(code.includes("Proceed to checkout"), "JSX text was stripped away");
-  assert.ok(code.includes("Your cart is empty"), "an empty state was stripped away");
+  // Owner ideas T13: "Proceed to checkout" and "Your cart is empty" now come
+  // from the cart settings (their defaults live in lib/cart/cartSettings.ts),
+  // so two words still written as JSX text in this file prove the same thing.
+  assert.ok(code.includes("Keep shopping"), "JSX text was stripped away");
+  assert.ok(code.includes("Promo code"), "a label was stripped away");
   assert.ok(source.includes(EM), "expected em dashes in the comments, found none");
   assert.ok(source.includes("Square"), "expected the word in a comment, found none");
 });

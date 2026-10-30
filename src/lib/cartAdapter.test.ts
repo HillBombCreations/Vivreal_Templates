@@ -77,6 +77,8 @@ test("H45: a refused Add to cart is no longer discarded", () => {
 });
 
 test("both refusals are shown as failures, not as confirmations", () => {
+  // Owner ideas T13 added a third refusal: Buy now on a shop that asks for a
+  // choice adds the item to the cart instead, and that add can be refused too.
   const destructive = source.match(/variant: "destructive"/g) ?? [];
-  assert.equal(destructive.length, 2, "expected one destructive toast per refusal");
+  assert.equal(destructive.length, 3, "expected one destructive toast per refusal");
 });
