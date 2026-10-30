@@ -133,6 +133,7 @@ test('REFUSE: a redirect that leaves the media hosts keeps the name and the targ
     'http://media.vivreal.io/x.png',
     'https://media.vivreal.io.evil.example/x.png',
     'http://169.254.169.254/latest/meta-data',
+    'https://media.vivreal.io:8443/x.png',
   ]) {
     reset(() => off);
     const [, url] = LIVE_LOGO_URLS[0];

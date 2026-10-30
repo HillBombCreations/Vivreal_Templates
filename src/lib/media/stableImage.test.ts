@@ -38,7 +38,7 @@ test('ALLOW: a signed media picture is fetched and streamed back with the long p
 });
 
 test('REFUSE: a URL off Vivreal’s media hosts (or not https) is never fetched; 404', async () => {
-  for (const url of ['https://evil.example/x.png', 'http://media.vivreal.io/x.png', 'https://media.vivreal.io.evil.example/x.png', 'javascript:alert(1)', undefined]) {
+  for (const url of ['https://evil.example/x.png', 'http://media.vivreal.io/x.png', 'https://media.vivreal.io.evil.example/x.png', 'https://media.vivreal.io:8443/x.png', 'https://client.vivreal.io:444/media?key=x', 'javascript:alert(1)', undefined]) {
     const { impl, calls } = fakeFetch(new Response('x', { headers: { 'Content-Type': 'image/png' } }));
     const res = await api().stableImageResponse(url, impl);
     assert.equal(res.status, 404, String(url));

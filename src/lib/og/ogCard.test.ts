@@ -436,6 +436,9 @@ test('B3 REFUSE: a logo off the media hosts is never fetched (card and icons)', 
     'http://media.vivreal.io/x.png',
     'https://media.vivreal.io.evil.example/x.png',
     'https://localhost/x.png',
+    // Review N2 (#223): a media host on another port is another service.
+    'https://media.vivreal.io:8443/x.png',
+    'https://client.vivreal.io:444/media?key=x',
   ];
   for (const url of offHost) {
     const card = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
@@ -457,6 +460,31 @@ test('B3 REFUSE: the logo fetch never auto-follows a redirect and is time-bounde
   // ogLogoRedirect.test.ts. 'follow' would skip that check, so it stays refused.
   assert.equal(inits[0]?.redirect, 'manual');
   assert.ok(inits[0]?.signal instanceof AbortSignal);
+});
+
+test('N3 (#223 review): the redirect body is cancelled before the next hop, so its socket is released', async () => {
+  let cancelled = false;
+  const redirectBody = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new TextEncoder().encode('Found'));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const calls: string[] = [];
+  // Test double: a 302 to the media host, then the PNG.
+  const impl = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    if (calls.length === 1) {
+      return new Response(redirectBody, { status: 302, headers: { location: 'https://media.vivreal.io/b/k.png?Signature=s' } });
+    }
+    assert.equal(cancelled, true, 'the 302 body was still open when the next hop started');
+    return new Response(PNG_BYTES, { headers: { 'content-type': 'image/png' } });
+  }) as typeof fetch;
+  const plan = await resolveOgLogo('https://client.vivreal.io/media?bucket=b&key=k.png', impl);
+  assert.equal(plan.kind, 'image');
+  assert.equal(calls.length, 2);
 });
 
 test('B3 ALLOW: both media hosts are fetched once', async () => {

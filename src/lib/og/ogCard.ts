@@ -234,7 +234,8 @@ export const OG_LOGO_MEDIA_HOSTS: ReadonlySet<string> = new Set(['media.vivreal.
 function isOgLogoMediaUrl(value: string): boolean {
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && OG_LOGO_MEDIA_HOSTS.has(url.hostname);
+    // `port === ''`: the same host on another port is another service (#223 review N2).
+    return url.protocol === 'https:' && url.port === '' && OG_LOGO_MEDIA_HOSTS.has(url.hostname);
   } catch {
     // Not a URL: nothing to fetch.
     return false;
@@ -286,6 +287,10 @@ export async function resolveOgLogo(
     let url = logoSrc;
     let res = await fetchImpl(url, { redirect: 'manual', signal });
     for (let hops = 0; res.status >= 300 && res.status < 400; hops += 1) {
+      // The redirect's own body is never read: release it, and its socket,
+      // before the next hop or the fallback (#223 review N3). A failed cancel
+      // only means the connection closes on its own, so it is not a failure.
+      await res.body?.cancel().catch(() => undefined);
       const location = res.headers.get('location');
       const next = location ? new URL(location, url).href : '';
       if (hops >= OG_LOGO_MAX_REDIRECTS || !isOgLogoMediaUrl(next)) {

@@ -145,7 +145,8 @@ export function isMediaUrl(value: string | undefined): value is string {
   if (!value) return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && MEDIA_HOSTS.has(url.hostname);
+    // `port === ''`: the same host on another port is another service (#223 review N2).
+    return url.protocol === 'https:' && url.port === '' && MEDIA_HOSTS.has(url.hostname);
   } catch {
     // Not a URL: nothing to fetch.
     return false;
