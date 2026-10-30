@@ -4,13 +4,24 @@ import type { PageConfig } from '@/types/SiteData';
 import {
   authoredStaticSlugs,
   capSlugParams,
-  MIN_PAGE_COST_BYTES,
+  FIXED_PAGE_COST_BYTES,
   PAGE_COST_FACTOR,
   planPrerenderLimits,
   PRERENDER_PAGE_BUDGET_BYTES,
   siteDataBytes,
 } from './prerenderBudget.ts';
 import { CHECKOUT_RESULT_SLUGS } from './builtInPages.ts';
+import { PRERENDER_WARN_BYTES } from '../../../scripts/build-size-guard.mjs';
+
+/**
+ * What a page REALLY costs, fitted by the #223 review (N1) to Comedy
+ * Collective (14.6 KB record, 365 KB page) and help.vivreal.io (314 KB,
+ * 2.26 MB): a fixed part plus a part proportional to the record.
+ */
+const realPageBytes = (dataBytes: number) => 270_000 + 6.3 * dataBytes;
+/** Outside the budget but inside the guard: the home page and both snapshot copies (help's, the largest measured). */
+const HOME_BYTES = 2_000_000;
+const SNAPSHOT_BYTES = 2 * 1_804_385;
 
 /**
  * Promote run 41089220307 (2026-10-30): six sites failed Amplify's output cap
@@ -31,9 +42,28 @@ const neverReserved = () => false;
 
 test('REFUSE: a large site record cannot list more pages than its budget (help.vivreal.io, 625 MB on 10-30)', () => {
   const limits = planPrerenderLimits(MEASURED.help.siteData, MEASURED.help.authoredSlugs);
-  assert.equal(limits.allowance, 8);
-  assert.equal(limits.slugs, 8);
+  assert.equal(limits.allowance, 7);
+  assert.equal(limits.slugs, 7);
   assert.equal(limits.items, 0, 'an item page must not be listed once inner pages spend the budget');
+});
+
+// Review N1 (#223): a page has a fixed cost too. Priced as proportional only,
+// a 40 to 55 KB record listed about 52 pages, 30 to 31.5 MB, on the guard's
+// fail line: a build Amplify would accept, failed by our own guard.
+test('ALLOW: a site with a 50 KB record passes the guard with margin (under the warn line)', () => {
+  const data = 50 * 1024;
+  const limits = planPrerenderLimits(data, 6);
+  const total = limits.allowance * realPageBytes(data) + HOME_BYTES + SNAPSHOT_BYTES;
+  assert.ok(total <= PRERENDER_WARN_BYTES, `${total} bytes listed, warn line ${PRERENDER_WARN_BYTES}`);
+  assert.ok(limits.allowance >= 20, `allowance ${limits.allowance}: a normal site must keep most pages cached`);
+});
+
+test('REFUSE: at no record size from 0 to 400 KB can what the budget lists reach the warn line', () => {
+  for (let data = 0; data <= 400 * 1024; data += 1024) {
+    const limits = planPrerenderLimits(data, 10);
+    const total = limits.allowance * realPageBytes(data) + HOME_BYTES + SNAPSHOT_BYTES;
+    assert.ok(total <= PRERENDER_WARN_BYTES, `record ${data} bytes: ${limits.allowance} pages, ${total} bytes`);
+  }
 });
 
 test("REFUSE: at each site's largest measured page, what the budget lists stays under the budget plus one page", () => {
@@ -41,7 +71,7 @@ test("REFUSE: at each site's largest measured page, what the budget lists stays 
   // (scripts/build-size-guard.mjs, 30 MiB) is what catches a bigger miss.
   for (const [site, m] of Object.entries(MEASURED)) {
     const limits = planPrerenderLimits(m.siteData, m.authoredSlugs);
-    const worst = limits.allowance * Math.max(m.measuredPageBytes, MIN_PAGE_COST_BYTES);
+    const worst = limits.allowance * m.measuredPageBytes;
     assert.ok(worst <= PRERENDER_PAGE_BUDGET_BYTES + m.measuredPageBytes, `${site}: ${worst} bytes listed`);
   }
 });
@@ -61,15 +91,15 @@ test('REFUSE: a record that cannot be measured lists no budgeted page at all', (
 
 test('ALLOW: a normal site keeps every page cached (Comedy Collective lists all of its 6 pages and 14 items)', () => {
   const limits = planPrerenderLimits(MEASURED.comedyCollective.siteData, MEASURED.comedyCollective.authoredSlugs);
-  assert.equal(limits.pageBytes, MIN_PAGE_COST_BYTES);
+  assert.equal(limits.pageBytes, FIXED_PAGE_COST_BYTES + PAGE_COST_FACTOR * MEASURED.comedyCollective.siteData);
   assert.equal(limits.slugs, 6);
   assert.ok(limits.items >= 14, `items ${limits.items}`);
-  assert.equal(limits.allowance, Math.floor(PRERENDER_PAGE_BUDGET_BYTES / MIN_PAGE_COST_BYTES));
+  assert.equal(limits.allowance, Math.floor(PRERENDER_PAGE_BUDGET_BYTES / limits.pageBytes));
 });
 
 test('ALLOW: siteDataBytes counts UTF-8 bytes of the serialized record', () => {
   assert.equal(siteDataBytes({ name: 'é' }), Buffer.byteLength(JSON.stringify({ name: 'é' })));
-  assert.equal(planPrerenderLimits(100_000, 0).pageBytes, PAGE_COST_FACTOR * 100_000);
+  assert.equal(planPrerenderLimits(100_000, 0).pageBytes, FIXED_PAGE_COST_BYTES + PAGE_COST_FACTOR * 100_000);
 });
 
 test('REFUSE: capSlugParams cuts authored pages at the limit, in order', () => {

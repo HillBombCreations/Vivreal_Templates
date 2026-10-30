@@ -14,8 +14,11 @@
  * failed six sites at 231 to 625 MB.
  *
  * WHAT. One byte budget per site, spent on authored inner pages first (the
- * pages a visitor lands on), then items. The cost of a page is estimated from
- * the serialized site data with a margin over the measured ratio. Pages past
+ * pages a visitor lands on), then items. A page is priced as a fixed part plus
+ * a part proportional to the serialized site data, each with a margin over
+ * what was measured. The budget (20 MiB) sits under the guard's warn line
+ * (24 MiB) by enough to hold the home page and both snapshot copies, so a
+ * site the budget plans for never meets the guard (review N1, #223). Pages past
  * the budget are not listed, so they render on request exactly as they did
  * before T10/T11 (200, `no-store`): never a 404, never a 500. A small site
  * keeps every page cached, which is the plan's promise for normal sites.
@@ -40,11 +43,14 @@ export const PRERENDER_PAGE_BUDGET_BYTES = 20 * 1024 * 1024;
 export const PAGE_COST_FACTOR = 8;
 
 /**
- * No page costs less than this, however small the site record: Comedy
- * Collective (a 14 KB record) measured 197 to 365 KB an inner page on
- * 2026-10-30, so the floor sits above its largest.
+ * What every page costs whatever the record (markup, chunk references, page
+ * content). The #223 review fitted the real cost to about 270 KB + 6.3 x the
+ * record across Comedy Collective (14.6 KB record, 365 KB page) and
+ * help.vivreal.io (314 KB, 2.26 MB). Pricing a page as proportional only let a
+ * 40 to 55 KB record list about 52 pages, 30 to 31.5 MB, on the guard's fail
+ * line.
  */
-export const MIN_PAGE_COST_BYTES = 384 * 1024;
+export const FIXED_PAGE_COST_BYTES = 300 * 1024;
 
 /** Bytes of the site data as the layout serializes it; Infinity when it cannot be measured. */
 export function siteDataBytes(siteData: unknown): number {
@@ -75,7 +81,7 @@ export interface PrerenderLimits {
  * takes what is left.
  */
 export function planPrerenderLimits(dataBytes: number, authoredSlugCount: number): PrerenderLimits {
-  const pageBytes = Math.max(MIN_PAGE_COST_BYTES, PAGE_COST_FACTOR * dataBytes);
+  const pageBytes = FIXED_PAGE_COST_BYTES + PAGE_COST_FACTOR * dataBytes;
   const allowance = Number.isFinite(pageBytes) ? Math.floor(PRERENDER_PAGE_BUDGET_BYTES / pageBytes) : 0;
   const slugs = Math.min(Math.max(0, authoredSlugCount), allowance);
   return { pageBytes, allowance, slugs, items: allowance - slugs };

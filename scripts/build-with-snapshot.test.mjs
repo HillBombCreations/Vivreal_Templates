@@ -494,7 +494,12 @@ test('size guard ALLOW: a build under the line exits 0 and prints its build size
     fs.writeFileSync(page, 'x'.repeat(1000));
     const { code, logs } = await run(root);
     assert.equal(code, 0);
-    assert.ok(logs.some((l) => l.startsWith('build size: prerendered 1 pages, 1000 bytes')), logs.join('\n'));
+    const line = logs.find((l) => l.startsWith('build size: prerendered 1 pages, '));
+    assert.ok(line, logs.join('\n'));
+    // Review B1 (#223): both snapshot copies the wrapper just wrote are counted.
+    const snapshot = files(root).reduce((n, p) => n + fs.statSync(p).size, 0);
+    assert.ok(snapshot > 0);
+    assert.ok(line.startsWith(`build size: prerendered 1 pages, ${1000 + snapshot} bytes with the snapshot's ${snapshot} `), line);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
