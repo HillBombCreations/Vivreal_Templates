@@ -8,6 +8,8 @@ import { getSafeFieldValue, resolveVariantableString } from "@/lib/utils/variant
 import { handleCheckout } from "@/lib/utils/cartUtils";
 import type { FloatingCartDialogProps } from "@/types/Cart";
 import { shipsOrders } from "@/lib/shipping";
+import { deliveryConfigOf } from "@hillbombcreations/site-renderer";
+import { cartNeedsChoices, readCartSettings } from "@/lib/cart/cartSettings";
 
 export default function FloatingCartDialog({
   open,
@@ -54,6 +56,13 @@ export default function FloatingCartDialog({
   };
 
   const onCheckout = async () => {
+    // Owner ideas T13/T15: with a note, a pickup time, a minimum or a choice
+    // of pickup and delivery, the shopper decides in the cart, so this quick
+    // card opens it instead of skipping straight past those choices.
+    if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
+      handleOpenCart();
+      return;
+    }
     setLoadingCheckout(true);
     setDisableButtons(true);
     try {

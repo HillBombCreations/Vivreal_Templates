@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { shouldSendBeacon } from '@/lib/beaconPolicy';
+import { browserBeaconTransport, buildPageViewPayload, configureSiteEvents } from '@/lib/siteEvents';
 
 /**
  * Vivreal first-party analytics beacon — cookieless page-view collection for
@@ -61,6 +62,9 @@ export default function SiteBeacon({
     }
     const endpoint = process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT || DEFAULT_ENDPOINT;
     if (!endpoint) return;
+    // Link taps and results (lib/siteEvents.ts) follow this page view's gate:
+    // they are configured only once `shouldSendBeacon` said yes.
+    configureSiteEvents({ siteId: siteId ?? '', endpoint, transport: browserBeaconTransport });
 
     // One beacon per distinct path per mount lifecycle (guards duplicate fires
     // from effect re-runs that don't change the path).
@@ -68,33 +72,20 @@ export default function SiteBeacon({
     if (lastSent.current === path) return;
     lastSent.current = path;
 
-    const payload = JSON.stringify({
-      s: siteId,
-      h: window.location.hostname,
-      p: path,
-      r: document.referrer || '',
-      w: window.screen?.width || 0,
-    });
-
-    try {
-      const blob = new Blob([payload], { type: 'text/plain' });
-      if (typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(endpoint, blob)) {
-        return;
-      }
-    } catch {
-      /* fall through to fetch */
-    }
-    try {
-      void fetch(endpoint, {
-        method: 'POST',
-        body: payload,
-        keepalive: true,
-        mode: 'no-cors',
-        headers: { 'Content-Type': 'text/plain' },
-      });
-    } catch {
-      /* swallow — analytics must never break the site */
-    }
+    // Owner ideas 3.3: `a` (a Google ad landing, never the click id) and `u`
+    // (campaign tags) ride the page view when the address carried them. The
+    // path stays query-free (`pagePath`).
+    const payload = JSON.stringify(
+      buildPageViewPayload({
+        siteId: siteId ?? '',
+        hostname: window.location.hostname,
+        path,
+        referrer: document.referrer || '',
+        width: window.screen?.width || 0,
+        search: window.location.search || '',
+      }),
+    );
+    browserBeaconTransport(endpoint, payload);
   }, [siteId, vivrealOwnSite, pathname]);
 
   return null;
