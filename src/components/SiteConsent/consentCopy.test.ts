@@ -244,11 +244,8 @@ test('the component renders null before anything else unless gated, and takes it
   const gate = code.indexOf('if (!state.gated) return null;');
   const firstJsx = code.indexOf('return (');
   assert.ok(gate > 0 && firstJsx > gate, 'the gate comes before any rendered markup');
-  // Owner ideas T6: the controller's first argument is the GATE, Vivreal's own
-  // site or a customer site that connected a Google tag, never anything else.
-  assert.ok(code.includes('const gate = vivrealOwnSite || customerTags != null;'));
   const setters = code.match(/setState\([^;]*/g) ?? [];
-  assert.deepEqual(setters.map((s) => s.match(/^setState\((\w+)\(gate\b/)?.[1]), [
+  assert.deepEqual(setters.map((s) => s.match(/^setState\((\w+)\(vivrealOwnSite\b/)?.[1]), [
     'runConsentMount',
     'grantConsent',
     'denyConsent',
@@ -258,16 +255,11 @@ test('the component renders null before anything else unless gated, and takes it
 
 test('the layout renders no head GA tag on the Vivreal site, and hands GA to the consent controller', () => {
   const layout = fs.readFileSync(new URL('../../app/layout.tsx', import.meta.url), 'utf8');
-  // Owner ideas T6: still never on the Vivreal site (`!vivrealOwnSite` first,
-  // and `customerTags` is null there), now also not on a customer site that
-  // asks its visitors first about GA.
-  assert.ok(layout.includes('{!vivrealOwnSite && !customerTags?.analytics && <SiteAnalytics analytics={siteData.analytics} />}'));
-  assert.ok(layout.includes('const customerTags = vivrealOwnSite ? null : customerConsentTags(siteData.analytics);'));
+  assert.ok(layout.includes('{!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}'));
   assert.equal((layout.match(/<SiteAnalytics\b/g) ?? []).length, 1, 'no other mount');
   assert.ok(/<SiteConsent[\s\S]*?analytics=\{siteData\.analytics\}/.test(layout));
   const consent = fs.readFileSync(new URL('./index.tsx', import.meta.url), 'utf8');
-  assert.ok(consent.includes('runConsentMount(gate, vendors, ga, opts)') && consent.includes('grantConsent(gate, vendors, ga, opts)'));
-  assert.ok(consent.includes('useMemo(() => ({ ownSite: vivrealOwnSite }), [vivrealOwnSite])'), 'own-site only parts follow the site id');
+  assert.ok(consent.includes('runConsentMount(vivrealOwnSite, vendors, ga)') && consent.includes('grantConsent(vivrealOwnSite, vendors, ga)'));
 });
 
 /* ── Clarity masks everything a visitor types ── */

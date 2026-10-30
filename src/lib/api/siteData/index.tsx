@@ -31,7 +31,6 @@ import { toOriginSource } from './originSource';
 import { resolveSiteChrome } from './chrome';
 import { applyScheduleFeedUrl } from './scheduleFeed';
 import { readShowLowStock } from './showLowStock';
-import { readBooking } from './booking';
 import { readCommerce } from './commerce';
 import { readIndexNowKey } from '@/lib/indexnow/keyFile';
 import { FALLBACK_SITE_DATA } from './fallback';
@@ -126,8 +125,6 @@ interface SiteDetailsResponse {
   subscribersCollectionId?: string | null;
   /** Discovery batch 2.1 (VR_Client_API C1): the IndexNow key, live sites only. */
   indexNowKey?: unknown;
-  /** Owner ideas F4 (VR_Client_API CL3): the public booking subset, top level only. */
-  booking?: unknown;
   /**
    * H177 - the shell's inline rich-text image map, key to signed media URL.
    * Present on every read from VR_Client_API v2.10.16 onward and always an
@@ -374,9 +371,6 @@ export const getSiteData = cache(async (): Promise<SiteData> => {
     // F2: the business wide low stock switch. Absent stays absent (contract C5),
     // so each template's own default decides. See ./showLowStock.ts.
     ...readShowLowStock(raw),
-    // Owner ideas F4: the public booking subset, top level only, absent unless
-    // booking is on. See ./booking.ts.
-    ...readBooking(raw),
     // H177 - the SHELL's inline rich-text image map. Read top-level only: unlike
     // the strips above there is no `values` copy to fall back to, because
     // VR_Client_API builds this map at read time by walking the payload it is

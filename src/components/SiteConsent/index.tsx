@@ -12,14 +12,6 @@ import {
 } from '@/lib/consent';
 import { resolveVendorScripts, type AdditionalVendorConfig } from '@/lib/vendorTags';
 import { resolveConsentGaScripts, type ConsentGaConfig } from '@/lib/gaConsentLoad';
-import {
-  configureAdsConversions,
-  readAdsConfig,
-  resolveCustomerConsentScripts,
-  type CustomerConsentTags,
-  type GoogleTagConfig,
-} from '@/lib/adsTag';
-import { consentBannerSentences } from '@hillbombcreations/site-renderer';
 import { bannerPolicySentence } from './bannerPolicy';
 
 /**
@@ -66,7 +58,6 @@ const INERT: ConsentState = {
 
 export default function SiteConsent({
   vivrealOwnSite,
-  customerTags,
   additional,
   analytics,
   privacyHref,
@@ -90,15 +81,7 @@ export default function SiteConsent({
    * layout renders no GA tag; GA loads from here on accept only
    * (`lib/gaConsentLoad.ts`).
    */
-  analytics?: (ConsentGaConfig & GoogleTagConfig) | null;
-  /**
-   * Owner ideas T6 (D20): on a CUSTOMER site that connected a Google tag,
-   * `customerConsentTags(siteData.analytics)` from the root layout; null or
-   * absent everywhere else. Non-null turns the gate on for that site, with
-   * the renderer's `CONSENT_COPY` words (the ones the owner saw in the app),
-   * and nothing of Vivreal's own (Clarity, `vr_attr`) ever runs there.
-   */
-  customerTags?: CustomerConsentTags | null;
+  analytics?: ConsentGaConfig | null;
   /**
    * The policy the banner links, resolved once by the root layout with
    * `resolveBannerPrivacyHref`: the site's stored policy page, else on
@@ -109,21 +92,12 @@ export default function SiteConsent({
   privacyHref?: string;
 }) {
   const [state, setState] = useState<ConsentState>(INERT);
-  // The gate: Vivreal's own site, or a customer site that connected a Google tag.
-  const gate = vivrealOwnSite || customerTags != null;
-  const opts = useMemo(() => ({ ownSite: vivrealOwnSite }), [vivrealOwnSite]);
   // Fail-closed inside: an unknown provider or a non-matching id yields
   // nothing. Resolving is pure. What stops a resolved snippet ever reaching a
   // customer site is `vivrealOwnSite`, threaded into every controller call
   // below, not anything this line does.
-  const vendors: VendorScript[] = useMemo(
-    () => (vivrealOwnSite ? resolveVendorScripts(additional) : []),
-    [vivrealOwnSite, additional],
-  );
-  const ga: VendorScript[] = useMemo(
-    () => (vivrealOwnSite ? resolveConsentGaScripts(analytics) : resolveCustomerConsentScripts(analytics)),
-    [vivrealOwnSite, analytics],
-  );
+  const vendors: VendorScript[] = useMemo(() => resolveVendorScripts(additional), [additional]);
+  const ga: VendorScript[] = useMemo(() => resolveConsentGaScripts(analytics), [analytics]);
   // A visitor who dismisses with the X has not decided; hide the banner for
   // this page view without storing anything, so the next load asks again.
   const [dismissed, setDismissed] = useState(false);
@@ -132,10 +106,7 @@ export default function SiteConsent({
     // Restore-on-mount. This is the D3 fix: a returning visitor who accepted
     // previously never sees the banner, so the ONLY path that can upgrade GA4
     // and inject the registry vendors for them is right here.
-    // Ads conversions (customer sites only) fire later, from a result, and
-    // only after an Accept; see lib/adsTag.ts `fireAdsConversion`.
-    configureAdsConversions(!vivrealOwnSite && customerTags ? readAdsConfig(analytics) : null);
-    setState(runConsentMount(gate, vendors, ga, opts));
+    setState(runConsentMount(vivrealOwnSite, vendors, ga));
     // `vendors` and `vivrealOwnSite` are both derived from server-rendered
     // props and are stable for the page's lifetime; re-running this effect
     // would re-enter the grant path.
@@ -143,13 +114,13 @@ export default function SiteConsent({
   }, []);
 
   const onAccept = useCallback(
-    () => setState(grantConsent(gate, vendors, ga, opts)),
-    [gate, vendors, ga, opts],
+    () => setState(grantConsent(vivrealOwnSite, vendors, ga)),
+    [vivrealOwnSite, vendors, ga],
   );
-  const onReject = useCallback(() => setState(denyConsent(gate, opts)), [gate, opts]);
+  const onReject = useCallback(() => setState(denyConsent(vivrealOwnSite)), [vivrealOwnSite]);
   const onWithdraw = useCallback(
-    () => setState(withdrawConsent(gate, undefined, opts)),
-    [gate, opts],
+    () => setState(withdrawConsent(vivrealOwnSite)),
+    [vivrealOwnSite],
   );
 
   if (!state.gated) return null;
@@ -189,12 +160,6 @@ export default function SiteConsent({
               wording, pinned by consentCopy.test.ts: change it only together
               with what the controller loads.
             */}
-            {customerTags && !vivrealOwnSite ? (
-              <p data-consent-copy="renderer" className="text-sm" style={{ color: 'var(--text-primary, #111111)' }}>
-                {consentBannerSentences(customerTags).join(' ')}
-                {bannerPolicySentence(privacyHref, Link)}
-              </p>
-            ) : (
             <p className="text-sm" style={{ color: 'var(--text-primary, #111111)' }}>
               We use cookies to see how people use this site and to make it better. If you
               accept, we turn on Google Analytics, which counts visits, and Microsoft Clarity,
@@ -206,7 +171,6 @@ export default function SiteConsent({
               settings at the bottom of the page.
               {bannerPolicySentence(privacyHref, Link)}
             </p>
-            )}
           </div>
           <div className="mt-4 flex justify-end gap-2">
             <button

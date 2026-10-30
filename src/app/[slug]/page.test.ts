@@ -204,28 +204,3 @@ test('the subscribe fallback resolves its list through the tested helper', () =>
   assert.match(source, /legacySubscribeCollectionId\(pageConfig\)/, 'the route must reach the tested helper');
   assert.doesNotMatch(source, /collections\?\.\[0\]/, 'no inline read of the legacy mirror');
 });
-
-// ── review B1: no reserved name in the build list ─────────────────────────
-test('the build list never claims a fixed route\'s path', () => {
-  assert.match(
-    source,
-    /return slugsForStaticParams\(siteData\.pageConfigs, CHECKOUT_RESULT_SLUGS\)\s*\.filter\(\(slug\) => !isReservedPageSlug\(slug\)\)/,
-    'an owner page called book would be prerendered by this route and 500 at /book',
-  );
-});
-
-// ── owner ideas T7: the link page ─────────────────────────────────────────
-test('the link page is a recognised format AND takes the plain delegation', () => {
-  // Without the Set entry a links page 404s (the /shop lesson). Without the
-  // delegation line it would fall into the format-specific arm meant for
-  // shows, team and the rest. The runtime half (a links page answering 200,
-  // and ISR) is the build check, scripts/isr-build-check.mjs.
-  assert.match(source, /^\s*"links",$/m, 'the link page must be routable');
-  assert.match(source, /format === "links"\s*\)\s*\{/, 'and delegated like standard');
-});
-
-test('a link tap reaches the beacon through the renderer context', () => {
-  const providers = fs.readFileSync(new URL('../../components/Providers/index.tsx', import.meta.url), 'utf8');
-  assert.match(providers, /onLinkTap=\{recordLinkTap\}/);
-  assert.match(providers, /import \{ recordLinkTap \} from '@\/lib\/siteEvents'/);
-});

@@ -21,24 +21,9 @@ export interface ShortStockLine {
   available: number;
 }
 
-/** The `reason` the route adds when one of the shop's own rules refused checkout. */
-export const CHECKOUT_SHOP_RULE = "shop_rule";
-
-/**
- * VR_Client_API's shop rules (owner ideas 3.9, 3.10, `shopRules.js`), each a
- * 409 the cart answers by staying open with everything kept. The words are
- * this app's, keyed on the stable code, never the upstream sentence.
- */
-export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.freeze({
-  BELOW_MINIMUM: "Your order is below the shop's minimum. Add a little more, then try again.",
-  BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more, or choose pickup.",
-  OUT_OF_AREA: "We don't deliver to that ZIP yet. Pickup is available.",
-  PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
-});
-
 export interface CheckoutRefusal {
   error: string;
-  reason?: typeof CHECKOUT_OUT_OF_STOCK | typeof CHECKOUT_SHOP_RULE;
+  reason?: typeof CHECKOUT_OUT_OF_STOCK;
   /** Present only when VR_Client_API named the short lines (Client #117 and later). */
   items?: ShortStockLine[];
 }
@@ -124,13 +109,6 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
       ...(items ? { items } : {}),
     };
   }
-  const ruleCode =
-    status === 409 && typeof upstreamBody === "object" && upstreamBody !== null
-      ? String((upstreamBody as { errorCode?: unknown }).errorCode)
-      : "";
-  // Own keys only: a code like "constructor" must not resolve through the prototype.
-  const shopRule = Object.hasOwn(SHOP_RULE_SENTENCES, ruleCode) ? SHOP_RULE_SENTENCES[ruleCode] : undefined;
-  if (shopRule) return { error: shopRule, reason: CHECKOUT_SHOP_RULE };
   const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
   if (notForSale) return { error: notForSale };
   if (status === 404 || status === 409 || status === 422) {

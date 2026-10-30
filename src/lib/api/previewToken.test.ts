@@ -348,13 +348,7 @@ test('the enable route redirects to a site-RELATIVE Location, never one built fr
   // (Middleware is different — Next's adapter relativizes a middleware
   // Location whose host matches the request, which is why the redirect in
   // middleware.ts may keep using NextResponse.redirect.)
-  // Owner ideas T12: the Location is `target`, or `target` with the preview
-  // nonce added by withPreviewNonce, which returns a site-relative path
-  // (pinned in src/lib/previewGuard.test.ts). Nothing else assigns it.
-  assert.match(enableRouteSource, /let location = target;/);
-  assert.match(enableRouteSource, /location = withPreviewNonce\(target, newPreviewNonce\(\)\);/);
-  assert.equal((enableRouteSource.match(/location = /g) ?? []).length, 2, 'no other assignment');
-  assert.match(enableRouteSource, /Location: location,/);
+  assert.match(enableRouteSource, /Location: target/);
   assert.doesNotMatch(
     enableRouteSource,
     /new URL\([^)]*request\.url/,

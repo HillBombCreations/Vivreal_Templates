@@ -8,7 +8,6 @@ import {
   isWellFormedPreviewToken,
   resolvePreviewRedirectTarget,
 } from '@/lib/api/previewToken';
-import { PREVIEW_MARKER_COOKIE, newPreviewNonce, withPreviewNonce } from '@/lib/previewGuard';
 
 // MUST be the Node.js runtime: `draftMode().enable()` writes the
 // `__prerender_bypass` cookie through Next's request store, and this route is
@@ -53,23 +52,8 @@ export async function GET(request: NextRequest) {
     request.nextUrl.searchParams.get(PREVIEW_ENABLE_REDIRECT_PARAM),
   );
 
-  let location = target;
   if (isWellFormedPreviewToken(rawToken)) {
     (await draftMode()).enable();
-    // Owner ideas T12 (D48): land on the target with a nonce query the public
-    // edge copy never had, so the edge cannot serve it to this draft session,
-    // and set the readable marker the backstop script reads. See
-    // src/lib/previewGuard.ts.
-    location = withPreviewNonce(target, newPreviewNonce());
-    (await cookies()).set({
-      name: PREVIEW_MARKER_COOKIE,
-      value: '1',
-      httpOnly: false,
-      sameSite: process.env.NODE_ENV !== 'development' ? 'none' : 'lax',
-      secure: process.env.NODE_ENV !== 'development',
-      path: '/',
-      maxAge: PREVIEW_TOKEN_MAX_AGE_SECONDS,
-    });
     (await cookies()).set({
       name: PREVIEW_TOKEN_COOKIE,
       value: rawToken,
@@ -94,7 +78,7 @@ export async function GET(request: NextRequest) {
   return new NextResponse(null, {
     status: 307,
     headers: {
-      Location: location,
+      Location: target,
       // A preview redirect is per-visitor and carries a Set-Cookie; it must
       // never be stored by a shared cache. `no-store` also stops a browser
       // heuristically caching the 307 and skipping the cookie write on a

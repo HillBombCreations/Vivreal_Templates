@@ -12,7 +12,6 @@ import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
-import { recordLinkTap } from '@/lib/siteEvents';
 import { subscribeUser } from '@/lib/api/subscribe/client';
 import { resolveSubscribersCollectionId } from '@/lib/subscribe/subscribersList';
 import { requestDeliveryQuote } from '@/lib/delivery/quoteClient';
@@ -147,9 +146,6 @@ const Providers = ({
             // writing). Until that lands the prop is accepted and dropped, and
             // the block stays in exactly the disabled state it is in today.
             onDeliveryQuote={requestDeliveryQuote}
-            // Owner ideas F5 (D32): a tap on a link page button sends one `lt`
-            // beacon, through the page view's own gate (lib/siteEvents.ts).
-            onLinkTap={recordLinkTap}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>
