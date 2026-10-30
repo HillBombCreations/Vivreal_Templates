@@ -4,11 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { X, Plus, Minus, Trash2, ShoppingBag, Check, Loader2, Tag } from "lucide-react";
-import { BrandMark } from "@hillbombcreations/site-renderer";
+import { BrandMark, deliveryConfigOf, pickupWindows } from "@hillbombcreations/site-renderer";
+import CartChoices from "./CartChoices";
+import {
+  checkoutChoice,
+  checkoutExtras,
+  choiceBlock,
+  cleanZip,
+  currentKind,
+  deliveryTotalLine,
+  fulfilmentChoices,
+  minimumLine,
+  readCartSettings,
+  type DeliveryQuote,
+  type FulfilmentKind,
+} from "@/lib/cart/cartSettings";
 import type { CartDialogProps } from "@/types/Cart";
 import {
   handleCheckout,
+  CheckoutShopRuleError,
   CheckoutStockError,
+  fetchDeliveryQuote,
   validateCoupon,
   type CouponPreview,
   type CartLineItemInput,
@@ -76,6 +92,39 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // so the cart-change effect that clears a code's error cannot wipe it.
   const [stockNotice, setStockNotice] = useState<string | null>(null);
 
+  // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
+  // defensively (absent settings are today's cart, word for word), and the
+  // shopper's choices. Every rule is re-checked by VR_Client_API at checkout.
+  const settings = useMemo(() => readCartSettings(siteData?.cart), [siteData?.cart]);
+  const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
+  const deliveryOn = deliveryConfig?.enabled === true;
+  const radiusMiles = deliveryOn ? Number(deliveryConfig?.config?.deliveryRadiusMiles) || 25 : null;
+  // Review B3: no choice at all until the owner saves cart settings; then
+  // "Ship it to me" first (and the default) when the shop ships.
+  const choices = fulfilmentChoices(settings, { deliveryOn, ships: shipsOrders(businessInfo) });
+  const [pickedKind, setKind] = useState<FulfilmentKind | null>(null);
+  const kind = currentKind(choices, pickedKind);
+  const [zip, setZip] = useState("");
+  const [delivery, setDelivery] = useState<DeliveryQuote | null>(null);
+  const [checkingZip, setCheckingZip] = useState(false);
+  const [pickupAt, setPickupAt] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const [ruleNotice, setRuleNotice] = useState<string | null>(null);
+  const pickupOffered = useMemo(
+    () =>
+      settings.pickup.on &&
+      pickupWindows({
+        hours: businessInfo?.hours,
+        timeZone: siteData?.timezone,
+        now: new Date(),
+        noticeMinutes: settings.pickup.noticeMinutes,
+        daysAhead: settings.pickup.daysAhead,
+      }).some((d) => d.times.length > 0),
+    // `open`: the window moves with the clock, so it is re-read when the cart opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings.pickup, businessInfo?.hours, siteData?.timezone, open],
+  );
+
   const itemsArray = useMemo(() => {
     const entries = cart ? Object.entries(cart) : [];
     return entries.map(([id, item]) => ({ id, ...item }));
@@ -113,6 +162,20 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     [itemsArray, quote, appliedCode, codeNewSubtotal]
   );
   const hasDiscount = appliedCode != null && discount > 0;
+  // The minimum is checked on the total after the code, as the server checks it.
+  const belowMinimum = minimumLine(total, settings.minimumOrder);
+  const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
+  // What still blocks checkout, shown, never guessed past: the server decides.
+  const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
+  const choiceMissing = blocked !== null;
+
+  const onCheckZip = async () => {
+    const clean = cleanZip(zip);
+    if (!clean || checkingZip) return;
+    setCheckingZip(true);
+    setDelivery(await fetchDeliveryQuote(cartLineItems, clean));
+    setCheckingZip(false);
+  };
 
   // F4: tell the shopper when a price they were shown went up. Compared quote
   // to quote only; a failed quote is not a sale ending.
@@ -145,6 +208,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       setCodeError(null);
     }
     setSaleEnded(false);
+    setDelivery(null);
     if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
     // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -242,6 +306,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const onCheckout = async () => {
     setLoadingCheckout(true);
     setStockNotice(null);
+    setRuleNotice(null);
     try {
       // F4: price the bag again right before paying. If a price the shopper was
       // shown went up (a sale ended), show the new total and wait for a second
@@ -259,12 +324,21 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         requiresShipping: shipsOrders(businessInfo),
         originUrl: window.location.origin,
         ...(appliedCode ? { code: appliedCode } : {}),
+        // Only what the shopper chose; nothing for a cart with no settings and
+        // one way to get the order, so that body is exactly today's.
+        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip })),
       });
       setOpenCartMenu(false);
     } catch (err) {
       // QA-W2-1: checkout refused a line above its stock. Bring every line down
       // to its stock and say exactly what changed; the code stays, because the
       // stock refusal says nothing about it.
+      // One of the shop's own rules refused (a minimum, the delivery area, a
+      // pickup time): say so and keep every choice, the code included.
+      if (err instanceof CheckoutShopRuleError) {
+        setRuleNotice(err.message);
+        return;
+      }
       if (err instanceof CheckoutStockError) {
         // The lines and counts checkout named win; the stock stored at add time
         // is only the fallback for an older Client that names none.
@@ -318,7 +392,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                   center-cropped letter slice. */}
               <BrandMark src={siteLogo} name={siteData?.name} fallbackSrc={siteData?.favicon} shape="avatar" size={40} radius={14} />
               <div className="leading-tight">
-                <div className="text-base font-semibold">Your cart</div>
+                <div className="text-base font-semibold">{settings.title}</div>
                 <div className="text-xs text-black/55">
                   {totalQty
                     ? `${totalQty} item${totalQty === 1 ? "" : "s"}`
@@ -345,7 +419,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
               <div className="mx-auto mb-3 h-12 w-12 rounded-2xl bg-black/5 flex items-center justify-center">
                 <ShoppingBag className="h-5 w-5 opacity-70" />
               </div>
-              <div className="text-sm font-semibold">Your cart is empty</div>
+              <div className="text-sm font-semibold">{settings.emptyText}</div>
               <div className="mt-1 text-xs text-black/55">
                 Add something you love and it&apos;ll show up here.
               </div>
@@ -472,6 +546,35 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           {/* Promo code (plan §5.5). Display only — Stripe re-validates + applies
               the authoritative discount at checkout. */}
           {itemsArray.length > 0 ? (
+            <CartChoices
+              settings={settings}
+              choices={choices}
+              kind={kind}
+              onKind={(next) => {
+                setKind(next);
+                setRuleNotice(null);
+              }}
+              radiusMiles={radiusMiles}
+              zip={zip}
+              onZip={(next) => {
+                setZip(next);
+                setDelivery(null);
+              }}
+              onCheckZip={() => void onCheckZip()}
+              checkingZip={checkingZip}
+              delivery={delivery}
+              hours={businessInfo?.hours}
+              timeZone={siteData?.timezone}
+              pickupAt={pickupAt}
+              noPickupTimes={blocked === "no-pickup-times"}
+              onPickupAt={setPickupAt}
+              note={note}
+              onNote={setNote}
+              disabled={loadingCheckout}
+            />
+          ) : null}
+
+          {itemsArray.length > 0 && settings.showPromo ? (
             <div className="mb-3">
               {appliedCode ? (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2">
@@ -543,6 +646,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </div>
           ) : null}
 
+          {ruleNotice ? (
+            <div className="mb-2 text-xs font-medium" role="alert">
+              {ruleNotice}
+            </div>
+          ) : null}
+
           {saleEnded ? (
             <div className="mb-2 text-xs font-medium" role="status">
               {SALE_ENDED_COPY}
@@ -569,10 +678,22 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </>
           ) : null}
 
+          {deliveryLine ? (
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <div className="text-black/60">{deliveryLine}</div>
+            </div>
+          ) : null}
+
+          {belowMinimum && itemsArray.length > 0 ? (
+            <div className="mt-2 text-xs font-medium" role="status">
+              {belowMinimum}
+            </div>
+          ) : null}
+
           <button
             type="button"
             onClick={onCheckout}
-            disabled={!itemsArray.length || loadingCheckout}
+            disabled={!itemsArray.length || loadingCheckout || Boolean(belowMinimum) || choiceMissing}
             className="mt-3 h-11 w-full rounded-2xl cursor-pointer font-semibold disabled:opacity-60 disabled:cursor-not-allowed text-[var(--text-inverse,#fff)] bg-[var(--primary,#365b99)] hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2"
           >
             {loadingCheckout ? (
@@ -581,7 +702,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                 <span>Starting checkout&hellip;</span>
               </>
             ) : (
-              <span>Proceed to checkout</span>
+              <span>{settings.checkoutLabel}</span>
             )}
           </button>
 

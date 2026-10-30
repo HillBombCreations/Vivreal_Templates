@@ -19,6 +19,7 @@ import { getTeamMembersRead } from '@/lib/api/team';
 import { readableSegments } from '@/lib/detail/readableSegment';
 import { applyReadableLinks, readableLinkCollections, type ReadablePage } from '@/lib/detail/readableListLinks';
 import { PAGE_LIST_LIMIT, usesProductBridge } from '@/lib/api/snapshot/fill';
+import { toRendererSiteData } from './rendererSiteData';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
@@ -197,7 +198,9 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   const data: PageDataContextValue = {
     getItems: (id) => itemsByCollection.get(id) ?? [],
     getIntegrationItems: (type) => itemsByIntegration.get((type ?? '').toLowerCase()) ?? [],
-    siteData: siteData as unknown as RendererSiteData,
+    // The stored `{ type, link }` socials in the renderer's `{ platform, url }`:
+    // without it no Link page button or social row ever rendered (#485 review).
+    siteData: toRendererSiteData(siteData) as unknown as RendererSiteData,
   };
 
   // 4. Assemble the composePage input. `pages` = sibling configs (composition

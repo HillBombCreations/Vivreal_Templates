@@ -30,10 +30,11 @@ import { isSeedOnlySlug } from "@/lib/seo/seedOnlyPaths";
 import SubscribeClientAdapter from "@/components/PageTemplates/SubscribeClientAdapter";
 import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTrigger";
 import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
+import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -52,6 +53,9 @@ import type { PageConfig, SiteData } from "@/types/SiteData";
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { slugsForStaticParams } from "@/lib/pages/staticParams";
+import { authoredStaticSlugs, capSlugParams, describePrerenderLimits, planPrerenderLimits, siteDataBytes } from "@/lib/pages/prerenderBudget";
+import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
+import { mayReadQuery } from "@/lib/queryReadGate";
 
 // ISR migration Phase 3. Both values MUST be literals — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -62,8 +66,13 @@ import { slugsForStaticParams } from "@/lib/pages/staticParams";
 //
 // `dynamicParams = true` is Next's default and is stated explicitly because it
 // is load-bearing here: `generateStaticParams` below emits the slugs known at
-// build time, and a page added in Studio afterwards must still render (then
-// cache) on first request rather than 404.
+// build time, and a page added in Studio afterwards must still render rather
+// than 404. It renders DYNAMIC and UNCACHED (200, `no-store`) until the next
+// fleet build lists it, never "render then cache": the checkout result slugs
+// always bail at build (they read the query), so this route gets no fallback
+// entry, and a path with no fallback renders plain dynamic (Next 16.4.1
+// `build/index.js:2239`; owner ideas plan 3.8, D46 records why an "add page"
+// triggers no rebuild).
 export const revalidate = 300;
 export const dynamicParams = true;
 
@@ -119,9 +128,23 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
   // explains is the difference between a working fleet and a 500. Privacy and
   // terms used to be here and are not: a site with no stored policy page now
   // answers 404 for them (owner decision 2026-10-14, no invented legal text).
-  return slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS).map(
-    (slug) => ({ slug }),
-  );
+  //
+  // Review B1 (owner ideas PR 11): never a reserved name. A fixed route
+  // (`/book`, `/booking/manage`, `/api`, ...) and this list claiming the same
+  // path made the build write `/book` as an ISR page of THIS route, and the
+  // fixed `force-dynamic` route then answered 500 on it. An owner's own `book`
+  // page is served by `src/app/book/page.tsx` (it hands it to this route's
+  // render, dynamic) and `booking` by this route on request.
+  const listed = slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS)
+    .filter((slug) => !isReservedPageSlug(slug));
+  // The per-site prerender budget (src/lib/pages/prerenderBudget.ts): a page
+  // past it is not listed and renders on request, as before T10, so a site
+  // with a large record cannot push its build past Amplify's output cap.
+  const dataBytes = siteDataBytes(siteData);
+  const limits = planPrerenderLimits(dataBytes, authoredStaticSlugs(siteData.pageConfigs, isReservedPageSlug).length);
+  const slugs = capSlugParams(listed, CHECKOUT_RESULT_SLUGS, limits.slugs);
+  console.log(describePrerenderLimits("[slug]", dataBytes, limits, slugs.length));
+  return slugs.map((slug) => ({ slug }));
 }
 
 // Formats migrated to the unified composePage() pipeline (Plan 4). Migrated one
@@ -276,6 +299,14 @@ const COMPOSE_FORMATS = new Set<string>([
   // is worse than a 404: a search that always returns everything looks like it
   // worked. The two changes are one change.
   "lookup",
+  // links → the LINK PAGE (owner ideas 2026-10-29, F5, D30): a photo, a name
+  // and a stack of buttons for an Instagram or TikTok bio. The renderer
+  // (1.93.0) composes it from `link-profile`, `link-stack` and `social-row`
+  // blocks and resolves every link at render time; a tap calls the context's
+  // `onLinkTap` (Providers sends the beacon). Route recognition is the only
+  // thing it needs here, and per the notes above omitting it 404s every
+  // link page (the /shop lesson).
+  "links",
 ]);
 function composeFormat(format: string | undefined): format is string {
   return format !== undefined && COMPOSE_FORMATS.has(format);
@@ -569,7 +600,10 @@ export default async function DynamicPage({
         // lookup (help-site kit 5.6) — the search RESULTS page. It composes
         // exactly like `collection-list`; the only thing that makes it a
         // results page is the `lookupQuery` threaded through below.
-        format === "lookup"
+        format === "lookup" ||
+        // links (owner ideas F5) — the link page. No storefront, no query:
+        // the same delegation as `standard`.
+        format === "links"
       ) {
         // Live storefront overrides + controlled query for EVERY generic
         // format: a products storefront group is composable on ANY page
@@ -578,7 +612,12 @@ export default async function DynamicPage({
         // no-op (first live Square E2E: the catalog-format Shop page).
         // Overrides only fire when composePage renders a storefront arm, so
         // storefront-less pages are unaffected.
-        const sp = (await searchParams) ?? {};
+        // Owner ideas T10 (plan 3.8): the query is read ONLY when the page can
+        // use it. Reading it bails the whole slug to dynamic, which is what
+        // kept every composed inner page `no-store`. A page with no
+        // storefront, lookup or schedule gets the empty query and caches
+        // like the home page. See src/lib/pages/pageReadsQuery.ts.
+        const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
         return renderComposedPage({
           siteData,
           composedPage,
@@ -589,13 +628,15 @@ export default async function DynamicPage({
       }
     }
 
-    // Products controlled query — parsed for EVERY composed format (not just
-    // format:'products'): a storefront group is composable on ANY page under
-    // the universal page model, and its toolbar round-trips filter/sort/search
-    // through these URL params, so the server must honor them wherever the
-    // grid can render. Harmless for pages without a storefront (buildPageContext
-    // ignores the query when no products arm resolves).
-    const sp = (await searchParams) ?? {};
+    // Products controlled query — honored wherever a storefront can render:
+    // a storefront group is composable on ANY page under the universal page
+    // model, and its toolbar round-trips filter/sort/search through these URL
+    // params. It is NOT harmless to read it for a page without one: reading
+    // `searchParams` bails the slug to dynamic, which kept every composed
+    // inner page `no-store` (owner ideas T10, plan 3.8). So it is read only
+    // when `pageReadsQuery` says the page can use it; the checkout result
+    // slugs always do, which keeps this route free of a build fallback.
+    const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
     const productQuery = parseProductQuery(sp);
 
     // Components override: the live storefront wrappers (BOTH products
@@ -833,6 +874,8 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <OrderConfirmationTrigger />}
       {/* RW3-6: a confirmed order empties the cart. See ClearCartOnConfirmedOrder.tsx. */}
       {format === "checkout-success" && <ClearCartOnConfirmedOrder />}
+      {/* Owner ideas T5/T6: the purchase result, once per confirmed order. */}
+      {format === "checkout-success" && <RecordPurchaseGoal />}
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
@@ -887,6 +930,10 @@ export async function generateMetadata({
   // verdict, same query, same cache entries, and no read at all for a page whose
   // config already holds authored content.
   //
+  // Owner ideas T10: and only when the page can use it (`pageReadsQuery`),
+  // the same query the render uses, so a page that cannot (a blog index) is
+  // not bailed to dynamic by its head.
+  //
   // `searchParams` is awaited ONLY behind the config-only check. Reading it
   // bails the route to dynamic, and a stored static page (privacy, terms) never
   // reads it in the render either, so on an ISR site it must stay prerendered.
@@ -896,7 +943,7 @@ export async function generateMetadata({
     (await composedPageIsEmpty({
       siteData,
       composedPage: pageConfig,
-      productQuery: parseProductQuery((await searchParams) ?? {}),
+      productQuery: parseProductQuery(pageReadsQuery(pageConfig) && mayReadQuery() ? ((await searchParams) ?? {}) : {}),
     }))
   ) {
     return buildEmptyPageMetadata(siteName);

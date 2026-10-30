@@ -7,7 +7,8 @@ import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
 import { bagLineStock, capQuantity } from "../../cartStock.ts";
-import { CHECKOUT_OUT_OF_STOCK, type ShortStockLine } from "../../checkoutRequest.ts";
+import { CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
+import { readDeliveryQuote, type CheckoutExtras, type DeliveryQuote } from "../../cart/cartSettings.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -76,6 +77,24 @@ interface CheckoutProps {
    * trusted as-is — the client only controls the code string + quantities.
    */
   code?: string;
+  /**
+   * Owner ideas T13/T15: the note and fulfilment, built by
+   * `checkoutExtras` (lib/cart/cartSettings.ts). Never a fee. Spread into the
+   * body only when present, so a cart with no settings sends today's body.
+   */
+  extras?: CheckoutExtras;
+}
+
+/**
+ * Thrown when one of the shop's own rules refused checkout (a minimum, the
+ * delivery area, a pickup time). The cart shows the message and keeps every
+ * choice, the code included: the rule says nothing about the code.
+ */
+export class CheckoutShopRuleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckoutShopRuleError";
+  }
 }
 
 /**
@@ -160,6 +179,7 @@ export async function handleCheckout({
   requiresShipping,
   originUrl,
   code,
+  extras,
 }: CheckoutProps): Promise<void> {
   // Storefront Phase 0.2: /api/checkout refuses an empty price with a 400. A
   // bag saved before this fix can still hold such a line, so refuse here, before
@@ -188,6 +208,7 @@ export async function handleCheckout({
       // Only include the code when present; omitted entirely otherwise so
       // no-code checkouts send a byte-identical payload to before this feature.
       ...(trimmedCode ? { code: trimmedCode } : {}),
+      ...(extras ?? {}),
     }),
   });
 
@@ -204,6 +225,7 @@ export async function handleCheckout({
   const message =
     (typeof data.error === "string" && data.error) ||
     "Checkout could not be started. Please try again.";
+  if (data.reason === CHECKOUT_SHOP_RULE) throw new CheckoutShopRuleError(message);
   if (data.reason === CHECKOUT_OUT_OF_STOCK) {
     // Our own route already validated `items` (lib/checkoutRequest.ts).
     throw new CheckoutStockError(message, Array.isArray(data.items) ? (data.items as ShortStockLine[]) : undefined);
@@ -304,6 +326,38 @@ export async function fetchCartQuote(
   })();
   try {
     return await Promise.race([request, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Owner ideas T15 (3.10): what delivery to `zip` would cost this bag, in the
+ * server's words (VR_Client_API `cartQuote` with a delivery fulfilment, the
+ * same code checkout charges with). Display only: checkout recomputes it.
+ * `null` on any failure; the cart then shows no delivery line and checkout
+ * still decides.
+ */
+export async function fetchDeliveryQuote(
+  cartLineItems: CartLineItemInput[],
+  zip: string,
+  timeoutMs: number = CART_QUOTE_TIMEOUT_MS,
+): Promise<DeliveryQuote | null> {
+  if (cartLineItems.length === 0) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch("/api/cart-quote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cartLineItems, fulfilment: { kind: "delivery", zip } }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return readDeliveryQuote(await res.json());
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }

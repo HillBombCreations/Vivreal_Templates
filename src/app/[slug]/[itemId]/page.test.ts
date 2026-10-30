@@ -266,3 +266,15 @@ test('the collection products arm hands the product renderer only the decided su
   assert.match(productRenderer, /lookShell: resolveProductPageShell\(storefrontConfig\?\.shell\) !== null,/);
   assert.doesNotMatch(productRenderer, /<DetailPageTemplate\b/);
 });
+
+// Fix-forward 2026-10-30: the item list takes what the site prerender budget
+// leaves after the inner pages, computed exactly as `[slug]` computes it, and
+// the sentinel is still appended whatever the budget.
+test('the item build list is cut to the site prerender budget and still ends in the sentinel', () => {
+  assert.match(
+    source,
+    /planPrerenderLimits\(dataBytes, authoredStaticSlugs\(siteData\.pageConfigs, isReservedPageSlug\)\.length\)/,
+  );
+  assert.match(source, /\}, limits\.items\);/);
+  assert.match(source, /return \[\.\.\.items, \{ \.\.\.DETAIL_SENTINEL_PARAMS \}\];/);
+});

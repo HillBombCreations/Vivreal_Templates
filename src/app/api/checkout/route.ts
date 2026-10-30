@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets, topLevelKeys } from "@/lib/log/redact";
 import { checkoutRefusal, checkoutSiteId } from "@/lib/checkoutRequest";
+import { forwardedCheckoutExtras } from "@/lib/cart/cartSettings";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -78,6 +79,12 @@ export async function POST(request: NextRequest) {
   // Forward to VR_Client_API — Stripe key is resolved server-side from group integrations
   const apiKey = process.env.API_KEY;
   const siteId = checkoutSiteId(process.env.SITE_ID);
+  // Owner ideas T13/T15 (3.9, 3.10): the shopper's note and how the order is
+  // fulfilled, re-checked here and forwarded only with a site id (VR_Client_API
+  // reads the shop's rules off the site). Never a fee: the server decides it
+  // (D57), and nothing here can carry one. Absent for a cart with no settings,
+  // so its body stays byte-identical. See lib/cart/cartSettings.ts.
+  const extras = forwardedCheckoutExtras(body, Boolean(siteId));
   const clientApiUrl =
     process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
 
@@ -99,6 +106,7 @@ export async function POST(request: NextRequest) {
         // QA-W2-4: names the checkout's business, logo and colour. Sent only
         // when it is a well-formed id; see lib/checkoutRequest.ts.
         ...(siteId ? { siteId } : {}),
+        ...extras,
       }),
     });
 
