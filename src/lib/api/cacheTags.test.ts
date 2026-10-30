@@ -45,13 +45,9 @@ test('a blank id is dropped, never emitted as a bare prefix', () => {
 /*  Contract with the webhook route                                    */
 /* ------------------------------------------------------------------ */
 
-// Owner ideas T10 moved the tag mapping out of the route, unchanged, into
-// lib/revalidateTags.ts (so a test can call it); the route calls it. Read the
-// module the tags are minted in, and pin that the route still reaches it.
-const routeSource = fs.readFileSync(new URL('../revalidateTags.ts', import.meta.url), 'utf8');
-assert.match(
-  fs.readFileSync(new URL('../../app/api/revalidate/route.ts', import.meta.url), 'utf8'),
-  /tagsForEvent\(event, body\.data, SITE_ID\)/,
+const routeSource = fs.readFileSync(
+  new URL('../../app/api/revalidate/route.ts', import.meta.url),
+  'utf8',
 );
 
 test('every tag this module mints is a tag /api/revalidate knows how to clear', () => {

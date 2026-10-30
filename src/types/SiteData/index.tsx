@@ -741,17 +741,6 @@ export interface SiteData {
          */
         consentMode?: boolean;
         /**
-         * Owner ideas 2026-10-29 (3.3, T6): the owner's own Google Ads code and
-         * conversion label, and the results counted as conversions. Written by
-         * VR_Secure_API's analytics validator (Pro to add or change, removal
-         * always allowed), which also forces `consentMode: true` on connect. A
-         * valid `AW-` code makes the site ask its visitors first and loads only
-         * after Accept (`lib/adsTag.ts`); an invalid one emits nothing.
-         */
-        adsTagId?: string | null;
-        adsConversionLabel?: string | null;
-        adsConversionEvents?: Array<'message' | 'booking' | 'purchase'> | null;
-        /**
          * Named-vendor tag registry (change item C9) — extra marketing tags as
          * `{provider, id}` against a HARD-CODED snippet in
          * `src/lib/vendorTags.ts`. Never a URL and never a script body. An
@@ -762,20 +751,6 @@ export interface SiteData {
          */
         additional?: Array<{ provider?: string; id?: string }>;
     } | null;
-    /**
-     * Owner ideas 2026-10-29 (F4): the public booking subset, from the TOP
-     * LEVEL of VR_Client_API's site details (`lib/api/siteData/booking.ts`).
-     * Absent means booking is off: the lever is off for the group, or the
-     * owner never switched requests on.
-     */
-    booking?: import('@/lib/api/siteData/booking').SiteBookingSubset;
-    /**
-     * Owner ideas 2026-10-29 (3.9, D51): the cart's words and switches,
-     * `siteDetails.values.cart`, written by VR_Secure_API's `cartSettingsRule`.
-     * Read ONLY through `readCartSettings` (lib/cart/cartSettings.ts), which
-     * treats every field as untrusted and falls back to today's cart.
-     */
-    cart?: unknown;
     /**
      * Migration lifecycle state (SEO demo-safety). `'demo'` = a pre-cutover
      * outreach/demo deployment that must NOT be indexed — it is a near-duplicate

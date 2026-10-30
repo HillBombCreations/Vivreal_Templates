@@ -45,10 +45,6 @@ import { isVivrealOwnSite } from '@/lib/vivrealApex';
 import EmailPopup from '@/components/HomeSections/EmailPopup';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import { resolvePrivacyPolicyHref } from '@/lib/pages/policyPage';
-import { customerConsentTags } from '@/lib/adsTag';
-import { draftMode } from 'next/headers';
-import { DRAFT_META_NAME, PREVIEW_BACKSTOP_SCRIPT } from '@/lib/previewGuard';
-import PreviewLinkNonce from '@/components/PreviewLinkNonce';
 
 /**
  * Root metadata. Sets `metadataBase` so any path-relative OG/canonical URLs
@@ -105,14 +101,6 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // variable already. False on every customer site, and false whenever
     // SITE_ID is unset or unrecognised, which is the safe direction.
     const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
-    // Owner ideas T6 (D20): a customer site that connected a Google tag asks
-    // its visitors first; null on every other customer site (no banner, head
-    // tag unchanged) and always null on Vivreal's own site, which has its own.
-    const customerTags = vivrealOwnSite ? null : customerConsentTags(siteData.analytics);
-    // Owner ideas T12 (D48): a draft render says so in its head, and keeps its
-    // links on the preview nonce. `draftMode()` is prerender-safe (see
-    // lib/api/previewToken.ts, Spike A), so this costs public pages no caching.
-    const isDraft = (await draftMode()).isEnabled;
     // The popup's consent line and the cookie banner link only to a policy
     // page this site stores and the route would serve (see
     // lib/pages/policyPage.ts): there is no built-in /privacy any more, so a
@@ -177,20 +165,12 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               {/* Structured data for classic crawlers + AI assistants. Emitted
                   here so every page inherits site-level Organization/WebSite. */}
               <JsonLd schema={siteSchema} />
-              {/* Owner ideas T12 (D48), the preview backstop: inert unless the
-                  readable preview marker cookie is set; then a page that is
-                  not a draft render reloads once with a fresh nonce. */}
-              {isDraft && <meta name={DRAFT_META_NAME} content="1" />}
-              <script dangerouslySetInnerHTML={{ __html: PREVIEW_BACKSTOP_SCRIPT }} />
               {/* Per-site web-analytics tag (migration continuity + portal-
                   editable). Reads siteData.analytics; absent ⇒ nothing renders
                   (byte-identical no-op for every existing site). NOT on
                   Vivreal's own site: there GA loads only after the visitor
                   accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
-              {/* Owner ideas T6: on a customer site that asks first about Google
-                  Analytics, GA moves to <SiteConsent> too ("Reject, and none of
-                  this runs"). Every other customer site renders exactly as before. */}
-              {!vivrealOwnSite && !customerTags?.analytics && <SiteAnalytics analytics={siteData.analytics} />}
+              {!vivrealOwnSite && <SiteAnalytics analytics={siteData.analytics} />}
               {/* C1: the literal families (Inter, Outfit, ...) load from a
                   <link>, not from a globals.css @import, which the Turbopack
                   build drops, and only on a site that draws one. See
@@ -215,7 +195,6 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
               }
           >
               <Providers siteData={siteData} vivrealOwnSite={vivrealOwnSite}>
-                  {isDraft && <PreviewLinkNonce />}
                   {/*
                     Route-transition feedback. Any page this site's content
                     keeps dynamic waits on a server render with nothing on
@@ -348,7 +327,6 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   <CtaClickTracking vivrealOwnSite={vivrealOwnSite} />
                   <SiteConsent
                       vivrealOwnSite={vivrealOwnSite}
-                      customerTags={customerTags}
                       additional={siteData.analytics?.additional}
                       analytics={siteData.analytics}
                       privacyHref={resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)}

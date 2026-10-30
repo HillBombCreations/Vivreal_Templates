@@ -56,16 +56,6 @@ export interface SiteAnalyticsConfig {
    * (`lib/consent.ts`) on grant and on restore — see `lib/vendorTags.ts`.
    */
   additional?: AdditionalVendorConfig[];
-  /**
-   * Owner ideas T6 (3.3): the owner's Google Ads code, label and counted
-   * results. Declared here because they live on the same `analytics` object,
-   * and DELIBERATELY IGNORED by this component: an Ads tag never loads in
-   * <head>. It loads only after the visitor accepts, from the consent
-   * controller (`lib/adsTag.ts`), and an invalid code loads nothing.
-   */
-  adsTagId?: string | null;
-  adsConversionLabel?: string | null;
-  adsConversionEvents?: readonly string[] | null;
 }
 
 // Strict per-provider id shapes. GA4 = `G-XXXX`; Plausible = a bare domain;

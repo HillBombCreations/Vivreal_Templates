@@ -47,7 +47,7 @@ import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } f
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
-import { collectRichTextImageKeys, itemSegment, resolvePattern, stableRichTextImageUrl, isReservedPageSlug } from "@hillbombcreations/site-renderer";
+import { collectRichTextImageKeys, itemSegment, resolvePattern, stableRichTextImageUrl } from "@hillbombcreations/site-renderer";
 // The renderer's own inventory helpers, imported rather than reimplemented so
 // the "Out of stock" button and the JSON-LD availability claim on the same page
 // cannot disagree. Their contract: `tracked: false` means untracked, not zero.
@@ -84,10 +84,6 @@ import { applyContextOverrides } from "@/lib/detail/contextOverlay";
 import { resolveDetailCanonical } from "@/lib/detail/canonical";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
-import { connection } from "next/server";
-import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
-import { mayReadQuery } from "@/lib/queryReadGate";
-import { DETAIL_SENTINEL_PARAMS, isDetailSentinel, listStaticItemParams } from "@/lib/detail/staticItemParams";
 
 // ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -97,43 +93,31 @@ import { DETAIL_SENTINEL_PARAMS, isDetailSentinel, listStaticItemParams } from "
 // if they drift.
 export const revalidate = 300;
 
-// `dynamicParams = true` (Next's default, stated because it is load-bearing):
-// an item not in the list below still renders, DYNAMIC and UNCACHED (200,
-// `no-store`), until the next fleet build lists it.
+// Stated explicitly because it documents a MEASURED limit, not an intent.
 //
-// HISTORY, rewritten for Next 16.4.1 (owner ideas 2026-10-29, plan 3.8, T11).
-// This route used to have no `generateStaticParams`, and that alone made it
-// fully dynamic whatever `revalidate` says ("Otherwise, the route will be
-// dynamically rendered"): every item page was sent `no-store`, measured up to
-// 3.25 s. It now lists each collection-detail item at the address a visitor
-// sees, plus a sentinel pair whose render bails (`connection()`, then
-// `notFound()`), see `src/lib/detail/staticItemParams.ts`:
-//   - listed items prerender with `revalidate = 300`, the home page's model,
-//     and a Save purges them by data tag on the receiving instance (D43);
-//   - the sentinel means the list is never empty (an EMPTY list makes Next
-//     classify the route static and, gate off, every URL answers 500, see the
-//     `[slug]` docblock) and the route always has a bailing path, so the build
-//     writes NO `dynamicRoutes` fallback for it. That is what keeps the
-//     request-time reads below safe for unlisted addresses: the show and team
-//     id redirects (`searchParams`) and product items (`headers()` in
-//     `lib/api/client.ts`) render plain dynamic, never a 500 "changed from
-//     static to dynamic at runtime" (research 1.11). Remove the sentinel and
-//     that guarantee goes with it.
+// This route has no `generateStaticParams`, and in Next 16.3.3 that means the
+// `revalidate` above does nothing: a dynamic route with no enumerated params is
+// fully dynamic, `revalidate` is not even reported for it in the build output,
+// and every response carries `Cache-Control: private, no-cache, no-store`.
+// Measured with SITE_RENDER_MODE=isr: `ƒ /[slug]/[itemId]` with no revalidate
+// column, and `/blog/<id>` served no-store on both passes. Removing
+// `fetchCache` below changes nothing, which is how the cause was isolated.
+//
+// So detail pages gain NO caching in this phase. Enumerating them was rejected
+// here rather than deferred by accident: the params would have to come from
+// fetching every bound collection of every page config on every fleet build
+// (and a promote-stable rebuilds all 16 sites), `getCollectionItems` caps at
+// 100 items so the enumeration would be partial anyway, and the id-to-URL
+// mapping on this route runs through `applyScope`/`itemSegment`/`resolvePattern`
+// plus a depth-2 nested-page arm, where a wrong param is a wrong page at a real
+// URL. That is its own piece of work with its own verification, not a line in
+// this one. `dynamicParams = true` is stated so the intent survives if someone
+// does add `generateStaticParams` later.
+//
+// NB an empty `generateStaticParams` is NOT a safe placeholder here: on
+// `[slug]` it made Next classify the route as fully static and every URL
+// returned HTTP 500 with the gate off. See that route's docblock.
 export const dynamicParams = true;
-
-export async function generateStaticParams(): Promise<{ slug: string; itemId: string }[]> {
-  const siteData = await getSiteData();
-  const items = await listStaticItemParams(siteData.pageConfigs ?? [], {
-    servesCollectionDetail: (page) => servesCollectionDetail(page),
-    isPageTurnedOff: (page) => isPageTurnedOff(page),
-    collectionIdOf: (page) => page.detailPage?.itemCollectionId || getPageCollectionId(siteData, page.name, "") || undefined,
-    // The same cached 100-row read the build's fill pass makes for the page list.
-    readItems: async (collectionId) => (await getCollectionItems(collectionId, { limit: 100 })).items,
-    segmentOf: (item, itemKeyField) => itemSegment(item, itemKeyField),
-    isReservedSlug: (slug) => isReservedPageSlug(slug),
-  });
-  return [...items, { ...DETAIL_SENTINEL_PARAMS }];
-}
 
 // `fetchCache = "force-no-store"` was REMOVED here by B1.1
 // (docs/projects/isr-and-social-pass/plan.md). This note is the record of that
@@ -242,13 +226,6 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
   // line runs during `next build`.
   await enforceDynamicUnlessIsr();
   const { slug, itemId } = await params;
-  // The bailing sentinel (T11): never a real address, and the reason this route
-  // has no build fallback. `connection()` BEFORE `notFound()`, so its prerender
-  // bails rather than writing a static 404. See src/lib/detail/staticItemParams.ts.
-  if (isDetailSentinel(slug, itemId)) {
-    await connection();
-    return notFound();
-  }
   const siteData = await getSiteData();
   // Same fallback the products list and the old client wrapper applied.
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
@@ -316,8 +293,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // Same live storefront overrides + controlled query as [slug]/page.tsx's
     // generic arm — a nested sub-page can compose a storefront group too, and
     // without the overrides its grid renders the bare (CartAdapter-less) arm.
-    // Owner ideas T10/T11: read only when the nested page can use it.
-    const sp = pageReadsQuery(nestedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
+    const sp = (await searchParams) ?? {};
     return renderComposedPage({
       siteData,
       composedPage: nestedPage,

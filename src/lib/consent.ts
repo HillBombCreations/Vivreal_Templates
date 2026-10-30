@@ -108,20 +108,6 @@ export const COOKIE_CONSENT_REJECTED = 'rejected';
 export type ConsentChoice = typeof COOKIE_CONSENT_ACCEPTED | typeof COOKIE_CONSENT_REJECTED;
 
 /**
- * Owner ideas T6 (D20): the first argument of every entry point below is the
- * GATE, "does this site ask its visitors first". It was only ever Vivreal's
- * own site; a customer site that connected a Google tag now asks too
- * (`lib/adsTag.ts`, `customerConsentTags`). `ownSite: false` keeps everything
- * that is Vivreal's own business off a customer site whatever the visitor
- * chooses: the registry vendors (Clarity), the `vr_attr` first touch, and the
- * `cookie_consent_*` measurement events. Absent means own site, so every
- * existing call reads exactly as before.
- */
-export interface ConsentOptions {
-  ownSite?: boolean;
-}
-
-/**
  * One third-party tag, already resolved to a hard-coded snippet. The consent
  * controller never sees a URL or a provider name — C9's registry
  * (`lib/vendorTags.ts`) does the validating and hands over an inert
@@ -343,14 +329,13 @@ export function runConsentMount(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
   ga: readonly VendorScript[] = [],
-  opts: ConsentOptions = {},
 ): ConsentState {
   const state = resolveConsentState(vivrealOwnSite);
   if (!state.gated) return state;
   removeLegacyConsentKeys();
   // Keep the server-side mirror in step with the stored choice on every page.
   writeConsentCookie(state.choice === COOKIE_CONSENT_ACCEPTED);
-  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState((opts.ownSite ?? true) ? vendors : [], ga);
+  if (state.choice === COOKIE_CONSENT_ACCEPTED) applyConsentedState(vendors, ga);
   return state;
 }
 
@@ -359,27 +344,24 @@ export function grantConsent(
   vivrealOwnSite: boolean,
   vendors: readonly VendorScript[] = [],
   ga: readonly VendorScript[] = [],
-  opts: ConsentOptions = {},
 ): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
-  const ownSite = opts.ownSite ?? true;
   writeStoredConsentChoice(COOKIE_CONSENT_ACCEPTED);
-  applyConsentedState(ownSite ? vendors : [], ga);
+  applyConsentedState(vendors, ga);
   // `vr_attr` is written only now, from the landing page held since the first visit.
-  acceptAttribution(ownSite);
-  if (ownSite && typeof window !== 'undefined') {
+  acceptAttribution(vivrealOwnSite);
+  if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_accept', { event_category: 'Privacy' });
   }
   return resolveConsentState(vivrealOwnSite);
 }
 
 /** Banner "Reject": store the refusal. Nothing is injected, nothing upgrades. */
-export function denyConsent(vivrealOwnSite: boolean, opts: ConsentOptions = {}): ConsentState {
+export function denyConsent(vivrealOwnSite: boolean): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
-  const ownSite = opts.ownSite ?? true;
   writeStoredConsentChoice(COOKIE_CONSENT_REJECTED);
-  rejectAttribution(ownSite);
-  if (ownSite && typeof window !== 'undefined') {
+  rejectAttribution(vivrealOwnSite);
+  if (typeof window !== 'undefined') {
     window.gtag?.('event', 'cookie_consent_reject', { event_category: 'Privacy' });
   }
   return resolveConsentState(vivrealOwnSite);
@@ -397,12 +379,11 @@ export function denyConsent(vivrealOwnSite: boolean, opts: ConsentOptions = {}):
  *
  * @param reload injected for testability; defaults to a real page reload.
  */
-export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void, opts: ConsentOptions = {}): ConsentState {
+export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void): ConsentState {
   if (!vivrealOwnSite) return DENIED_STATE;
-  const ownSite = opts.ownSite ?? true;
   clearStoredConsentChoice();
   resetConsentApplied();
-  withdrawAttribution(ownSite);
+  withdrawAttribution(vivrealOwnSite);
   if (typeof window !== 'undefined') {
     // Downgrade every signal the accept path granted, so withdrawal is complete
     // on the current page before the reload. `ad_personalization` was never
@@ -412,7 +393,7 @@ export function withdrawConsent(vivrealOwnSite: boolean, reload?: () => void, op
       ad_storage: 'denied',
       ad_user_data: 'denied',
     });
-    if (ownSite) window.gtag?.('event', 'cookie_consent_withdraw', { event_category: 'Privacy' });
+    window.gtag?.('event', 'cookie_consent_withdraw', { event_category: 'Privacy' });
   }
   const doReload =
     reload ?? (() => (typeof window !== 'undefined' ? window.location.reload() : undefined));
