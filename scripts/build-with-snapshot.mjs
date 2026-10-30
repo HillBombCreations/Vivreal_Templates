@@ -33,6 +33,9 @@
  *     `site snapshot: <n> entries, <bytes> bytes, siteDetails ok, snapshot_uncovered: <n>`
  *     then one line per uncovered key (query stripped, plus a hash).
  *     Uncovered keys do not fail the build; validation failures do.
+ *  7. SIZE GUARD. Measure the prerendered page output and fail before
+ *     Amplify's output cap, naming the largest pages
+ *     (`scripts/build-size-guard.mjs`); always print the `build size:` line.
  *
  * PLAIN JAVASCRIPT, NO DEPENDENCY. The build image's Node cannot import
  * TypeScript, so the policy values this needs (the expected keys, excluded
@@ -48,6 +51,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { judgePrerenderOutput, measurePrerenderOutput } from './build-size-guard.mjs';
 
 /** Twin of `SNAPSHOT_FILE_NAME` in src/lib/api/snapshot/constants.ts. */
 export const SNAPSHOT_FILE_NAME = 'site-snapshot.json';
@@ -428,6 +432,14 @@ export async function main(deps = {}) {
     if (bytes > SIZE_WARN_BYTES) log(`site snapshot: WARNING size ${bytes} bytes is over ${SIZE_WARN_BYTES}`);
     if (trimmed.length) log(`site snapshot: snapshot_trimmed ${trimmed.length} entries (${trimmed.map((k) => `${stripQuery(k)} ${hashKey(k)}`).join(', ')})`);
     for (const p of outputPaths) log(`site snapshot: wrote ${path.relative(root, p).split(path.sep).join('/')}`);
+
+    // Fail here, by name, before Amplify's output cap (scripts/build-size-guard.mjs).
+    const size = judgePrerenderOutput((deps.measurePrerenderOutput ?? measurePrerenderOutput)(root));
+    if (!size.ok) {
+      logError(size.line);
+      return 1;
+    }
+    log(size.line);
     return 0;
   } catch (err) {
     if (err instanceof SnapshotRefusal) {

@@ -88,6 +88,7 @@ import { connection } from "next/server";
 import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
 import { mayReadQuery } from "@/lib/queryReadGate";
 import { DETAIL_SENTINEL_PARAMS, isDetailSentinel, listStaticItemParams } from "@/lib/detail/staticItemParams";
+import { authoredStaticSlugs, describePrerenderLimits, planPrerenderLimits, siteDataBytes } from "@/lib/pages/prerenderBudget";
 
 // ISR migration Phase 3. `revalidate` MUST be a literal — Next 16 parses route
 // segment config out of this file's source and hard-fails the build on any
@@ -123,6 +124,11 @@ export const dynamicParams = true;
 
 export async function generateStaticParams(): Promise<{ slug: string; itemId: string }[]> {
   const siteData = await getSiteData();
+  // The per-site prerender budget (src/lib/pages/prerenderBudget.ts), the same
+  // plan `[slug]` computes: inner pages first, items get what is left. An item
+  // past it renders on request, as before T11.
+  const dataBytes = siteDataBytes(siteData);
+  const limits = planPrerenderLimits(dataBytes, authoredStaticSlugs(siteData.pageConfigs, isReservedPageSlug).length);
   const items = await listStaticItemParams(siteData.pageConfigs ?? [], {
     servesCollectionDetail: (page) => servesCollectionDetail(page),
     isPageTurnedOff: (page) => isPageTurnedOff(page),
@@ -131,7 +137,8 @@ export async function generateStaticParams(): Promise<{ slug: string; itemId: st
     readItems: async (collectionId) => (await getCollectionItems(collectionId, { limit: 100 })).items,
     segmentOf: (item, itemKeyField) => itemSegment(item, itemKeyField),
     isReservedSlug: (slug) => isReservedPageSlug(slug),
-  });
+  }, limits.items);
+  console.log(describePrerenderLimits("[slug]/[itemId]", dataBytes, limits, items.length));
   return [...items, { ...DETAIL_SENTINEL_PARAMS }];
 }
 

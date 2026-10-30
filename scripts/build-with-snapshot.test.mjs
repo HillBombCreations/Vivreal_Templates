@@ -22,6 +22,7 @@ import {
   FORCE_FLOOR_ENV,
   trimToBudget,
 } from './build-with-snapshot.mjs';
+import { PRERENDER_FAIL_BYTES } from './build-size-guard.mjs';
 import * as tsConstants from '../src/lib/api/snapshot/constants.ts';
 import { createSnapshotRecorder } from '../src/lib/api/snapshot/recorder.ts';
 import { fillSnapshotAtBuild } from '../src/lib/api/snapshot/fill.ts';
@@ -464,6 +465,37 @@ test('the key the recorder writes during the build is the key the runtime floor 
     assert.equal(found.value.items[0].objectValue.title, 'Lemon Tart');
   } finally {
     process.chdir(cwd);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Owner ideas fix-forward (2026-10-30): the size guard runs on the real build
+// tree after the snapshot is written (scripts/build-size-guard.mjs).
+test('size guard REFUSE: a build whose prerendered pages pass the fail line exits 1 and names them', async () => {
+  const root = tempRoot();
+  try {
+    const big = path.join(root, '.next', 'server', 'app', 'getting-started', 'item-1.html');
+    fs.mkdirSync(path.dirname(big), { recursive: true });
+    fs.writeFileSync(big, '');
+    fs.truncateSync(big, PRERENDER_FAIL_BYTES + 1);
+    const { code, errors } = await run(root);
+    assert.equal(code, 1);
+    assert.ok(errors.some((l) => /^build size: .*FAILED before Amplify's output cap/.test(l) && l.includes('/getting-started')), errors.join('\n'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('size guard ALLOW: a build under the line exits 0 and prints its build size line', async () => {
+  const root = tempRoot();
+  try {
+    const page = path.join(root, '.next', 'server', 'app', 'index.html');
+    fs.mkdirSync(path.dirname(page), { recursive: true });
+    fs.writeFileSync(page, 'x'.repeat(1000));
+    const { code, logs } = await run(root);
+    assert.equal(code, 0);
+    assert.ok(logs.some((l) => l.startsWith('build size: prerendered 1 pages, 1000 bytes')), logs.join('\n'));
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

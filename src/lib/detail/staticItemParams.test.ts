@@ -91,6 +91,35 @@ test('REFUSE: the list is capped per page and in total', async () => {
   assert.equal(out.filter((p) => p.slug === 'c0').length, PER_PAGE_LIMIT);
 });
 
+// Owner ideas fix-forward (2026-10-30): the per-site prerender budget.
+test('REFUSE: the site budget caps the item list below TOTAL_LIMIT (help.vivreal.io listed 300 and built 625 MB)', async () => {
+  const pages: Page[] = Array.from({ length: 5 }, (_, i) => ({ slug: `c${i}`, collection: `big${i}` }));
+  const { deps: d, reads } = deps(new Set(pages.map((p) => p.slug ?? '')));
+  const out = await listStaticItemParams(pages, d, 12);
+  assert.equal(out.length, 12);
+  assert.deepEqual(reads, ['big0'], 'no collection past the budget is read');
+});
+
+test('REFUSE: a zero budget lists no item and reads no collection', async () => {
+  const { deps: d, reads } = deps();
+  assert.deepEqual(await listStaticItemParams([{ slug: 'blog', collection: 'posts' }] as Page[], d, 0), []);
+  assert.deepEqual(reads, []);
+});
+
+test('ALLOW: a budget above TOTAL_LIMIT (or a junk value) never raises the cap', async () => {
+  const pages: Page[] = Array.from({ length: 5 }, (_, i) => ({ slug: `c${i}`, collection: `big${i}` }));
+  const { deps: d } = deps(new Set(pages.map((p) => p.slug ?? '')));
+  assert.equal((await listStaticItemParams(pages, d, 10_000)).length, TOTAL_LIMIT);
+  assert.equal((await listStaticItemParams(pages, d, -5)).length, 0);
+  assert.equal((await listStaticItemParams(pages, d, Number.NaN)).length, 0);
+});
+
+test('ALLOW: a small site within its budget lists every item, as before', async () => {
+  const pages: Page[] = [{ slug: 'blog', collection: 'posts', detailPage: { itemKeyField: 'slug' } }];
+  const { deps: d } = deps();
+  assert.equal((await listStaticItemParams(pages, d, 47)).length, 2);
+});
+
 test('REFUSE: a segment the router would not hand back unchanged is not listed', async () => {
   const { deps: d } = deps();
   const out = await listStaticItemParams([{ slug: 'blog', collection: 'odd', detailPage: { itemKeyField: 'slug' } }] as Page[], {

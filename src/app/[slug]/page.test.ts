@@ -209,9 +209,22 @@ test('the subscribe fallback resolves its list through the tested helper', () =>
 test('the build list never claims a fixed route\'s path', () => {
   assert.match(
     source,
-    /return slugsForStaticParams\(siteData\.pageConfigs, CHECKOUT_RESULT_SLUGS\)\s*\.filter\(\(slug\) => !isReservedPageSlug\(slug\)\)/,
+    /const listed = slugsForStaticParams\(siteData\.pageConfigs, CHECKOUT_RESULT_SLUGS\)\s*\.filter\(\(slug\) => !isReservedPageSlug\(slug\)\)/,
     'an owner page called book would be prerendered by this route and 500 at /book',
   );
+});
+
+// ── fix-forward 2026-10-30: the per-site prerender budget ────────────────
+test('the build list is cut to the site prerender budget, keeping the checkout slugs', () => {
+  // Without the cut, help.vivreal.io listed every inner page and its build hit
+  // Amplify's output cap (promote run 41089220307). The checkout slugs must
+  // survive it: they keep the list non-empty and the route free of a fallback.
+  assert.match(
+    source,
+    /planPrerenderLimits\(dataBytes, authoredStaticSlugs\(siteData\.pageConfigs, isReservedPageSlug\)\.length\)/,
+  );
+  assert.match(source, /const slugs = capSlugParams\(listed, CHECKOUT_RESULT_SLUGS, limits\.slugs\);/);
+  assert.match(source, /return slugs\.map\(\(slug\) => \(\{ slug \}\)\);/);
 });
 
 // ── owner ideas T7: the link page ─────────────────────────────────────────

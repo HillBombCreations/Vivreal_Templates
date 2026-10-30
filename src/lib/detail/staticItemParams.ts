@@ -68,14 +68,23 @@ export interface StaticItemDeps<P extends ListedPage> {
 
 const SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~-]{0,199}$/;
 
+/**
+ * `limit` is the site's prerender budget for items (`planPrerenderLimits` in
+ * `src/lib/pages/prerenderBudget.ts`), never above `TOTAL_LIMIT`. At 0 the
+ * list is empty and no collection is read; the route's sentinel still keeps
+ * every item address rendering on request.
+ */
 export async function listStaticItemParams<P extends ListedPage>(
   pages: readonly P[],
   deps: StaticItemDeps<P>,
+  limit: number = TOTAL_LIMIT,
 ): Promise<Array<{ slug: string; itemId: string }>> {
+  // A non-finite limit lists nothing: `length >= NaN` is never true, so it would remove the cap.
+  const cap = Number.isFinite(limit) ? Math.min(TOTAL_LIMIT, Math.max(0, Math.floor(limit))) : 0;
   const params: Array<{ slug: string; itemId: string }> = [];
   const seen = new Set<string>();
   for (const page of pages) {
-    if (params.length >= TOTAL_LIMIT) break;
+    if (params.length >= cap) break;
     const slug = page?.slug;
     // A nested page slug (`features/ai-sites`) is not a [slug] segment.
     if (typeof slug !== 'string' || !slug || slug.includes('/') || slug === DETAIL_SENTINEL) continue;
@@ -91,7 +100,7 @@ export async function listStaticItemParams<P extends ListedPage>(
       continue; // a failed read lists nothing; those items stay dynamic, as today
     }
     for (const item of items.slice(0, PER_PAGE_LIMIT)) {
-      if (params.length >= TOTAL_LIMIT) break;
+      if (params.length >= cap) break;
       const itemId = deps.segmentOf(item, page.detailPage?.itemKeyField);
       // Only an address the router would hand back unchanged.
       if (!SEGMENT.test(itemId)) continue;

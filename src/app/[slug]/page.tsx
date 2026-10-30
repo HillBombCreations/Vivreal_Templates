@@ -53,6 +53,7 @@ import type { PageConfig, SiteData } from "@/types/SiteData";
 import type { ScheduleView } from "@hillbombcreations/site-renderer";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { slugsForStaticParams } from "@/lib/pages/staticParams";
+import { authoredStaticSlugs, capSlugParams, describePrerenderLimits, planPrerenderLimits, siteDataBytes } from "@/lib/pages/prerenderBudget";
 import { pageReadsQuery } from "@/lib/pages/pageReadsQuery";
 import { mayReadQuery } from "@/lib/queryReadGate";
 
@@ -134,9 +135,16 @@ export async function generateStaticParams(): Promise<{ slug: string }[]> {
   // fixed `force-dynamic` route then answered 500 on it. An owner's own `book`
   // page is served by `src/app/book/page.tsx` (it hands it to this route's
   // render, dynamic) and `booking` by this route on request.
-  return slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS)
-    .filter((slug) => !isReservedPageSlug(slug))
-    .map((slug) => ({ slug }));
+  const listed = slugsForStaticParams(siteData.pageConfigs, CHECKOUT_RESULT_SLUGS)
+    .filter((slug) => !isReservedPageSlug(slug));
+  // The per-site prerender budget (src/lib/pages/prerenderBudget.ts): a page
+  // past it is not listed and renders on request, as before T10, so a site
+  // with a large record cannot push its build past Amplify's output cap.
+  const dataBytes = siteDataBytes(siteData);
+  const limits = planPrerenderLimits(dataBytes, authoredStaticSlugs(siteData.pageConfigs, isReservedPageSlug).length);
+  const slugs = capSlugParams(listed, CHECKOUT_RESULT_SLUGS, limits.slugs);
+  console.log(describePrerenderLimits("[slug]", dataBytes, limits, slugs.length));
+  return slugs.map((slug) => ({ slug }));
 }
 
 // Formats migrated to the unified composePage() pipeline (Plan 4). Migrated one
