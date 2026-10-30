@@ -447,11 +447,15 @@ test('B3 REFUSE: a logo off the media hosts is never fetched (card and icons)', 
   }
 });
 
-test('B3 REFUSE: the logo fetch refuses redirects and is time-bounded', async () => {
+test('B3 REFUSE: the logo fetch never auto-follows a redirect and is time-bounded', async () => {
   const { impl, inits } = fakeFetch(PNG_BYTES, { 'content-type': 'image/png' });
   await resolveOgLogo(LOGO_URL, impl);
   assert.equal(inits.length, 1);
-  assert.equal(inits[0]?.redirect, 'error');
+  // 'manual', not 'error' (2026-10-30): every image logo is a 302 from
+  // client.vivreal.io/media, and 'error' threw on it. The fence moved to a
+  // host check on each Location, proven through the real fetch in
+  // ogLogoRedirect.test.ts. 'follow' would skip that check, so it stays refused.
+  assert.equal(inits[0]?.redirect, 'manual');
   assert.ok(inits[0]?.signal instanceof AbortSignal);
 });
 

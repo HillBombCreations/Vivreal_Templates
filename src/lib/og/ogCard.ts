@@ -162,6 +162,15 @@ export const MAX_OG_LOGO_BYTES = 4 * 1024 * 1024;
 /** A hung media fetch must not hang the whole card. */
 const OG_LOGO_FETCH_TIMEOUT_MS = 5000;
 
+/**
+ * How many redirects a logo fetch may follow. Every image logo VR_Client_API
+ * serves is a stable `https://client.vivreal.io/media?bucket=..&key=..` link
+ * that answers a 302 to a freshly signed `media.vivreal.io` URL
+ * (`buildMediaUrl.js`, P0C). One hop is that redirect; a second is never
+ * needed and is refused.
+ */
+const OG_LOGO_MAX_REDIRECTS = 1;
+
 /** Any element named `text`, namespaced or not, in any case. */
 const SVG_TEXT_ELEMENT = /<(?:[a-z][\w.-]*:)?text[\s/>]/i;
 
@@ -251,11 +260,11 @@ function logLogoFallback(logoSrc: string, reason: string): void {
  * Decide the card's top slot from the logo's own bytes.
  *
  * Fail-closed: anything that is not a verified drawable image (no URL, a URL
- * off the media hosts, a redirect, a failed, slow or broken fetch or body
- * read, an oversized body, an unknown format, an SVG Satori cannot size, a
- * text wordmark) plans `name`, so an SVG is only ever handed to the image
- * element after it has been read and found to hold no text. This never
- * throws.
+ * off the media hosts, a redirect off the media hosts or past the one hop
+ * allowed, a failed, slow or broken fetch or body read, an oversized body, an
+ * unknown format, an SVG Satori cannot size, a text wordmark) plans `name`, so
+ * an SVG is only ever handed to the image element after it has been read and
+ * found to hold no text. This never throws.
  */
 export async function resolveOgLogo(
   logoSrc: string,
@@ -268,12 +277,24 @@ export async function resolveOgLogo(
   }
 
   try {
-    // `redirect: 'error'`: a redirect could leave the media hosts. The timeout
-    // covers the body read as well as the headers.
-    const res = await fetchImpl(logoSrc, {
-      redirect: 'error',
-      signal: AbortSignal.timeout(OG_LOGO_FETCH_TIMEOUT_MS),
-    });
+    // One timeout across every hop and the body read.
+    const signal = AbortSignal.timeout(OG_LOGO_FETCH_TIMEOUT_MS);
+    // `redirect: 'manual'` and the host check on each `Location`, not
+    // `'follow'`: a redirect could otherwise leave the media hosts. It was
+    // `'error'` until 2026-10-30, which threw on the 302 every image logo
+    // answers, so every image-logo site drew its name (promote 41089220307).
+    let url = logoSrc;
+    let res = await fetchImpl(url, { redirect: 'manual', signal });
+    for (let hops = 0; res.status >= 300 && res.status < 400; hops += 1) {
+      const location = res.headers.get('location');
+      const next = location ? new URL(location, url).href : '';
+      if (hops >= OG_LOGO_MAX_REDIRECTS || !isOgLogoMediaUrl(next)) {
+        logLogoFallback(logoSrc, hops >= OG_LOGO_MAX_REDIRECTS ? 'too-many-redirects' : 'redirect-off-media-host');
+        return { kind: 'name' };
+      }
+      url = next;
+      res = await fetchImpl(url, { redirect: 'manual', signal });
+    }
     if (!res.ok) {
       logLogoFallback(logoSrc, `status-${res.status}`);
       return { kind: 'name' };
