@@ -12,7 +12,7 @@ import { SiteDataProvider } from '@/contexts/SiteDataContext';
 import { CartProvider } from '@/contexts/CartContext';
 import CartDialogWrapper from './CartDialogWrapper';
 import { NextSiteRendererProvider } from '@hillbombcreations/site-renderer';
-import { recordLinkTap } from '@/lib/siteEvents';
+import { recordGoal, recordLinkTap } from '@/lib/siteEvents';
 import { subscribeUser } from '@/lib/api/subscribe/client';
 import { resolveSubscribersCollectionId } from '@/lib/subscribe/subscribersList';
 import { requestDeliveryQuote } from '@/lib/delivery/quoteClient';
@@ -150,6 +150,9 @@ const Providers = ({
             // Owner ideas F5 (D32): a tap on a link page button sends one `lt`
             // beacon, through the page view's own gate (lib/siteEvents.ts).
             onLinkTap={recordLinkTap}
+            // Next release 2026-11 (N2): a contact form message the server
+            // accepted sends one `gl` result beacon, through the same gate.
+            onGoal={recordGoal}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>

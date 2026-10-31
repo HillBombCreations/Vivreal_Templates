@@ -240,5 +240,10 @@ test('the link page is a recognised format AND takes the plain delegation', () =
 test('a link tap reaches the beacon through the renderer context', () => {
   const providers = fs.readFileSync(new URL('../../components/Providers/index.tsx', import.meta.url), 'utf8');
   assert.match(providers, /onLinkTap=\{recordLinkTap\}/);
-  assert.match(providers, /import \{ recordLinkTap \} from '@\/lib\/siteEvents'/);
+  assert.match(providers, /import \{ recordGoal, recordLinkTap \} from '@\/lib\/siteEvents'/);
+});
+
+test('a contact form result reaches the beacon through the renderer context (next release 2026-11, N2)', () => {
+  const providers = fs.readFileSync(new URL('../../components/Providers/index.tsx', import.meta.url), 'utf8');
+  assert.match(providers, /onGoal=\{recordGoal\}/);
 });
