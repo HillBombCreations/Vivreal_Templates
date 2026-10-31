@@ -176,9 +176,16 @@ REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verific
 NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
 NEXT_PUBLIC_SENTRY_DSN         # Sentry DSN
 SHOWS_ID / TEAMMEMBERS_ID / PARTNERS_ID  # Legacy collection-ID fallbacks (block bindings win — see getPageCollectionId)
+INTERNAL_METER_KEY             # Internal-meter key for THIS group (64 lowercase hex), server-only (next release 2026-11, F0)
+INTERNAL_METER_GROUP_ID        # The group that key was derived for. Both written at BRANCH level by EventHandler.
+                               #   Either absent or malformed: no token is minted and every read is metered as today.
+                               #   Never NEXT_PUBLIC_: a browser bundle must never carry the key.
 ```
 
-All env vars are injected by the EventHandler during Amplify deployment — they are NOT stored in this repo.
+All env vars are injected by the EventHandler during Amplify deployment — they are NOT stored in this repo. A new name
+reaches the running server only if the app's STORED buildSpec greps it into `.env.production` (the `SITE_RENDER_MODE`
+trap): EventHandler's buildSpec adds the two `INTERNAL_METER_*` greps, and existing apps get them through
+`updateSiteEnvVars` (the X-F0 one-shot), so a site mints only after that and its next build.
 
 ---
 
