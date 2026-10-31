@@ -132,3 +132,95 @@ test('ALLOW: every fixed top-level route in src/app is reserved', () => {
   assert.ok(fixedTopLevelAddresses(real).length >= 15, 'the listing parsed real routes');
   assert.deepEqual(unlisted(real), []);
 });
+
+// ── next release 2026-11, N3: closed weekdays, the shop zone, service names ─
+// The fixture is VR_Client_API's own CL1 test (closedWeekdays.test.js): a shop
+// closed Sunday and Monday gives [0, 1]. Pinning the same array here pins the
+// day numbering across the repo boundary: 0 = Sunday, as getUTCDay numbers it.
+const CLIENT_BODY = {
+  booking: {
+    mode: 'request',
+    staff: [],
+    services: [],
+    timeZone: 'America/Chicago',
+    closedWeekdays: [0, 1],
+  },
+};
+
+/** Each day button the renderer's real request form draws: its label and whether it is disabled. */
+function dayButtons(days: ReturnType<typeof bookingDays>): Array<{ label: string; disabled: boolean }> {
+  const html = renderToStaticMarkup(
+    createElement(BookingRequestForm, { shopName: 'Clipper Lane', days, onSubmit: async () => ({ ok: true, emailed: false }) }),
+  );
+  const out: Array<{ label: string; disabled: boolean }> = [];
+  for (const m of html.matchAll(/<button type="button"( disabled="")?[^>]*>([A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2})<\/button>/g)) {
+    out.push({ label: m[2], disabled: Boolean(m[1]) });
+  }
+  return out;
+}
+
+test('ALLOW (N3): the Client [0,1] fixture greys every Sunday and Monday on the form, and nothing else', () => {
+  const site = readBooking(CLIENT_BODY);
+  assert.deepEqual(site.booking?.closedWeekdays, [0, 1], 'readBooking carries closedWeekdays');
+  assert.equal(site.booking?.timeZone, 'America/Chicago', 'readBooking carries timeZone');
+  // Tue 2026-11-03 in Chicago: 30 days run to Wed Dec 2.
+  const buttons = dayButtons(bookingDays(new Date('2026-11-03T15:00:00Z'), site.booking?.timeZone, site.booking?.closedWeekdays));
+  assert.equal(buttons.length, 30, 'positive control: the form drew all 30 days');
+  const greyed = buttons.filter((b) => b.disabled).map((b) => b.label.slice(0, 3));
+  assert.ok(greyed.length > 0, 'some days are greyed');
+  assert.deepEqual([...new Set(greyed)].sort(), ['Mon', 'Sun'], 'only Sundays and Mondays are greyed');
+  const open = buttons.filter((b) => !b.disabled).map((b) => b.label.slice(0, 3));
+  assert.ok(!open.includes('Sun') && !open.includes('Mon'), 'no Sunday or Monday is offered');
+  assert.equal(greyed.length + open.length, 30);
+});
+
+test('REFUSE (N3): an absent closedWeekdays greys nothing, and the days are byte-identical to today', () => {
+  const site = readBooking({ booking: { mode: 'request', staff: [], services: [] } });
+  assert.equal('closedWeekdays' in (site.booking ?? {}), false, 'absent stays absent');
+  const now = new Date('2026-11-03T15:00:00Z');
+  const days = bookingDays(now, 'America/Chicago', site.booking?.closedWeekdays);
+  assert.equal(days.some((d) => 'closed' in d), false, 'no day carries a closed key');
+  assert.deepEqual(days, bookingDays(now, 'America/Chicago'), 'identical to the call without the argument');
+  assert.equal(dayButtons(days).filter((b) => b.disabled).length, 0);
+});
+
+test('REFUSE (N3): a malformed closedWeekdays entry never greys a day', () => {
+  const site = readBooking({ booking: { mode: 'request', staff: [], services: [], closedWeekdays: [7, -1, '0', 1.5, null, 3, 3] } });
+  assert.deepEqual(site.booking?.closedWeekdays, [3], 'only whole numbers 0 to 6 survive, once each');
+  const greyed = dayButtons(bookingDays(new Date('2026-11-03T15:00:00Z'), 'America/Chicago', site.booking?.closedWeekdays))
+    .filter((b) => b.disabled)
+    .map((b) => b.label.slice(0, 3));
+  assert.deepEqual([...new Set(greyed)], ['Wed'], 'only Wednesday, 3');
+});
+
+test('ALLOW (N3): service names Client sent come first; REFUSE: a blank name is not a name', async () => {
+  const mod = await import('./bookPage.ts');
+  assert.equal(typeof mod.subsetServiceNames, 'function', 'bookPage exports subsetServiceNames');
+  const site = readBooking({
+    booking: {
+      mode: 'online',
+      staff: [],
+      services: [
+        { itemId: 'svc1', minutes: 30, name: ' Haircut ' },
+        { itemId: 'svc2', minutes: 45, name: '   ' },
+        { itemId: 'svc3', minutes: 60 },
+      ],
+    },
+  });
+  assert.deepEqual(site.booking?.services, [
+    { itemId: 'svc1', minutes: 30, name: 'Haircut' },
+    { itemId: 'svc2', minutes: 45 },
+    { itemId: 'svc3', minutes: 60 },
+  ]);
+  const names = mod.subsetServiceNames(site.booking);
+  assert.deepEqual([...names], [['svc1', 'Haircut']], 'only the named one');
+});
+
+test('/book reads the shop zone and closed days from the subset and names from Client first', () => {
+  const source = fs.readFileSync(new URL('../../app/book/page.tsx', import.meta.url), 'utf8');
+  assert.match(source, /const timeZone = siteData\.booking\?\.timeZone \?\? siteData\.timezone;/);
+  assert.match(source, /timeZone=\{timeZone\}/, 'the picker takes the same zone');
+  assert.match(source, /days=\{bookingDays\(new Date\(\), timeZone, siteData\.booking\?\.closedWeekdays\)\}/);
+  assert.match(source, /const names = subsetServiceNames\(siteData\.booking\);/);
+  assert.match(source, /resolveServiceNames\(siteData, unnamed\)/, 'only the ids Client did not name are looked up');
+});
