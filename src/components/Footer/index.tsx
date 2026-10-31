@@ -6,6 +6,7 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { toRendererSocialLinks } from '@/lib/api/composition/rendererSiteData';
 import { footerHours } from '@/lib/footerHours';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import { resolveSubscribersCollectionId, withSignupUnavailableCopy } from '@/lib/subscribe/subscribersList';
@@ -69,8 +70,7 @@ const Footer = async () => {
 
   // Footer social overrides win over the site-level social links.
   const socialLinks =
-    siteData?.footer?.socialLinks ??
-    (siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }));
+    siteData?.footer?.socialLinks ?? toRendererSocialLinks(siteData?.socialLinks);
 
   // Wrinsy round (D6) — 'wordmark-crown' giant-wordmark threading. The mark's
   // media object rides `footer.wordmark` (imageKey + backend-signed media —
