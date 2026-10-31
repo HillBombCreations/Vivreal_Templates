@@ -20,9 +20,13 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = path.resolve(here, '../..');
-const read = (rel: string) => fs.readFileSync(path.join(here, rel), 'utf8');
+/** Read lazily, so a missing file fails its own assertion rather than the whole file's load. */
+const read = (rel: string) => {
+  const file = path.join(here, rel);
+  assert.ok(fs.existsSync(file), `${rel} exists`);
+  return fs.readFileSync(file, 'utf8');
+};
 const client = read('client.ts');
-const minter = read('internalToken.ts');
 
 /** The body of `export async function <name>` up to the next top-level `export`. */
 function functionBody(source: string, name: string): string {
@@ -76,6 +80,7 @@ test('REFUSE: only client.ts imports the minter; no route handler, MCP, .well-kn
 });
 
 test('REFUSE: the minter is server-only and reads no NEXT_PUBLIC_ name', () => {
+  const minter = read('internalToken.ts');
   assert.match(minter, /^import 'server-only';/, 'first line imports server-only');
   assert.match(minter, /readInternalMeterConfig\(process\.env\)/);
   for (const source of [minter, read('internalTokenCore.ts')]) {

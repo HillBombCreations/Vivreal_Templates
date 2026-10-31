@@ -250,7 +250,21 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     // Every fleet header and every session cookie, each with its own sentinel,
     // plus the release check's kept control header, through the real server,
     // the real SDK's request isolation scope and the real transport.
-    const { FLEET_SECRET_HEADERS } = await import("../sentry/scrubCredentials.ts");
+    // The fleet list, copied from plan 3.PII (Revision 26, 33 names) rather than
+    // imported, so this real-SDK check does not lean on the module it proves;
+    // `scrubCredentials.test.ts` pins the module's own array to the same 33.
+    const FLEET_SECRET_HEADERS = [
+      "cookie", "set-cookie", "authorization", "proxy-authorization",
+      "x-active-ctx", "x-user-ctx", "x-api-key", "x-support-attestation",
+      "x-csrf-token", "x-aws-waf-token", "x-amz-security-token", "x-amz-signature",
+      "x-shopify-access-token", "x-dead-token-value", "x-github-stateless-s2s-token",
+      "x-vivreal-preview", "x-vivreal-preview-token", "x-vivreal-signature", "x-vivreal-internal",
+      "stripe-signature", "x-stripe-signature", "x-hub-signature-256",
+      "x-shopify-hmac-sha256", "x-square-hmacsha256-signature", "x-vr-sentry-canary",
+      "x-preview-token", "x-vr-metering-token", "x-revalidate-signature",
+      "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "x-client-ip",
+    ];
+    assert.equal(FLEET_SECRET_HEADERS.length, 33);
     const secret = (name: string) => `SENTINEL_${name.replace(/[^a-z0-9]/gi, "_")}_sdk_9d1e`;
     const cookieNames = ["token", "active_ctx", "user_ctx", "refreshToken", "csrf_token", "session", "sid", "zz_other", "vr-preview-token"];
     const headers: Record<string, string> = { "content-type": "application/json", "x-vr-check-control": "kept-control-9d1e" };

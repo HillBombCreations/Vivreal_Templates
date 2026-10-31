@@ -131,3 +131,12 @@ test('ALLOW: shapes the hooks do not expect pass through untouched and never thr
   const plain = { message: 'm', request: { url: 'u', headers: { accept: 'a' } } };
   assert.deepEqual(scrubCredentials(structuredClone(plain)), plain, 'nothing to remove means nothing changes');
 });
+
+test('the module list is exactly the copy the real-SDK test sends (no drift between the two)', async () => {
+  const fs = await import('node:fs');
+  const sdkTest = fs.readFileSync(new URL('../api/scrubbedCapture.sdk.test.ts', import.meta.url), 'utf8');
+  const block = sdkTest.slice(sdkTest.indexOf('const FLEET_SECRET_HEADERS = ['), sdkTest.indexOf('];', sdkTest.indexOf('const FLEET_SECRET_HEADERS = [')));
+  const copied = [...block.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
+  assert.equal(copied.length, 33, 'positive control: parsed the 33 copied names');
+  assert.deepEqual(copied, [...FLEET_SECRET_HEADERS]);
+});
