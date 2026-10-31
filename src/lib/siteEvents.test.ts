@@ -109,3 +109,49 @@ test('ALLOW: recordLinkTap sends one lt beacon at the current page', async () =>
   }
   assert.deepEqual(JSON.parse(sent[0]), { s: 'site1', h: 'shop.example', p: '/links', k: 'lt', l: 'lnk0001' });
 });
+
+// ── next release 2026-11, N2 (D7): the renderer's onGoal ──────────────────
+function atPage<T>(hostname: string, pathname: string, run: () => T): T {
+  const g = globalThis as unknown as { window?: unknown };
+  const before = g.window;
+  g.window = { location: { hostname, pathname } };
+  try {
+    return run();
+  } finally {
+    g.window = before;
+  }
+}
+
+test('ALLOW (N2): recordGoal sends exactly {k:"gl", g:"message"} at the current page', async () => {
+  const mod = await import('./siteEvents.ts');
+  assert.equal(typeof mod.recordGoal, 'function', 'siteEvents exports recordGoal for the renderer onGoal');
+  const sent: string[] = [];
+  configureSiteEvents({ siteId: 'site1', endpoint: 'e', transport: (_e, p) => sent.push(p) });
+  atPage('shop.example', '/contact', () => mod.recordGoal('message'));
+  assert.equal(sent.length, 1, 'one beacon per accepted message');
+  assert.deepEqual(JSON.parse(sent[0]), { s: 'site1', h: 'shop.example', p: '/contact', k: 'gl', g: 'message' });
+});
+
+test('REFUSE (N2): on SITE_ID "preview" the page view gate configures nothing, so a goal sends nothing', async () => {
+  const mod = await import('./siteEvents.ts');
+  const { shouldSendBeacon } = await import('./beaconPolicy.ts');
+  // The gate <SiteBeacon> runs before configureSiteEvents: a preview build never passes it.
+  assert.equal(shouldSendBeacon({ siteId: 'preview', vivrealOwnSite: false, hostname: 'shop.example', referrer: '', cookie: '' }), false);
+  configureSiteEvents(null);
+  const sent: string[] = [];
+  const transport = (_e: string, p: string) => void sent.push(p);
+  atPage('shop.example', '/contact', () => mod.recordGoal?.('message'));
+  assert.deepEqual(sent, [], 'nothing leaves while the gate has not configured events');
+  // Positive control: the same call does send once the gate allowed a real site.
+  configureSiteEvents({ siteId: 'site1', endpoint: 'e', transport });
+  atPage('shop.example', '/contact', () => mod.recordGoal?.('message'));
+  assert.equal(sent.length, 1, 'control: a configured site sends');
+});
+
+test('REFUSE (N2): recordGoal drops a goal word the ingest does not accept', async () => {
+  const mod = await import('./siteEvents.ts');
+  const sent: string[] = [];
+  configureSiteEvents({ siteId: 'site1', endpoint: 'e', transport: (_e, p) => sent.push(p) });
+  atPage('shop.example', '/', () => mod.recordGoal?.('signup' as never));
+  assert.deepEqual(sent, []);
+});

@@ -33,10 +33,10 @@ const STORED: SiteData = {
   ],
 } as SiteData; // Only the field these blocks read.
 
-function renderBlock(dispatchId: 'link-stack' | 'social-row', labels: Record<string, unknown>): string {
+function renderBlock(dispatchId: 'link-stack' | 'social-row', labels: Record<string, unknown>, site: SiteData = STORED): string {
   const ctx = {
     pages: [],
-    data: { siteData: handOff(STORED), getItems: () => [], getIntegrationItems: () => [] },
+    data: { siteData: handOff(site), getItems: () => [], getIntegrationItems: () => [] },
     isHome: false,
     options: { mode: 'live' },
   };
@@ -85,7 +85,7 @@ test('toRendererSocialLinks: maps type to platform and link to url, drops rows w
   assert.deepEqual(mod.toRendererSocialLinks({} as unknown as SiteData['socialLinks']), []); // Not an array.
 });
 
-test('toRendererSiteData: only socialLinks changes; Footer and Navbar keep reading the stored shape', () => {
+test('toRendererSiteData: only socialLinks changes, and the stored data is never mutated', () => {
   assert.ok(mod, 'src/lib/api/composition/rendererSiteData.ts exists');
   const site = { name: 'Dougs Kitchen', socialLinks: [{ type: 'instagram', link: 'https://instagram.com/a' }] } as SiteData;
   const out = mod.toRendererSiteData(site);
@@ -98,4 +98,45 @@ test('buildPageContext hands the renderer the mapped site data, not the stored s
   const source = fs.readFileSync(new URL('./buildPageContext.ts', import.meta.url), 'utf8');
   assert.match(source, /siteData: toRendererSiteData\(siteData\) as unknown as RendererSiteData,/);
   assert.doesNotMatch(source, /siteData: siteData as unknown as RendererSiteData/);
+});
+
+// ── next release 2026-11, N6 and owner Q12: the owner's own label ─────────
+// Schemas 1.67.0 stores an optional `label` on a social link so an Other link
+// keeps the owner's name for it. The renderer (1.94.0) draws it; Templates must
+// carry it. Before this, all three mappers (this one, Footer, Navbar) dropped it.
+const OTHER_SITE = {
+  socialLinks: [{ type: 'other', link: 'https://shop.example/owner', label: 'My Etsy' }],
+} as SiteData; // Only the field these blocks read.
+
+test('ALLOW (N6, Q12): an Other link is named by the owner\'s label in the Link page social row', () => {
+  const html = renderBlock('social-row', {}, OTHER_SITE);
+  assert.match(html, /aria-label="My Etsy"/, html || 'no section rendered');
+});
+
+test('ALLOW (N6, Q12): toRendererSocialLinks carries a label, trimmed', () => {
+  assert.ok(mod, 'src/lib/api/composition/rendererSiteData.ts exists');
+  const rows = [{ type: 'other', link: 'https://a.example', label: '  My Etsy ' }] as unknown as SiteData['socialLinks'];
+  assert.deepEqual(mod.toRendererSocialLinks(rows), [{ platform: 'other', url: 'https://a.example', label: 'My Etsy' }]);
+});
+
+test('REFUSE (N6, Q12): a blank or non-string label adds no label key, so today\'s rows are byte-identical', () => {
+  assert.ok(mod, 'src/lib/api/composition/rendererSiteData.ts exists');
+  const rows = [
+    { type: 'instagram', link: 'https://instagram.com/a' },
+    { type: 'other', link: 'https://b.example', label: '   ' },
+    { type: 'other', link: 'https://c.example', label: 42 },
+  ] as unknown as SiteData['socialLinks']; // Malformed labels a stored document could hold.
+  assert.deepEqual(mod.toRendererSocialLinks(rows), [
+    { platform: 'instagram', url: 'https://instagram.com/a' },
+    { platform: 'other', url: 'https://b.example' },
+    { platform: 'other', url: 'https://c.example' },
+  ]);
+});
+
+test('Footer and Navbar read the site social links through the same mapper (so the label reaches them)', () => {
+  for (const rel of ['../../../components/Footer/index.tsx', '../../../components/Navigation/Navbar.tsx']) {
+    const source = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+    assert.match(source, /toRendererSocialLinks\(siteData\?\.socialLinks\)/, `${rel} uses toRendererSocialLinks`);
+    assert.doesNotMatch(source, /platform: l\.type, url: l\.link/, `${rel} keeps no inline mapper that drops the label`);
+  }
 });

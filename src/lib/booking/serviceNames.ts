@@ -4,9 +4,10 @@ import { collectBindingTargets } from "@/lib/api/composition/bindings";
 import type { PageConfig, SiteData } from "@/types/SiteData";
 
 /**
- * Names for the services online booking offers (owner ideas T2). VR_Client_API's
- * public booking subset carries each service's item id and length, not its
- * name, so the name is read from the site's own pages: every collection a page
+ * Names for the services online booking offers (owner ideas T2). Since next
+ * release 2026-11 (N3) VR_Client_API names a service whose item is public, and
+ * `/book` asks here only for the ids it did not name. The name is read from
+ * the site's own pages: every collection a page
  * binds is read through the same cached reader the pages render with (so this
  * costs no request a page has not already made), and an id found there takes
  * that item's title. Stops as soon as every id is named. An id found nowhere

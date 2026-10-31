@@ -12,6 +12,7 @@ import { BOT_VERDICT_HEADER } from '../botVerdict';
 import { buildFetchFailureCapture, stripQueryString, upstreamFallbackLine } from './errorCapture';
 import { ApiError, doClientFetch, isQuotaError, type ClientApiConfig } from './clientFetchCore';
 import { resolvePreviewToken } from './previewToken';
+import { internalTokenFor } from './internalToken';
 import { createFailureMemo } from './failureMemo';
 import { createCaptureThrottle } from './captureThrottle';
 import { RECORD_DIR_ENV } from './snapshot/constants';
@@ -314,8 +315,13 @@ export async function clientFetchCached<T>(
 ): Promise<T> {
   const previewToken = await readPreviewToken();
 
+  // F0 (next release 2026-11, T4): a cached read that goes upstream is a page
+  // render read (a build, an ISR regeneration, a revalidation), so it carries
+  // the internal-meter token, minted here, inside the closure, so each upstream
+  // call gets a fresh one and nothing per-request reaches the cache key. The
+  // preview path below and every uncached `clientFetch` never mint.
   const cached = unstable_cache(
-    async () => doClientFetch<T>(CLIENT_API, path, null, init),
+    async () => doClientFetch<T>(CLIENT_API, path, null, init, await internalTokenFor(path, init)),
     ['vr-client-api', path],
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );

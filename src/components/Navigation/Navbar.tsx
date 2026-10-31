@@ -2,6 +2,7 @@ import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcr
 import type { HeroSection, PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { toRendererSocialLinks } from '@/lib/api/composition/rendererSiteData';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import NavbarChrome from './NavbarChrome';
 
@@ -140,7 +141,7 @@ const Navbar = async ({
       // uses; no fabrication, the rail null-outs when nothing is authored).
       bandColor={siteData?.navigation?.bandColor ?? null}
       linkColorCycle={siteData?.navigation?.linkColorCycle ?? null}
-      socialLinks={(siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }))}
+      socialLinks={toRendererSocialLinks(siteData?.socialLinks)}
       // Ansel kit (bakery template #3) — the boutique utility-header extras
       // (all boutique-only; null/absent keep every other layout byte-identical).
       brandKicker={siteData?.navigation?.brandKicker ?? null}

@@ -381,3 +381,47 @@ test('a POST that hits a dead socket is not replayed', async () => {
   await assert.rejects(() => doClientFetch(CONFIG, '/tenant/x', null, { method: 'POST', body: '{}' }));
   assert.equal(calls, 1);
 });
+
+/* ------------------------------------------------------------------ */
+/*  Next release 2026-11, F0 (T4): the internal-meter header           */
+/* ------------------------------------------------------------------ */
+
+const INTERNAL = 'v1.NTA3ZjFmNzdiY2Y4NmNkNzk5NDM5MDExOjE3OTM1MzQ0MDAwMDA6cmVuZGVy.1866840d663c31111c552bd67e050fb8b67089f2d17a5458a123983486e2b1c0';
+
+test('ALLOW (F0): a render read given a token sends it as x-vivreal-internal on the real outbound request', async () => {
+  const calls = captureFetch({ success: true, data: { ok: 1 }, error: null });
+  await doClientFetch(CONFIG, '/tenant/siteDetails?siteId=abc', null, undefined, INTERNAL);
+  assert.equal(calls.length, 1);
+  assert.equal(headerOf(calls[0], 'x-vivreal-internal'), INTERNAL);
+  assert.equal(headerOf(calls[0], 'authorization'), 'test-api-key', 'the API key still rides along');
+});
+
+test('REFUSE (F0): no token means no header, and the header set is exactly today\'s', async () => {
+  const calls = captureFetch({ success: true, data: { ok: 1 }, error: null });
+  await doClientFetch(CONFIG, '/tenant/siteDetails?siteId=abc', null);
+  assert.equal(headerOf(calls[0], 'x-vivreal-internal'), null);
+  assert.deepEqual(buildClientFetchHeaders('k', null), { Authorization: 'k', 'Content-Type': 'application/json' });
+  assert.deepEqual(buildClientFetchHeaders('k', null, undefined, null), { Authorization: 'k', 'Content-Type': 'application/json' });
+});
+
+test('REFUSE (F0): a caller cannot set or override x-vivreal-internal through its own init, in any letter case', async () => {
+  for (const name of ['x-vivreal-internal', 'X-Vivreal-Internal', 'X-VIVREAL-INTERNAL']) {
+    const calls = captureFetch({ success: true, data: {}, error: null });
+    // A route handler forging one: dropped, nothing sent.
+    await doClientFetch(CONFIG, '/tenant/collectionObjects?collectionId=c', null, { headers: { [name]: 'forged' } });
+    assert.equal(headerOf(calls[0], 'x-vivreal-internal'), null, `${name} forged by a caller is dropped`);
+    // With a minted token, the minted value wins and the forged one is gone.
+    const calls2 = captureFetch({ success: true, data: {}, error: null });
+    await doClientFetch(CONFIG, '/tenant/collectionObjects?collectionId=c', null, { headers: { [name]: 'forged' } }, INTERNAL);
+    assert.equal(headerOf(calls2[0], 'x-vivreal-internal'), INTERNAL, `${name}: only the minted token`);
+  }
+});
+
+test('ALLOW (F0): preview and internal headers ride together, both applied after the caller\'s headers', () => {
+  const headers = buildClientFetchHeaders('k', TOKEN, { 'X-Bot': '1' }, INTERNAL);
+  assert.equal(headers[PREVIEW_FORWARD_HEADER], TOKEN);
+  assert.equal(headers['x-vivreal-internal'], INTERNAL);
+  assert.equal(headers['X-Bot'], '1', 'caller headers still ride along');
+  const keys = Object.keys(headers);
+  assert.equal(keys[keys.length - 1], 'x-vivreal-internal', 'applied last');
+});

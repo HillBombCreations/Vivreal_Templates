@@ -166,13 +166,31 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     collectionId: COLLECTION_ID,
   };
 
-  await t.test("the repo's own config initialises the SDK, enabled, with nothing scrubbing ahead of us", () => {
+  await t.test("the repo's own config initialises the SDK, enabled, with only the credential scrub ahead of us", () => {
     const options = Sentry.__realSentryControl.initOptions;
     assert.ok(options, "src/instrumentation.ts called init");
     assert.equal(Sentry.SDK_VERSION, "10.75.3", "the installed SDK this was proved against; re-run on a bump");
     assert.equal(options.enabled, true, "control: the SDK really sends");
-    assert.equal(options.sendDefaultPii, undefined, "the repo leaves sendDefaultPii at its default");
-    assert.equal(options.beforeSend, undefined, "no beforeSend hides or adds anything");
+    // Next release 2026-11, plan 3.PII, T8 (owner Q14): explicit, never the default.
+    assert.equal(options.sendDefaultPii, false, "sendDefaultPii is set false explicitly");
+    // The global hooks remove credentials and the IP only. A body and a console
+    // line pass them untouched, so the CONTROL below still proves the route
+    // scrub is what removes those.
+    for (const hook of ["beforeSend", "beforeSendTransaction"] as const) {
+      const fn = options[hook] as ((e: unknown) => unknown) | undefined;
+      assert.equal(typeof fn, "function", `${hook} is set`);
+      const event = {
+        request: { data: { email: EMAIL_SENTINEL }, headers: { cookie: "active_ctx=x", accept: "a" }, cookies: { active_ctx: "x" } },
+        breadcrumbs: [{ category: "console", message: EMAIL_SENTINEL }],
+        user: { ip_address: "203.0.113.9" },
+      };
+      assert.deepEqual(fn?.(event), {
+        request: { data: { email: EMAIL_SENTINEL }, headers: { accept: "a" } },
+        breadcrumbs: [{ category: "console", message: EMAIL_SENTINEL }],
+        user: {},
+      }, `${hook} removes credentials and the IP, and nothing else`);
+    }
+    assert.equal(typeof options.beforeBreadcrumb, "function", "beforeBreadcrumb is set");
   });
 
   await t.test("CONTROL: without the scrub the SDK sends the body and the console line", async () => {
@@ -226,5 +244,56 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     assert.deepEqual(event.breadcrumbs ?? [], []);
     assert.equal(event.tags?.stage, "upstream-rejected");
     assert.equal(event.tags?.status, "400");
+  });
+
+  await t.test("REFUSE (T8): a real request's cookies, fleet headers and IP never leave; a harmless header does", async () => {
+    // Every fleet header and every session cookie, each with its own sentinel,
+    // plus the release check's kept control header, through the real server,
+    // the real SDK's request isolation scope and the real transport.
+    // The fleet list, copied from plan 3.PII (Revision 26, 33 names) rather than
+    // imported, so this real-SDK check does not lean on the module it proves;
+    // `scrubCredentials.test.ts` pins the module's own array to the same 33.
+    const FLEET_SECRET_HEADERS = [
+      "cookie", "set-cookie", "authorization", "proxy-authorization",
+      "x-active-ctx", "x-user-ctx", "x-api-key", "x-support-attestation",
+      "x-csrf-token", "x-aws-waf-token", "x-amz-security-token", "x-amz-signature",
+      "x-shopify-access-token", "x-dead-token-value", "x-github-stateless-s2s-token",
+      "x-vivreal-preview", "x-vivreal-preview-token", "x-vivreal-signature", "x-vivreal-internal",
+      "stripe-signature", "x-stripe-signature", "x-hub-signature-256",
+      "x-shopify-hmac-sha256", "x-square-hmacsha256-signature", "x-vr-sentry-canary",
+      "x-preview-token", "x-vr-metering-token", "x-revalidate-signature",
+      "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "x-client-ip",
+    ];
+    assert.equal(FLEET_SECRET_HEADERS.length, 33);
+    const secret = (name: string) => `SENTINEL_${name.replace(/[^a-z0-9]/gi, "_")}_sdk_9d1e`;
+    const cookieNames = ["token", "active_ctx", "user_ctx", "refreshToken", "csrf_token", "session", "sid", "zz_other", "vr-preview-token"];
+    const headers: Record<string, string> = { "content-type": "application/json", "x-vr-check-control": "kept-control-9d1e" };
+    for (const name of FLEET_SECRET_HEADERS) {
+      // `fetch` forbids setting these two itself; the SDK reads them like any other header.
+      if (name === "cookie" || name === "set-cookie") continue;
+      headers[name] = secret(name);
+    }
+    headers.cookie = cookieNames.map((c) => `${c}=${secret(`cookie_${c}`)}`).join("; ");
+    const sentinels = [
+      ...FLEET_SECRET_HEADERS.filter((n) => n !== "cookie" && n !== "set-cookie").map(secret),
+      ...cookieNames.map((c) => secret(`cookie_${c}`)),
+    ];
+    const res = await realFetch(`${origin}/control-credentials`, { method: "POST", headers, body: JSON.stringify({ ok: 1 }) });
+    assert.equal(res.status, 200);
+
+    const sent = sentEvents(Sentry.__realSentryControl.envelopes).filter(
+      ({ event }) => event.message === "scrub control, unscrubbed" && String(event.request?.url ?? "").includes("/control-credentials"),
+    );
+    assert.equal(sent.length, 1, "one event for the credentials request");
+    const { raw, event } = sent[0];
+    const sentHeaders = (event.request as { headers?: Record<string, string> } | undefined)?.headers ?? {};
+    // Positive control: the SDK recorded the request's headers at all.
+    assert.equal(sentHeaders["x-vr-check-control"], "kept-control-9d1e", "control: the kept header rides on the event");
+    for (const name of Object.keys(sentHeaders)) {
+      assert.ok(!FLEET_SECRET_HEADERS.includes(name.toLowerCase()), `fleet header ${name} left the process`);
+    }
+    assert.equal("cookies" in (event.request ?? {}), false, "no request.cookies");
+    for (const s of sentinels) assert.ok(!raw.includes(s), `${s} is in the envelope`);
+    assert.ok(!/"ip_address"/.test(raw), "no IP address");
   });
 });

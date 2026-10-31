@@ -16,6 +16,7 @@ import {
   serviceChoices,
   serviceIds,
   staffChoices,
+  subsetServiceNames,
 } from "@/lib/booking/bookPage";
 import { resolveServiceNames } from "@/lib/booking/serviceNames";
 
@@ -62,8 +63,17 @@ export default async function BookPage({ searchParams }: Props) {
   const staff = staffChoices(siteData.booking);
   const ids = serviceIds(siteData.booking);
   // Both forms offer the shop's named services ("What for"); a request with
-  // none named takes free text instead.
-  const services = ids.length > 0 ? serviceChoices(ids, await resolveServiceNames(siteData, ids)) : [];
+  // none named takes free text instead. N3: the names VR_Client_API sent come
+  // first; only an id it did not name is looked up on the site's pages.
+  const names = subsetServiceNames(siteData.booking);
+  const unnamed = ids.filter((id) => !names.has(id));
+  if (unnamed.length > 0) {
+    for (const [id, name] of await resolveServiceNames(siteData, unnamed)) names.set(id, name);
+  }
+  const services = ids.length > 0 ? serviceChoices(ids, names) : [];
+  // N3: the booking engine's own shop zone, so "today" is the shop's day
+  // around midnight, and the shop's closed weekdays greyed.
+  const timeZone = siteData.booking?.timeZone ?? siteData.timezone;
   const mode = effectiveMode(decision.mode, services);
   const query = (await searchParams) ?? {};
   const shopName = siteData?.businessInfo?.name || siteData?.name || "";
@@ -77,10 +87,10 @@ export default async function BookPage({ searchParams }: Props) {
           mode={mode}
           shopName={shopName}
           shopPhone={shopPhone}
-          timeZone={siteData.timezone}
+          timeZone={timeZone}
           services={services}
           staff={staff}
-          days={bookingDays(new Date(), siteData.timezone)}
+          days={bookingDays(new Date(), timeZone, siteData.booking?.closedWeekdays)}
           initialServiceId={initialServiceId(query.service, services)}
         />
       </main>

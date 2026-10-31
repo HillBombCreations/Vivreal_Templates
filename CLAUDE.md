@@ -136,6 +136,24 @@ All data fetching goes through `src/lib/api/client.ts`:
 
 `isQuotaError()` detects 402 quota responses — the root layout renders `<QuotaExceeded />` instead of crashing.
 
+**Render reads are not billed (next release 2026-11, F0).** A `clientFetchCached` read that goes upstream (a build,
+an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted inside its `unstable_cache` closure by
+`lib/api/internalToken.ts` (`server-only`) from `INTERNAL_METER_KEY` and `INTERNAL_METER_GROUP_ID`, and VR_Client_API
+counts it to `internalCalls` instead of the billable `totalCalls`. Minted ONLY there and only for Client's render-read
+rule (GET of `siteDetails`, `collectionObjects` or `integrationObjects`, no non-empty `search`;
+`lib/api/internalTokenCore.ts`); `clientFetch` and `clientFetchSafe`, which route handlers use, never mint, and
+`buildClientFetchHeaders` drops a caller's own `x-vivreal-internal`. The data-cache key is still the path alone. The
+token format and its shared test vector are VR_Client_API's (`internalTokenCore.test.ts` copies it verbatim); change
+neither here alone.
+
+### Sentry: what never leaves (next release 2026-11, 3.PII)
+
+All three inits (`instrumentation.ts` nodejs and edge, `instrumentation-client.ts`) set `sendDefaultPii: false` and run
+`lib/sentry/scrubCredentials.ts` as `beforeSend`, `beforeSendTransaction` and `beforeBreadcrumb`. `sendDefaultPii:
+false` alone removes only the SDK's own IP; the hooks delete `request.cookies`, every header on the 33-name FLEET list
+(`FLEET_SECRET_HEADERS`, the same array in every repo; never add the release check's `x-vr-check-control` to it), the
+IP, and the same names as span keys in both spellings, cookies by prefix. Tracing is off (`tracesSampleRate: 0`).
+
 ### API Response Format
 
 VR_Client_API wraps all responses in an envelope:
@@ -176,9 +194,16 @@ REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verific
 NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
 NEXT_PUBLIC_SENTRY_DSN         # Sentry DSN
 SHOWS_ID / TEAMMEMBERS_ID / PARTNERS_ID  # Legacy collection-ID fallbacks (block bindings win — see getPageCollectionId)
+INTERNAL_METER_KEY             # Internal-meter key for THIS group (64 lowercase hex), server-only (next release 2026-11, F0)
+INTERNAL_METER_GROUP_ID        # The group that key was derived for. Both written at BRANCH level by EventHandler.
+                               #   Either absent or malformed: no token is minted and every read is metered as today.
+                               #   Never NEXT_PUBLIC_: a browser bundle must never carry the key.
 ```
 
-All env vars are injected by the EventHandler during Amplify deployment — they are NOT stored in this repo.
+All env vars are injected by the EventHandler during Amplify deployment — they are NOT stored in this repo. A new name
+reaches the running server only if the app's STORED buildSpec greps it into `.env.production` (the `SITE_RENDER_MODE`
+trap): EventHandler's buildSpec adds the two `INTERNAL_METER_*` greps, and existing apps get them through
+`updateSiteEnvVars` (the X-F0 one-shot), so a site mints only after that and its next build.
 
 ---
 
@@ -293,6 +318,7 @@ cannot tell those two audiences apart, so that case is on you (see `H36`).
 ### Config-Driven Extras
 
 - `siteData.floatingCta` → site-wide get-in-touch FAB; `siteInfo.templateType === 'restaurant'` → Reserve-a-Table FAB
+- Social links reach the renderer through ONE mapper, `toRendererSocialLinks` (`lib/api/composition/rendererSiteData.ts`), used by the composed page, the Footer and the Navbar band rail. It carries the owner's optional `label` (Schemas 1.67.0, next release 2026-11 N6) that names an Other link; a second inline mapper would drop it again
 - `siteData.emailPopup` → EmailPopup (mounted in layout; absent config ⇒ legacy home-only behavior)
 - Inline hero/footer email capture uses the SAME subscribe path as the popup — Providers inject `onSubscribe` into the renderer context
 
@@ -300,8 +326,9 @@ cannot tell those two audiences apart, so that case is on you (see `H36`).
 
 ## Booking, the cart and preview (owner ideas 2026-10-29)
 
-- **Beacon** (`lib/siteEvents.ts`): a landing with `gclid`, `gbraid` or `wbraid` sends `a:1`, never the id; campaign tags ride as `u`; the path is always cut at `?`. Link taps (`k:'lt'`) and results (`k:'gl'`, `recordSiteGoal`) go through the page view's own gate. The contact form's success is NOT recorded: the renderer has no form-success callback.
+- **Beacon** (`lib/siteEvents.ts`): a landing with `gclid`, `gbraid` or `wbraid` sends `a:1`, never the id; campaign tags ride as `u`; the path is always cut at `?`. Link taps (`k:'lt'`) and results (`k:'gl'`, `recordSiteGoal`) go through the page view's own gate. A contact form message is counted since renderer 1.94.0 (next release 2026-11, N2): the renderer calls `onGoal('message')` on an accepted send (never in preview), and Providers passes `recordGoal`.
 - **`/book`** is a fixed, always-dynamic route. Booking is on only when Client serves a top-level `booking` subset (`lib/api/siteData/booking.ts`; `getSiteData` copies top-level fields by name, so a new one needs a reader there). Booking off: the owner's own `book` page renders through `[slug]`, else 404. `/booking/manage?t=` is the cancel link; the token is taken off the address and only ever POSTed.
+- **`/book` greys closed days and names services from Client** (next release 2026-11, N3). The subset may carry `timeZone`, `closedWeekdays` (0 = Sunday, as `getUTCDay` and Client's `slotMath.js` number it; absent when the shop has no hours) and `services[].name` for a public item. `readBooking` keeps each field by field and drops a weekday that is not 0 to 6, `bookingDays` marks those days `closed`, both forms use `booking.timeZone ?? siteData.timezone`, and only a service Client did not name is looked up on the pages. Opening times themselves never reach the site.
 - **`/api/booking/*`** forward to Client through `lib/booking/bookingProxy.ts`: 4 KB cap, field allowlist, honeypot never forwarded, the visitor's address forwarded (Client rate-limits per visitor), only the stable `errorCode` back to the browser.
 - **Reserved page names**: every top-level entry in `src/app` must be in the renderer's `RESERVED_PAGE_SLUGS`; `lib/booking/bookPage.test.ts` fails otherwise. Adding a top-level route means a renderer change first.
 - **Inner and item pages are ISR like the home page.** `[slug]` reads `searchParams` only when `pageReadsQuery(page)` says the page can use it; `[slug]/[itemId]` lists collection items in `generateStaticParams` plus a sentinel that bails. Both rules exist so the build writes NO `dynamicRoutes` fallback (an unlisted address then renders dynamic, never 500). Pages and items added after a build stay dynamic until the next fleet build. `scripts/isr-build-check.mjs` proves it. Inner pages, then item pages, are prerendered only up to a per-site budget (`src/lib/pages/prerenderBudget.ts`, priced from the site record's size), so a site with a large record keeps some or all of them dynamic and `no-store`; `scripts/build-size-guard.mjs` fails the build at 30 MiB of prerender and snapshot output, before Amplify's output cap (2026-10-30, #223).
