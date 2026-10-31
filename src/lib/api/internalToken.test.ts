@@ -5,12 +5,19 @@
  * the minting itself is driven for real in `internalTokenCore.test.ts` and the
  * header slot in `clientFetchCore.test.ts`.
  *
- * Rule (design section 5.3): minted only on the cached render read
- * (`clientFetchCached`), never on the uncached `clientFetch` / `clientFetchSafe`
- * that route handlers use (`/api/shows` reads `/tenant/collectionObjects`
- * through `clientFetchSafe`, which Client would otherwise count as a render
- * read), and never by anything under `src/app/api`, `src/app/mcp`,
- * `src/app/.well-known` or `src/app/feeds`.
+ * Rule (design section 5.3, review-t-pr224 note 1): a cached read mints
+ * whichever route triggers the fill; the uncached readers never do.
+ *  - `clientFetchCached` mints inside its `unstable_cache` closure, with no
+ *    condition on the caller. A page render, the sitemap, an OG image, the
+ *    icons and `/api/indexnow/urls` all reach it through `getSiteData` and the
+ *    collection readers, and each fill is shared, by path, with page renders.
+ *  - `clientFetch` / `clientFetchSafe` never mint, so a route that reads
+ *    uncached is metered: `/api/shows` reads `/tenant/collectionObjects`
+ *    through `clientFetchSafe` (`getShowsPaginated`), which Client would
+ *    otherwise count as a render read.
+ *  - No file under `src/app/api`, `src/app/mcp`, `src/app/.well-known` or
+ *    `src/app/feeds` imports the minter or sets the header itself, and
+ *    `buildClientFetchHeaders` drops one a caller sets.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -62,7 +69,7 @@ test('REFUSE: the uncached clientFetch and clientFetchSafe never mint', () => {
   assert.match(functionBody(client, 'clientFetch'), /return doClientFetch<T>\(CLIENT_API, path, await readPreviewToken\(\), init\);/);
 });
 
-test('REFUSE: only client.ts imports the minter; no route handler, MCP, .well-known or feed file touches it', () => {
+test('REFUSE: only client.ts imports the minter; no route handler, MCP, .well-known or feed file imports it or sets the header', () => {
   const files = walk(src).filter((f) => !/\.test\.(ts|tsx|mjs)$/.test(f));
   assert.ok(files.length > 100, 'positive control: the walk found the source tree');
   const importers = files
@@ -88,4 +95,28 @@ test('REFUSE: the minter is server-only and reads no NEXT_PUBLIC_ name', () => {
   }
   // A minting failure never fails the read: the call is wrapped and returns null.
   assert.match(minter, /try \{\s*return await internalTokenForRequest\(CONFIG, path, init\?\.method, Date\.now\(\)\);\s*\} catch/);
+});
+
+test('ALLOW (review note 1): the cached read mints with no condition on its caller, so a route that fills the cache mints', () => {
+  const cached = functionBody(client, 'clientFetchCached');
+  // The only inputs to the mint are the path and the init: nothing about which route is rendering.
+  assert.match(cached, /await internalTokenFor\(path, init\)/);
+  assert.doesNotMatch(cached, /internalTokenFor\([^)]*(route|caller|segment|pathname)/i);
+  // Positive control that route handlers DO reach it: these routes read site data through
+  // getSiteData, which reads through clientFetchCached.
+  const siteData = read('siteData/index.tsx');
+  assert.match(siteData, /clientFetchCached</, 'getSiteData reads through clientFetchCached');
+  for (const rel of ['app/sitemap.xml/route.ts', 'app/api/indexnow/urls/route.ts', 'app/og/[slug]/route.tsx']) {
+    assert.match(fs.readFileSync(path.join(src, rel), 'utf8'), /getSiteData/, `${rel} reads cached site data, so its fill mints`);
+  }
+});
+
+test('REFUSE (review note 1): a route that reads uncached stays metered (/api/shows through clientFetchSafe)', () => {
+  const shows = read('shows/index.tsx');
+  const start = shows.indexOf('export async function getShowsPaginated');
+  assert.ok(start >= 0, 'positive control: getShowsPaginated exists');
+  const body = shows.slice(start, shows.indexOf('\nexport ', start + 1));
+  assert.match(body, /clientFetchSafe</, 'the /api/shows reader is uncached');
+  assert.doesNotMatch(body, /clientFetchCached</);
+  assert.match(fs.readFileSync(path.join(src, 'app/api/shows/route.tsx'), 'utf8'), /getShowsPaginated/);
 });

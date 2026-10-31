@@ -141,7 +141,9 @@ an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted inside
 `lib/api/internalToken.ts` (`server-only`) from `INTERNAL_METER_KEY` and `INTERNAL_METER_GROUP_ID`, and VR_Client_API
 counts it to `internalCalls` instead of the billable `totalCalls`. Minted ONLY there and only for Client's render-read
 rule (GET of `siteDetails`, `collectionObjects` or `integrationObjects`, no non-empty `search`;
-`lib/api/internalTokenCore.ts`); `clientFetch` and `clientFetchSafe`, which route handlers use, never mint, and
+`lib/api/internalTokenCore.ts`). A cached read mints whichever route triggers the fill (pages, and also the
+sitemap, OG, icon and `/api/indexnow/urls` routes, which read the same cached site data); the uncached `clientFetch`
+and `clientFetchSafe` never mint, so a route reading uncached (`/api/shows`) stays metered, and
 `buildClientFetchHeaders` drops a caller's own `x-vivreal-internal`. The data-cache key is still the path alone. The
 token format and its shared test vector are VR_Client_API's (`internalTokenCore.test.ts` copies it verbatim); change
 neither here alone.

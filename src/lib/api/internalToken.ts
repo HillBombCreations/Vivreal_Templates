@@ -9,10 +9,11 @@ import { internalTokenForRequest, readInternalMeterConfig } from './internalToke
  * `./internalTokenCore.ts`.
  *
  * Called from exactly one place, `clientFetchCached` in `./client.ts`, inside
- * its data-cache closure, so a token is minted only when a cached render read
- * actually goes upstream (build-time prerender, an ISR regeneration, a
- * revalidation) and never on the uncached `clientFetch` / `clientFetchSafe`
- * that route handlers use. `internalToken.test.ts` pins both.
+ * its data-cache closure, so a token is minted only when a cached read goes
+ * upstream, whichever route triggered the fill (a page build or regeneration,
+ * a revalidation, or the sitemap, OG, icon and IndexNow routes, which read the
+ * same cached site data). The uncached `clientFetch` / `clientFetchSafe` never
+ * mint. `internalToken.test.ts` pins both.
  *
  * Resolved once at module scope, like `API_KEY` in `./client.ts`: env is fixed
  * for the life of an Amplify instance.
