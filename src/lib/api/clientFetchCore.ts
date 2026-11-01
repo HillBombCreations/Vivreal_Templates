@@ -21,6 +21,7 @@
  */
 import { PREVIEW_FORWARD_HEADER } from './previewToken.ts';
 import { DEFAULT_BACKOFF_MS, fetchWithReconnect } from './fetchWithReconnect.ts';
+import { INTERNAL_METER_HEADER } from './internalTokenCore.ts';
 
 /** Where to send the request, and what to authenticate it with. */
 export interface ClientApiConfig {
@@ -98,18 +99,28 @@ export function isQuotaError(err: unknown): boolean {
  * the bot verdict), but the preview header is applied LAST and is therefore
  * not overridable — a caller must not be able to accidentally strip the quota
  * bypass, and no caller has any reason to set it itself.
+ *
+ * The internal-meter token (next release 2026-11, F0, T4) is applied last as
+ * well, and a caller's own `x-vivreal-internal`, in any letter case, is
+ * dropped: the one minter (`clientFetchCached`, through `./internalToken.ts`)
+ * is the only way a request carries it, so no route handler can.
  */
 export function buildClientFetchHeaders(
   apiKey: string,
   previewToken: string | null,
   extra?: HeadersInit,
+  internalToken: string | null = null,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     Authorization: apiKey,
     'Content-Type': 'application/json',
     ...(extra as Record<string, string> | undefined),
   };
+  for (const name of Object.keys(headers)) {
+    if (name.toLowerCase() === INTERNAL_METER_HEADER) delete headers[name];
+  }
   if (previewToken) headers[PREVIEW_FORWARD_HEADER] = previewToken;
+  if (internalToken) headers[INTERNAL_METER_HEADER] = internalToken;
   return headers;
 }
 
@@ -169,13 +180,15 @@ function describeFailure(
 /**
  * Core fetch + envelope-unwrap. Takes the preview token explicitly so this can
  * be invoked from inside a cache scope (`unstable_cache`), where request APIs
- * like `cookies()` are not permitted.
+ * like `cookies()` are not permitted. `internalToken` is the render-read mark
+ * (F0); only `clientFetchCached` passes one.
  */
 export async function doClientFetch<T>(
   config: ClientApiConfig,
   path: string,
   previewToken: string | null,
   init?: RequestInit,
+  internalToken: string | null = null,
 ): Promise<T> {
   const url = `${config.baseUrl}${path}`;
 
@@ -188,7 +201,7 @@ export async function doClientFetch<T>(
     url,
     {
       ...init,
-      headers: buildClientFetchHeaders(config.apiKey, previewToken, init?.headers),
+      headers: buildClientFetchHeaders(config.apiKey, previewToken, init?.headers, internalToken),
       cache: 'no-store',
     },
     { label: 'clientFetch', backoffMs: DEFAULT_BACKOFF_MS },

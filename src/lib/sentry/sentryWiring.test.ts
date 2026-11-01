@@ -56,3 +56,23 @@ test('[V7.319 ALLOW] the errors-only settings are unchanged', () => {
   assert.match(instrumentationServer, /tracesSampleRate: 0/);
   assert.match(instrumentationClient, /dsn: process\.env\.NEXT_PUBLIC_SENTRY_DSN/);
 });
+
+test('[next release 2026-11, 3.PII, T8] every init sets sendDefaultPii false and runs the credential scrub', () => {
+  for (const [name, src] of [
+    ['instrumentation-client.ts', instrumentationClient],
+    ['instrumentation.ts', instrumentationServer],
+  ] as const) {
+    const inits = (src.match(/Sentry\.init\(/g) ?? []).length;
+    assert.ok(inits >= 1, `positive control: ${name} initialises Sentry`);
+    for (const line of [
+      'sendDefaultPii: false,',
+      'beforeSend: scrubCredentials,',
+      'beforeSendTransaction: scrubCredentials,',
+      'beforeBreadcrumb: scrubBreadcrumbCredentials,',
+    ]) {
+      assert.equal(src.split(line).length - 1, inits, `${name}: every init has ${line}`);
+    }
+    assert.match(src, /import \{ scrubBreadcrumbCredentials, scrubCredentials \} from "@\/lib\/sentry\/scrubCredentials";/);
+    assert.doesNotMatch(src, /sendDefaultPii: true/);
+  }
+});

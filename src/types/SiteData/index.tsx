@@ -127,6 +127,8 @@ export interface Businessinfo {
 export interface SocialLink {
     type: string;
     link: string;
+    /** The owner's own name for an Other link (Schemas 1.67.0, owner Q12). Optional, at most 40 characters. */
+    label?: string;
 }
 
 export interface PageIntegrationBinding {

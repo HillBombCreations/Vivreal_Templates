@@ -6,6 +6,7 @@ import {
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
+import { menuPageConfigs, toRendererSocialLinks } from '@/lib/api/composition/rendererSiteData';
 import { footerHours } from '@/lib/footerHours';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import { resolveSubscribersCollectionId, withSignupUnavailableCopy } from '@/lib/subscribe/subscribersList';
@@ -64,13 +65,15 @@ const Footer = async () => {
     : businessLogoUrl;
 
   const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
-  const navItems = deriveNav(pageConfigs);
-  const footerPages = deriveFooterPages(pageConfigs);
+  // The menus get the home page too, as in the Studio (see menuPageConfigs).
+  // Cast: Templates' PageConfig mirror of the renderer's, as on the line above.
+  const menuPages = menuPageConfigs(siteData) as unknown as RendererPageConfig[];
+  const navItems = deriveNav(menuPages);
+  const footerPages = deriveFooterPages(menuPages);
 
   // Footer social overrides win over the site-level social links.
   const socialLinks =
-    siteData?.footer?.socialLinks ??
-    (siteData?.socialLinks ?? []).map((l) => ({ platform: l.type, url: l.link }));
+    siteData?.footer?.socialLinks ?? toRendererSocialLinks(siteData?.socialLinks);
 
   // Wrinsy round (D6) — 'wordmark-crown' giant-wordmark threading. The mark's
   // media object rides `footer.wordmark` (imageKey + backend-signed media —

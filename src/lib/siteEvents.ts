@@ -206,3 +206,14 @@ export function sendSiteEventHere(event: SiteEvent): void {
 export function recordLinkTap(linkId: string): void {
   sendSiteEventHere({ k: 'lt', l: linkId });
 }
+
+/**
+ * The renderer's `onGoal` (next release 2026-11, N2, D7): one result, today a
+ * contact form message the server accepted. The renderer calls it only on a
+ * 2xx, never in preview, and wraps it so a throw cannot fail the send; the
+ * page view's own gate still decides whether anything leaves (a `preview`
+ * site id or Vivreal staff configure no events, so this sends nothing).
+ */
+export function recordGoal(goal: SiteGoal): void {
+  sendSiteEventHere({ k: 'gl', g: goal });
+}
