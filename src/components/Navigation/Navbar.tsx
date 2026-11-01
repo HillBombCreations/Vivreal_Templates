@@ -2,7 +2,7 @@ import { deriveNav, resolveHeaderPinned, resolveMastheadTone } from '@hillbombcr
 import type { HeroSection, PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import { getSiteData } from '@/lib/api/siteData';
 import { getSignedUrl } from '@/lib/api/media';
-import { toRendererSocialLinks } from '@/lib/api/composition/rendererSiteData';
+import { menuPageConfigs, toRendererSocialLinks } from '@/lib/api/composition/rendererSiteData';
 import { getSeedOnlyPaths } from '@/lib/seo/getSeedOnlyPaths';
 import NavbarChrome from './NavbarChrome';
 
@@ -103,7 +103,10 @@ const Navbar = async ({
   const logoScrolledUrl = has('logoScrolledKey') ? getSignedUrl(brand!.logoScrolled) : null;
 
   const pageConfigs = (siteData?.pageConfigs ?? []) as unknown as RendererPageConfig[];
-  const navItems = deriveNav(pageConfigs);
+  // The menu gets the home page too, as in the Studio, so a renamed home page
+  // shows the owner's name (see menuPageConfigs). Cast: Templates' PageConfig
+  // mirror of the renderer's, the same cast as the line above.
+  const navItems = deriveNav(menuPageConfigs(siteData) as unknown as RendererPageConfig[]);
 
   return (
     <NavbarChrome

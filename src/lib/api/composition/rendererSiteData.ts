@@ -1,4 +1,4 @@
-import type { SiteData } from '@/types/SiteData';
+import type { PageConfig, SiteData } from '@/types/SiteData';
 // The renderer's own `{ platform, url }` (what `resolveLinkStack` and the social row read).
 import type { SocialLink as RendererSocialLink } from '@hillbombcreations/site-renderer';
 
@@ -39,4 +39,28 @@ export function toRendererSocialLinks(socialLinks: SiteData['socialLinks'] | und
  */
 export function toRendererSiteData(siteData: SiteData): Omit<SiteData, 'socialLinks'> & { socialLinks: RendererSocialLink[] } {
   return { ...siteData, socialLinks: toRendererSocialLinks(siteData.socialLinks) };
+}
+
+/**
+ * The page list the renderer's menu derives (`deriveNav`, `deriveFooterPages`)
+ * read: the home page first, then every other page.
+ *
+ * WHY. `getSiteData` splits the home page out of `pageConfigs`, so the menus
+ * never saw it and the first menu item always read "Home". The Studio preview
+ * hands the derives every page, home included, so an owner who renamed the home
+ * page saw that name in the Studio and "Home" on the live site (owner, next
+ * release 2026-11: live menus show the owner's name). Renderer 1.94.1 names the
+ * first item after the home page and never lists the home page again, so a
+ * blank site's seeded home page still shows one "Home" (WD-5).
+ *
+ * Menus only. The chrome's own `pageConfigs` props keep the list without home:
+ * there it also drives the cart icon and the derived footer columns, which this
+ * change does not move.
+ */
+export function menuPageConfigs(
+  siteData: Pick<SiteData, 'homePageConfig' | 'pageConfigs'> | null | undefined,
+): PageConfig[] {
+  const pages = siteData?.pageConfigs ?? [];
+  const home = siteData?.homePageConfig;
+  return home ? [home, ...pages] : pages;
 }
