@@ -135,6 +135,9 @@ const Footer = async () => {
         surface: siteData?.surface,
         'text-primary': siteData?.['text-primary'],
         'text-secondary': siteData?.['text-secondary'],
+        // Renderer 1.95.0: the dark arm's text and the newsletter's Subscribe
+        // label are judged against the site's own inverse ink.
+        'text-inverse': siteData?.['text-inverse'],
       }}
       hours={footerHours(siteData)}
       timezone={siteData?.timezone}
