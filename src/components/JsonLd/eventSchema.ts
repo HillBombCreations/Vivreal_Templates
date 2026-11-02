@@ -15,6 +15,10 @@
  * now invited to open.
  *
  * THE RULES.
+ *   - A stored date-time with NO zone (`2026-11-14T19:00`) is a wall time in
+ *     the business's own zone: its calendar day is the one written, and its
+ *     clock is the start time when no time field says otherwise (pass 1 note
+ *     5; it used to be read on the server's clock, which can move it a day).
  *   - `startDate` is the show's CALENDAR date in the business's own time zone,
  *     with the clock time parsed (`7:00 pm`, `7pm`, `7:30PM`, `19:00`) and that
  *     date's real offset from `Intl`: `2026-07-24T19:00:00-05:00`. An
@@ -25,7 +29,11 @@
  *     `Venue 123 N Street` with no colon (D17, see `splitSpacedVenue`); no
  *     location text at all on a business with a street address (its own
  *     events) gives the business address; location text saying online or
- *     virtual gives a `VirtualLocation`. No city is ever borrowed from the
+ *     virtual gives a `VirtualLocation` at the address people attend at: the
+ *     event's own online link, else its ticket link. Never the page that
+ *     lists it (pass 1 note 4): with neither, an online event has no place and
+ *     no Event node, as schema.org's VirtualLocation `url` is where to attend.
+ *     No city is ever borrowed from the
  *     business for a named venue: a touring act's venue is not its home town.
  *   - Nothing resolvable gives NO Event node. A missing rich result costs less
  *     than a red error. The caller logs `jsonld.event.skipped`.
@@ -49,6 +57,8 @@ export interface EventInput {
   location?: string;
   /** The show's own street address, when its content type has the field. */
   address?: string;
+  /** Where people join an online event (a stream or meeting link). */
+  onlineUrl?: string;
   ticketsUrl?: string;
   /** IANA zone of the business (`siteDetails.values.timezone`). */
   timezone?: string;
@@ -65,12 +75,20 @@ export type EventResult =
   | { schema: null; skipped: EventSkipReason };
 
 const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+/** A date-time written with no zone: a wall time in the business's zone. */
+const ZONELESS_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
 /** `YYYY-MM-DD` of `date` in `timezone`, or in UTC when the zone is unusable. */
 export function calendarDate(date: string | undefined, timezone: string | undefined): string | undefined {
   const trimmed = date?.trim();
   if (!trimmed) return undefined;
   if (ISO_DATE_ONLY.test(trimmed)) return trimmed;
+  const zoneless = ZONELESS_DATE_TIME.exec(trimmed);
+  // A day that does not exist (`2026-02-30`) is no date: Date.parse would roll it over.
+  if (zoneless) {
+    const midnight = Date.parse(`${zoneless[1]}T00:00:00Z`);
+    return Number.isFinite(midnight) && new Date(midnight).toISOString().slice(0, 10) === zoneless[1] ? zoneless[1] : undefined;
+  }
   const time = Date.parse(trimmed);
   if (!Number.isFinite(time)) return undefined;
   if (timezone) {
@@ -149,7 +167,8 @@ export function showStartDate(
 ): string | undefined {
   const day = calendarDate(date, timezone);
   if (!day) return undefined;
-  const minuteOfDay = parseShowTime(time);
+  const zoneless = date ? ZONELESS_DATE_TIME.exec(date.trim()) : null;
+  const minuteOfDay = parseShowTime(time) ?? (zoneless ? parseShowTime(`${zoneless[2]}:${zoneless[3]}`) : undefined);
   if (minuteOfDay === undefined || !timezone) return day;
   const [year, month, dayOfMonth] = day.split('-').map(Number);
   const hour = Math.floor(minuteOfDay / 60);
@@ -306,7 +325,7 @@ function resolveLocation(input: EventInput): EventLocation | undefined {
 
   // 4. Online or virtual: the place is the link people join or buy at.
   if (location && ONLINE.test(location)) {
-    const url = webLink(input.ticketsUrl) ?? webLink(input.url);
+    const url = webLink(input.onlineUrl) ?? webLink(input.ticketsUrl);
     if (url) return { location: { '@type': 'VirtualLocation', url }, online: true };
   }
 

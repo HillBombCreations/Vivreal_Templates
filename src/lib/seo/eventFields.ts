@@ -23,6 +23,12 @@
  *     `streetAddress`, `street`, `venueAddress` or `locationAddress`. An
  *     address counts only when it starts with a house number: "Phoenix, AZ"
  *     is a town, not a street, and is dropped rather than published.
+ *   - ONLINE: an event held online is placed at the address people join at,
+ *     read from a field named `onlineUrl`, `joinUrl`, `streamUrl`,
+ *     `meetingUrl`, `virtualUrl` or `livestreamUrl` (or their `_url` forms),
+ *     else its ticket link (`ticketsUrl`, `ticketUrl`, `ticketLink`,
+ *     `tickets_url`). With neither, an online event has no place and is not
+ *     marked up (schema.org `VirtualLocation` names where to attend).
  *
  * The site never receives a list's schema (field types and labels), only its
  * rows, so "type date" is read from the stored value's shape. That is the
@@ -42,12 +48,21 @@ export interface EventFields {
   time?: string;
   location?: string;
   address?: string;
+  /** Where people join an online event. */
+  onlineUrl?: string;
+  /** Where people buy or reserve a place. */
+  ticketsUrl?: string;
 }
 
 const DATE_NAMES = ['startDate', 'start', 'startsAt', 'start_date', 'date', 'eventDate', 'datetime', 'dateTime'] as const;
 const TIME_NAMES = ['time', 'startTime', 'start_time', 'starts'] as const;
 const PLACE_NAMES = ['location', 'venue', 'place', 'where', 'locationName', 'location_name', 'venueName', 'placeName'] as const;
 const ADDRESS_NAMES = ['address', 'streetAddress', 'street', 'venueAddress', 'locationAddress'] as const;
+const ONLINE_NAMES = [
+  'onlineUrl', 'online_url', 'joinUrl', 'join_url', 'streamUrl', 'stream_url',
+  'meetingUrl', 'meeting_url', 'virtualUrl', 'virtual_url', 'livestreamUrl', 'livestream_url',
+] as const;
+const TICKET_NAMES = ['ticketsUrl', 'ticketUrl', 'ticketLink', 'tickets_url'] as const;
 
 /** A calendar date as a date field stores it: `YYYY-MM-DD`, optionally a full timestamp after it. */
 const STORED_DATE = /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
@@ -94,6 +109,8 @@ export function readEventFields(raw: Record<string, unknown> | null | undefined)
     time: firstText(raw, TIME_NAMES),
     location: firstText(raw, PLACE_NAMES),
     address: address !== undefined && HOUSE_NUMBER_FIRST.test(address) ? address : undefined,
+    onlineUrl: firstText(raw, ONLINE_NAMES),
+    ticketsUrl: firstText(raw, TICKET_NAMES),
   };
 }
 

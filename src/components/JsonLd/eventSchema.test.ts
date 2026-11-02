@@ -283,7 +283,38 @@ test('ALLOW: shows unchanged byte for byte (24 golden cases from d180716)', asyn
   };
   assert.equal(golden.cases.length, 24, 'positive control: the golden file parsed');
   assert.equal(golden.cases.filter((c) => (c.output as { schema: unknown }).schema !== null).length, 18, 'and it holds real Events, not only skips');
-  for (const { input, output } of golden.cases) {
-    assert.equal(JSON.stringify(buildEventJsonLd(input)), JSON.stringify(output), JSON.stringify(input));
-  }
+  // One case changes on purpose (review of #225, pass 1 note 4): an online
+  // show with no join or ticket link used to be placed at its own page; it now
+  // has no place, so no Event. Every other case is byte for byte unchanged.
+  const changed = new Map<number, unknown>([[9, { schema: null, skipped: 'no_address' }]]);
+  assert.equal((golden.cases[9].input as { location?: string }).location, 'Virtual show', 'the changed case is the virtual show');
+  golden.cases.forEach(({ input, output }, i) => {
+    assert.equal(JSON.stringify(buildEventJsonLd(input)), JSON.stringify(changed.get(i) ?? output), JSON.stringify(input));
+  });
+});
+
+test('ALLOW (pass 1 note 4): an online show is placed at its own join link before its ticket link', () => {
+  const schema = schemaOf(show({ location: 'Online', onlineUrl: 'https://stream.example/s', ticketsUrl: 'https://tix.example.com/e/1' }));
+  assert.deepEqual(schema.location, { '@type': 'VirtualLocation', url: 'https://stream.example/s' });
+});
+
+test('WIRING (pass 1 note 4): the show route hands the builder the show\'s join link, read by the listing rule', async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.meta.url), 'utf8');
+  const shows = readFileSync(new URL('../../lib/api/shows/index.tsx', import.meta.url), 'utf8');
+  assert.ok(page.length > 500 && shows.length > 500, 'both files were read');
+  assert.match(page, /onlineUrl: show\.onlineUrl,/);
+  assert.match(shows, /onlineUrl: readEventFields\(item\.objectValue as Record<string, unknown>\)\.onlineUrl,/);
+});
+
+test('REFUSE (pass 1 note 4): an online show with no join or ticket link is never placed at its own page', () => {
+  const result = buildEventJsonLd(show({ location: 'Online' }));
+  assert.equal(result.schema, null);
+  assert.equal(result.skipped, 'no_address');
+});
+
+test('ALLOW (pass 1 note 5): a zoneless date-time keeps its written day and clock in the business zone', () => {
+  assert.equal(showStartDate('2026-11-14T23:30', undefined, CHICAGO), '2026-11-14T23:30:00-06:00');
+  assert.equal(showStartDate('2026-11-14T23:30', '7:00 pm', CHICAGO), '2026-11-14T19:00:00-06:00', 'a time field still wins');
+  assert.equal(showStartDate('2026-02-30T10:00', undefined, CHICAGO), undefined, 'an impossible day is no date');
 });

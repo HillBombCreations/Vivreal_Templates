@@ -102,7 +102,7 @@ items.set('sixty', Array.from({ length: 60 }, (_, i) => row({ title: `Class ${i 
 test('OD-4: a date read by name or by what it holds; a town is not a street; publish date is never the date', () => {
   assert.ok(fields, 'eventFields.ts exists');
   assert.deepEqual(fields.readEventFields({ date: '2026-11-14', time: '7pm', venue: 'Hall', address: '12 Main St' }), {
-    date: '2026-11-14', time: '7pm', location: 'Hall', address: '12 Main St',
+    date: '2026-11-14', time: '7pm', location: 'Hall', address: '12 Main St', onlineUrl: undefined, ticketsUrl: undefined,
   });
   assert.equal(fields.readEventFields({ marketDate: '2026-11-14T15:00:00.000Z' }).date, '2026-11-14T15:00:00.000Z', 'a field named for a date, holding one');
   assert.equal(fields.readEventFields({ when: 'every Saturday' }).date, undefined, 'free text is not a date');
@@ -243,11 +243,18 @@ function render(page: RendererPageConfig, options: Record<string, unknown> = {})
 const fragmentsOf = (out: Record<string, unknown>[]) =>
   out.map((e) => String(e.url)).filter((u) => u.includes('#')).map((u) => u.slice(u.indexOf('#') + 1));
 
+/** The Event urls that point at a row's own detail page (not the list page, with or without a fragment). */
+const detailLinksOf = (out: Record<string, unknown>[]) =>
+  out.map((e) => String(e.url)).filter((u) => u !== PAGE_URL && !u.startsWith(`${PAGE_URL}#`));
+
 function assertFragmentsRendered(page: RendererPageConfig, out: Record<string, unknown>[], options?: Record<string, unknown>): string[] {
   const html = render(page, options);
   const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]));
   const fragments = fragmentsOf(out);
   for (const f of fragments) assert.ok(ids.has(f), `#${f} is linked but the page renders no such id`);
+  // A detail link is the address the page itself links that row to.
+  const hrefs = new Set([...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]));
+  for (const url of detailLinksOf(out)) assert.ok(hrefs.has(new URL(url).pathname), `${url} is not an address this page links`);
   return fragments;
 }
 
@@ -256,7 +263,7 @@ for (const displayAs of ['agenda', 'whats-on', 'calendar', 'event-wall']) {
     const page = pageOf({ format: 'standard', blocks: [layoutBlock(displayAs, 'markets')] });
     const out = events(page as unknown as Record<string, unknown>);
     const fragments = assertFragmentsRendered(page, out);
-    assert.ok(fragments.length > 0, `positive control: ${displayAs} linked at least one row`);
+    assert.ok(fragments.length + detailLinksOf(out).length > 0, `positive control: ${displayAs} linked at least one row`);
     for (const f of fragments) assert.match(f, /^item-6a\d{22}$/);
   });
 }
@@ -269,13 +276,96 @@ test('ALLOW (page level, event wall): only the two cards the phone copy draws ar
 });
 
 test('ALLOW (page level, two blocks on one list): links name the first block\'s ids, never the scoped copies', () => {
-  const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'markets', undefined, 'blk_a'), layoutBlock('whats-on', 'markets', undefined, 'blk_b')] });
+  const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'markets', undefined, 'blk_a'), layoutBlock('calendar', 'markets', undefined, 'blk_b')] });
   const out = events(page as unknown as Record<string, unknown>);
   const fragments = assertFragmentsRendered(page, out);
   assert.equal(fragments.length, 2, 'positive control');
   const html = render(page);
   assert.ok(/\sid="item-\d+-6a/.test(html), 'control: the second block really is scoped in the page');
   for (const f of fragments) assert.doesNotMatch(f, /^item-\d+-/);
+});
+
+// Review pass 3, B4: what the renderer draws is read from the blocks, never
+// from a binding's own `enabled` flag (the Studio once wrote it, and the
+// renderer ignores it when drawing).
+const offBinding = (block: ReturnType<typeof layoutBlock> | ReturnType<typeof scheduleBlock>) => ({
+  ...block,
+  config: { ...block.config, bindings: [{ ...block.config.bindings[0], enabled: false }] },
+});
+
+test('REFUSE (B4, layout): a first section whose binding says enabled:false still owns its ids, so the later Agenda is never linked unscoped', () => {
+  const shared = getItems('markets')[0];
+  items.set('markets-overlap', [shared, row({ title: 'Later only', date: day(20), venue: 'Hall', address: '12 Main St' })]);
+  const page = pageOf({ format: 'standard', blocks: [offBinding(layoutBlock('calendar', 'markets', undefined, 'blk_off')), layoutBlock('agenda', 'markets-overlap', undefined, 'blk_later')] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.ok(out.some((e) => e.name === 'Later only'), 'positive control: the later row is an Event');
+  assert.ok(!out.some((e) => e.name === 'Night Market'), 'the switched-off binding gives no Events');
+  assert.ok(/\sid="item-\d+-6a/.test(render(page)), 'control: the renderer scoped the later Agenda');
+  assertFragmentsRendered(page, out);
+});
+
+test('REFUSE (B4, schedule template): a schedule whose binding says enabled:false still owns its stops', () => {
+  const shared = getItems('stops')[0];
+  items.set('stops-overlap-b4', [shared, row({ title: 'Agenda extra', date: day(21), venue: 'Hall', address: '12 Main St' })]);
+  const page = pageOf({ format: 'schedule', blocks: [offBinding(scheduleBlock('stops')), layoutBlock('agenda', 'stops-overlap-b4')] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.ok(out.some((e) => e.name === 'Agenda extra'), 'positive control: the later row is an Event');
+  assert.ok(!out.some((e) => e.name === 'All-day fair'), 'the switched-off binding gives no Events');
+  assert.ok(/\sid="item-\d+-6a/.test(render(page)), 'control: the renderer scoped the later Agenda');
+  assertFragmentsRendered(page, out);
+});
+
+test('REFUSE (B4, Agenda part with two lists): only the first list is the schedule; the second gives no Event', () => {
+  // The second list is stop-shaped, so only the binding choice can keep it out.
+  items.set('stops-second', [row({ title: 'Second list stop', location_name: 'Annex', address: '40 E Jefferson St', start: day(12, '15:00:00.000Z') })]);
+  const group = scheduleGroup('stops');
+  const children = group.config.children.map((c) => (c.id === 'c_agenda' ? { ...c, config: { bindings: [{ collectionId: 'stops' }, { collectionId: 'stops-second' }] } } : c));
+  const page = pageOf({ format: 'schedule', blocks: [{ ...group, config: { ...group.config, children } }] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.deepEqual(out.map((e) => e.name), ['Downtown market', 'All-day fair']);
+  assertFragmentsRendered(page, out);
+});
+
+test('ALLOW (pass 3 note 1): a schedule inside a plain group owns nothing, so a later Agenda keeps its links', () => {
+  const shared = getItems('stops')[0];
+  items.set('stops-overlap-nested', [shared, row({ title: 'Nested later', date: day(22), venue: 'Hall', address: '12 Main St' })]);
+  const plain = { id: 'blk_plain', order: 0, enabled: true, type: { kind: 'group', dispatchId: 'group' }, config: { children: [scheduleGroup('stops')] } };
+  const page = pageOf({ format: 'schedule', blocks: [plain, { ...layoutBlock('agenda', 'stops-overlap-nested'), order: 1 }] });
+  const out = events(page as unknown as Record<string, unknown>);
+  const fragments = assertFragmentsRendered(page, out);
+  assert.ok(fragments.some((f) => out.find((e) => e.name === 'Nested later' && String(e.url).endsWith(f))), 'the later Agenda row is linked');
+});
+
+test('ALLOW (pass 1 note 3): a row with its own detail page links its Event there, at the address the page links', () => {
+  // A collection-list page serves its list's detail pages, so its rows link /<page>/<id>.
+  const page = pageOf({ format: 'collection-list', blocks: [layoutBlock('whats-on', 'markets')], detailPage: { enabled: true } });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.equal(out.length, 2, 'positive control');
+  for (const e of out) assert.match(String(e.url), /^https:\/\/shop\.example\/markets\/6a\d{22}$/);
+  assertFragmentsRendered(page, out);
+});
+
+test('REFUSE (pass 1 note 3): a binding that opts out of detail links keeps the list address', () => {
+  const page = pageOf({ format: 'collection-list', blocks: [layoutBlock('whats-on', 'markets', { detailEligible: false })], detailPage: { enabled: true } });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.equal(out.length, 2, 'positive control');
+  assert.deepEqual(detailLinksOf(out), []);
+});
+
+test('ALLOW (pass 1 note 4): an online row is placed at its own join link; REFUSE: with no link it is not marked up', () => {
+  items.set('online', [
+    row({ title: 'Live stream', date: day(3), venue: 'Online', streamUrl: 'https://stream.example/live' }),
+    row({ title: 'Webinar', date: day(4), venue: 'Online' }),
+  ]);
+  const out = events({ blocks: [layoutBlock('agenda', 'online')] }) as Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any -- JSON-LD read in assertions only
+  assert.deepEqual(out.map((e) => e.name), ['Live stream']);
+  assert.deepEqual(out[0].location, { '@type': 'VirtualLocation', url: 'https://stream.example/live' });
+});
+
+test('ALLOW (pass 1 note 5): a stored date-time with no zone is a wall time in the business zone', () => {
+  items.set('zoneless', [row({ title: 'Late show', date: `${YEAR}-03-14T23:30`, venue: 'Hall', address: '12 Main St' })]);
+  const [event] = events({ blocks: [layoutBlock('agenda', 'zoneless')] });
+  assert.equal(event.startDate, `${YEAR}-03-14T23:30:00-07:00`, 'the day and clock written, not moved by the server clock');
 });
 
 // Renderer 1.95.1 gives schedule rows `item-<id>`: every upcoming stop in the

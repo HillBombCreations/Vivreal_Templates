@@ -474,6 +474,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       time: show.time,
       location: show.location,
       address: show.address,
+      onlineUrl: show.onlineUrl,
       ticketsUrl: show.ticketsUrl,
       timezone: siteData.timezone,
       organizationId: siteOrganizationId(siteData),

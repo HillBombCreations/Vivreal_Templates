@@ -17,6 +17,8 @@ export type ShowData = {
   location?: string;
   /** The show's own street address, when its content type has the field (discovery batch 3.1). */
   address?: string;
+  /** Where people join the show online, read by the listing rule (`lib/seo/eventFields.ts`). */
+  onlineUrl?: string;
   ticketsUrl?: string;
 };
 

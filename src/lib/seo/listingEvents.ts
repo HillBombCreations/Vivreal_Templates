@@ -55,6 +55,23 @@
  *     `fieldMap`) gets no fragment, since which rows it draws is decided
  *     after this reads them.
  *
+ * WHICH SECTIONS DRAW (review B4). Read from the blocks the way the renderer
+ * reads them, never from a binding's own `enabled` flag, which the renderer
+ * ignores when it draws: a block draws when it and every block above it are
+ * on; a layout draws its FIRST binding (an integration binding draws no
+ * collection rows), the schedule template its first binding, a coordinated
+ * schedule group the first binding with a list on its Agenda part (whether
+ * that part is on or off). Only TOP-LEVEL sections own and scope ids (the
+ * renderer's `scopeEventRowAnchors` walks the page's top-level sections only);
+ * a section inside a plain group draws its ids unscoped and owns nothing.
+ * Events come only from a drawn section whose binding and block are on.
+ *
+ * A ROW WITH ITS OWN DETAIL PAGE (not a show). When the renderer links the row
+ * to a detail page (`resolveServingDetailRouteSlug`, mirrored in
+ * `lib/detail/linkedItems.ts`, unless the binding opts out with
+ * `detailEligible: false`), its Event points at that page, at the address the
+ * row links (the readable key when the page names one), not at the list.
+ *
  * At most `LISTING_EVENT_CAP` (50) Events per page (OD-5), one per item.
  *
  * NOT for an item that has a page of its own with its own Event: a show list
@@ -67,13 +84,14 @@
  */
 import type { ContentItem } from '@hillbombcreations/site-renderer';
 import type { SiteData } from '@/types/SiteData';
-import { pageBindings, readStopTiming, scheduleTimezone, stopAnchor, stopOccurrences } from '@hillbombcreations/site-renderer/bindings';
+import { readStopTiming, scheduleTimezone, stopAnchor, stopOccurrences, systemValue } from '@hillbombcreations/site-renderer/bindings';
 import { buildEventJsonLd } from '../../components/JsonLd/eventSchema.ts';
 import { seedFreeText } from './seedFreeText.ts';
 import { isEventList, readEventFields, type EventFields } from './eventFields.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 import { siteOrganizationId } from '../../components/JsonLd/schema.ts';
 import { pageDetailCollectionId, type DetailPageLike } from '../detail/detailCollection.ts';
+import { servingDetailRouteSlug, type LinkPage } from '../detail/linkedItems.ts';
 
 /** OD-5: never more Events than this on one page. */
 export const LISTING_EVENT_CAP = 50;
@@ -91,8 +109,10 @@ const SCHEDULE_DISPATCH: ReadonlySet<string> = new Set(['schedule', 'schedule-ag
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 export interface ListingEventsInput {
-  /** The page as composePage receives it (only `blocks` and `labels` are read). */
-  page: { blocks?: unknown; labels?: unknown };
+  /** The page as composePage receives it (`blocks`, `labels`, and for detail links `slug`, `format`, `detailPage`). */
+  page: { blocks?: unknown; labels?: unknown; slug?: string | null; format?: string; detailPage?: unknown };
+  /** Every page of the site, as composePage receives them: where a row's detail page lives. */
+  pages?: readonly LinkPage[];
   /** The composePage input's item getter, so the Events describe the rows the page draws. */
   getItems: (collectionId: string) => ContentItem[];
   /** The page's own absolute address, no fragment. */
@@ -200,21 +220,6 @@ function findBlock(blocks: unknown, id: string, parent?: Block): { block: Block;
 
 const asView = (value: unknown): ScheduleView => (value === 'month' || value === 'map' ? value : 'agenda');
 
-/** Whether the schedule group holding this agenda child is switched on (itself and every block above it). */
-function scheduleGroupOn(blocks: unknown, childId: string): boolean {
-  const walk = (list: unknown): boolean | undefined => {
-    if (!Array.isArray(list)) return undefined;
-    for (const block of list as Block[]) {
-      const children = block?.config?.children;
-      if (Array.isArray(children) && (children as Block[]).some((c) => c?.id === childId)) return block.enabled !== false;
-      const inner = walk(children);
-      if (inner !== undefined) return inner && block.enabled !== false;
-    }
-    return undefined;
-  };
-  return walk(blocks) === true;
-}
-
 /**
  * The view a schedule section serves at the page's own address (no query), as
  * the renderer decides it (1.95.1: the `blocks.ts` schedule arms,
@@ -308,47 +313,126 @@ function stopFields(item: ContentItem, zone: string | undefined, now: number): E
     time: occurrence && !occurrence.allDay && zone ? clockTime(occurrence.startMs, zone) : undefined,
     location: name?.trim() ?? place.location,
     address: place.address,
+    onlineUrl: place.onlineUrl,
   };
+}
+
+/** One collection section the renderer draws, read from the blocks as it reads them. */
+interface DrawnSection {
+  blockId: string;
+  dispatchId: string;
+  kind: string;
+  displayAs?: string;
+  collectionId: string;
+  sectionConfig: SectionConfig;
+  /** A top-level section: it owns its ids and can be scoped. */
+  topLevel: boolean;
+  /** The block, every block above it and the binding are on: it gets Events. */
+  eventsOn: boolean;
+}
+
+type DrawnBinding = { collectionId?: unknown; integrationProvider?: unknown; displayAs?: unknown; enabled?: unknown; sectionConfig?: unknown };
+type DrawnBlock = Block & { order?: unknown; type?: { kind?: unknown; dispatchId?: unknown } };
+
+const byOrder = (blocks: unknown): DrawnBlock[] =>
+  (Array.isArray(blocks) ? (blocks as DrawnBlock[]) : [])
+    .filter((b) => !!b && typeof b === 'object')
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+
+function section(block: DrawnBlock, binding: DrawnBinding | undefined, topLevel: boolean, blockOn: boolean): DrawnSection | undefined {
+  if (!binding || typeof binding.collectionId !== 'string' || binding.collectionId === '') return undefined;
+  return {
+    blockId: String(block.id ?? ''),
+    dispatchId: String(block.type?.dispatchId ?? ''),
+    kind: String(block.type?.kind ?? ''),
+    ...(typeof binding.displayAs === 'string' ? { displayAs: binding.displayAs } : {}),
+    collectionId: binding.collectionId,
+    sectionConfig: (binding.sectionConfig ?? {}) as SectionConfig,
+    topLevel,
+    eventsOn: blockOn && binding.enabled !== false,
+  };
+}
+
+/**
+ * The collection sections the renderer draws, in drawing order (`mapBlocks`,
+ * `blockToComposedSection`, `mapGroup`, `mapLayout`, the schedule arms of
+ * `composition/blocks.js` at 1.95.1). Only the event rows and schedules this
+ * module marks up are returned.
+ */
+function drawnSections(blocks: unknown, topLevel = true, out: DrawnSection[] = []): DrawnSection[] {
+  for (const block of byOrder(blocks)) {
+    if (block.enabled === false) continue;
+    const kind = block.type?.kind;
+    const dispatchId = block.type?.dispatchId;
+    const config = (block.config ?? {}) as Record<string, unknown>;
+    const bindings = (Array.isArray(config.bindings) ? config.bindings : []) as DrawnBinding[];
+    if (kind === 'group' && config.coordinated === 'schedule') {
+      // The schedule is built from the Agenda part's first list, on or off.
+      const agenda = (Array.isArray(config.children) ? (config.children as DrawnBlock[]) : []).find((c) => c?.type?.dispatchId === 'schedule-agenda');
+      const agendaBindings = (Array.isArray(agenda?.config?.bindings) ? agenda?.config?.bindings : []) as DrawnBinding[];
+      const drawn = agenda && section(agenda, agendaBindings.find((b) => !!b?.collectionId), topLevel, agenda.enabled !== false);
+      if (drawn) out.push(drawn);
+      continue;
+    }
+    if (kind === 'group' && typeof config.coordinated === 'string') continue;
+    if (kind === 'group') {
+      drawnSections(config.children, false, out);
+      continue;
+    }
+    const first = bindings[0];
+    if (kind === 'layout' && first && !first.integrationProvider && typeof first.displayAs === 'string' && EVENT_ROW_LAYOUTS.has(first.displayAs)) {
+      const drawn = section(block, first, topLevel, true);
+      if (drawn) out.push(drawn);
+    } else if (kind === 'page-template' && dispatchId === 'schedule') {
+      const drawn = section(block, first, topLevel, true);
+      if (drawn) out.push(drawn);
+    }
+  }
+  return out;
+}
+
+/** The address the renderer links a layout row to (`mapLayout`), or `undefined` when it links none. */
+function detailAddress(input: ListingEventsInput, drawn: DrawnSection, item: ContentItem): string | undefined {
+  if (drawn.sectionConfig.detailEligible === false) return undefined;
+  const page = input.page as LinkPage;
+  const owner = servingDetailRouteSlug(page, input.pages ?? [], drawn.collectionId);
+  if (!owner) return undefined;
+  // `resolveItemKeyField`: the readable key the CURRENT page names, for its own collection.
+  const dp = (input.page.detailPage ?? {}) as { itemKeyField?: unknown; itemCollectionId?: unknown };
+  const keyField = typeof dp.itemKeyField === 'string' && (!dp.itemCollectionId || dp.itemCollectionId === drawn.collectionId) ? dp.itemKeyField : undefined;
+  const keyed = keyField ? systemValue(item.raw, keyField) : undefined;
+  const segment = typeof keyed === 'string' && keyed.trim() ? keyed.trim() : item.id;
+  return `${new URL(input.pageUrl).origin}/${owner}/${encodeURIComponent(segment)}`;
 }
 
 /** Every Event this page marks up, at most `LISTING_EVENT_CAP`, in drawing order. */
 export function buildListingEvents(input: ListingEventsInput): Record<string, unknown>[] {
-  const { collections } = pageBindings(input.page as Parameters<typeof pageBindings>[0]);
   const events: Record<string, unknown>[] = [];
   const marked = new Set<string>();
-  // The ids earlier event sections drew (renderer `scopeEventRowAnchors`).
+  // The ids earlier top-level event sections drew (renderer `scopeEventRowAnchors`).
   const earlierRowIds = new Set<string>();
 
-  for (const binding of collections) {
-    if (!binding.collectionId) continue;
-    const isSchedule = SCHEDULE_DISPATCH.has(binding.dispatchId);
-    const isEventRows = binding.kind === 'layout' && typeof binding.displayAs === 'string' && EVENT_ROW_LAYOUTS.has(binding.displayAs);
-    if (!isSchedule && !isEventRows) continue;
-    // A switched-off Agenda part inside a switched-on schedule group: the
-    // renderer still builds the schedule from its list, so its stops still own
-    // their ids (review B3). It is counted below and gets no Events.
-    const ownsWhileOff = !binding.enabled && binding.dispatchId === 'schedule-agenda' && scheduleGroupOn(input.page.blocks, binding.blockId);
-    if (!binding.enabled && !ownsWhileOff) continue;
-
-    const items = input.getItems(binding.collectionId).filter((item) => typeof item.id === 'string' && item.id !== '');
-    const config = (binding.sectionConfig ?? {}) as SectionConfig;
+  for (const drawn of drawnSections(input.page.blocks)) {
+    const isSchedule = SCHEDULE_DISPATCH.has(drawn.dispatchId);
+    const items = input.getItems(drawn.collectionId).filter((item) => typeof item.id === 'string' && item.id !== '');
+    const config = drawn.sectionConfig;
     // What the renderer counts as this section's rows: a schedule's dated stops
     // (upcoming and past, dated as it dates them), a layout's items.
-    const drawn = isSchedule ? items.filter((item) => stopAnchor(readStopTiming({ raw: item.raw, date: item.date })) !== null) : items;
-    const scoped = drawn.some((item) => earlierRowIds.has(item.id));
-    if (!scoped) for (const item of drawn) earlierRowIds.add(item.id);
-    // Ownership is counted first: a skipped list still owns its rows' ids.
-    if (ownsWhileOff || input.skipCollections?.has(binding.collectionId)) continue;
+    const rows = isSchedule ? items.filter((item) => stopAnchor(readStopTiming({ raw: item.raw, date: item.date })) !== null) : items;
+    const scoped = drawn.topLevel && rows.some((item) => earlierRowIds.has(item.id));
+    if (drawn.topLevel && !scoped) for (const item of rows) earlierRowIds.add(item.id);
+    // Ownership is counted first: a section with no Events still owns its rows' ids.
+    if (!drawn.eventsOn || input.skipCollections?.has(drawn.collectionId)) continue;
 
     let anchored = new Set<string>();
     let zone = input.timezone;
     if (isSchedule) {
-      const serving = scheduleServing(binding, input.page, input.timezone);
+      const serving = scheduleServing(drawn, input.page, input.timezone);
       zone = serving.zone;
-      if (!scoped) anchored = scheduleAnchoredIds(drawn, serving.view, zone, input.now);
+      if (!scoped) anchored = scheduleAnchoredIds(rows, serving.view, zone, input.now);
     } else {
       const reshaped = config.itemLimit !== undefined || config.scope !== undefined || config.fieldMap !== undefined;
-      if (!scoped && !reshaped) anchored = anchoredIds(binding.displayAs as string, items, config);
+      if (!scoped && !reshaped) anchored = anchoredIds(drawn.displayAs as string, items, config);
       // OD-4: a list drawn as events still has to carry a date and a place.
       if (!isEventList(items)) continue;
     }
@@ -358,14 +442,17 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
       if (marked.has(item.id) || !(item.title ?? '').trim() || notScheduled(item)) continue;
       const fields = isSchedule ? stopFields(item, zone, input.now) : readEventFields(item.raw as Record<string, unknown>);
       const fragment = anchored.has(item.id) && SAFE_ID.test(item.id) ? `#item-${item.id}` : '';
+      const url = (!isSchedule && detailAddress(input, drawn, item)) || `${input.pageUrl}${fragment}`;
       const result = buildEventJsonLd({
         title: item.title.trim(),
         description: seedFreeText(item.description, 500),
-        url: `${input.pageUrl}${fragment}`,
+        url,
         date: fields.date,
         time: fields.time,
         location: fields.location,
         address: fields.address,
+        onlineUrl: fields.onlineUrl,
+        ticketsUrl: fields.ticketsUrl,
         timezone: zone,
         organizationId: input.organizationId,
       });
@@ -400,6 +487,8 @@ export function pageListingEvents(
   );
   const events = buildListingEvents({
     page: input.page,
+    // Cast: the site's page configs are the structural shape `LinkPage` reads.
+    pages: (siteData.pageConfigs ?? []) as unknown as LinkPage[],
     getItems: input.data.getItems,
     pageUrl: path === '/' ? origin : `${origin}${path}`,
     timezone: siteData.timezone,
