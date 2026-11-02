@@ -29,10 +29,10 @@
  * 1.95.1 and are deliberately conservative; `listingEvents.test.ts` renders
  * the real renderer and fails if any emitted fragment is missing from the
  * page's HTML, so a renderer change that drops or rescopes an id fails here.
- *   - Agenda: every row the agenda dates, unless the block shows only
- *     upcoming dates (then no fragment: which rows are past is decided at the
- *     visitor's request time).
- *   - What's On: every row, unless past events are hidden.
+ *   - Agenda: every row the agenda dates; with `upcomingOnly`, only rows from
+ *     the start of today, read an hour ahead (`UPCOMING_MARGIN_MS`).
+ *   - What's On: every row; with `showPast: false`, only rows still upcoming
+ *     an hour ahead, as `isUpcoming` reads them.
  *   - Calendar: the computer view is a month grid with no ids; the phone list
  *     below it carries them, for the month the calendar opens on. A fragment
  *     only when that month is certain: the block names it (`initialMonth`), or
@@ -51,9 +51,17 @@
  *     counting between this read and the render is never linked.
  *   - A row whose `status` is cancelled (either spelling) or private is not
  *     marked up at all, on any arm (review B1).
- *   - A block that trims, filters or remaps its list (`itemLimit`, `scope`,
- *     `fieldMap`) gets no fragment, since which rows it draws is decided
- *     after this reads them.
+ *
+ * WHICH ROWS ARE MARKED UP (review B6). Only rows the section draws, with the
+ * words it shows:
+ *   - A non-schedule block that trims, filters or remaps its list
+ *     (`itemLimit`, `scope`, `fieldMap`) gets NO Events. The renderer's
+ *     `shapeItems` and `applyScope` are not in its pure package exports
+ *     (1.95.1 exports only the field-map helpers from `./bindings`; `applyScope`
+ *     sits in the root barrel, which plain Node cannot load), so copying the
+ *     trim here would be one more mirror to drift. Its rows still own ids.
+ *   - An Agenda with `upcomingOnly` and a What's On with `showPast: false`
+ *     mark up only the rows they keep (the same rows they anchor, above).
  *
  * WHICH SECTIONS DRAW (review B4). Read from the blocks the way the renderer
  * reads them, never from a binding's own `enabled` flag, which the renderer
@@ -177,14 +185,37 @@ function authoredMonth(value: unknown): string | undefined {
 }
 
 /** The ids one event-row section is certain to render, per the rules in the docblock. */
-function anchoredIds(displayAs: string, items: ContentItem[], config: SectionConfig): Set<string> {
+/**
+ * Whether a row survives its block's own past-row filter at every instant from
+ * `now` to `now + UPCOMING_MARGIN_MS`: the Agenda's `upcomingOnly` (`buildAgenda`:
+ * dated, and from the server's local start of today) and What's On's
+ * `showPast: false` (`isUpcoming`: its `date`, `startDate` or `eventDate` on a
+ * UTC day from today, an undated row kept). Reading at the later instant is the
+ * stricter answer for both. Any other block keeps every row.
+ */
+function keptByPastFilter(displayAs: string | undefined, item: ContentItem, config: SectionConfig, now: number): boolean {
+  const later = new Date(now + UPCOMING_MARGIN_MS);
+  if (displayAs === 'agenda' && config.upcomingOnly === true) {
+    const ts = rendererTimestamp(item);
+    return ts !== null && ts >= new Date(later.getFullYear(), later.getMonth(), later.getDate()).getTime();
+  }
+  if (displayAs === 'whats-on' && config.showPast === false) {
+    const raw = (item.raw ?? {}) as Record<string, unknown>;
+    const value = [raw.date, raw.startDate, raw.eventDate].find((v) => typeof v === 'string' && v.trim() !== '') as string | undefined;
+    if (value === undefined) return true;
+    const at = new Date(value.trim());
+    if (Number.isNaN(at.getTime())) return true;
+    return Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()) >= Date.UTC(later.getUTCFullYear(), later.getUTCMonth(), later.getUTCDate());
+  }
+  return true;
+}
+
+function anchoredIds(displayAs: string, items: ContentItem[], config: SectionConfig, now: number): Set<string> {
   const ids = new Set<string>();
   if (displayAs === 'agenda') {
-    if (config.upcomingOnly === true) return ids;
-    for (const item of items) if (rendererTimestamp(item) !== null) ids.add(item.id);
+    for (const item of items) if (rendererTimestamp(item) !== null && keptByPastFilter(displayAs, item, config, now)) ids.add(item.id);
   } else if (displayAs === 'whats-on') {
-    if (config.showPast === false) return ids;
-    for (const item of items) ids.add(item.id);
+    for (const item of items) if (keptByPastFilter(displayAs, item, config, now)) ids.add(item.id);
   } else if (displayAs === 'calendar') {
     const dated = items.filter((item) => rendererTimestamp(item) !== null);
     if (dated.length === 0) {
@@ -445,8 +476,9 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
       zone = serving.zone;
       if (!scoped) anchored = scheduleAnchoredIds(rows, serving.view, zone, input.now);
     } else {
-      const reshaped = config.itemLimit !== undefined || config.scope !== undefined || config.fieldMap !== undefined;
-      if (!scoped && !reshaped) anchored = anchoredIds(drawn.displayAs as string, items, config);
+      // B6: a block that trims, filters or remaps its list gets no Events at all.
+      if (config.itemLimit !== undefined || config.scope !== undefined || config.fieldMap !== undefined) continue;
+      if (!scoped) anchored = anchoredIds(drawn.displayAs as string, items, config, input.now);
       // OD-4: a list drawn as events still has to carry a date and a place.
       if (!isEventList(items)) continue;
     }
@@ -454,6 +486,7 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
     for (const item of items) {
       if (events.length >= LISTING_EVENT_CAP) return events;
       if (marked.has(item.id) || !(item.title ?? '').trim() || notScheduled(item)) continue;
+      if (!isSchedule && !keptByPastFilter(drawn.displayAs, item, config, input.now)) continue;
       const fields = isSchedule ? stopFields(item, zone, input.now) : readEventFields(item.raw as Record<string, unknown>);
       const fragment = anchored.has(item.id) && SAFE_ID.test(item.id) ? `#item-${item.id}` : '';
       const url = (!isSchedule && detailAddress(input, drawn, item)) || `${input.pageUrl}${fragment}`;

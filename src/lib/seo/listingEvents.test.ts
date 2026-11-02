@@ -200,11 +200,33 @@ test('ALLOW: one Event per item, even when two blocks draw the same list', () =>
   assert.deepEqual(out.map((e) => e.name), ['Farmers Market', 'Night Market']);
 });
 
-test('REFUSE: a block that trims, filters or remaps its list gets no fragment', () => {
-  for (const sectionConfig of [{ itemLimit: 1 }, { scope: { field: 'venue', equals: 'x' } }, { fieldMap: { title: 'venue' } }, { upcomingOnly: true }]) {
-    const out = events({ blocks: [layoutBlock('agenda', 'markets', sectionConfig)] });
-    for (const e of out) assert.equal(e.url, PAGE_URL, JSON.stringify(sectionConfig));
+test('REFUSE (review B6): only rows the block draws are marked up; a block that trims, filters or remaps gives none', () => {
+  // Three upcoming rows and one past row, every one above the floor.
+  items.set('trim', [
+    row({ title: 'First up', date: day(1), venue: 'Hall', address: '12 Main St' }),
+    row({ title: 'Second up', date: day(2), venue: 'Hall', address: '12 Main St' }),
+    row({ title: 'Third up', date: day(3), venue: 'Hall', address: '12 Main St' }),
+    row({ title: 'Long gone', date: `${YEAR - 5}-03-01`, venue: 'Hall', address: '12 Main St' }),
+  ]);
+  const all = ['First up', 'Second up', 'Third up', 'Long gone'];
+  const upcoming = ['First up', 'Second up', 'Third up'];
+  const cases: Array<[string, Record<string, unknown> | undefined, string[]]> = [];
+  for (const displayAs of ['agenda', 'whats-on', 'calendar', 'event-wall']) {
+    cases.push([displayAs, undefined, all], [displayAs, { itemLimit: 1 }, []], [displayAs, { scope: { field: 'venue', equals: 'Hall' } }, []], [displayAs, { fieldMap: { title: 'venue' } }, []]);
   }
+  cases.push(['agenda', { upcomingOnly: true }, upcoming], ['whats-on', { showPast: false }, upcoming], ['agenda', { showPast: false }, all], ['whats-on', { upcomingOnly: true }, all]);
+  for (const [displayAs, sectionConfig, expected] of cases) {
+    const page = pageOf({ format: 'standard', blocks: [layoutBlock(displayAs, 'trim', sectionConfig)] });
+    const out = events(page as unknown as Record<string, unknown>);
+    assert.deepEqual(out.map((e) => e.name), expected, `${displayAs} ${JSON.stringify(sectionConfig ?? {})}`);
+    assertFragmentsRendered(page, out);
+  }
+});
+
+test('ALLOW (review B6): an Agenda that shows only upcoming dates links the rows it keeps', () => {
+  const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'trim', { upcomingOnly: true })] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.equal(assertFragmentsRendered(page, out).length, 3, 'each kept row links its own row');
 });
 
 test('the id rule is the renderer\'s: a fragment exactly when eventRowAnchor gives the row an id', async () => {
@@ -382,14 +404,17 @@ test('PARITY (pass 4 note 3): blocks are read in the renderer\'s order, whatever
   items.set('order-b', [row({ title: 'Order B', date: day(2), venue: 'Hall', address: '12 Main St' })]);
   items.set('order-c', [row({ title: 'Order C', date: day(3), venue: 'Hall', address: '12 Main St' })]);
   items.set('order-d', [row({ title: 'Order D', date: day(4), venue: 'Hall', address: '12 Main St' })]);
+  items.set('order-e', [row({ title: 'Order E', date: day(5), venue: 'Hall', address: '12 Main St' })]);
   const at = (block: ReturnType<typeof layoutBlock>, order: unknown) => ({ ...block, order });
+  // `'abc'` reads as NaN in the renderer (an equal pair to sort); `Number(x) || 0`
+  // would read it as 0 and move it ahead of `2`, so this case tells the two apart.
   const page = pageOf({
     format: 'standard',
-    blocks: [at(layoutBlock('agenda', 'order-a'), '10'), at(layoutBlock('agenda', 'order-b'), 2), at(layoutBlock('agenda', 'order-c'), null), at(layoutBlock('agenda', 'order-d'), '1')],
+    blocks: [at(layoutBlock('agenda', 'order-a'), '10'), at(layoutBlock('agenda', 'order-b'), 2), at(layoutBlock('agenda', 'order-e'), 'abc'), at(layoutBlock('agenda', 'order-c'), null), at(layoutBlock('agenda', 'order-d'), '1')],
   });
   const names = events(page as unknown as Record<string, unknown>).map((e) => String(e.name));
   const html = render(page);
-  const drawnOrder = ['Order A', 'Order B', 'Order C', 'Order D'].sort((x, y) => html.indexOf(x) - html.indexOf(y));
+  const drawnOrder = ['Order A', 'Order B', 'Order C', 'Order D', 'Order E'].sort((x, y) => html.indexOf(x) - html.indexOf(y));
   assert.ok(drawnOrder.every((n) => html.includes(n)), 'positive control: every block drew');
   assert.deepEqual(names, drawnOrder);
 });
