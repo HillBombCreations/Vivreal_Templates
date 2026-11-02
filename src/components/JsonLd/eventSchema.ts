@@ -1,5 +1,11 @@
 /**
- * Event JSON-LD for a show detail page (discovery batch 3.1, 2026-10-22).
+ * Event JSON-LD for a show detail page (discovery batch 3.1, 2026-10-22), and
+ * since next release 2026-12 (plan 11.3, T3) for every dated row a listing
+ * page marks up (`src/lib/seo/listingEvents.ts`): one builder, one honest
+ * floor. Shows call it exactly as before (`buildShowEventJsonLd` was renamed,
+ * its body unchanged; `__fixtures__/showEvents-d180716.json` pins the output
+ * byte for byte). A listing passes no `business`, so rule 3 below never
+ * places a market stop at the shop's own address.
  *
  * WHAT WAS WRONG. `startDate` was `${show.date}T${show.time}`, string
  * concatenation of an ISO timestamp and a clock time as typed, which produced
@@ -29,7 +35,7 @@
 import type { SiteData } from '@/types/SiteData';
 import { unsignMediaUrl } from './unsignMediaUrl.ts';
 
-export interface ShowEventInput {
+export interface EventInput {
   title: string;
   description?: string;
   imageUrl?: string;
@@ -54,7 +60,7 @@ export interface ShowEventInput {
 
 export type EventSkipReason = 'no_date' | 'no_address';
 
-export type ShowEventResult =
+export type EventResult =
   | { schema: Record<string, unknown>; skipped?: undefined }
   | { schema: null; skipped: EventSkipReason };
 
@@ -262,7 +268,7 @@ function splitVenue(location: string): { venue: string; street: string } | undef
   return splitColonVenue(location) ?? splitSpacedVenue(location);
 }
 
-function resolveLocation(input: ShowEventInput): EventLocation | undefined {
+function resolveLocation(input: EventInput): EventLocation | undefined {
   const location = input.location?.trim() ?? '';
   const ownAddress = input.address?.trim();
 
@@ -307,7 +313,7 @@ function resolveLocation(input: ShowEventInput): EventLocation | undefined {
   return undefined;
 }
 
-export function buildShowEventJsonLd(input: ShowEventInput): ShowEventResult {
+export function buildEventJsonLd(input: EventInput): EventResult {
   const startDate = showStartDate(input.date, input.time, input.timezone);
   if (!startDate) return { schema: null, skipped: 'no_date' };
   const resolved = resolveLocation(input);

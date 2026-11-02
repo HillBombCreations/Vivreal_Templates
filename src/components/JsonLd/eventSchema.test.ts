@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildShowEventJsonLd, parseShowTime, showStartDate, type ShowEventInput } from './eventSchema.ts';
+import { buildEventJsonLd, parseShowTime, showStartDate, type EventInput } from './eventSchema.ts';
 
 // Discovery batch 3.1 (design-discovery-batch-2026-10-22.md section 6, rows
 // "Event date" and "Event place"). Every ALLOW has its REFUSE.
@@ -8,7 +8,7 @@ import { buildShowEventJsonLd, parseShowTime, showStartDate, type ShowEventInput
 const CHICAGO = 'America/Chicago';
 const ORG = 'https://comedycollectivechi.com/#organization';
 
-function show(overrides: Partial<ShowEventInput> = {}): ShowEventInput {
+function show(overrides: Partial<EventInput> = {}): EventInput {
   return {
     title: 'Friday Night Standup',
     url: 'https://comedycollectivechi.com/shows/abc123',
@@ -21,8 +21,8 @@ function show(overrides: Partial<ShowEventInput> = {}): ShowEventInput {
   };
 }
 
-function schemaOf(input: ShowEventInput): Record<string, unknown> {
-  const result = buildShowEventJsonLd(input);
+function schemaOf(input: EventInput): Record<string, unknown> {
+  const result = buildEventJsonLd(input);
   assert.ok(result.schema, `expected an Event node, got skipped=${String(result.skipped)}`);
   return result.schema;
 }
@@ -66,7 +66,7 @@ test('REFUSE: no usable time zone gives the date alone (an hour is never guessed
 
 test('REFUSE: no date (or an unreadable one) gives no Event node', () => {
   for (const date of [undefined, '', 'next Friday']) {
-    const result = buildShowEventJsonLd(show({ date }));
+    const result = buildEventJsonLd(show({ date }));
     assert.equal(result.schema, null, JSON.stringify(date));
     assert.equal(result.skipped, 'no_date');
   }
@@ -140,20 +140,20 @@ test('ALLOW: an online show is a VirtualLocation at its ticket link, attendance 
 });
 
 test('REFUSE: "Uptown Taproom" alone on a non-local site gives no Event node and the no_address skip', () => {
-  const result = buildShowEventJsonLd(show({ location: 'Uptown Taproom' }));
+  const result = buildEventJsonLd(show({ location: 'Uptown Taproom' }));
   assert.equal(result.schema, null);
   assert.equal(result.skipped, 'no_address');
 });
 
 test('REFUSE: venue text alone is still skipped on a LOCAL site (its address is not the venue\'s)', () => {
-  const result = buildShowEventJsonLd(
+  const result = buildEventJsonLd(
     show({ location: 'Uptown Taproom', business: { name: 'Hop Haus', address: { street1: '10 Main St' } } }),
   );
   assert.equal(result.skipped, 'no_address');
 });
 
 test('REFUSE: a colon followed by words is not a street ("Chicago: Uptown")', () => {
-  assert.equal(buildShowEventJsonLd(show({ location: 'Chicago: Uptown Taproom' })).skipped, 'no_address');
+  assert.equal(buildEventJsonLd(show({ location: 'Chicago: Uptown Taproom' })).skipped, 'no_address');
 });
 
 // ---------------------------------------------------------------------------
@@ -178,7 +178,7 @@ test('REFUSE: no site origin means no organizer reference, and a non-web ticket 
 test('SOURCE PIN: the show route logs jsonld.event.skipped with the reason when no Event is emitted', async () => {
   const { readFileSync } = await import('node:fs');
   const page = readFileSync(new URL('../../app/[slug]/[itemId]/page.tsx', import.meta.url), 'utf8');
-  const start = page.indexOf('buildShowEventJsonLd({');
+  const start = page.indexOf('buildEventJsonLd({');
   assert.ok(start > 0, 'sanity: the show arm was not found, this pin read nothing');
   const arm = page.slice(start, page.indexOf('return (', start));
   assert.ok(arm.includes('"jsonld.event.skipped"'), 'the skip is logged');
@@ -213,7 +213,7 @@ test('ALLOW (D17, real string): a location that IS a street address is its own p
 
 test('REFUSE (D17): a number inside a venue name never splits it, and a venue alone still emits no Event', () => {
   for (const location of ['Club 21', 'Studio 54 Lounge', 'The Den Theatre', 'K&K Wrigleyville', 'Room 2 Upstairs', 'Hotshots! With Rosey Catherine February 21st 7pm']) {
-    const result = buildShowEventJsonLd(show({ location }));
+    const result = buildEventJsonLd(show({ location }));
     assert.equal(result.schema, null, location);
     assert.equal(result.skipped, 'no_address', location);
   }
@@ -246,7 +246,7 @@ test('D17 count: 5 of The Comedy Collective’s 14 live shows now emit an Event 
   assert.equal(LIVE.length, 14);
   const emitted = LIVE.filter(([title, , time, location]) =>
     // The business has no street address (live read), so rule 3 never applies.
-    buildShowEventJsonLd(show({ title, time, location, business: undefined })).schema !== null,
+    buildEventJsonLd(show({ title, time, location, business: undefined })).schema !== null,
   ).map(([title]) => title);
   assert.deepEqual(emitted, [
     'Hotshots',
@@ -259,7 +259,7 @@ test('D17 count: 5 of The Comedy Collective’s 14 live shows now emit an Event 
 
 test('REFUSE (D17 review): a number inside a venue name never becomes a street, however address-like the words after it', () => {
   for (const location of ['Pier 39 West Lot', 'Stage 3 North Hall', 'Gate 2 East Entrance', 'Suite 200 Park Plaza Hotel', 'The 5 Points Lane Bar']) {
-    const result = buildShowEventJsonLd(show({ location }));
+    const result = buildEventJsonLd(show({ location }));
     assert.equal(result.schema, null, `${location} must not invent an address`);
     assert.equal(result.skipped, 'no_address', location);
   }
@@ -269,4 +269,21 @@ test('ALLOW (D17 review): a compass street with a ZIP or a ", XX" state, or a st
   assert.equal((place('Hall 5 300 N State Street, Chicago') .address as Record<string, unknown>).streetAddress, '300 N State Street, Chicago');
   assert.equal((place('The Annex 1200 W Belmont, IL') .address as Record<string, unknown>).streetAddress, '1200 W Belmont, IL');
   assert.equal((place('The Annex 1200 W Belmont 60657') .address as Record<string, unknown>).streetAddress, '1200 W Belmont 60657');
+});
+
+// Next release 2026-12, plan 11.3 (T3): the builder is shared with listing
+// pages. Shows must be unchanged byte for byte: every case below was written
+// by the PRE-CHANGE `buildShowEventJsonLd` at d180716, run once over these
+// inputs before the rename, and the renamed builder must answer each one with
+// exactly the same JSON.
+test('ALLOW: shows unchanged byte for byte (24 golden cases from d180716)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const golden = JSON.parse(readFileSync(new URL('./__fixtures__/showEvents-d180716.json', import.meta.url), 'utf8')) as {
+    cases: Array<{ input: EventInput; output: unknown }>;
+  };
+  assert.equal(golden.cases.length, 24, 'positive control: the golden file parsed');
+  assert.equal(golden.cases.filter((c) => (c.output as { schema: unknown }).schema !== null).length, 18, 'and it holds real Events, not only skips');
+  for (const { input, output } of golden.cases) {
+    assert.equal(JSON.stringify(buildEventJsonLd(input)), JSON.stringify(output), JSON.stringify(input));
+  }
 });

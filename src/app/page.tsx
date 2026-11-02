@@ -17,6 +17,8 @@ import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { homeMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import type { PageWithBlocks } from "@hillbombcreations/site-renderer/bindings";
 import { reportDisplayMismatches } from "@/lib/reportDisplayMismatch";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEvents } from "@/lib/seo/listingEvents";
 
 // ISR migration Phase 3. `revalidate` must be a literal — Next 16 parses it
 // out of this file's source and hard-fails the build on any expression, so
@@ -81,6 +83,8 @@ async function Resolved() {
       />
       {/* RW4-6: a failed list read must not be page-cached. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
+      {/* Plan 11.3 (T3): a What's On or Agenda on home marks its rows up as Events. */}
+      <JsonLd schema={pageListingEvents(siteData, input, "/")} />
       {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are
           Templates chrome and carry no CMS rich text, so widening the boundary
           would buy nothing and put a client component above the whole page. */}

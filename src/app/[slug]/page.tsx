@@ -34,6 +34,8 @@ import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFor } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEvents } from "@/lib/seo/listingEvents";
 import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
@@ -624,6 +626,7 @@ export default async function DynamicPage({
           components: LIVE_PRODUCTS_OVERRIDES,
           productQuery: parseProductQuery(sp),
           lookupQuery: readLookupQuery(sp, composedPage),
+          pagePath: `/${slug}`,
         });
       }
     }
@@ -741,6 +744,7 @@ export default async function DynamicPage({
             components={components}
             scheduleView={scheduleView}
             suppressSrTitle={showTransitionalTitleBand}
+            pagePath={`/${slug}`}
             {...(heroContext ? { context: heroContext } : {})}
           />
         </Suspense>
@@ -781,6 +785,7 @@ async function ComposedFormatBody({
   scheduleView,
   suppressSrTitle,
   context,
+  pagePath,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -797,6 +802,8 @@ async function ComposedFormatBody({
   suppressSrTitle?: boolean;
   /** The context the parent already read above the boundary for a Dark data-dependent hero (owner find 3). */
   context?: PageContextResult;
+  /** The page's own path, for the Event markup of its dated rows (plan 11.3, `src/lib/seo/listingEvents.ts`). */
+  pagePath: string;
 }) {
   const { input, isEmpty, emptinessUnknown, listReadFailed, richTextImageUrls } =
     context ??
@@ -878,6 +885,8 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <RecordPurchaseGoal />}
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
+      {/* Plan 11.3 (T3): schedule stops and dated rows as Events. JSON-LD only. */}
+      <JsonLd schema={pageListingEvents(siteData, input, pagePath)} />
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
           See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
       {format === "checkout-success" ? (
