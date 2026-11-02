@@ -86,3 +86,34 @@ export function stableRichTextImageMap(
   }
   return out;
 }
+
+/**
+ * The stable address of the FIRST addressable picture in this item's body,
+ * or `undefined` (next release 2026-12, plan 11.5, T4): the image the page
+ * list names for a post. A site-relative `/img/...` path, never a signed URL.
+ */
+export function firstRichTextImageUrl(
+  pageSlug: string,
+  itemId: string,
+  raw: Record<string, unknown> | undefined,
+  tools: RichTextImageTools,
+): string | undefined {
+  const [first] = keysByFile(raw, tools.collect).values();
+  return first === undefined ? undefined : tools.stableUrl(pageSlug, itemId, first);
+}
+
+/**
+ * The item for its share card: its own cover picture when it has one, else
+ * its body's first picture, signed by the same read (plan 11.5, T4). An item
+ * with neither is returned unchanged, so the branded card stands.
+ */
+export function withFirstInlinePicture<T extends { imageUrl?: string; raw?: Record<string, unknown> }>(
+  item: T,
+  signedByKey: Record<string, string>,
+  collect: RichTextImageTools['collect'],
+): T {
+  if (item.imageUrl?.trim()) return item;
+  const [first] = keysByFile(item.raw, collect).values();
+  const signedUrl = first === undefined ? undefined : signedByKey[first];
+  return signedUrl ? { ...item, imageUrl: signedUrl } : item;
+}

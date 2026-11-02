@@ -48,7 +48,8 @@ import { detailFieldMap, enterDetailItems } from '@/lib/detail/detailItems';
 import type { SitemapItem } from '@/lib/seo/sitemap';
 import { logSitemapBuilt } from '@/lib/seo/sitemapSignals';
 import { readableSegments } from '@/lib/detail/readableSegment';
-import { applyScope, itemSegment } from '@hillbombcreations/site-renderer';
+import { applyScope, collectRichTextImageKeys, itemSegment, stableRichTextImageUrl } from '@hillbombcreations/site-renderer';
+import { firstRichTextImageUrl } from '@/lib/media/richTextImage';
 
 const SITE_ID = process.env.SITE_ID || '';
 
@@ -508,6 +509,9 @@ export function getPageBindingsByRole(pageConfig: PageConfig): {
   };
 }
 
+/** The renderer's BLOG2 helpers, as `src/lib/media/richTextImage.ts` takes them. */
+const RICH_TEXT_IMAGE_TOOLS = { collect: collectRichTextImageKeys, stableUrl: stableRichTextImageUrl };
+
 export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
   // Same resolution as getSiteData: live, else the build-time floor. A sitemap
   // from the floor lists the URLs the site had at its last build, a true
@@ -608,7 +612,13 @@ export const getSiteMap = async (): Promise<MetadataRoute.Sitemap> => {
           const changedAt = new Map(all.map((it) => [it.id, it.updatedAt]));
           // Only the items some link on the site reaches (B1, `linkedItems.ts`).
           for (const it of restrictToLinked(applyScope(all, c.scope), c.linkScopes ?? null, applyScope)) {
-            items.push({ segment: itemSegment(it, c.itemKeyField), lastModified: changedAt.get(it.id) });
+            items.push({
+              segment: itemSegment(it, c.itemKeyField),
+              lastModified: changedAt.get(it.id),
+              // Plan 11.5 (T4): the post's first inline picture, at the stable
+              // address `/img/<slug>/<itemId>/<file>` serves (never a signed URL).
+              image: firstRichTextImageUrl(slug, it.id, it.raw, RICH_TEXT_IMAGE_TOOLS),
+            });
           }
         };
         if (source.kind === 'shows') {

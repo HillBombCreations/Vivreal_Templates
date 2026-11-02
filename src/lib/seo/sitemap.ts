@@ -80,7 +80,16 @@ import { isPageTurnedOff } from '../pages/pageEnabled.ts';
 export interface SitemapItem {
   segment: string;
   lastModified?: string;
+  /**
+   * Plan 11.5 (T4): the post's first inline picture, as its site-relative
+   * stable address (`/img/<slug>/<itemId>/<file>`). Anything else (a signed
+   * media URL, an absolute link) is dropped, never listed.
+   */
+  image?: string;
 }
+
+/** Only the stable picture route may be listed: its address never expires. */
+const STABLE_IMAGE_PATH = /^\/img\/[a-z0-9][a-z0-9-]{0,99}\/[A-Za-z0-9_-]{1,64}\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /**
  * A recorded last-changed time, or `undefined`. R4: the page list claims a
@@ -177,13 +186,14 @@ export function buildSitemapEntries(
       if (seen.has(slug)) continue;
       seen.add(slug);
       for (const item of detailItemsByPage[slug] ?? []) {
-        const { segment, lastModified } = asItem(item);
+        const { segment, lastModified, image } = asItem(item);
         if (!segment) continue;
         entries.push({
           url: `${origin}/${slug}/${segment}`,
           ...dated(sitemapDate(lastModified)),
           changeFrequency: 'monthly',
           priority: 0.5,
+          ...(image && STABLE_IMAGE_PATH.test(image) ? { images: [`${origin}${image}`] } : {}),
         });
       }
     }

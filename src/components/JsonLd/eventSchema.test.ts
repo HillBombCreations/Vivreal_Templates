@@ -270,3 +270,20 @@ test('ALLOW (D17 review): a compass street with a ZIP or a ", XX" state, or a st
   assert.equal((place('The Annex 1200 W Belmont, IL') .address as Record<string, unknown>).streetAddress, '1200 W Belmont, IL');
   assert.equal((place('The Annex 1200 W Belmont 60657') .address as Record<string, unknown>).streetAddress, '1200 W Belmont 60657');
 });
+
+// Next release 2026-12 (owner 2026-11-02, "ship without it, redo properly"):
+// listing-page Events are out of this release (backlog F33), and show pages
+// keep their Event exactly as at d180716. Every case below was written by
+// `buildShowEventJsonLd` at d180716, run once over these inputs, and the
+// builder must answer each one with exactly the same JSON.
+test('ALLOW: shows unchanged byte for byte (24 golden cases from d180716)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const golden = JSON.parse(readFileSync(new URL('./__fixtures__/showEvents-d180716.json', import.meta.url), 'utf8')) as {
+    cases: Array<{ input: ShowEventInput; output: unknown }>;
+  };
+  assert.equal(golden.cases.length, 24, 'positive control: the golden file parsed');
+  assert.equal(golden.cases.filter((c) => (c.output as { schema: unknown }).schema !== null).length, 18, 'and it holds real Events, not only skips');
+  for (const { input, output } of golden.cases) {
+    assert.equal(JSON.stringify(buildShowEventJsonLd(input)), JSON.stringify(output), JSON.stringify(input));
+  }
+});

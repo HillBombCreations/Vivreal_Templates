@@ -29,6 +29,7 @@ import { resolveSiteFont } from '@/lib/fonts/siteFont';
 import { siteFontStylesheets } from '@/lib/fonts/siteFontStylesheets';
 import { themeVarStyle } from '@/lib/theme/themeVarStyle';
 import { resolveMonoFamily } from '@hillbombcreations/site-renderer/theme';
+import { themePalette } from '@hillbombcreations/site-renderer/contrast';
 import Providers from '@/components/Providers';
 import QuotaExceeded from '@/components/QuotaExceeded';
 import { FloatingCta, FulfillmentStrip, UtilityDock, EdgeDock } from '@/components/RendererExports';
@@ -165,6 +166,11 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     // styleVariant so first paint gets the preset's `--motion-*` tokens from
     // the renderer's content-grid.css; Providers re-stamps on the client.
     const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
+    // Renderer 1.95.0 (studio contrast guard): the site's theme colours, so the
+    // docks and the fulfillment strip judge their text on the site's own ground
+    // (owner-approved contrast-fleet-list.md, the rail and bar rows). Only the
+    // eight theme colour keys; absent ones are left out.
+    const chromePalette = themePalette(siteData);
     return (
       <html
         lang="en"
@@ -258,7 +264,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       The component itself gates on enabled/links; absent
                       config ⇒ nothing renders. */}
                   {siteData.fulfillmentStrip && (
-                      <FulfillmentStrip config={siteData.fulfillmentStrip} />
+                      <FulfillmentStrip config={siteData.fulfillmentStrip} palette={chromePalette} />
                   )}
                   {/* Coastal Estate kit (wedding-venue look #3) — the persistent
                       BOTTOM action bar (phone · address · one squared CTA),
@@ -266,7 +272,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       the fixed header, which would cover it. The component
                       itself renders nothing when nothing is authored. */}
                   {siteData.utilityDock && (
-                      <UtilityDock {...siteData.utilityDock} />
+                      <UtilityDock {...siteData.utilityDock} palette={chromePalette} />
                   )}
                   {/* Med-spa kit look #1 (Vesper) — the persistent VERTICAL
                       page-EDGE action rail (rotated label + stacked actions),
@@ -275,7 +281,7 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                       only; the component renders nothing when nothing is
                       authored. */}
                   {siteData.edgeDock && (
-                      <EdgeDock {...siteData.edgeDock} />
+                      <EdgeDock {...siteData.edgeDock} palette={chromePalette} />
                   )}
                   {/* #3 — site-wide "get in touch" FAB, config-driven from
                       siteData.floatingCta (migrated marketing sites). Links to the

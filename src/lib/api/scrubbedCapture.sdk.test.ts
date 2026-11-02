@@ -252,7 +252,10 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     // the real SDK's request isolation scope and the real transport.
     // The fleet list, copied from plan 3.PII (Revision 26, 33 names) rather than
     // imported, so this real-SDK check does not lean on the module it proves;
-    // `scrubCredentials.test.ts` pins the module's own array to the same 33.
+    // `scrubCredentials.test.ts` pins the module's own array to the same 34.
+    // Next release 2026-12 (plan RP-4, review-a-pr28 note 5) adds the 34th,
+    // `cloudfront-viewer-address` (the viewer's `ip:port`), which the SDK's
+    // HTTP server instrumentation records like any other request header.
     const FLEET_SECRET_HEADERS = [
       "cookie", "set-cookie", "authorization", "proxy-authorization",
       "x-active-ctx", "x-user-ctx", "x-api-key", "x-support-attestation",
@@ -263,8 +266,9 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
       "x-shopify-hmac-sha256", "x-square-hmacsha256-signature", "x-vr-sentry-canary",
       "x-preview-token", "x-vr-metering-token", "x-revalidate-signature",
       "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "x-client-ip",
+      "cloudfront-viewer-address",
     ];
-    assert.equal(FLEET_SECRET_HEADERS.length, 33);
+    assert.equal(FLEET_SECRET_HEADERS.length, 34);
     const secret = (name: string) => `SENTINEL_${name.replace(/[^a-z0-9]/gi, "_")}_sdk_9d1e`;
     const cookieNames = ["token", "active_ctx", "user_ctx", "refreshToken", "csrf_token", "session", "sid", "zz_other", "vr-preview-token"];
     const headers: Record<string, string> = { "content-type": "application/json", "x-vr-check-control": "kept-control-9d1e" };

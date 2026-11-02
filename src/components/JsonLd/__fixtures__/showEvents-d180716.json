@@ -1,0 +1,708 @@
+{
+  "source": "buildShowEventJsonLd at Vivreal_Templates d180716",
+  "cases": [
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-11-14T06:00:00.000Z",
+        "time": "8pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-11-14T20:00:00-06:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "doors at dusk",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "Not/AZone",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_date"
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "soon",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_date"
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Online",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "ticketsUrl": "https://tickets.example/x"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+          "location": {
+            "@type": "VirtualLocation",
+            "url": "https://tickets.example/x"
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          },
+          "offers": {
+            "@type": "Offer",
+            "url": "https://tickets.example/x"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Virtual show",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+          "location": {
+            "@type": "VirtualLocation",
+            "url": "https://comedycollectivechi.com/shows/abc123"
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "address": "1265 W Wilson Ave"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "business": {
+          "name": "The Club",
+          "address": {
+            "street1": "12 Main St",
+            "street2": "Unit 2",
+            "city": "Chicago",
+            "state": "IL",
+            "zip": "60601"
+          }
+        }
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "The Club",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "12 Main St Unit 2",
+              "addressLocality": "Chicago",
+              "addressRegion": "IL",
+              "postalCode": "60601"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "business": {
+          "name": "The Club",
+          "address": {
+            "street1": "12 Main St"
+          }
+        }
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_address"
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "description": "A night of standup.",
+        "imageUrl": "https://media.vivreal.io/a/b.jpg?Expires=1&Signature=x&Key-Pair-Id=y",
+        "ticketsUrl": "https://tix.example/1"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "description": "A night of standup.",
+          "image": "https://media.vivreal.io/a/b.jpg",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          },
+          "offers": {
+            "@type": "Offer",
+            "url": "https://tix.example/1"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization",
+        "ticketsUrl": "mailto:box@office.example"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Friday Night Standup",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Friday Night Standup",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Hotshots",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "9:00 pm",
+        "location": "1331 N. Milwaukee Ave., Chicago IL",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Hotshots",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T21:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "1331 N. Milwaukee Ave., Chicago IL",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1331 N. Milwaukee Ave., Chicago IL"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Monsignor Madness February",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "",
+        "location": "",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_address"
+      }
+    },
+    {
+      "input": {
+        "title": "Hotshots! With Rosey Catherine February 21st 7pm",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "The Den Theatre",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_address"
+      }
+    },
+    {
+      "input": {
+        "title": "Sake To Me!",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "K&K Wrigleyville",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": null,
+        "skipped": "no_address"
+      }
+    },
+    {
+      "input": {
+        "title": "Sake to Me!",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "K&K Wrigleyville  3443 N Sheffield  Chicago, IL 60657",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Sake to Me!",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "K&K Wrigleyville",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "3443 N Sheffield Chicago, IL 60657"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Uncorked & Unfiltered: a Wine & Comedy Experience",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "8:00 pm",
+        "location": "BottlesUp! 3164 North Broadway Chicago, IL 60657",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Uncorked & Unfiltered: a Wine & Comedy Experience",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T20:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "BottlesUp!",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "3164 North Broadway Chicago, IL 60657"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "Here's My Thing: A Show & Tell Comedy Show",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Burton Place 1447 N Wells St",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "Here's My Thing: A Show & Tell Comedy Show",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Burton Place",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1447 N Wells St"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    },
+    {
+      "input": {
+        "title": "I Think I Should Leave: A Comedy Storytelling Showcase",
+        "url": "https://comedycollectivechi.com/shows/abc123",
+        "date": "2026-07-24T05:00:00.000Z",
+        "time": "7:00 pm",
+        "location": "Uptown Taproom: 1265 W Wilson Ave",
+        "timezone": "America/Chicago",
+        "organizationId": "https://comedycollectivechi.com/#organization"
+      },
+      "output": {
+        "schema": {
+          "@context": "https://schema.org",
+          "@type": "Event",
+          "name": "I Think I Should Leave: A Comedy Storytelling Showcase",
+          "url": "https://comedycollectivechi.com/shows/abc123",
+          "startDate": "2026-07-24T19:00:00-05:00",
+          "eventStatus": "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+          "location": {
+            "@type": "Place",
+            "name": "Uptown Taproom",
+            "address": {
+              "@type": "PostalAddress",
+              "streetAddress": "1265 W Wilson Ave"
+            }
+          },
+          "organizer": {
+            "@id": "https://comedycollectivechi.com/#organization"
+          }
+        }
+      }
+    }
+  ]
+}

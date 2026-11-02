@@ -9,6 +9,8 @@ import { planOgItemCard, resolvePageOgHeading } from '@/lib/og/ogCard';
 import { proxyImageBytes, renderBrandedOgCard } from '@/lib/og/ogCardRender';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
+import { collectRichTextImageKeys } from '@hillbombcreations/site-renderer';
+import { withFirstInlinePicture } from '@/lib/media/richTextImage';
 
 /**
  * `/og/<slug>/<itemId>` — the social card for ONE item under a page.
@@ -61,7 +63,12 @@ export async function GET(
         showsCollectionId: getPageCollectionId(siteData, pageConfig.name, process.env.SHOWS_ID || ''),
         readShows: getShows,
         storefrontSummary: () => resolveStorefrontItemSummary(siteData, pageConfig, itemId),
-        lookup: async () => (await lookupDetailItem(siteData, pageConfig, itemId))?.item,
+        // Plan 11.5 (T4): a post with no cover picture shows its body's first
+        // picture, signed by the same read; a cover picture still wins.
+        lookup: async () => {
+          const found = await lookupDetailItem(siteData, pageConfig, itemId);
+          return found?.item ? withFirstInlinePicture(found.item, found.richTextImageUrls, collectRichTextImageKeys) : found?.item;
+        },
       })
     : null;
   const plan = planOgItemCard(item, pageHeading);
