@@ -31,6 +31,10 @@ function lastmod(value: Entry['lastModified']): string | undefined {
 }
 
 export function renderUrlset(entries: readonly Entry[]): string {
+  // Plan 11.5 (T4): a post's first inline picture, in Google's image
+  // extension. The namespace is declared only when an entry carries one, so a
+  // list with no pictures is byte-identical to before.
+  const withImages = entries.some((e) => (e.images?.length ?? 0) > 0);
   const urls = entries.map((e) => {
     const mod = lastmod(e.lastModified);
     return [
@@ -39,12 +43,15 @@ export function renderUrlset(entries: readonly Entry[]): string {
       ...(mod ? [`<lastmod>${mod}</lastmod>`] : []),
       ...(e.changeFrequency ? [`<changefreq>${e.changeFrequency}</changefreq>`] : []),
       ...(e.priority !== undefined ? [`<priority>${e.priority}</priority>`] : []),
+      ...(e.images ?? []).map((loc) => ['<image:image>', `<image:loc>${xml(loc)}</image:loc>`, '</image:image>'].join('\n')),
       '</url>',
     ].join('\n');
   });
   return [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    withImages
+      ? '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">'
+      : '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
     ...urls,
     '</urlset>',
     '',
