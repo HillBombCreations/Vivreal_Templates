@@ -345,6 +345,55 @@ test('ALLOW (pass 1 note 3): a row with its own detail page links its Event ther
   assertFragmentsRendered(page, out);
 });
 
+test('REFUSE (review B5): Agenda and Event wall draw no detail link, so their rows keep #item-<id>, on the owning page and linked from home', () => {
+  const owner = { name: 'All markets', slug: 'all-markets', format: 'collection-list', labels: {}, blocks: [layoutBlock('whats-on', 'markets', undefined, 'blk_owner')] };
+  for (const displayAs of ['agenda', 'event-wall']) {
+    const own = pageOf({ format: 'collection-list', blocks: [layoutBlock(displayAs, 'markets')], detailPage: { enabled: true } });
+    const home = pageOf({ name: 'Home', slug: 'home', format: 'home', blocks: [layoutBlock(displayAs, 'markets')] });
+    for (const [where, page, pages] of [['own page', own, [own]], ['home', home, [home, owner]]] as const) {
+      const out = events(page as unknown as Record<string, unknown>, { pages: pages as never });
+      assert.deepEqual(detailLinksOf(out), [], `${displayAs} on ${where}: no detail address`);
+      const fragments = assertFragmentsRendered(page, out);
+      assert.ok(fragments.length > 0, `${displayAs} on ${where}: positive control, rows keep their anchor`);
+    }
+  }
+});
+
+test('ALLOW (review B5): a Calendar row links its Event to the detail page the calendar links', () => {
+  const page = pageOf({ format: 'collection-list', blocks: [layoutBlock('calendar', 'markets')], detailPage: { enabled: true } });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.equal(out.length, 2, 'positive control');
+  for (const e of out) assert.match(String(e.url), /^https:\/\/shop\.example\/markets\/6a\d{22}$/);
+  assertFragmentsRendered(page, out);
+});
+
+test('ALLOW (pass 4 note 2): a group with a coordinated value the renderer does not know is drawn as a plain group', () => {
+  for (const coordinated of ['', 'gallery']) {
+    const group = { id: 'blk_unknown', order: 0, enabled: true, type: { kind: 'group', dispatchId: 'group' }, config: { coordinated, children: [layoutBlock('agenda', 'markets')] } };
+    const page = pageOf({ format: 'standard', blocks: [group] });
+    const out = events(page as unknown as Record<string, unknown>);
+    assert.deepEqual(out.map((e) => e.name), ['Farmers Market', 'Night Market'], `coordinated '${coordinated}'`);
+    assertFragmentsRendered(page, out);
+  }
+});
+
+test('PARITY (pass 4 note 3): blocks are read in the renderer\'s order, whatever shape `order` is stored in', () => {
+  items.set('order-a', [row({ title: 'Order A', date: day(1), venue: 'Hall', address: '12 Main St' })]);
+  items.set('order-b', [row({ title: 'Order B', date: day(2), venue: 'Hall', address: '12 Main St' })]);
+  items.set('order-c', [row({ title: 'Order C', date: day(3), venue: 'Hall', address: '12 Main St' })]);
+  items.set('order-d', [row({ title: 'Order D', date: day(4), venue: 'Hall', address: '12 Main St' })]);
+  const at = (block: ReturnType<typeof layoutBlock>, order: unknown) => ({ ...block, order });
+  const page = pageOf({
+    format: 'standard',
+    blocks: [at(layoutBlock('agenda', 'order-a'), '10'), at(layoutBlock('agenda', 'order-b'), 2), at(layoutBlock('agenda', 'order-c'), null), at(layoutBlock('agenda', 'order-d'), '1')],
+  });
+  const names = events(page as unknown as Record<string, unknown>).map((e) => String(e.name));
+  const html = render(page);
+  const drawnOrder = ['Order A', 'Order B', 'Order C', 'Order D'].sort((x, y) => html.indexOf(x) - html.indexOf(y));
+  assert.ok(drawnOrder.every((n) => html.includes(n)), 'positive control: every block drew');
+  assert.deepEqual(names, drawnOrder);
+});
+
 test('REFUSE (pass 1 note 3): a binding that opts out of detail links keeps the list address', () => {
   const page = pageOf({ format: 'collection-list', blocks: [layoutBlock('whats-on', 'markets', { detailEligible: false })], detailPage: { enabled: true } });
   const out = events(page as unknown as Record<string, unknown>);

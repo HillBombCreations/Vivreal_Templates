@@ -70,7 +70,9 @@
  * to a detail page (`resolveServingDetailRouteSlug`, mirrored in
  * `lib/detail/linkedItems.ts`, unless the binding opts out with
  * `detailEligible: false`), its Event points at that page, at the address the
- * row links (the readable key when the page names one), not at the list.
+ * row links (the readable key when the page names one), not at the list. Only
+ * What's On and Calendar draw that link (`DETAIL_LINK_LAYOUTS`); an Agenda or
+ * Event wall row links nothing, so it keeps its `#item-<id>` (review B5).
  *
  * At most `LISTING_EVENT_CAP` (50) Events per page (OD-5), one per item.
  *
@@ -101,6 +103,16 @@ export const LISTING_EVENT_CAP = 50;
  * `lib/itemAnchor.ts` `EVENT_ROW_LAYOUTS`; the test pins this copy to it).
  */
 export const EVENT_ROW_LAYOUTS: ReadonlySet<string> = new Set(['agenda', 'calendar', 'whats-on', 'event-wall']);
+
+/**
+ * The event layouts that draw a row's detail link at renderer 1.95.1:
+ * `WhatsOnLayout` (`detailHref`) and `EventsCalendarLayout` (`ItemLink`).
+ * `AgendaListLayout` and `EventWallLayout` draw none.
+ */
+const DETAIL_LINK_LAYOUTS: ReadonlySet<string> = new Set(['whats-on', 'calendar']);
+
+/** The `coordinated` values the renderer composes on their own (`mapGroup`); any other value is a plain group. */
+const COORDINATED_GROUPS: ReadonlySet<string> = new Set(['products', 'schedule', 'menu']);
 
 /** The schedule page's stop list: the monolith template and the atomized agenda child. */
 const SCHEDULE_DISPATCH: ReadonlySet<string> = new Set(['schedule', 'schedule-agenda']);
@@ -337,7 +349,9 @@ type DrawnBlock = Block & { order?: unknown; type?: { kind?: unknown; dispatchId
 const byOrder = (blocks: unknown): DrawnBlock[] =>
   (Array.isArray(blocks) ? (blocks as DrawnBlock[]) : [])
     .filter((b) => !!b && typeof b === 'object')
-    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0));
+    // `mapBlocks` and `mapGroup` exactly: `(a.order ?? 0) - (b.order ?? 0)`;
+    // `Number` is the conversion that subtraction applies.
+    .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0));
 
 function section(block: DrawnBlock, binding: DrawnBinding | undefined, topLevel: boolean, blockOn: boolean): DrawnSection | undefined {
   if (!binding || typeof binding.collectionId !== 'string' || binding.collectionId === '') return undefined;
@@ -374,7 +388,7 @@ function drawnSections(blocks: unknown, topLevel = true, out: DrawnSection[] = [
       if (drawn) out.push(drawn);
       continue;
     }
-    if (kind === 'group' && typeof config.coordinated === 'string') continue;
+    if (kind === 'group' && typeof config.coordinated === 'string' && COORDINATED_GROUPS.has(config.coordinated)) continue;
     if (kind === 'group') {
       drawnSections(config.children, false, out);
       continue;
@@ -393,7 +407,7 @@ function drawnSections(blocks: unknown, topLevel = true, out: DrawnSection[] = [
 
 /** The address the renderer links a layout row to (`mapLayout`), or `undefined` when it links none. */
 function detailAddress(input: ListingEventsInput, drawn: DrawnSection, item: ContentItem): string | undefined {
-  if (drawn.sectionConfig.detailEligible === false) return undefined;
+  if (!DETAIL_LINK_LAYOUTS.has(drawn.displayAs ?? '') || drawn.sectionConfig.detailEligible === false) return undefined;
   const page = input.page as LinkPage;
   const owner = servingDetailRouteSlug(page, input.pages ?? [], drawn.collectionId);
   if (!owner) return undefined;
