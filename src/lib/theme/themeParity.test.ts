@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { themeTokenStyle, resolveMonoFamily, THEME_TOKEN_KEYS } from '@hillbombcreations/site-renderer/theme';
+import { resolveThemeTokens } from '@hillbombcreations/site-renderer/contrast';
 
 /**
  * Owner find 3, gate G-T step 6: the parity run for the theme builder.
@@ -28,6 +29,18 @@ import { themeTokenStyle, resolveMonoFamily, THEME_TOKEN_KEYS } from '@hillbombc
  *    `[--k]`, a quoted `'--k'`) over Templates `src` and the installed
  *    renderer, comments stripped. Review-2 found no dynamic `var(--${...})`
  *    reader in either, which is what makes a literal search sound.
+ *
+ *
+ * Renderer 1.95.0 (studio contrast guard; next release 2026-12, plan 11.2 and
+ * 3.T) adds group (iii), the owner-approved corrections
+ * (`vivreal-hq` `docs/projects/next-release-2026-12/contrast-fleet-list.md`,
+ * approved 2026-11-02): the two root tokens the contrast module corrects,
+ * `--text-secondary` (muted text) and `--accent-readable` (brand colour as link
+ * text), may change, and ONLY to the value `resolveThemeTokens` reports as
+ * shown to visitors (`mutedShown`, `accentReadable`). Any other change, or a
+ * correction to any other value, is still a violation, and the fleet run pins
+ * the exact set of corrected sites below. A key the old loop CLEARED after
+ * load is never group (iii): that control still reports.
  *
  * Fleet data: `__fixtures__/fleetThemeSettings.json`, built by
  * `scripts/theme-parity-fixture.mjs` from the Client API responses the gate
@@ -200,6 +213,8 @@ function makeHasReader(corpus: string[]): (property: string) => boolean {
 type SiteResult = {
   groupI: string[];
   groupII: Array<[string, string]>;
+  /** Group (iii): [property, before, after], an approved contrast correction. */
+  groupIII: Array<[string, string, string]>;
   dropped: string[];
   violations: string[];
 };
@@ -208,7 +223,7 @@ const NEW_KEYS = THEME_TOKEN_KEYS.filter((key) => !(LEGACY_THEME_TOKEN_KEYS as r
 
 /** `build` is injectable only so the controls below can prove a wrong builder is caught. */
 function checkSite(siteData: Site, hasReader: (property: string) => boolean, build: (siteData: Site) => Style = newServerRender): SiteResult {
-  const result: SiteResult = { groupI: [], groupII: [], dropped: [], violations: [] };
+  const result: SiteResult = { groupI: [], groupII: [], groupIII: [], dropped: [], violations: [] };
   const oldServer = legacyThemeVarStyle(siteData);
   const newServer = build(siteData);
   const oldStamps = legacyProvidersStamps(siteData);
@@ -218,12 +233,17 @@ function checkSite(siteData: Site, hasReader: (property: string) => boolean, bui
     property === '--font-mono' &&
     !(typeof kitMono === 'string' && kitMono.trim() !== '') &&
     newServer[property] === resolveMonoFamily(siteData);
+  const resolved = resolveThemeTokens(siteData);
+  const corrected: Record<string, string> = { '--text-secondary': resolved.mutedShown, '--accent-readable': resolved.accentReadable };
+  const isGroupIII = (property: string, after: string | undefined) => after !== undefined && corrected[property] === after;
 
   for (const property of new Set([...Object.keys(oldServer), ...Object.keys(newServer)])) {
     const before = oldServer[property];
     const after = newServer[property];
     if (before === after) continue;
-    if (before !== undefined) {
+    if (before !== undefined && isGroupIII(property, after)) {
+      result.groupIII.push([property, before, after]);
+    } else if (before !== undefined) {
       result.violations.push(`server render: ${property} ${JSON.stringify(before)} became ${JSON.stringify(after)}`);
     } else if (isGroupI(property)) {
       result.groupI.push(after);
@@ -245,6 +265,8 @@ function checkSite(siteData: Site, hasReader: (property: string) => boolean, bui
       result.dropped.push(property);
       if (hasReader(property)) result.violations.push(`after load: ${property} dropped, and something reads it`);
     } else if (before === undefined && isGroupI(property)) {
+      continue;
+    } else if (before !== undefined && isGroupIII(property, after)) {
       continue;
     } else if (hasReader(property)) {
       result.violations.push(`after load: ${property} ${JSON.stringify(before)} became ${JSON.stringify(after)}`);
@@ -305,12 +327,14 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
   const violations: string[] = [];
   const groupI: string[] = [];
   const groupII: string[] = [];
+  const groupIII: string[] = [];
   const dropped = new Map<string, number>();
   for (const { id, siteData } of fixture.sites) {
     const r = checkSite(siteData, hasReader);
     for (const v of r.violations) violations.push(`${id}: ${v}`);
     for (const mono of r.groupI) groupI.push(`${id}: --font-mono ${mono}`);
     for (const [property, value] of r.groupII) groupII.push(`${id}: ${property} ${value}`);
+    for (const [property, before, after] of r.groupIII) groupIII.push(`${id}: ${property} ${before} -> ${after}`);
     for (const property of r.dropped) dropped.set(property, (dropped.get(property) ?? 0) + 1);
   }
 
@@ -318,7 +342,23 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
   t.diagnostic(`group (i), pack mono gains --font-mono: ${groupI.length}${groupI.length ? `: ${groupI.join('; ')}` : ''}`);
   t.diagnostic(`group (ii), newly whitelisted key gains its old after-load value: ${groupII.length}${groupII.length ? `: ${groupII.join('; ')}` : ''}`);
   t.diagnostic(`dropped after load, no reader: ${[...dropped].sort().map(([p, n]) => `${p} (${n})`).join(', ')}`);
+  t.diagnostic(`group (iii), approved contrast correction: ${groupIII.length}`);
   assert.deepEqual(violations, []);
+  // Every row is a root-token row of the approved list (fixture of 2026-10-27,
+  // names redacted, matched by stored colours): the warm light gray site,
+  // the three see-through dark brown sites (globaldropsupply, Marlowe & Kept,
+  // QA scratch-2), Blackbird Hall's link text, and the two starting-template
+  // sites (Urbanapparel, Visa and Migration Ltd). A new row here is a colour
+  // change the owner has not seen: STOP and show it (plan RB-TG).
+  assert.deepEqual(groupIII, [
+    '6abbc9a32f8f56089eebf644: --text-secondary #8d8681 -> #77706c',
+    '6abbcd7d8e8e28f586e28b33: --text-secondary rgba(58,48,45,0.62) -> #746b68',
+    '6abf2e0604c8fdb7032a2105: --accent-readable #16213e -> #858b9a',
+    '6acac947003526380bb8e960: --text-secondary rgba(58,48,45,0.62) -> #746b68',
+    '6ad2755e8cd83f003a3ecc97: --text-secondary rgba(58,48,45,0.62) -> #746b68',
+    '6ad905fbadc0e8de121991a2: --text-secondary color-mix(in oklab, #1c1c1c 55%, #ffffff) -> #747474',
+    '6ad9d07b27baf29bffdf80d4: --text-secondary color-mix(in oklab, #1c1c1c 55%, #ffffff) -> #747474',
+  ]);
 });
 
 /* ── the check is not blind ───────────────────────────────────────────────── */
@@ -367,5 +407,24 @@ test('REFUSE control: a blank stored reader key, which the old loop used to clea
   // surface here rather than pass silently.
   const r = checkSite({ primary: '#1f3a5f', 'text-secondary': '' }, hasReader);
   assert.equal(r.violations.length, 1, JSON.stringify(r));
-  assert.match(r.violations[0], /^after load: --text-secondary undefined became "color-mix/);
+  // Renderer 1.95.0: the kept value is the corrected muted ink, no longer the
+  // raw color-mix, so the match stops at the opening quote. Still exactly one
+  // violation, on the same property, for the same reason.
+  assert.match(r.violations[0], /^after load: --text-secondary undefined became "/);
+});
+
+test('ALLOW control (iii): a default palette whose muted text the contrast module corrects is group (iii)', () => {
+  const r = checkSite({ primary: '#1f3a5f' }, hasReader);
+  assert.deepEqual(r.groupIII, [['--text-secondary', 'color-mix(in oklab, #1c1c1c 55%, #ffffff)', resolveThemeTokens({ primary: '#1f3a5f' }).mutedShown]]);
+  assert.deepEqual(r.violations, []);
+});
+
+test('REFUSE control (iii): a muted text the contrast module did not choose is reported', () => {
+  const wrong = (site: Site): Style => ({ ...newServerRender(site), '--text-secondary': '#000000' });
+  const r = checkSite({ primary: '#1f3a5f' }, hasReader, wrong);
+  assert.deepEqual(r.groupIII, []);
+  assert.deepEqual(r.violations, [
+    'server render: --text-secondary "color-mix(in oklab, #1c1c1c 55%, #ffffff)" became "#000000"',
+    'after load: --text-secondary "color-mix(in oklab, #1c1c1c 55%, #ffffff)" became "#000000"',
+  ]);
 });
