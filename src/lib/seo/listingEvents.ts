@@ -62,6 +62,9 @@
  *     trim here would be one more mirror to drift. Its rows still own ids.
  *   - An Agenda with `upcomingOnly` and a What's On with `showPast: false`
  *     mark up only the rows they keep (the same rows they anchor, above).
+ *   - An Agenda drawn as an `itinerary` (the musician tour list) shows each
+ *     row's venue as its headline, so its Event is named the same way
+ *     (`itineraryHeadline`, review B7).
  *
  * WHICH SECTIONS DRAW (review B4). Read from the blocks the way the renderer
  * reads them, never from a binding's own `enabled` flag, which the renderer
@@ -169,6 +172,30 @@ function rendererTimestamp(item: ContentItem): number | null {
   return null;
 }
 
+/** The Agenda's tour-list variant (exact literal, as `AgendaListLayout` gates it). */
+const isItinerary = (config: SectionConfig): boolean => config.variant === 'itinerary';
+
+/**
+ * The headline an itinerary row draws, renderer 1.95.1 `ItineraryRows`:
+ * `(typeof raw.venue === "string" && raw.venue.trim()) || item.title`.
+ * The test compares it with the rendered row, so the two cannot drift.
+ */
+function itineraryHeadline(item: ContentItem): string {
+  const venue = (item.raw as Record<string, unknown> | undefined)?.venue;
+  return (typeof venue === 'string' && venue.trim()) || item.title;
+}
+
+/** A date-only start (`YYYY-MM-DD`) as the server's local midnight, or `undefined`. */
+function localDateOnlyStart(item: ContentItem): number | undefined {
+  const raw = (item.raw ?? {}) as Record<string, unknown>;
+  for (const value of [raw.startDate, raw.start, raw.startsAt, item.date, raw.date]) {
+    if (typeof value !== 'string' || !value.trim()) continue;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime() : undefined;
+  }
+  return undefined;
+}
+
 /** `year-month` (month 0 to 11), read on the server's clock as the calendar reads it. */
 function monthOf(ts: number): string {
   const d = new Date(ts);
@@ -197,7 +224,11 @@ function keptByPastFilter(displayAs: string | undefined, item: ContentItem, conf
   const later = new Date(now + UPCOMING_MARGIN_MS);
   if (displayAs === 'agenda' && config.upcomingOnly === true) {
     const ts = rendererTimestamp(item);
-    return ts !== null && ts >= new Date(later.getFullYear(), later.getMonth(), later.getDate()).getTime();
+    if (ts === null) return false;
+    // An itinerary re-reads a date-only start as the server's LOCAL midnight
+    // (`buildAgenda` with `dateOnlyAsLocal`); both readings must keep the row.
+    const local = isItinerary(config) ? localDateOnlyStart(item) : undefined;
+    return Math.min(ts, local ?? ts) >= new Date(later.getFullYear(), later.getMonth(), later.getDate()).getTime();
   }
   if (displayAs === 'whats-on' && config.showPast === false) {
     const raw = (item.raw ?? {}) as Record<string, unknown>;
@@ -491,7 +522,8 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
       const fragment = anchored.has(item.id) && SAFE_ID.test(item.id) ? `#item-${item.id}` : '';
       const url = (!isSchedule && detailAddress(input, drawn, item)) || `${input.pageUrl}${fragment}`;
       const result = buildEventJsonLd({
-        title: item.title.trim(),
+        // The words the row shows: an itinerary row's headline is its venue (B7).
+        title: (!isSchedule && drawn.displayAs === 'agenda' && isItinerary(config) ? itineraryHeadline(item) : item.title).trim(),
         description: seedFreeText(item.description, 500),
         url,
         date: fields.date,

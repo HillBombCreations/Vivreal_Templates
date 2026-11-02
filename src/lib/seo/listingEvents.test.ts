@@ -223,6 +223,31 @@ test('REFUSE (review B6): only rows the block draws are marked up; a block that 
   }
 });
 
+test('ALLOW (review B7): an itinerary Agenda names each Event by the headline it draws (the venue, else the title)', () => {
+  items.set('tour', [
+    row({ title: 'Spring tour, night 1', date: day(5), venue: 'The Metro', location: 'Chicago, IL', address: '3730 N Clark St' }),
+    row({ title: 'Spring tour, night 2', date: day(6), venue: '   ', address: '1104 S Wabash Ave', location: 'Chicago, IL' }),
+    row({ title: 'Last year', date: `${YEAR - 5}-03-01`, venue: 'Old Hall', address: '9 W Main St', location: 'Chicago, IL' }),
+  ]);
+  for (const [config, expected] of [
+    [{ variant: 'itinerary' }, ['The Metro', 'Spring tour, night 2', 'Old Hall']],
+    [{ variant: 'itinerary', upcomingOnly: true }, ['The Metro', 'Spring tour, night 2']],
+  ] as const) {
+    const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'tour', { ...config })] });
+    const out = events(page as unknown as Record<string, unknown>);
+    assert.deepEqual(out.map((e) => e.name), expected, JSON.stringify(config));
+    // Parity: each name is a headline the rendered row draws, exactly.
+    const html = render(page);
+    for (const name of expected) assert.ok(html.includes(`>${name}</span>`), `"${name}" is the drawn headline`);
+    assertFragmentsRendered(page, out);
+  }
+});
+
+test('REFUSE (review B7): an Agenda that is not an itinerary keeps the title', () => {
+  const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'tour')] });
+  assert.deepEqual(events(page as unknown as Record<string, unknown>).map((e) => e.name), ['Spring tour, night 1', 'Spring tour, night 2', 'Last year']);
+});
+
 test('ALLOW (review B6): an Agenda that shows only upcoming dates links the rows it keeps', () => {
   const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'trim', { upcomingOnly: true })] });
   const out = events(page as unknown as Record<string, unknown>);
