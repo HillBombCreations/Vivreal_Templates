@@ -23,8 +23,6 @@ import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
 import { skeletonLabelsFor } from '@/lib/composition/skeletonLabels';
-import { JsonLd } from '@/components/JsonLd';
-import { pageListingEvents } from '@/lib/seo/listingEvents';
 
 /**
  * composePage component overrides (CompositionOptions.components). Typed
@@ -136,16 +134,9 @@ export async function renderComposedPage({
   components,
   productQuery,
   lookupQuery,
-  pagePath,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
-  /**
-   * The page's own path (`/markets`), for the Event markup of its dated rows
-   * (`src/lib/seo/listingEvents.ts`, plan 11.3). Absent (a nested page under
-   * a detail route): no listing Events.
-   */
-  pagePath?: string;
   /**
    * Optional composePage component overrides — the live storefront wrappers
    * (LIVE_PRODUCTS_OVERRIDES). An override only fires when composePage renders
@@ -296,7 +287,6 @@ export async function renderComposedPage({
           lookupQuery={lookupQuery}
           suppressSrTitle={showTransitionalTitleBand}
           context={context}
-          pagePath={pagePath}
         />
       </Suspense>
       <Footer />
@@ -321,7 +311,6 @@ async function ComposedPageBody({
   lookupQuery,
   suppressSrTitle,
   context,
-  pagePath,
 }: {
   siteData: SiteData;
   composedPage: PageConfig;
@@ -337,8 +326,6 @@ async function ComposedPageBody({
   suppressSrTitle?: boolean;
   /** The context `renderComposedPage` already read, when it had to (QA-G1-2). */
   context?: PageContextResult;
-  /** See renderComposedPage. */
-  pagePath?: string;
 }) {
   const { input, richTextImageUrls, listReadFailed } =
     context ??
@@ -386,9 +373,6 @@ async function ComposedPageBody({
   return (
     <>
       {listReadFailed && <ListLoadFailedNotice />}
-      {/* Plan 11.3 (T3): one Event per dated row this page lists, from the same
-          items composePage draws below. JSON-LD only, nothing visible. */}
-      {pagePath && <JsonLd schema={pageListingEvents(siteData, input, pagePath)} />}
       <RichTextImages map={richTextImageUrls}>
         {composePage(
           Object.keys(extraOptions).length

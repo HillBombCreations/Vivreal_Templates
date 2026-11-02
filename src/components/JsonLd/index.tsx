@@ -17,8 +17,7 @@
  * Schema shapes used:
  *   - `WebSite` + `Organization` / `LocalBusiness` — emitted in root layout (every page)
  *   - `Product` — emitted on ecommerce detail pages with a price
- *   - `Event`: emitted on shows detail pages with a date and a place, and
- *     for the dated rows of schedule and event-list pages (`lib/seo/listingEvents.ts`)
+ *   - `Event`: emitted on shows detail pages with a date and a place
  *   - `BlogPosting` / `Article`: priceless content items with body text
  *   - nothing: `schema` is `null` (an item with no node of its own)
  */
@@ -47,5 +46,5 @@ export function JsonLd({ schema }: JsonLdProps) {
 // can import them (this file's JSX makes it unloadable there). Re-exported so
 // every `@/components/JsonLd` import site is unchanged.
 export { buildSiteJsonLd, buildDetailJsonLd, siteOrganizationId } from './schema';
-export { buildEventJsonLd } from './eventSchema';
+export { buildShowEventJsonLd } from './eventSchema';
 export type { DetailJsonLdInput } from './schema';

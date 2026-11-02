@@ -7,7 +7,6 @@ import { readRichTextImageUrls } from '@/lib/api/richTextImageUrls';
 import { getSignedUrl, getSrcSet } from '@/lib/api/media';
 import { withRecordDate } from '@/lib/api/recordDate';
 import { cmsSlugField } from '@/lib/detail/readableSegment';
-import { readEventFields } from '@/lib/seo/eventFields';
 
 const SHOWS_ID = process.env.SHOWS_ID || '';
 const SITE_ID = process.env.SITE_ID || '';
@@ -52,9 +51,6 @@ function mapShow(item: CMSShowData): ShowData {
     // has one, so the Event JSON-LD can name a real place.
     address: textField(item.objectValue.address) ?? textField(item.objectValue.venueAddress),
     ticketsUrl: item.objectValue.tickets_url,
-    // Review of #225, pass 1 note 4: an online show is placed at its join
-    // link, read with the same field names as every listed event.
-    onlineUrl: readEventFields(item.objectValue as Record<string, unknown>).onlineUrl,
     image: getSignedUrl(item.objectValue.poster),
     imageUrl: getSignedUrl(item.objectValue.poster),
     imageSrcSet: getSrcSet(item.objectValue.poster) || undefined,

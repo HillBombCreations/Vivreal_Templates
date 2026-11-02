@@ -1,11 +1,5 @@
 /**
- * Event JSON-LD for a show detail page (discovery batch 3.1, 2026-10-22), and
- * since next release 2026-12 (plan 11.3, T3) for every dated row a listing
- * page marks up (`src/lib/seo/listingEvents.ts`): one builder, one honest
- * floor. Shows call it exactly as before (`buildShowEventJsonLd` was renamed,
- * its body unchanged; `__fixtures__/showEvents-d180716.json` pins the output
- * byte for byte). A listing passes no `business`, so rule 3 below never
- * places a market stop at the shop's own address.
+ * Event JSON-LD for a show detail page (discovery batch 3.1, 2026-10-22).
  *
  * WHAT WAS WRONG. `startDate` was `${show.date}T${show.time}`, string
  * concatenation of an ISO timestamp and a clock time as typed, which produced
@@ -15,10 +9,6 @@
  * now invited to open.
  *
  * THE RULES.
- *   - A stored date-time with NO zone (`2026-11-14T19:00`) is a wall time in
- *     the business's own zone: its calendar day is the one written, and its
- *     clock is the start time when no time field says otherwise (pass 1 note
- *     5; it used to be read on the server's clock, which can move it a day).
  *   - `startDate` is the show's CALENDAR date in the business's own time zone,
  *     with the clock time parsed (`7:00 pm`, `7pm`, `7:30PM`, `19:00`) and that
  *     date's real offset from `Intl`: `2026-07-24T19:00:00-05:00`. An
@@ -29,11 +19,7 @@
  *     `Venue 123 N Street` with no colon (D17, see `splitSpacedVenue`); no
  *     location text at all on a business with a street address (its own
  *     events) gives the business address; location text saying online or
- *     virtual gives a `VirtualLocation` at the address people attend at: the
- *     event's own online link, else its ticket link. Never the page that
- *     lists it (pass 1 note 4): with neither, an online event has no place and
- *     no Event node, as schema.org's VirtualLocation `url` is where to attend.
- *     No city is ever borrowed from the
+ *     virtual gives a `VirtualLocation`. No city is ever borrowed from the
  *     business for a named venue: a touring act's venue is not its home town.
  *   - Nothing resolvable gives NO Event node. A missing rich result costs less
  *     than a red error. The caller logs `jsonld.event.skipped`.
@@ -43,7 +29,7 @@
 import type { SiteData } from '@/types/SiteData';
 import { unsignMediaUrl } from './unsignMediaUrl.ts';
 
-export interface EventInput {
+export interface ShowEventInput {
   title: string;
   description?: string;
   imageUrl?: string;
@@ -57,15 +43,6 @@ export interface EventInput {
   location?: string;
   /** The show's own street address, when its content type has the field. */
   address?: string;
-  /** Where people join an online event (a stream or meeting link). */
-  onlineUrl?: string;
-  /**
-   * The town and region of the event's own street address, when the caller
-   * knows them apart from the street (an itinerary row's city). Absent for
-   * shows and every other caller, whose Place is unchanged.
-   */
-  locality?: string;
-  region?: string;
   ticketsUrl?: string;
   /** IANA zone of the business (`siteDetails.values.timezone`). */
   timezone?: string;
@@ -77,25 +54,17 @@ export interface EventInput {
 
 export type EventSkipReason = 'no_date' | 'no_address';
 
-export type EventResult =
+export type ShowEventResult =
   | { schema: Record<string, unknown>; skipped?: undefined }
   | { schema: null; skipped: EventSkipReason };
 
 const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-/** A date-time written with no zone: a wall time in the business's zone. */
-const ZONELESS_DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/;
 
 /** `YYYY-MM-DD` of `date` in `timezone`, or in UTC when the zone is unusable. */
 export function calendarDate(date: string | undefined, timezone: string | undefined): string | undefined {
   const trimmed = date?.trim();
   if (!trimmed) return undefined;
   if (ISO_DATE_ONLY.test(trimmed)) return trimmed;
-  const zoneless = ZONELESS_DATE_TIME.exec(trimmed);
-  // A day that does not exist (`2026-02-30`) is no date: Date.parse would roll it over.
-  if (zoneless) {
-    const midnight = Date.parse(`${zoneless[1]}T00:00:00Z`);
-    return Number.isFinite(midnight) && new Date(midnight).toISOString().slice(0, 10) === zoneless[1] ? zoneless[1] : undefined;
-  }
   const time = Date.parse(trimmed);
   if (!Number.isFinite(time)) return undefined;
   if (timezone) {
@@ -174,8 +143,7 @@ export function showStartDate(
 ): string | undefined {
   const day = calendarDate(date, timezone);
   if (!day) return undefined;
-  const zoneless = date ? ZONELESS_DATE_TIME.exec(date.trim()) : null;
-  const minuteOfDay = parseShowTime(time) ?? (zoneless ? parseShowTime(`${zoneless[2]}:${zoneless[3]}`) : undefined);
+  const minuteOfDay = parseShowTime(time);
   if (minuteOfDay === undefined || !timezone) return day;
   const [year, month, dayOfMonth] = day.split('-').map(Number);
   const hour = Math.floor(minuteOfDay / 60);
@@ -208,16 +176,11 @@ const STARTS_WITH_NUMBER = /^\d/;
 
 type EventLocation = { location: Record<string, unknown>; online: boolean };
 
-function streetPlace(name: string, street: string, town?: { locality?: string; region?: string }): Record<string, unknown> {
+function streetPlace(name: string, street: string): Record<string, unknown> {
   return {
     '@type': 'Place',
     name,
-    address: {
-      '@type': 'PostalAddress',
-      streetAddress: street,
-      ...(town?.locality ? { addressLocality: town.locality } : {}),
-      ...(town?.region ? { addressRegion: town.region } : {}),
-    },
+    address: { '@type': 'PostalAddress', streetAddress: street },
   };
 }
 
@@ -299,14 +262,14 @@ function splitVenue(location: string): { venue: string; street: string } | undef
   return splitColonVenue(location) ?? splitSpacedVenue(location);
 }
 
-function resolveLocation(input: EventInput): EventLocation | undefined {
+function resolveLocation(input: ShowEventInput): EventLocation | undefined {
   const location = input.location?.trim() ?? '';
   const ownAddress = input.address?.trim();
 
   // 1. The show's own address field.
   if (ownAddress) {
     const name = (location && splitVenue(location)?.venue) || location || ownAddress;
-    return { location: streetPlace(name, ownAddress, { locality: input.locality, region: input.region }), online: false };
+    return { location: streetPlace(name, ownAddress), online: false };
   }
 
   // 2. `Venue: street`, or `Venue 123 N Street` (D17), in the location text.
@@ -337,14 +300,14 @@ function resolveLocation(input: EventInput): EventLocation | undefined {
 
   // 4. Online or virtual: the place is the link people join or buy at.
   if (location && ONLINE.test(location)) {
-    const url = webLink(input.onlineUrl) ?? webLink(input.ticketsUrl);
+    const url = webLink(input.ticketsUrl) ?? webLink(input.url);
     if (url) return { location: { '@type': 'VirtualLocation', url }, online: true };
   }
 
   return undefined;
 }
 
-export function buildEventJsonLd(input: EventInput): EventResult {
+export function buildShowEventJsonLd(input: ShowEventInput): ShowEventResult {
   const startDate = showStartDate(input.date, input.time, input.timezone);
   if (!startDate) return { schema: null, skipped: 'no_date' };
   const resolved = resolveLocation(input);

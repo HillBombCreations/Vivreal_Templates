@@ -43,7 +43,7 @@ import type {
   DetailSection,
   PageCtaConfig as RendererPageCtaConfig,
 } from "@hillbombcreations/site-renderer";
-import { JsonLd, buildDetailJsonLd, buildEventJsonLd, siteOrganizationId } from "@/components/JsonLd";
+import { JsonLd, buildDetailJsonLd, buildShowEventJsonLd, siteOrganizationId } from "@/components/JsonLd";
 import { withDetailBreadcrumbs } from "@/lib/seo/detailBreadcrumbJsonLd";
 // `applyScope` moved behind `lookupDetailItem` with the rest of the item
 // resolution, so this file no longer calls it directly.
@@ -459,7 +459,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
 
     // Discovery batch 3.1: a valid startDate in the business's own time zone
     // and a real address, or no Event node at all (see eventSchema.ts).
-    const showEvent = buildEventJsonLd({
+    const showEvent = buildShowEventJsonLd({
       title: show.title,
       // RT5-176: never a kit seed instruction in JSON-LD (lib/seo/seedCopy.ts).
       description: seedFreeText(show.description, 500),
@@ -474,7 +474,6 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
       time: show.time,
       location: show.location,
       address: show.address,
-      onlineUrl: show.onlineUrl,
       ticketsUrl: show.ticketsUrl,
       timezone: siteData.timezone,
       organizationId: siteOrganizationId(siteData),
