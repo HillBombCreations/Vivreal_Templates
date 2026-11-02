@@ -16,14 +16,17 @@
  * WHERE EACH EVENT POINTS (OD-5). An item with no page of its own is linked
  * to the page that lists it, plus `#item-<id>` when, and only when, the served
  * HTML of this page carries that id. Renderer 1.95.0 (R3) gives a row that id
- * in the four event layouts; the first section that draws an item owns
- * `item-<id>`, and a later section sharing any item is scoped
- * (`item-<index>-<id>`), so it is never linked. A row whose id the served HTML
- * may not carry gets the page address with no fragment, which lands at the
- * top of the page. The rules below are read from the renderer's layouts at
- * 1.95.0 and are deliberately conservative; `listingEvents.test.ts` renders
+ * in the four event layouts, and 1.95.1 in a schedule's rows too. The first
+ * section that draws an item owns `item-<id>` (a schedule counts every dated
+ * stop it holds, upcoming and past); a later section sharing any item is
+ * scoped (`item-<index>-<id>`, renderer `scopeEventRowAnchors`). A scoped
+ * section is never linked: the index counts sections this module cannot see
+ * (headers, heroes), so its ids are not knowable here. A row whose id the
+ * served HTML may not carry gets the page address with no fragment, which
+ * lands at the top of the page. The rules below are read from the renderer at
+ * 1.95.1 and are deliberately conservative; `listingEvents.test.ts` renders
  * the real renderer and fails if any emitted fragment is missing from the
- * page's HTML, so a renderer change that drops an id fails the build here.
+ * page's HTML, so a renderer change that drops or rescopes an id fails here.
  *   - Agenda: every row the agenda dates, unless the block shows only
  *     upcoming dates (then no fragment: which rows are past is decided at the
  *     visitor's request time).
@@ -35,8 +38,16 @@
  *     top of the page (OD-5 accepts this).
  *   - Event wall: the phone copy carries the ids for its first page of two
  *     cards only, so only those two.
- *   - Schedule pages: renderer 1.95.0 gives schedule stops no ids in any view
- *     (agenda, month, map), so no fragment.
+ *   - Schedule pages, by the view the page serves (the toolbar's or the page's
+ *     `defaultView`; on the atomized schedule a `?view=` the route read wins;
+ *     the board style is always the agenda; a switched-off part falls back as
+ *     the renderer does). Agenda and map: every upcoming stop. Month: the
+ *     first chip of each upcoming stop in the month the calendar opens on (the
+ *     soonest stop's month), only when the schedule has a zone. A past stop:
+ *     never. "Upcoming" is read an hour ahead too, so a stop that stops
+ *     counting between this read and the render is never linked.
+ *   - A row whose `status` is cancelled (either spelling) or private is not
+ *     marked up at all, on any arm (review B1).
  *   - A block that trims, filters or remaps its list (`itemLimit`, `scope`,
  *     `fieldMap`) gets no fragment, since which rows it draws is decided
  *     after this reads them.
@@ -91,7 +102,11 @@ export interface ListingEventsInput {
   now: number;
   /** Lists whose items already carry an Event on their own detail page (shows). */
   skipCollections?: ReadonlySet<string>;
+  /** The `?view=` the route read for this render (atomized schedules honour it). */
+  scheduleView?: ScheduleView;
 }
+
+type ScheduleView = 'agenda' | 'month' | 'map';
 
 type SectionConfig = Record<string, unknown>;
 
@@ -154,8 +169,100 @@ function anchoredIds(displayAs: string, items: ContentItem[], config: SectionCon
   return ids;
 }
 
-/** A stop the page shows but that is not happening as scheduled (`shapeSchedule` statuses). */
-const NOT_SCHEDULED_STOP: ReadonlySet<string> = new Set(['cancelled', 'private']);
+/**
+ * A row the page shows but that is not happening as scheduled: its owner set
+ * `status` to cancelled (either spelling) or private. Marking it up as a
+ * scheduled Event would be untrue (review B1), on every arm.
+ */
+const NOT_SCHEDULED_STATUS = /^(?:cancell?ed|private)$/i;
+
+function notScheduled(item: ContentItem): boolean {
+  const status = (item.raw as Record<string, unknown> | undefined)?.status;
+  return typeof status === 'string' && NOT_SCHEDULED_STATUS.test(status.trim());
+}
+
+/** How far ahead "upcoming" is read again, so the render a moment later agrees. */
+const UPCOMING_MARGIN_MS = 60 * 60 * 1000;
+
+type Block = { id?: unknown; enabled?: unknown; type?: { dispatchId?: unknown }; config?: Record<string, unknown> };
+
+/** The block with this id, anywhere in the page's blocks, with its parent group. */
+function findBlock(blocks: unknown, id: string, parent?: Block): { block: Block; parent?: Block } | undefined {
+  if (!Array.isArray(blocks)) return undefined;
+  for (const block of blocks as Block[]) {
+    if (block?.id === id) return { block, parent };
+    const found = findBlock(block?.config?.children, id, block);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+const asView = (value: unknown): ScheduleView => (value === 'month' || value === 'map' ? value : 'agenda');
+
+/**
+ * The view a schedule section serves, as the renderer decides it (1.95.1:
+ * the `blocks.ts` schedule arms, `ScheduleProvider`, `ScheduleStorefront`),
+ * and the zone it reads stops on. `null` view: no part is switched on.
+ */
+function scheduleServing(
+  binding: { blockId: string; dispatchId: string },
+  page: ListingEventsInput['page'],
+  siteZone: string | undefined,
+  requested: ScheduleView | undefined,
+): { view: ScheduleView | null; zone: string | undefined } {
+  const labels = (page.labels ?? {}) as Record<string, unknown>;
+  if (binding.dispatchId === 'schedule') {
+    // The page template: page labels only, every part on, no `?view=`.
+    const view = labels.agendaStyle === 'board' ? 'agenda' : asView(labels.defaultView);
+    return { view, zone: scheduleTimezone(labels.timezone, siteZone) };
+  }
+  const children = (findBlock(page.blocks, binding.blockId)?.parent?.config?.children ?? []) as Block[];
+  const child = (dispatchId: string) => children.find((c) => c?.type?.dispatchId === dispatchId);
+  const on = (dispatchId: string) => {
+    const c = child(dispatchId);
+    return c !== undefined && c.enabled !== false;
+  };
+  const toolbar = (child('schedule-toolbar')?.config ?? {}) as Record<string, unknown>;
+  const agendaCfg = (child('schedule-agenda')?.config ?? {}) as Record<string, unknown>;
+  const zone = scheduleTimezone(toolbar.timezone, labels.timezone, siteZone);
+  const [agenda, calendar, map] = [on('schedule-agenda'), on('schedule-calendar'), on('schedule-map')];
+  if ((agendaCfg.agendaStyle ?? labels.agendaStyle) === 'board' && agenda) return { view: 'agenda', zone };
+  const view = requested ?? asView(toolbar.defaultView ?? labels.defaultView);
+  if (view === 'agenda' && agenda) return { view, zone };
+  if (view === 'month' && calendar) return { view, zone };
+  if ((view === 'map' || (!agenda && !calendar)) && map) return { view: 'map', zone };
+  return { view: agenda ? 'agenda' : calendar ? 'month' : map ? 'map' : null, zone };
+}
+
+/** The stop's occurrence the page draws as upcoming from `from`, read as the renderer reads it (its `date` included). */
+function upcomingAt(item: ContentItem, zone: string | undefined, from: number) {
+  return stopOccurrences(readStopTiming({ raw: item.raw, date: item.date }), { timezone: zone, from, max: 1 })[0];
+}
+
+/** The stop ids a schedule section draws with a row id in the view it serves. */
+function scheduleAnchoredIds(items: ContentItem[], view: ScheduleView | null, zone: string | undefined, now: number): Set<string> {
+  const ids = new Set<string>();
+  if (view === null) return ids;
+  const steady = items.filter((item) => upcomingAt(item, zone, now) && upcomingAt(item, zone, now + UPCOMING_MARGIN_MS));
+  if (view === 'agenda' || view === 'map') {
+    for (const item of steady) ids.add(item.id);
+    return ids;
+  }
+  // Month: the grid opens on the soonest upcoming stop's month, read now and
+  // an hour on; when the two disagree the opening month is not certain.
+  if (!zone) return ids;
+  const openingMonth = (from: number) => {
+    const soonest = items
+      .map((item) => upcomingAt(item, zone, from))
+      .filter((occ) => occ !== undefined)
+      .sort((a, b) => a.startMs - b.startMs)[0];
+    return soonest?.date.slice(0, 7);
+  };
+  const opening = openingMonth(now);
+  if (opening === undefined || opening !== openingMonth(now + UPCOMING_MARGIN_MS)) return ids;
+  for (const item of steady) if (upcomingAt(item, zone, now)?.date.slice(0, 7) === opening) ids.add(item.id);
+  return ids;
+}
 
 /** `HH:MM` of an instant on the schedule's clock, for the builder's time parser. */
 function clockTime(startMs: number, zone: string): string | undefined {
@@ -169,12 +276,10 @@ function clockTime(startMs: number, zone: string): string | undefined {
 
 /**
  * The fields of a schedule stop at its next date (or its date as written, once
- * past). `undefined` for a cancelled or private stop: marking it up as a
- * scheduled event would be untrue.
+ * past).
  */
-function stopFields(item: ContentItem, zone: string | undefined, now: number): EventFields | undefined {
+function stopFields(item: ContentItem, zone: string | undefined, now: number): EventFields {
   const raw = (item.raw ?? {}) as Record<string, unknown>;
-  if (typeof raw.status === 'string' && NOT_SCHEDULED_STOP.has(raw.status.trim())) return undefined;
   // `raw` only: the item's `date` falls back to its publish date, which is not when a stop happens.
   const timing = readStopTiming({ raw });
   const occurrence = stopOccurrences(timing, { timezone: zone, from: now, max: 1 })[0] ?? stopAnchor(timing, { timezone: zone });
@@ -195,38 +300,42 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
   const { collections } = pageBindings(input.page as Parameters<typeof pageBindings>[0]);
   const events: Record<string, unknown>[] = [];
   const marked = new Set<string>();
-  // The ids earlier event-row sections drew (renderer `scopeEventRowAnchors`).
+  // The ids earlier event sections drew (renderer `scopeEventRowAnchors`).
   const earlierRowIds = new Set<string>();
-  const labels = (input.page.labels ?? {}) as Record<string, unknown>;
 
   for (const binding of collections) {
     if (!binding.enabled || !binding.collectionId) continue;
-    if (input.skipCollections?.has(binding.collectionId)) continue;
     const isSchedule = SCHEDULE_DISPATCH.has(binding.dispatchId);
     const isEventRows = binding.kind === 'layout' && typeof binding.displayAs === 'string' && EVENT_ROW_LAYOUTS.has(binding.displayAs);
     if (!isSchedule && !isEventRows) continue;
 
     const items = input.getItems(binding.collectionId).filter((item) => typeof item.id === 'string' && item.id !== '');
     const config = (binding.sectionConfig ?? {}) as SectionConfig;
+    // What the renderer counts as this section's rows: a schedule's dated stops
+    // (upcoming and past, dated as it dates them), a layout's items.
+    const drawn = isSchedule ? items.filter((item) => stopAnchor(readStopTiming({ raw: item.raw, date: item.date })) !== null) : items;
+    const scoped = drawn.some((item) => earlierRowIds.has(item.id));
+    if (!scoped) for (const item of drawn) earlierRowIds.add(item.id);
+    // Ownership is counted first: a skipped list still owns its rows' ids.
+    if (input.skipCollections?.has(binding.collectionId)) continue;
+
     let anchored = new Set<string>();
-    if (isEventRows) {
-      const scoped = items.some((item) => earlierRowIds.has(item.id));
+    let zone = input.timezone;
+    if (isSchedule) {
+      const serving = scheduleServing(binding, input.page, input.timezone, input.scheduleView);
+      zone = serving.zone;
+      if (!scoped) anchored = scheduleAnchoredIds(drawn, serving.view, zone, input.now);
+    } else {
       const reshaped = config.itemLimit !== undefined || config.scope !== undefined || config.fieldMap !== undefined;
-      if (!scoped) {
-        if (!reshaped) anchored = anchoredIds(binding.displayAs as string, items, config);
-        for (const item of items) earlierRowIds.add(item.id);
-      }
+      if (!scoped && !reshaped) anchored = anchoredIds(binding.displayAs as string, items, config);
       // OD-4: a list drawn as events still has to carry a date and a place.
       if (!isEventList(items)) continue;
     }
-    // The schedule's own zone first, as the page reads it, then the business's.
-    const zone = isSchedule ? scheduleTimezone(config.timezone, labels.timezone, input.timezone) : input.timezone;
 
     for (const item of items) {
       if (events.length >= LISTING_EVENT_CAP) return events;
-      if (marked.has(item.id) || !(item.title ?? '').trim()) continue;
+      if (marked.has(item.id) || !(item.title ?? '').trim() || notScheduled(item)) continue;
       const fields = isSchedule ? stopFields(item, zone, input.now) : readEventFields(item.raw as Record<string, unknown>);
-      if (!fields) continue;
       const fragment = anchored.has(item.id) && SAFE_ID.test(item.id) ? `#item-${item.id}` : '';
       const result = buildEventJsonLd({
         title: item.title.trim(),
@@ -257,6 +366,7 @@ export function pageListingEvents(
   input: { page: ListingEventsInput['page']; data: { getItems: ListingEventsInput['getItems'] } },
   path: string,
   now: number = Date.now(),
+  scheduleView?: ScheduleView,
 ): Record<string, unknown>[] | null {
   const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
   if (!origin) return null;
@@ -276,6 +386,7 @@ export function pageListingEvents(
     organizationId: siteOrganizationId(siteData),
     now,
     skipCollections: showLists,
+    scheduleView,
   });
   return events.length > 0 ? events : null;
 }

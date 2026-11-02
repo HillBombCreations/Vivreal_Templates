@@ -139,7 +139,9 @@ test('ALLOW: a schedule stop with a date and street address emits one Event; REF
   assert.equal(out[0].startDate, `${YEAR}-03-08T08:00:00-07:00`, 'the stop instant on the business clock');
   assert.equal(out[0].location.name, 'Downtown Phoenix Farmers Market');
   assert.equal(out[1].startDate, `${YEAR}-03-25`, 'an all-day stop is its date');
-  for (const e of out) assert.equal(e.url, PAGE_URL, 'schedule stops render no row id in 1.95.0: no fragment');
+  // Renderer 1.95.1: the default (agenda) view gives every upcoming stop its row id.
+  assert.deepEqual(out.map((e) => e.url), out.map((e) => `${PAGE_URL}#item-${String(e.url).split('#item-')[1]}`), 'both upcoming stops link their row');
+  assert.ok(out.every((e) => /#item-6a\d{22}$/.test(String(e.url))), JSON.stringify(out.map((e) => e.url)));
 });
 
 test('REFUSE: a schedule stop never borrows the business address (no place, no Event)', () => {
@@ -169,6 +171,23 @@ test('ALLOW: pageListingEvents skips the collection of a shows page, and gives h
   assert.equal(mod.pageListingEvents({ ...site, domainInformation: undefined } as typeof site, input, '/'), null, 'no origin, no Events');
 });
 
+test('REFUSE (review B1): a row the owner marks Cancelled or private gives no Event, on every event layout', () => {
+  items.set('statuses', [
+    row({ title: 'Called off', date: day(10), venue: 'Hall', address: '12 Main St', status: 'Cancelled' }),
+    row({ title: 'Called off too', date: day(11), venue: 'Hall', address: '12 Main St', status: ' canceled ' }),
+    row({ title: 'Members only', date: day(12), venue: 'Hall', address: '12 Main St', status: 'Private' }),
+    row({ title: 'Packed house', date: day(13), venue: 'Hall', address: '12 Main St', status: 'Sold out' }),
+  ]);
+  for (const displayAs of ['agenda', 'whats-on', 'calendar', 'event-wall']) {
+    const names = events({ blocks: [layoutBlock(displayAs, 'statuses')] }).map((e) => e.name);
+    assert.ok(!names.includes('Called off') && !names.includes('Called off too') && !names.includes('Members only'), `${displayAs}: ${names.join(', ')}`);
+  }
+});
+
+test('ALLOW (review B1): a Sold out row is still a scheduled Event', () => {
+  assert.deepEqual(events({ blocks: [layoutBlock('agenda', 'statuses')] }).map((e) => e.name), ['Packed house']);
+});
+
 test('REFUSE: the 51st row; at most 50 Events on a page (OD-5)', () => {
   const out = events({ blocks: [layoutBlock('whats-on', 'sixty')] });
   assert.equal(out.length, 50);
@@ -185,6 +204,18 @@ test('REFUSE: a block that trims, filters or remaps its list gets no fragment', 
   for (const sectionConfig of [{ itemLimit: 1 }, { scope: { field: 'venue', equals: 'x' } }, { fieldMap: { title: 'venue' } }, { upcomingOnly: true }]) {
     const out = events({ blocks: [layoutBlock('agenda', 'markets', sectionConfig)] });
     for (const e of out) assert.equal(e.url, PAGE_URL, JSON.stringify(sectionConfig));
+  }
+});
+
+test('the id rule is the renderer\'s: a fragment exactly when eventRowAnchor gives the row an id', async () => {
+  const { eventRowAnchor } = (await import('../../../node_modules/@hillbombcreations/site-renderer/dist/lib/itemAnchor.js')) as { eventRowAnchor: (id: unknown, scope?: string) => { id?: string } };
+  const ids = ['abc_DEF-1', 'a.b', 'x'.repeat(64), 'y'.repeat(65), 'has space', 'ok'];
+  items.set('id-rule', ids.map((id, i) => row({ title: `Row ${i}`, date: day(i + 1), venue: 'Hall', address: '12 Main St' }, id)));
+  const out = events({ blocks: [layoutBlock('whats-on', 'id-rule')] });
+  assert.equal(out.length, ids.length, 'positive control: every row is an Event');
+  for (const [i, id] of ids.entries()) {
+    const expected = eventRowAnchor(id).id;
+    assert.equal(String(out[i].url), expected ? `${PAGE_URL}#${expected}` : PAGE_URL, id);
   }
 });
 
@@ -247,17 +278,56 @@ test('ALLOW (page level, two blocks on one list): links name the first block\'s 
   for (const f of fragments) assert.doesNotMatch(f, /^item-\d+-/);
 });
 
+// Renderer 1.95.1 gives schedule rows `item-<id>`: every upcoming stop in the
+// agenda and map views, the first chip of each upcoming stop in the month the
+// calendar opens on, never a past stop.
 for (const scheduleView of ['agenda', 'month', 'map'] as const) {
   for (const [shape, block] of [['template', scheduleBlock('stops')], ['atomized', scheduleGroup('stops')]] as const) {
-    test(`ALLOW (page level, schedule ${shape}, ${scheduleView} view): Events, and no fragment the page cannot serve`, () => {
+    test(`ALLOW (page level, schedule ${shape}, ${scheduleView} view): every linked stop id is in the rendered page`, () => {
       const page = pageOf({ format: 'schedule', blocks: [block], labels: { defaultView: scheduleView } });
-      const out = events(page as unknown as Record<string, unknown>);
+      const out = events(page as unknown as Record<string, unknown>, { scheduleView });
       assert.equal(out.length, 2, 'positive control: the two stops that pass the floor');
-      assertFragmentsRendered(page, out, { scheduleView });
-      assert.deepEqual(fragmentsOf(out), []);
+      const fragments = assertFragmentsRendered(page, out, { scheduleView });
+      assert.equal(fragments.length, 2, 'both upcoming stops are linked to their row');
     });
   }
 }
+
+test('ALLOW (page level, schedule month view): only stops in the opening month are linked; a later month gets the page address', () => {
+  items.set('stops-two-months', [
+    row({ title: 'March market', location_name: 'Plaza', address: '1 N 1st St', start: day(8, '15:00:00.000Z') }),
+    row({ title: 'May market', location_name: 'Plaza', address: '1 N 1st St', start: `${YEAR}-05-09T15:00:00.000Z` }),
+  ]);
+  for (const view of ['month', 'agenda'] as const) {
+    const page = pageOf({ format: 'schedule', blocks: [scheduleBlock('stops-two-months')], labels: { defaultView: view } });
+    const out = events(page as unknown as Record<string, unknown>, { scheduleView: view });
+    assert.equal(out.length, 2, 'positive control');
+    const fragments = assertFragmentsRendered(page, out, { scheduleView: view });
+    assert.equal(fragments.length, view === 'month' ? 1 : 2, view);
+  }
+});
+
+test('REFUSE (page level, schedule): a past stop is never linked (the page draws no row id for it)', () => {
+  items.set('stops-past', [row({ title: 'Last year', location_name: 'Plaza', address: '1 N 1st St', start: `${YEAR - 5}-03-08T15:00:00.000Z` })]);
+  const page = pageOf({ format: 'schedule', blocks: [scheduleBlock('stops-past')] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.equal(out.length, 1, 'positive control: the past stop is still an Event');
+  assert.deepEqual(assertFragmentsRendered(page, out), []);
+});
+
+test('DRIFT (page level): a schedule owns its stop ids, so a later Agenda sharing one stop is scoped and never linked unscoped', () => {
+  // The renderer's scopeEventRowAnchors (1.95.1) counts the schedule as the
+  // first owner; Templates' copy must agree, or the Agenda's other row is
+  // linked to `#item-<id>` while the page renders `item-<index>-<id>`.
+  const shared = getItems('stops')[0];
+  items.set('agenda-overlap', [shared, row({ title: 'Agenda only', date: day(18), venue: 'Hall', address: '12 Main St' })]);
+  const page = pageOf({ format: 'schedule', blocks: [scheduleBlock('stops'), layoutBlock('agenda', 'agenda-overlap')] });
+  const out = events(page as unknown as Record<string, unknown>);
+  assert.ok(out.some((e) => e.name === 'Agenda only'), 'positive control: the Agenda row is an Event');
+  const html = render(page);
+  assert.ok(/\sid="item-\d+-6a/.test(html), 'control: the renderer scoped the Agenda');
+  assertFragmentsRendered(page, out);
+});
 
 // Wiring: the three routes that compose a listing page emit the Events --------
 // The routes are .tsx server components the plain-Node runner cannot load, so
@@ -273,7 +343,7 @@ test('WIRING: home, the schedule and composed formats, and the generic formats e
   const home = read('../../app/page.tsx');
   assert.match(home, /<JsonLd schema=\{pageListingEvents\(siteData, input, "\/"\)\} \/>/);
   const slugPage = read('../../app/[slug]/page.tsx');
-  assert.match(slugPage, /<JsonLd schema=\{pageListingEvents\(siteData, input, pagePath\)\} \/>/, 'ComposedFormatBody (schedule and the other composed formats)');
+  assert.match(slugPage, /<JsonLd schema=\{pageListingEvents\(siteData, input, pagePath, Date\.now\(\), scheduleView\)\} \/>/, 'ComposedFormatBody hands the served ?view= on (schedule and the other composed formats)');
   assert.match(slugPage, /pagePath=\{`\/\$\{slug\}`\}/, 'DynamicPage hands the body its path');
   assert.match(slugPage, /pagePath: `\/\$\{slug\}`,/, 'the generic arm hands renderComposedPage its path');
   const composed = read('../renderComposedPage.tsx');
