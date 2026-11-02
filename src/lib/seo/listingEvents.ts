@@ -64,7 +64,10 @@
  *     mark up only the rows they keep (the same rows they anchor, above).
  *   - An Agenda drawn as an `itinerary` (the musician tour list) shows each
  *     row's venue as its headline, so its Event is named the same way
- *     (`itineraryHeadline`, review B7).
+ *     (`itineraryHeadline`, review B7), and draws `location` as the city
+ *     beside it, so the Place is named by the venue and the city is its
+ *     `addressLocality` (with `addressRegion` after a comma: "Chicago, IL").
+ *     Every other layout reads place fields as before.
  *
  * WHICH SECTIONS DRAW (review B4). Read from the blocks the way the renderer
  * reads them, never from a binding's own `enabled` flag, which the renderer
@@ -183,6 +186,26 @@ const isItinerary = (config: SectionConfig): boolean => config.variant === 'itin
 function itineraryHeadline(item: ContentItem): string {
   const venue = (item.raw as Record<string, unknown> | undefined)?.venue;
   return (typeof venue === 'string' && venue.trim()) || item.title;
+}
+
+/**
+ * An itinerary row's place as the row shows it (`ItineraryRows`): the venue is
+ * the place's name, `location` is the city (`"Chicago, IL"` reads as locality
+ * `Chicago`, region `IL`). The street address is read as for any row.
+ */
+function itineraryPlace(item: ContentItem, fields: EventFields): EventFields & { locality?: string; region?: string } {
+  const raw = (item.raw ?? {}) as Record<string, unknown>;
+  const venue = typeof raw.venue === 'string' ? raw.venue.trim() : '';
+  const city = typeof raw.location === 'string' ? raw.location.trim() : '';
+  const comma = city.indexOf(',');
+  const locality = (comma === -1 ? city : city.slice(0, comma)).trim();
+  const region = comma === -1 ? '' : city.slice(comma + 1).trim();
+  return {
+    ...fields,
+    location: venue || fields.location,
+    ...(locality ? { locality } : {}),
+    ...(region ? { region } : {}),
+  };
 }
 
 /** A date-only start (`YYYY-MM-DD`) as the server's local midnight, or `undefined`. */
@@ -518,18 +541,22 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
       if (events.length >= LISTING_EVENT_CAP) return events;
       if (marked.has(item.id) || !(item.title ?? '').trim() || notScheduled(item)) continue;
       if (!isSchedule && !keptByPastFilter(drawn.displayAs, item, config, input.now)) continue;
-      const fields = isSchedule ? stopFields(item, zone, input.now) : readEventFields(item.raw as Record<string, unknown>);
+      const read = isSchedule ? stopFields(item, zone, input.now) : readEventFields(item.raw as Record<string, unknown>);
+      const itinerary = !isSchedule && drawn.displayAs === 'agenda' && isItinerary(config);
+      const fields: EventFields & { locality?: string; region?: string } = itinerary ? itineraryPlace(item, read) : read;
       const fragment = anchored.has(item.id) && SAFE_ID.test(item.id) ? `#item-${item.id}` : '';
       const url = (!isSchedule && detailAddress(input, drawn, item)) || `${input.pageUrl}${fragment}`;
       const result = buildEventJsonLd({
         // The words the row shows: an itinerary row's headline is its venue (B7).
-        title: (!isSchedule && drawn.displayAs === 'agenda' && isItinerary(config) ? itineraryHeadline(item) : item.title).trim(),
+        title: (itinerary ? itineraryHeadline(item) : item.title).trim(),
         description: seedFreeText(item.description, 500),
         url,
         date: fields.date,
         time: fields.time,
         location: fields.location,
         address: fields.address,
+        locality: fields.locality,
+        region: fields.region,
         onlineUrl: fields.onlineUrl,
         ticketsUrl: fields.ticketsUrl,
         timezone: zone,

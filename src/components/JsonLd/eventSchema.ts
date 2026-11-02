@@ -59,6 +59,13 @@ export interface EventInput {
   address?: string;
   /** Where people join an online event (a stream or meeting link). */
   onlineUrl?: string;
+  /**
+   * The town and region of the event's own street address, when the caller
+   * knows them apart from the street (an itinerary row's city). Absent for
+   * shows and every other caller, whose Place is unchanged.
+   */
+  locality?: string;
+  region?: string;
   ticketsUrl?: string;
   /** IANA zone of the business (`siteDetails.values.timezone`). */
   timezone?: string;
@@ -201,11 +208,16 @@ const STARTS_WITH_NUMBER = /^\d/;
 
 type EventLocation = { location: Record<string, unknown>; online: boolean };
 
-function streetPlace(name: string, street: string): Record<string, unknown> {
+function streetPlace(name: string, street: string, town?: { locality?: string; region?: string }): Record<string, unknown> {
   return {
     '@type': 'Place',
     name,
-    address: { '@type': 'PostalAddress', streetAddress: street },
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: street,
+      ...(town?.locality ? { addressLocality: town.locality } : {}),
+      ...(town?.region ? { addressRegion: town.region } : {}),
+    },
   };
 }
 
@@ -294,7 +306,7 @@ function resolveLocation(input: EventInput): EventLocation | undefined {
   // 1. The show's own address field.
   if (ownAddress) {
     const name = (location && splitVenue(location)?.venue) || location || ownAddress;
-    return { location: streetPlace(name, ownAddress), online: false };
+    return { location: streetPlace(name, ownAddress, { locality: input.locality, region: input.region }), online: false };
   }
 
   // 2. `Venue: street`, or `Venue 123 N Street` (D17), in the location text.

@@ -243,6 +243,29 @@ test('ALLOW (review B7): an itinerary Agenda names each Event by the headline it
   }
 });
 
+test('ALLOW (itinerary place): the Place is named by the venue, and the city is its locality and region', () => {
+  const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'tour', { variant: 'itinerary' })] });
+  const [metro] = events(page as unknown as Record<string, unknown>) as Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any -- JSON-LD read in assertions only
+  assert.deepEqual(metro.location, {
+    '@type': 'Place',
+    name: 'The Metro',
+    address: { '@type': 'PostalAddress', streetAddress: '3730 N Clark St', addressLocality: 'Chicago', addressRegion: 'IL' },
+  });
+  // Parity: the row draws the venue and the city as its two place words.
+  const html = render(page);
+  assert.ok(html.includes('>The Metro</span>') && html.includes('>Chicago, IL</span>'), 'the row shows the venue and the city');
+  items.set('tour-city-only', [row({ title: 'Night 3', date: day(7), venue: 'Thalia Hall', location: 'Chicago', address: '1807 S Allport St' })]);
+  const [thalia] = events({ blocks: [layoutBlock('agenda', 'tour-city-only', { variant: 'itinerary' })] }) as Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any -- JSON-LD read in assertions only
+  assert.deepEqual(thalia.location.address, { '@type': 'PostalAddress', streetAddress: '1807 S Allport St', addressLocality: 'Chicago' }, 'no region when the city has none');
+});
+
+test('REFUSE (itinerary place): every other layout reads the place exactly as before', () => {
+  for (const displayAs of ['agenda', 'whats-on', 'calendar', 'event-wall']) {
+    const [first] = events({ blocks: [layoutBlock(displayAs, 'tour')] }) as Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any -- JSON-LD read in assertions only
+    assert.deepEqual(first.location, { '@type': 'Place', name: 'Chicago, IL', address: { '@type': 'PostalAddress', streetAddress: '3730 N Clark St' } }, displayAs);
+  }
+});
+
 test('REFUSE (review B7): an Agenda that is not an itinerary keeps the title', () => {
   const page = pageOf({ format: 'standard', blocks: [layoutBlock('agenda', 'tour')] });
   assert.deepEqual(events(page as unknown as Record<string, unknown>).map((e) => e.name), ['Spring tour, night 1', 'Spring tour, night 2', 'Last year']);
