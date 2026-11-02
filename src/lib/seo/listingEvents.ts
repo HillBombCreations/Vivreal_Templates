@@ -18,7 +18,9 @@
  * HTML of this page carries that id. Renderer 1.95.0 (R3) gives a row that id
  * in the four event layouts, and 1.95.1 in a schedule's rows too. The first
  * section that draws an item owns `item-<id>` (a schedule counts every dated
- * stop it holds, upcoming and past); a later section sharing any item is
+ * stop it holds, upcoming and past, even with its Agenda part switched off,
+ * since the renderer still builds it from that part's list); a later section
+ * sharing any item is
  * scoped (`item-<index>-<id>`, renderer `scopeEventRowAnchors`). A scoped
  * section is never linked: the index counts sections this module cannot see
  * (headers, heroes), so its ids are not knowable here. A row whose id the
@@ -38,10 +40,11 @@
  *     top of the page (OD-5 accepts this).
  *   - Event wall: the phone copy carries the ids for its first page of two
  *     cards only, so only those two.
- *   - Schedule pages, by the view the page serves (the toolbar's or the page's
- *     `defaultView`; on the atomized schedule a `?view=` the route read wins;
- *     the board style is always the agenda; a switched-off part falls back as
- *     the renderer does). Agenda and map: every upcoming stop. Month: the
+ *   - Schedule pages, by the view the page's own address serves: the
+ *     toolbar's or the page's `defaultView`, the board style always the
+ *     agenda, a switched-off part falling back as the renderer does. Never a
+ *     `?view=` a visitor asked for: the Event's url carries no query, so it
+ *     opens the default view (review B2). Agenda and map: every upcoming stop. Month: the
  *     first chip of each upcoming stop in the month the calendar opens on (the
  *     soonest stop's month), only when the schedule has a zone. A past stop:
  *     never. "Upcoming" is read an hour ahead too, so a stop that stops
@@ -102,8 +105,6 @@ export interface ListingEventsInput {
   now: number;
   /** Lists whose items already carry an Event on their own detail page (shows). */
   skipCollections?: ReadonlySet<string>;
-  /** The `?view=` the route read for this render (atomized schedules honour it). */
-  scheduleView?: ScheduleView;
 }
 
 type ScheduleView = 'agenda' | 'month' | 'map';
@@ -199,16 +200,31 @@ function findBlock(blocks: unknown, id: string, parent?: Block): { block: Block;
 
 const asView = (value: unknown): ScheduleView => (value === 'month' || value === 'map' ? value : 'agenda');
 
+/** Whether the schedule group holding this agenda child is switched on (itself and every block above it). */
+function scheduleGroupOn(blocks: unknown, childId: string): boolean {
+  const walk = (list: unknown): boolean | undefined => {
+    if (!Array.isArray(list)) return undefined;
+    for (const block of list as Block[]) {
+      const children = block?.config?.children;
+      if (Array.isArray(children) && (children as Block[]).some((c) => c?.id === childId)) return block.enabled !== false;
+      const inner = walk(children);
+      if (inner !== undefined) return inner && block.enabled !== false;
+    }
+    return undefined;
+  };
+  return walk(blocks) === true;
+}
+
 /**
- * The view a schedule section serves, as the renderer decides it (1.95.1:
- * the `blocks.ts` schedule arms, `ScheduleProvider`, `ScheduleStorefront`),
- * and the zone it reads stops on. `null` view: no part is switched on.
+ * The view a schedule section serves at the page's own address (no query), as
+ * the renderer decides it (1.95.1: the `blocks.ts` schedule arms,
+ * `ScheduleProvider`, `ScheduleStorefront`), and the zone it reads stops on.
+ * `null` view: no part is switched on.
  */
 function scheduleServing(
   binding: { blockId: string; dispatchId: string },
   page: ListingEventsInput['page'],
   siteZone: string | undefined,
-  requested: ScheduleView | undefined,
 ): { view: ScheduleView | null; zone: string | undefined } {
   const labels = (page.labels ?? {}) as Record<string, unknown>;
   if (binding.dispatchId === 'schedule') {
@@ -227,7 +243,7 @@ function scheduleServing(
   const zone = scheduleTimezone(toolbar.timezone, labels.timezone, siteZone);
   const [agenda, calendar, map] = [on('schedule-agenda'), on('schedule-calendar'), on('schedule-map')];
   if ((agendaCfg.agendaStyle ?? labels.agendaStyle) === 'board' && agenda) return { view: 'agenda', zone };
-  const view = requested ?? asView(toolbar.defaultView ?? labels.defaultView);
+  const view = asView(toolbar.defaultView ?? labels.defaultView);
   if (view === 'agenda' && agenda) return { view, zone };
   if (view === 'month' && calendar) return { view, zone };
   if ((view === 'map' || (!agenda && !calendar)) && map) return { view: 'map', zone };
@@ -304,10 +320,15 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
   const earlierRowIds = new Set<string>();
 
   for (const binding of collections) {
-    if (!binding.enabled || !binding.collectionId) continue;
+    if (!binding.collectionId) continue;
     const isSchedule = SCHEDULE_DISPATCH.has(binding.dispatchId);
     const isEventRows = binding.kind === 'layout' && typeof binding.displayAs === 'string' && EVENT_ROW_LAYOUTS.has(binding.displayAs);
     if (!isSchedule && !isEventRows) continue;
+    // A switched-off Agenda part inside a switched-on schedule group: the
+    // renderer still builds the schedule from its list, so its stops still own
+    // their ids (review B3). It is counted below and gets no Events.
+    const ownsWhileOff = !binding.enabled && binding.dispatchId === 'schedule-agenda' && scheduleGroupOn(input.page.blocks, binding.blockId);
+    if (!binding.enabled && !ownsWhileOff) continue;
 
     const items = input.getItems(binding.collectionId).filter((item) => typeof item.id === 'string' && item.id !== '');
     const config = (binding.sectionConfig ?? {}) as SectionConfig;
@@ -317,12 +338,12 @@ export function buildListingEvents(input: ListingEventsInput): Record<string, un
     const scoped = drawn.some((item) => earlierRowIds.has(item.id));
     if (!scoped) for (const item of drawn) earlierRowIds.add(item.id);
     // Ownership is counted first: a skipped list still owns its rows' ids.
-    if (input.skipCollections?.has(binding.collectionId)) continue;
+    if (ownsWhileOff || input.skipCollections?.has(binding.collectionId)) continue;
 
     let anchored = new Set<string>();
     let zone = input.timezone;
     if (isSchedule) {
-      const serving = scheduleServing(binding, input.page, input.timezone, input.scheduleView);
+      const serving = scheduleServing(binding, input.page, input.timezone);
       zone = serving.zone;
       if (!scoped) anchored = scheduleAnchoredIds(drawn, serving.view, zone, input.now);
     } else {
@@ -366,7 +387,6 @@ export function pageListingEvents(
   input: { page: ListingEventsInput['page']; data: { getItems: ListingEventsInput['getItems'] } },
   path: string,
   now: number = Date.now(),
-  scheduleView?: ScheduleView,
 ): Record<string, unknown>[] | null {
   const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
   if (!origin) return null;
@@ -386,7 +406,6 @@ export function pageListingEvents(
     organizationId: siteOrganizationId(siteData),
     now,
     skipCollections: showLists,
-    scheduleView,
   });
   return events.length > 0 ? events : null;
 }

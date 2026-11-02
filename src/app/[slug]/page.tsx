@@ -886,7 +886,7 @@ async function ComposedFormatBody({
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
       {/* Plan 11.3 (T3): schedule stops and dated rows as Events. JSON-LD only. */}
-      <JsonLd schema={pageListingEvents(siteData, input, pagePath, Date.now(), scheduleView)} />
+      <JsonLd schema={pageListingEvents(siteData, input, pagePath)} />
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
           See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
       {format === "checkout-success" ? (
