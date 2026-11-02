@@ -42,6 +42,12 @@ function buildEvent() {
     'http.method': 'GET',
     'http.client_ip': '203.0.113.9',
     'client.address': '203.0.113.9',
+    'net.peer.ip': '203.0.113.9',
+    // Next release 2026-12, plan RP-4 (D8): the two stable-convention names.
+    // The installed SDK does not write them today; an SDK move to them would
+    // otherwise ship the address silently, so the fixture carries them.
+    'network.peer.address': '203.0.113.9',
+    'net.sock.peer.addr': '203.0.113.9',
     ...httpHeadersToSpanAttributes(headers, false),
   });
   return {
@@ -53,12 +59,12 @@ function buildEvent() {
   };
 }
 
-test('the list is the fleet list: 33 names, lower case, no duplicates, and never the kept control header', () => {
-  assert.equal(FLEET_SECRET_HEADERS.length, 33);
-  assert.equal(new Set(FLEET_SECRET_HEADERS).size, 33);
+test('the list is the fleet list: 34 names, lower case, no duplicates, and never the kept control header', () => {
+  assert.equal(FLEET_SECRET_HEADERS.length, 34);
+  assert.equal(new Set(FLEET_SECRET_HEADERS).size, 34);
   for (const n of FLEET_SECRET_HEADERS) assert.equal(n, n.toLowerCase());
   assert.ok(!FLEET_SECRET_HEADERS.includes('x-vr-check-control'), 'x-vr-check-control stays off every list (RB-SCHK control)');
-  for (const n of ['x-vr-sentry-canary', 'x-vivreal-internal', 'x-vivreal-preview', 'x-vivreal-preview-token', 'x-vivreal-signature', 'x-forwarded-for']) {
+  for (const n of ['x-vr-sentry-canary', 'x-vivreal-internal', 'x-vivreal-preview', 'x-vivreal-preview-token', 'x-vivreal-signature', 'x-forwarded-for', 'cloudfront-viewer-address']) {
     assert.ok(FLEET_SECRET_HEADERS.includes(n), n);
   }
 });
@@ -137,6 +143,6 @@ test('the module list is exactly the copy the real-SDK test sends (no drift betw
   const sdkTest = fs.readFileSync(new URL('../api/scrubbedCapture.sdk.test.ts', import.meta.url), 'utf8');
   const block = sdkTest.slice(sdkTest.indexOf('const FLEET_SECRET_HEADERS = ['), sdkTest.indexOf('];', sdkTest.indexOf('const FLEET_SECRET_HEADERS = [')));
   const copied = [...block.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
-  assert.equal(copied.length, 33, 'positive control: parsed the 33 copied names');
+  assert.equal(copied.length, 34, 'positive control: parsed the 34 copied names');
   assert.deepEqual(copied, [...FLEET_SECRET_HEADERS]);
 });

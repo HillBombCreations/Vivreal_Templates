@@ -28,8 +28,12 @@
  * `x-vr-sentry-canary`, the 3 from the server-side rule, and the 5 headers
  * that carry the visitor's IP. Templates' own unfiltered re-grep at build
  * (2026-10-31) found no name outside it. The release check's kept control
- * header, `x-vr-check-control`, must NEVER join it. The same array as
- * VR_Client_API PR #133 `src/scripts/sentry.js` `FLEET_SECRET_HEADERS`.
+ * header, `x-vr-check-control`, must NEVER join it. Next release 2026-12
+ * (plan RP-4, review-a-pr28 note 5) adds a 34th, `cloudfront-viewer-address`
+ * (the viewer's `ip:port`): the SDK's HTTP server instrumentation records it
+ * like any other request header, and the SDK's own IP list does not hold it.
+ * The same array as VR_Client_API `src/scripts/sentry.js`
+ * `FLEET_SECRET_HEADERS` on its 2026-12 release branch.
  *
  * Only Sentry's copy of the event is touched; nothing here changes a request.
  * Pure, so `node --test` drives it with the installed SDK's own output.
@@ -45,6 +49,7 @@ export const FLEET_SECRET_HEADERS: readonly string[] = Object.freeze([
   'x-shopify-hmac-sha256', 'x-square-hmacsha256-signature', 'x-vr-sentry-canary',
   'x-preview-token', 'x-vr-metering-token', 'x-revalidate-signature',
   'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip', 'x-client-ip',
+  'cloudfront-viewer-address',
 ]);
 
 const SECRET_HEADERS: ReadonlySet<string> = new Set(FLEET_SECRET_HEADERS);
@@ -57,8 +62,16 @@ const COOKIE_ATTRIBUTE_PREFIXES: readonly string[] = Object.freeze([
   'http.response.header.set_cookie',
   'http.response.header.set-cookie',
 ]);
-/** Where the SDK records the client address on a span. */
-const CLIENT_ADDRESS_KEYS: ReadonlySet<string> = new Set(['http.client_ip', 'client.address', 'net.peer.ip']);
+/**
+ * Where the SDK records the client address on a span. Next release 2026-12
+ * (plan D8, RP-4): the fleet's one five-key set. The installed SDK does not
+ * write the two stable-convention names (`network.peer.address`,
+ * `net.sock.peer.addr`) today, but a move to them would otherwise ship the
+ * address silently.
+ */
+const CLIENT_ADDRESS_KEYS: ReadonlySet<string> = new Set([
+  'network.peer.address', 'client.address', 'net.peer.ip', 'http.client_ip', 'net.sock.peer.addr',
+]);
 
 type Bag = Record<string, unknown>;
 
