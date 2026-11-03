@@ -12,8 +12,11 @@ import {
   choiceBlock,
   cleanZip,
   currentKind,
+  deliveryRadiusLine,
   deliveryTotalLine,
+  deliveryZonesBound,
   fulfilmentChoices,
+  lineShippingNote,
   minimumLine,
   readCartSettings,
   type DeliveryQuote,
@@ -98,7 +101,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const settings = useMemo(() => readCartSettings(siteData?.cart), [siteData?.cart]);
   const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
   const deliveryOn = deliveryConfig?.enabled === true;
-  const radiusMiles = deliveryOn ? Number(deliveryConfig?.config?.deliveryRadiusMiles) || 25 : null;
+  // F54 L-10 D9: no 25 mile default, and no radius line when zones decide the area.
+  const radiusMiles = useMemo(
+    () => (deliveryOn ? deliveryRadiusLine(deliveryConfig?.config, deliveryZonesBound(siteData?.pageConfigs)) : null),
+    [deliveryOn, deliveryConfig, siteData?.pageConfigs],
+  );
   // Review B3: no choice at all until the owner saves cart settings; then
   // "Ship it to me" first (and the default) when the shop ships.
   const choices = fulfilmentChoices(settings, { deliveryOn, ships: shipsOrders(businessInfo) });
@@ -165,6 +172,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // The minimum is checked on the total after the code, as the server checks it.
   const belowMinimum = minimumLine(total, settings.minimumOrder);
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
+  // F54 L-10 D7: nothing per line once Pickup or Delivery is chosen.
+  const shippingNote = lineShippingNote(shipsOrders(businessInfo), kind);
   // What still blocks checkout, shown, never guessed past: the server decides.
   const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
   const choiceMissing = blocked !== null;
@@ -526,11 +535,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                             </button>
                           </div>
 
-                          <div className="text-xs text-black/55">
-                            {shipsOrders(businessInfo)
-                              ? "Shipping calculated at checkout"
-                              : "No shipping"}
-                          </div>
+                          {shippingNote ? <div className="text-xs text-black/55">{shippingNote}</div> : null}
                         </div>
                       </div>
                     </div>

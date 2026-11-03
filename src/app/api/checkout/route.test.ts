@@ -87,8 +87,9 @@ test("the shopper is told what to do in our words, not the upstream's", () => {
   // which names the wrong company on a Square site and is internal vocabulary.
   // The sentences moved to lib/checkoutRequest.ts (QA-W2-1), where they are
   // also tested by being CALLED; the route only reads the upstream `error` to
-  // tell a stock refusal apart.
-  assert.match(code, /NextResponse\.json\(checkoutRefusal\(res\.status, data\?\.error, data\), \{ status: res\.status \}\)/);
+  // tell a stock refusal apart. F54: the ZIP this checkout sent names the
+  // delivery refusals ("We could not check {zip}.").
+  assert.match(code, /NextResponse\.json\(checkoutRefusal\(res\.status, data\?\.error, data, extras\.fulfilment\?\.zip\), \{ status: res\.status \}\)/);
   assert.doesNotMatch(code, /data\.error \?\? data\.message/, "upstream prose is still echoed");
   for (const banned of ["integration", "Stripe", "Square", "endpoint", "API_KEY is"]) {
     const messages = refusalCode.match(/error: "[^"]+"/g) ?? [];

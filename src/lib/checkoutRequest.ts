@@ -27,14 +27,25 @@ export const CHECKOUT_SHOP_RULE = "shop_rule";
 /**
  * VR_Client_API's shop rules (owner ideas 3.9, 3.10, `shopRules.js`), each a
  * 409 the cart answers by staying open with everything kept. The words are
- * this app's, keyed on the stable code, never the upstream sentence.
+ * this app's, keyed on the stable code, never the upstream sentence. F54
+ * (VR_Client_API #135) added the delivery codes, each in the server's own
+ * words (`shopRules.js` `deliveryWords`, `PRICE_MISSING_WORDS`,
+ * `PICKUP_NOT_OFFERED_WORDS`): a ZIP nobody could check is never told "we do
+ * not deliver there", and no refusal offers a pickup the shop may not offer.
+ * `{zip}` is the ZIP this checkout sent.
  */
 export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   BELOW_MINIMUM: "Your order is below the shop's minimum. Add a little more, then try again.",
   BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more, or choose pickup.",
-  OUT_OF_AREA: "We don't deliver to that ZIP yet. Pickup is available.",
+  OUT_OF_AREA: "We do not deliver to {zip} yet.",
+  ZIP_NOT_RECOGNIZED: "We could not check {zip}. Send us your address and we will let you know right away.",
+  DELIVERY_ORIGIN_MISSING: "We cannot check delivery just yet. Send us your address and we will let you know right away.",
+  DELIVERY_PRICE_MISSING: "Delivery is not available online yet. Contact the shop to arrange it.",
+  PICKUP_NOT_OFFERED: "This shop does not offer pickup.",
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
 });
+
+const ZIP_SHAPE = /^\d{5}$/;
 
 export interface CheckoutRefusal {
   error: string;
@@ -113,7 +124,7 @@ function notForSaleSentence(body: unknown): string | undefined {
  * for shoppers. Every other branch says what to DO, because a cart that only
  * says no is a dead button.
  */
-export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown): CheckoutRefusal {
+export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown, zip?: string): CheckoutRefusal {
   const stockByText = typeof upstreamError === "string" && STOCK_REFUSAL.test(upstreamError);
   if (status === 409 && (stockByText || isInsufficientStock(upstreamBody))) {
     // The bag replaces this with the exact lines and counts it can name.
@@ -130,7 +141,11 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
       : "";
   // Own keys only: a code like "constructor" must not resolve through the prototype.
   const shopRule = Object.hasOwn(SHOP_RULE_SENTENCES, ruleCode) ? SHOP_RULE_SENTENCES[ruleCode] : undefined;
-  if (shopRule) return { error: shopRule, reason: CHECKOUT_SHOP_RULE };
+  if (shopRule) {
+    // Only a well-formed ZIP is echoed back; anything else reads "that ZIP".
+    const named = typeof zip === "string" && ZIP_SHAPE.test(zip) ? zip : "that ZIP";
+    return { error: shopRule.replace("{zip}", named), reason: CHECKOUT_SHOP_RULE };
+  }
   const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
   if (notForSale) return { error: notForSale };
   if (status === 404 || status === 409 || status === 422) {

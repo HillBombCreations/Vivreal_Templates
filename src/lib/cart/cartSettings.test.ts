@@ -110,7 +110,8 @@ test('ALLOW: the cart shows the server\'s delivery words and total line; REFUSE:
   assert.equal(readDeliveryQuote({ delivery: { inArea: 'yes', words: 'x' } }), null);
   assert.equal(readDeliveryQuote({ lines: [] }), null);
   const choices = fs.readFileSync(new URL('../../components/Navigation/CartChoices.tsx', import.meta.url), 'utf8');
-  assert.match(choices, /delivery\.inArea \? delivery\.words : `\$\{delivery\.words\} Pickup is available\.`/);
+  // F54 L-10 D6 moved the "Pickup is available." rule into deliveryAnswerLine (f54Cart.test.ts pins it).
+  assert.match(choices, /\{deliveryAnswerLine\(delivery, choices\.includes\("pickup"\)\)\}/);
 });
 
 test('ALLOW: once saved, pickup and delivery are offered together only when Local delivery is on and shown', () => {

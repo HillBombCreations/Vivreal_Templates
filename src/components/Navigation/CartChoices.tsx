@@ -4,9 +4,12 @@ import { useMemo, useState } from "react";
 import { pickupWindows, slotWhenLabel, type PickupDay } from "@hillbombcreations/site-renderer";
 import {
   cleanZip,
+  DELIVERY_DAY_NOTE,
+  deliveryAnswerLine,
   FULFILMENT_LABELS,
   NO_PICKUP_TIMES,
   NOTE_MAX,
+  shopTimeZoneNote,
   type CartSettings,
   type DeliveryQuote,
   type FulfilmentKind,
@@ -71,6 +74,9 @@ export default function CartChoices({
   const showPickupTimes = kind === "pickup" && days.some((d) => d.times.length > 0);
   const [day, setDay] = useState<string | null>(null);
   const activeDay = days.find((d) => d.date === day) ?? days.find((d) => d.times.length > 0) ?? null;
+  // The cart renders only with items, which load from the browser after
+  // hydration, so reading the browser's zone here never differs from a server render.
+  const zoneNote = useMemo(() => shopTimeZoneNote(timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone), [timeZone]);
 
   return (
     <div className="mb-3 space-y-3">
@@ -133,9 +139,10 @@ export default function CartChoices({
           </div>
           {delivery ? (
             <div className="mt-1.5 text-xs font-medium" role="status">
-              {delivery.inArea ? delivery.words : `${delivery.words} Pickup is available.`}
+              {deliveryAnswerLine(delivery, choices.includes("pickup"))}
             </div>
           ) : null}
+          <div className="mt-1.5 text-xs text-black/60">{DELIVERY_DAY_NOTE}</div>
         </div>
       ) : null}
 
@@ -185,6 +192,7 @@ export default function CartChoices({
             </select>
           )}
           {pickupAt ? <div className="mt-1.5 text-xs font-semibold">Pickup {slotWhenLabel(pickupAt, timeZone)}</div> : null}
+          {zoneNote ? <div className="mt-1.5 text-xs text-black/60">{zoneNote}</div> : null}
         </div>
       ) : null}
 
