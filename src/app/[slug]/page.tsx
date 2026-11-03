@@ -32,9 +32,9 @@ import OrderConfirmationTrigger from "@/components/Checkout/OrderConfirmationTri
 import ClearCartOnConfirmedOrder from "@/components/Checkout/ClearCartOnConfirmedOrder";
 import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
-import { shopHrefFor } from "@/lib/orderConfirmationGate";
+import { shopHrefFrom } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -881,7 +881,7 @@ async function ComposedFormatBody({
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
           See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
       {format === "checkout-success" ? (
-        <ConfirmedOrderGate shopHref={shopHrefFor(siteData.pageConfigs)}>{composedBody}</ConfirmedOrderGate>
+        <ConfirmedOrderGate shopHref={shopHrefFrom(findShopPage(siteData.pageConfigs))}>{composedBody}</ConfirmedOrderGate>
       ) : (
         composedBody
       )}

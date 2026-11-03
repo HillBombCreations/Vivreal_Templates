@@ -20,9 +20,12 @@ test("comment stripping did not eat the code (control)", () => {
 
 test("the success page body renders only through the gate, and the cancel page never through it", () => {
   assert.match(page, /import ConfirmedOrderGate from "@\/components\/Checkout\/ConfirmedOrderGate"/);
+  // F48: the back-link is the renderer's shop rule, the same one the Link page uses.
+  assert.match(page, /^import \{[^}]*\bfindShopPage\b[^}]*\} from "@hillbombcreations\/site-renderer";$/m);
+  assert.match(page, /^import \{ shopHrefFrom \} from "@\/lib\/orderConfirmationGate";$/m);
   assert.match(
     page,
-    /format === "checkout-success" \? \(\s*<ConfirmedOrderGate shopHref=\{shopHrefFor\(siteData\.pageConfigs\)\}>\{composedBody\}<\/ConfirmedOrderGate>\s*\) : \(\s*composedBody\s*\)/,
+    /format === "checkout-success" \? \(\s*<ConfirmedOrderGate shopHref=\{shopHrefFrom\(findShopPage\(siteData\.pageConfigs\)\)\}>\{composedBody\}<\/ConfirmedOrderGate>\s*\) : \(\s*composedBody\s*\)/,
   );
   assert.equal((page.match(/<ConfirmedOrderGate /g) ?? []).length, 1, "rendered exactly once");
   assert.doesNotMatch(page, /checkout-cancel"[^\n]*ConfirmedOrderGate/);
