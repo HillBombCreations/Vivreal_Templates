@@ -23,6 +23,7 @@ import {
   type FulfilmentKind,
 } from "@/lib/cart/cartSettings";
 import type { CartDialogProps } from "@/types/Cart";
+import { shopRuleWords } from "@/lib/checkoutRequest";
 import {
   handleCheckout,
   CheckoutShopRuleError,
@@ -174,6 +175,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
   // F54 L-10 D7: nothing per line once Pickup or Delivery is chosen.
   const shippingNote = lineShippingNote(shipsOrders(businessInfo), kind);
+  // No refusal suggests Pickup when this cart, or the shop's answer, does not offer it.
+  const cartOffersPickup = choices.includes("pickup") && delivery?.pickupOffered !== false;
   // What still blocks checkout, shown, never guessed past: the server decides.
   const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
   const choiceMissing = blocked !== null;
@@ -345,7 +348,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // One of the shop's own rules refused (a minimum, the delivery area, a
       // pickup time): say so and keep every choice, the code included.
       if (err instanceof CheckoutShopRuleError) {
-        setRuleNotice(err.message);
+        setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup));
         return;
       }
       if (err instanceof CheckoutStockError) {

@@ -181,7 +181,8 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
   }
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'PICKUP_UNAVAILABLE' }).error, 'This pickup time is no longer available. Pick another.');
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'constructor' }).reason, undefined, 'never resolved through the prototype');
-  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(err\.message\);\s*return;/, 'the code and choices are kept');
+  // The notice now drops a pickup suggestion when Pickup is off (f54Cart.test.ts); still set, still returns.
+  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup\)\);\s*return;/, 'the code and choices are kept');
 });
 
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {

@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as cart from './cartSettings.ts';
+import * as request from '../checkoutRequest.ts';
 import { CHECKOUT_SHOP_RULE, checkoutRefusal } from '../checkoutRequest.ts';
 
 const dialog = fs.readFileSync(new URL('../../components/Navigation/CartDialog.tsx', import.meta.url), 'utf8');
@@ -189,4 +190,41 @@ test('REFUSE (D11): with Delivery chosen the cart says the shop will confirm the
   const note = choicesSrc.indexOf('{DELIVERY_DAY_NOTE}');
   const pickupNote = choicesSrc.indexOf('{noPickupTimes ? (');
   assert.ok(delivery > 0 && note > delivery && note < pickupNote, 'drawn inside the Delivery section only');
+});
+
+/* Coordinator 2026-11-03: no refusal suggests Pickup when the shop does not offer it */
+
+const BELOW_DELIVERY = 'Your order is below the minimum for delivery. Add a little more, or choose pickup.';
+const BELOW_DELIVERY_NO_PICKUP = 'Your order is below the minimum for delivery. Add a little more.';
+
+const ruleWords = (): Fn => {
+  const fn = (request as unknown as Record<string, unknown>).shopRuleWords; // reads a named export; checked on the next line
+  assert.equal(typeof fn, 'function', 'checkoutRequest exports shopRuleWords');
+  return fn as Fn; // checked to be a function above
+};
+
+test('REFUSE (pickup words): below the delivery minimum never says "or choose pickup" when Pickup is not offered', () => {
+  assert.match(dialog, /setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup\)\)/, 'the cart picks the words by whether Pickup is offered');
+  assert.match(dialog, /const cartOffersPickup = choices\.includes\("pickup"\) && delivery\?\.pickupOffered !== false;/);
+  const refusal = checkoutRefusal(409, 'x', { errorCode: 'BELOW_DELIVERY_MINIMUM' }, '60614') as { error: string; code?: string };
+  assert.equal(refusal.code, 'BELOW_DELIVERY_MINIMUM', 'the route names the rule');
+  const words = ruleWords();
+  assert.equal(words(refusal.code, refusal.error, false), BELOW_DELIVERY_NO_PICKUP);
+  assert.doesNotMatch(String(words(refusal.code, refusal.error, false)), /pickup/i);
+});
+
+test('ALLOW (pickup words): with Pickup offered the message is unchanged; other rules are untouched', () => {
+  const words = ruleWords();
+  const refusal = checkoutRefusal(409, 'x', { errorCode: 'BELOW_DELIVERY_MINIMUM' }) as { error: string; code?: string };
+  assert.equal(words(refusal.code, refusal.error, true), BELOW_DELIVERY);
+  const out = checkoutRefusal(409, 'x', { errorCode: 'OUT_OF_AREA' }, '85001') as { error: string; code?: string };
+  assert.equal(words(out.code, out.error, false), 'We do not deliver to 85001 yet.');
+  assert.equal(words(undefined, 'Some message.', false), 'Some message.', 'no code keeps the message');
+  assert.equal(words('constructor', 'Some message.', false), 'Some message.', 'never resolved through the prototype');
+  // Every shop-rule sentence naming pickup has a no-pickup form, except the
+  // pickup-only rules, which only ever answer a pickup.
+  for (const [code, text] of Object.entries(request.SHOP_RULE_SENTENCES)) {
+    if (!/pickup/i.test(text) || code.startsWith('PICKUP_')) continue;
+    assert.doesNotMatch(String(words(code, text, false)), /pickup/i, code);
+  }
 });

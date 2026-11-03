@@ -45,11 +45,30 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
 });
 
+/**
+ * The same rules' words for a cart where Pickup is not offered (the owner's
+ * "Offer pickup" is off, or the cart quote says `pickupOffered: false`): the
+ * pickup suggestion is dropped and the rest kept word for word. Only a rule
+ * whose sentence suggests pickup has an entry; the pickup-only rules answer a
+ * pickup, so they never reach a cart without one.
+ */
+const SHOP_RULE_SENTENCES_NO_PICKUP: Readonly<Record<string, string>> = Object.freeze({
+  BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more.",
+});
+
+/** The words the cart shows for a shop-rule refusal, by whether this cart offers Pickup. */
+export function shopRuleWords(code: string | undefined, message: string, pickupOffered: boolean): string {
+  if (pickupOffered || typeof code !== "string" || !Object.hasOwn(SHOP_RULE_SENTENCES_NO_PICKUP, code)) return message;
+  return SHOP_RULE_SENTENCES_NO_PICKUP[code];
+}
+
 const ZIP_SHAPE = /^\d{5}$/;
 
 export interface CheckoutRefusal {
   error: string;
   reason?: typeof CHECKOUT_OUT_OF_STOCK | typeof CHECKOUT_SHOP_RULE;
+  /** The shop rule's code, only with `reason: shop_rule`, and only a key of `SHOP_RULE_SENTENCES`. */
+  code?: string;
   /** Present only when VR_Client_API named the short lines (Client #117 and later). */
   items?: ShortStockLine[];
 }
@@ -144,7 +163,8 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
   if (shopRule) {
     // Only a well-formed ZIP is echoed back; anything else reads "that ZIP".
     const named = typeof zip === "string" && ZIP_SHAPE.test(zip) ? zip : "that ZIP";
-    return { error: shopRule.replace("{zip}", named), reason: CHECKOUT_SHOP_RULE };
+    // `code` is one of this file's own keys, so the cart can pick its no-pickup words.
+    return { error: shopRule.replace("{zip}", named), reason: CHECKOUT_SHOP_RULE, code: ruleCode };
   }
   const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
   if (notForSale) return { error: notForSale };

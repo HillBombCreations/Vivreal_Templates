@@ -91,9 +91,12 @@ interface CheckoutProps {
  * choice, the code included: the rule says nothing about the code.
  */
 export class CheckoutShopRuleError extends Error {
-  constructor(message: string) {
+  /** The rule's code from our own route, so the cart can drop a pickup suggestion when Pickup is off. */
+  readonly code?: string;
+  constructor(message: string, code?: string) {
     super(message);
     this.name = "CheckoutShopRuleError";
+    if (code) this.code = code;
   }
 }
 
@@ -225,7 +228,9 @@ export async function handleCheckout({
   const message =
     (typeof data.error === "string" && data.error) ||
     "Checkout could not be started. Please try again.";
-  if (data.reason === CHECKOUT_SHOP_RULE) throw new CheckoutShopRuleError(message);
+  if (data.reason === CHECKOUT_SHOP_RULE) {
+    throw new CheckoutShopRuleError(message, typeof data.code === "string" ? data.code : undefined);
+  }
   if (data.reason === CHECKOUT_OUT_OF_STOCK) {
     // Our own route already validated `items` (lib/checkoutRequest.ts).
     throw new CheckoutStockError(message, Array.isArray(data.items) ? (data.items as ShortStockLine[]) : undefined);
