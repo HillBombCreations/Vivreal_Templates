@@ -203,8 +203,17 @@ const ruleWords = (): Fn => {
   return fn as Fn; // checked to be a function above
 };
 
+test('REFUSE (pickup words, Client #135 93490e54): outside the area with Pickup off, checkout says what the cart line says', () => {
+  const words = ruleWords();
+  const out = checkoutRefusal(409, 'x', { errorCode: 'OUT_OF_AREA' }, '85001') as { error: string; code?: string };
+  assert.equal(words(out.code, out.error, false, '85001'), 'We do not deliver to 85001 yet. Send us a note and we will see what we can do.');
+  assert.equal(words(out.code, out.error, false, '8500'), 'We do not deliver to that ZIP yet. Send us a note and we will see what we can do.', 'the same ZIP rule as the route');
+  assert.equal(words(out.code, out.error, false), 'We do not deliver to that ZIP yet. Send us a note and we will see what we can do.');
+  assert.doesNotMatch(String(words(out.code, out.error, false, '85001')), /\{zip\}/, 'never an unfilled placeholder');
+});
+
 test('REFUSE (pickup words): below the delivery minimum never says "or choose pickup" when Pickup is not offered', () => {
-  assert.match(dialog, /setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup\)\)/, 'the cart picks the words by whether Pickup is offered');
+  assert.match(dialog, /setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup, zip\)\)/, 'the cart picks the words by whether Pickup is offered');
   assert.match(dialog, /const cartOffersPickup = choices\.includes\("pickup"\) && delivery\?\.pickupOffered !== false;/);
   const refusal = checkoutRefusal(409, 'x', { errorCode: 'BELOW_DELIVERY_MINIMUM' }, '60614') as { error: string; code?: string };
   assert.equal(refusal.code, 'BELOW_DELIVERY_MINIMUM', 'the route names the rule');
@@ -218,7 +227,9 @@ test('ALLOW (pickup words): with Pickup offered the message is unchanged; other 
   const refusal = checkoutRefusal(409, 'x', { errorCode: 'BELOW_DELIVERY_MINIMUM' }) as { error: string; code?: string };
   assert.equal(words(refusal.code, refusal.error, true), BELOW_DELIVERY);
   const out = checkoutRefusal(409, 'x', { errorCode: 'OUT_OF_AREA' }, '85001') as { error: string; code?: string };
-  assert.equal(words(out.code, out.error, false), 'We do not deliver to 85001 yet.');
+  assert.equal(words(out.code, out.error, true, '85001'), 'We do not deliver to 85001 yet.', 'pickup offered: unchanged');
+  const zipless = checkoutRefusal(409, 'x', { errorCode: 'ZIP_NOT_RECOGNIZED' }, '85001') as { error: string; code?: string };
+  assert.equal(words(zipless.code, zipless.error, false, '85001'), zipless.error, 'a rule with no pickup words is untouched');
   assert.equal(words(undefined, 'Some message.', false), 'Some message.', 'no code keeps the message');
   assert.equal(words('constructor', 'Some message.', false), 'Some message.', 'never resolved through the prototype');
   // Every shop-rule sentence naming pickup has a no-pickup form, except the

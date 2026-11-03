@@ -31,7 +31,10 @@ export const CHECKOUT_SHOP_RULE = "shop_rule";
  * (VR_Client_API #135) added the delivery codes, each in the server's own
  * words (`shopRules.js` `deliveryWords`, `PRICE_MISSING_WORDS`,
  * `PICKUP_NOT_OFFERED_WORDS`): a ZIP nobody could check is never told "we do
- * not deliver there", and no refusal offers a pickup the shop may not offer.
+ * not deliver there". These are the words for a shop that offers pickup; a
+ * cart without Pickup shows `SHOP_RULE_SENTENCES_NO_PICKUP` instead (below),
+ * so no refusal suggests a pickup the shop does not offer, and OUT_OF_AREA
+ * matches the Client's no-pickup words (#135 `93490e54`, `deliveryWords`).
  * `{zip}` is the ZIP this checkout sent.
  */
 export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.freeze({
@@ -47,22 +50,32 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
 
 /**
  * The same rules' words for a cart where Pickup is not offered (the owner's
- * "Offer pickup" is off, or the cart quote says `pickupOffered: false`): the
- * pickup suggestion is dropped and the rest kept word for word. Only a rule
- * whose sentence suggests pickup has an entry; the pickup-only rules answer a
- * pickup, so they never reach a cart without one.
+ * "Offer pickup" is off, or the cart quote says `pickupOffered: false`).
+ * BELOW_DELIVERY_MINIMUM drops its pickup suggestion and keeps the rest word
+ * for word. OUT_OF_AREA is the Client's no-pickup sentence, the same words the
+ * cart quote line shows. The pickup-only rules answer a pickup, so they never
+ * reach a cart without one. `{zip}` is filled by the same rule as above.
  */
 const SHOP_RULE_SENTENCES_NO_PICKUP: Readonly<Record<string, string>> = Object.freeze({
   BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more.",
+  OUT_OF_AREA: "We do not deliver to {zip} yet. Send us a note and we will see what we can do.",
 });
 
-/** The words the cart shows for a shop-rule refusal, by whether this cart offers Pickup. */
-export function shopRuleWords(code: string | undefined, message: string, pickupOffered: boolean): string {
-  if (pickupOffered || typeof code !== "string" || !Object.hasOwn(SHOP_RULE_SENTENCES_NO_PICKUP, code)) return message;
-  return SHOP_RULE_SENTENCES_NO_PICKUP[code];
+const ZIP_SHAPE = /^\d{5}$/;
+
+/** `{zip}` filled with a five digit ZIP, or "that ZIP" for anything else. */
+function fillZip(sentence: string, zip: string | undefined): string {
+  return sentence.replace("{zip}", typeof zip === "string" && ZIP_SHAPE.test(zip) ? zip : "that ZIP");
 }
 
-const ZIP_SHAPE = /^\d{5}$/;
+/**
+ * The words the cart shows for a shop-rule refusal, by whether this cart
+ * offers Pickup. `zip` is the ZIP the cart sent.
+ */
+export function shopRuleWords(code: string | undefined, message: string, pickupOffered: boolean, zip?: string): string {
+  if (pickupOffered || typeof code !== "string" || !Object.hasOwn(SHOP_RULE_SENTENCES_NO_PICKUP, code)) return message;
+  return fillZip(SHOP_RULE_SENTENCES_NO_PICKUP[code], zip);
+}
 
 export interface CheckoutRefusal {
   error: string;
@@ -162,9 +175,8 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
   const shopRule = Object.hasOwn(SHOP_RULE_SENTENCES, ruleCode) ? SHOP_RULE_SENTENCES[ruleCode] : undefined;
   if (shopRule) {
     // Only a well-formed ZIP is echoed back; anything else reads "that ZIP".
-    const named = typeof zip === "string" && ZIP_SHAPE.test(zip) ? zip : "that ZIP";
     // `code` is one of this file's own keys, so the cart can pick its no-pickup words.
-    return { error: shopRule.replace("{zip}", named), reason: CHECKOUT_SHOP_RULE, code: ruleCode };
+    return { error: fillZip(shopRule, zip), reason: CHECKOUT_SHOP_RULE, code: ruleCode };
   }
   const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
   if (notForSale) return { error: notForSale };

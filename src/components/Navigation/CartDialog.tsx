@@ -348,7 +348,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // One of the shop's own rules refused (a minimum, the delivery area, a
       // pickup time): say so and keep every choice, the code included.
       if (err instanceof CheckoutShopRuleError) {
-        setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup));
+        setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
         return;
       }
       if (err instanceof CheckoutStockError) {
