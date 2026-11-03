@@ -3,6 +3,7 @@
  * checkout will not start. Pure and free of `next/server`, so it runs under
  * `node --test`; the route is the thin call site.
  */
+import { NO_WAY_TO_GET_ORDER } from "./cart/cartSettings.ts";
 
 /** The `reason` the route adds when checkout refused a line for stock. */
 export const CHECKOUT_OUT_OF_STOCK = "out_of_stock";
@@ -46,6 +47,8 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   DELIVERY_PRICE_MISSING: "Delivery is not available online yet. Contact the shop to arrange it.",
   PICKUP_NOT_OFFERED: "This shop does not offer pickup.",
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
+  // Review note 1 on #226: the shop offers no way to get the order; one sentence, the one the cart shows.
+  NO_WAY_TO_GET_ORDER,
 });
 
 /**

@@ -139,8 +139,30 @@ export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): Fulfi
 export function cartNeedsChoices(settings: CartSettings, ways: ShopWays): boolean {
   if (!settings.saved) return false;
   const choices = fulfilmentChoices(settings, ways);
-  // Delivery as the only way (Pickup off, no shipping, F54 L-10 D5) still needs its ZIP checked in the cart.
-  return settings.note.on || settings.pickup.on || settings.minimumOrder !== null || choices.length > 1 || choices[0] === 'delivery';
+  // Delivery as the only way (Pickup off, no shipping, F54 L-10 D5) still needs its ZIP checked in the cart,
+  // and a cart with no way at all opens to say so rather than check out.
+  return (
+    settings.note.on ||
+    settings.pickup.on ||
+    settings.minimumOrder !== null ||
+    choices.length > 1 ||
+    choices[0] === 'delivery' ||
+    cartHasNoWay(settings, choices)
+  );
+}
+
+/** Shown in place of the checkout button when the cart offers no way to get the order. */
+export const NO_WAY_TO_GET_ORDER = "This shop can't take online orders yet. Please contact the shop.";
+
+/**
+ * Whether a saved cart offers no way at all to get the order: Pickup off, no
+ * shipping, and Delivery off or hidden (review note 1 on #226). Such a cart
+ * never checks out; VR_Client_API refuses the same case with
+ * NO_WAY_TO_GET_ORDER. A cart with no saved settings has no choices too, but
+ * that is today's cart and checks out as before.
+ */
+export function cartHasNoWay(settings: CartSettings, choices: readonly FulfilmentKind[]): boolean {
+  return settings.saved && choices.length === 0;
 }
 
 /** The shopper's current way: their pick when it is still offered, else the default (the first). */
@@ -291,10 +313,16 @@ export const PICKUP_IS_AVAILABLE = 'Pickup is available.';
 /**
  * The line under the ZIP box (F54 L-10 D6): the server's words for its
  * answer, and "Pickup is available." after a no only when pickup really is
- * offered, by the shop (the quote) and in this cart (its choices).
+ * offered, by the shop (the quote) and in this cart (its choices). Only an
+ * out-of-area answer gets it (review B1): VR_Client_API sends that one as the
+ * headline alone, leaving the cart to offer pickup in its place
+ * (`shopRules.js` `deliveryWords`), while a ZIP it could not check and a zone
+ * with no price arrive as complete sentences with their own way forward. No
+ * status is an older Client, which keeps today's words.
  */
 export function deliveryAnswerLine(quote: DeliveryQuote, cartOffersPickup: boolean): string {
-  if (quote.inArea || !quote.pickupOffered || !cartOffersPickup) return quote.words;
+  const outOfArea = quote.status === 'out-of-area' || quote.status === null;
+  if (quote.inArea || !outOfArea || !quote.pickupOffered || !cartOffersPickup) return quote.words;
   return `${quote.words} ${PICKUP_IS_AVAILABLE}`;
 }
 

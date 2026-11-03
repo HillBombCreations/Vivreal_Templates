@@ -192,6 +192,67 @@ test('REFUSE (D11): with Delivery chosen the cart says the shop will confirm the
   assert.ok(delivery > 0 && note > delivery && note < pickupNote, 'drawn inside the Delivery section only');
 });
 
+/* Review B1 (review-t-pr226.md): only an out-of-area answer gets the pickup way */
+
+test('REFUSE (B1): a ZIP that could not be checked, or a zone with no price, shows the Client words exactly, pickup offered or not', () => {
+  const answer = helper('deliveryAnswerLine');
+  const cases: Array<[string, string]> = [
+    ['zip-not-recognized', 'We could not check 99999. Send us your address and we will let you know right away.'],
+    ['origin-not-configured', 'We cannot check delivery just yet. Send us your address and we will let you know right away.'],
+    ['price-missing', 'Delivery is not available online yet. Contact the shop to arrange it.'],
+  ];
+  for (const [status, words] of cases) {
+    const quote = cart.readDeliveryQuote({ delivery: { inArea: false, status, feeCents: null, waived: false, pickupOffered: true, words } });
+    assert.ok(quote, status);
+    assert.equal(answer(quote, true), words, `${status}: never "Pickup is available." after a complete sentence`);
+  }
+});
+
+test('ALLOW (B1): out of the area, or an older Client with no status, still offers Pickup when it is offered', () => {
+  const answer = helper('deliveryAnswerLine');
+  const out = cart.readDeliveryQuote({ delivery: { inArea: false, status: 'out-of-area', pickupOffered: true, words: 'We do not deliver to 85001 yet.' } });
+  assert.equal(answer(out, true), 'We do not deliver to 85001 yet. Pickup is available.');
+  const older = cart.readDeliveryQuote({ delivery: { inArea: false, words: "We don't deliver to 85001 yet." } });
+  assert.equal(answer(older, true), "We don't deliver to 85001 yet. Pickup is available.");
+});
+
+/* Review note 1 (main thread decision): a saved cart with no way to get the order */
+
+const NO_WAY = "This shop can't take online orders yet. Please contact the shop.";
+
+test('REFUSE (no way): Pickup off, no shipping, no Delivery: the cart says so instead of checking out', () => {
+  assert.match(dialog, /if \(noWayToGetOrder\) return;/, 'checkout refuses before any session');
+  assert.ok(dialog.indexOf('if (noWayToGetOrder) return;') < dialog.indexOf('await handleCheckout('), 'the guard sits before checkout');
+  assert.match(dialog, /\{noWayToGetOrder \? \(/, 'the sentence replaces the checkout button');
+  const settings = cart.readCartSettings({ offerPickup: false });
+  for (const ways of [{ deliveryOn: false, ships: false }, { deliveryOn: true, ships: false }]) {
+    const s = ways.deliveryOn ? cart.readCartSettings({ offerPickup: false, showDelivery: false }) : settings;
+    const choices = cart.fulfilmentChoices(s, ways);
+    assert.deepEqual(choices, []);
+    const none = (cart as unknown as Record<string, unknown>).cartHasNoWay as Fn; // a named export, checked below
+    assert.equal(typeof none, 'function', 'cartSettings exports cartHasNoWay');
+    assert.equal(none(s, choices), true);
+    assert.equal(cart.cartNeedsChoices(s, ways), true, 'Added to bag and Buy now open the cart instead of checking out');
+  }
+  assert.equal((cart as unknown as Record<string, unknown>).NO_WAY_TO_GET_ORDER, NO_WAY);
+  const r = checkoutRefusal(409, 'x', { errorCode: 'NO_WAY_TO_GET_ORDER', ownerSafe: true });
+  assert.equal(r.reason, CHECKOUT_SHOP_RULE);
+  assert.equal(r.error, NO_WAY, 'the Client refusal reads the same words');
+});
+
+test('ALLOW (no way): a cart with no saved settings, or with any way at all, checks out as before', () => {
+  const none = (cart as unknown as Record<string, unknown>).cartHasNoWay as Fn; // a named export, checked below
+  assert.equal(typeof none, 'function', 'cartSettings exports cartHasNoWay');
+  const unsaved = cart.readCartSettings(undefined);
+  assert.equal(none(unsaved, cart.fulfilmentChoices(unsaved, { deliveryOn: false, ships: false })), false, "today's cart: no choices, still checks out");
+  assert.equal(cart.cartNeedsChoices(unsaved, { deliveryOn: false, ships: false }), false);
+  const shipOnly = cart.readCartSettings({ offerPickup: false });
+  assert.equal(none(shipOnly, cart.fulfilmentChoices(shipOnly, { deliveryOn: false, ships: true })), false);
+  assert.equal(cart.cartNeedsChoices(shipOnly, { deliveryOn: false, ships: true }), false, 'ship only: Buy now as before');
+  const pickupOnly = cart.readCartSettings({});
+  assert.equal(none(pickupOnly, cart.fulfilmentChoices(pickupOnly, { deliveryOn: false, ships: false })), false);
+});
+
 /* Coordinator 2026-11-03: no refusal suggests Pickup when the shop does not offer it */
 
 const BELOW_DELIVERY = 'Your order is below the minimum for delivery. Add a little more, or choose pickup.';
