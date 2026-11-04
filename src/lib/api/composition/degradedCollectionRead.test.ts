@@ -12,6 +12,12 @@ import {
 } from './pageEmptiness.ts';
 
 /**
+ * D-10: these cases pin the structural rules alone, so the renderer is told
+ * the page draws nothing. `pageEmptinessDraws.test.ts` runs the real renderer.
+ */
+const NOTHING_DRAWS = (): boolean => false;
+
+/**
  * A DEGRADED COLLECTION READ MUST NOT 404 A REAL PUBLISHED PAGE.
  *
  * `clientFetchCached` swallows every upstream failure and returns the caller's
@@ -134,7 +140,7 @@ const COLLECTION_ONLY_PAGE = {
 
 test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
   const reads: PageDataRead[] = [{ sourceCount: 0, degraded: true, fromFloor: false }];
-  const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
+  const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads, drawsContent: NOTHING_DRAWS });
   assert.equal(
     verdict.isEmpty,
     false,
@@ -149,7 +155,7 @@ test('THE DEFECT: a degraded read on a real page does NOT report empty', () => {
 
 test('a GENUINELY empty generic page still reports empty, so it still 404s', () => {
   const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false, fromFloor: false }];
-  const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
+  const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads, drawsContent: NOTHING_DRAWS });
   assert.equal(verdict.isEmpty, true, 'the emptiness 404 exists for a reason and is kept');
   assert.equal(verdict.emptinessUnknown, false);
 });
@@ -158,6 +164,7 @@ test('a page with items is neither empty nor unknown', () => {
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: [{ sourceCount: 3, degraded: false, fromFloor: false }],
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
 });
@@ -172,6 +179,7 @@ test('one degraded read poisons the verdict even when a sibling read succeeded e
       { sourceCount: 0, degraded: true, fromFloor: false },
       { sourceCount: 0, degraded: false, fromFloor: false },
     ],
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
 });
@@ -199,7 +207,7 @@ test('PARTIAL DEGRADE: items in hand still render, and are NOT refused', () => {
   ];
   for (const reads of combos) {
     assert.deepEqual(
-      decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads }),
+      decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads, drawsContent: NOTHING_DRAWS }),
       { isEmpty: false, emptinessUnknown: false },
       'a page with items must render, whatever a sibling read did',
     );
@@ -226,7 +234,7 @@ test('PARITY SWEEP: whatever rendered before still renders, for every read combi
             { sourceCount: c2, degraded: d2, fromFloor: false },
           ];
           const renderedBefore = !reads.every((r) => r.sourceCount === 0);
-          const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
+          const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads, drawsContent: NOTHING_DRAWS });
           const rendersNow = !verdict.isEmpty && !verdict.emptinessUnknown;
           if (renderedBefore) {
             assert.equal(
@@ -253,7 +261,7 @@ test('INVARIANT: isEmpty and emptinessUnknown are never both true', () => {
     ],
   ];
   for (const reads of combos) {
-    const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads });
+    const verdict = decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads, drawsContent: NOTHING_DRAWS });
     assert.ok(
       !(verdict.isEmpty && verdict.emptinessUnknown),
       `both true for ${JSON.stringify(reads)}, which would make the caller's branch order decide the answer`,
@@ -283,11 +291,11 @@ test('WEDDINGS/TEA-TIME: an authored static page is neither empty nor unknown, d
       },
     ],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }], drawsContent: NOTHING_DRAWS }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }], drawsContent: NOTHING_DRAWS }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -299,11 +307,11 @@ test('a form page is neither empty nor unknown, degraded or not', () => {
     format: 'standard',
     blocks: [{ id: 'f', type: { kind: 'page-template', dispatchId: 'form' }, enabled: true }],
   };
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: false, fromFloor: false }], drawsContent: NOTHING_DRAWS }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }] }), {
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: [{ sourceCount: 0, degraded: true, fromFloor: false }], drawsContent: NOTHING_DRAWS }), {
     isEmpty: false,
     emptinessUnknown: false,
   });
@@ -317,18 +325,18 @@ test('PARITY: a page with no bindings at all is still empty', () => {
   // The old expression ended in `.every((a) => a.length === 0)` over two empty
   // maps, and `[].every(...)` is `true`. A page that binds nothing has nothing
   // to render, and that verdict is unchanged.
-  assert.equal(decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads: [] }).isEmpty, true);
+  assert.equal(decidePageEmptiness({ ...COLLECTION_ONLY_PAGE, reads: [], drawsContent: NOTHING_DRAWS }).isEmpty, true);
 });
 
 test('PARITY: home, static and the two checkout formats are never empty', () => {
   const reads: PageDataRead[] = [{ sourceCount: 0, degraded: false, fromFloor: false }];
   assert.equal(
-    decidePageEmptiness({ isHome: true, format: 'list', blocks: [], reads }).isEmpty,
+    decidePageEmptiness({ isHome: true, format: 'list', blocks: [], reads, drawsContent: NOTHING_DRAWS }).isEmpty,
     false,
   );
   for (const format of ['static', 'checkout-success', 'checkout-cancel']) {
     assert.equal(
-      decidePageEmptiness({ isHome: false, format, blocks: [], reads }).isEmpty,
+      decidePageEmptiness({ isHome: false, format, blocks: [], reads, drawsContent: NOTHING_DRAWS }).isEmpty,
       false,
       `${format} must never be reported empty`,
     );
@@ -370,6 +378,7 @@ test('a social band whose every post was dropped renders an empty section, NOT a
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([SOCIAL_READ_ALL_DROPPED]),
+    drawsContent: NOTHING_DRAWS,
   });
   assert.equal(
     verdict.isEmpty,
@@ -391,6 +400,7 @@ test('CONTROL: a page that is genuinely empty for non-social reasons still 404s'
   const verdict = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([SOCIAL_READ_NOTHING_UPSTREAM]),
+    drawsContent: NOTHING_DRAWS,
   });
   assert.equal(verdict.isEmpty, true, 'nothing upstream and nothing authored is still an empty page');
   assert.equal(verdict.emptinessUnknown, false);
@@ -400,6 +410,7 @@ test('CONTROL: a page that is genuinely empty for non-social reasons still 404s'
   const degraded = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([{ sourceCount: 0, degraded: true, fromFloor: false }]),
+    drawsContent: NOTHING_DRAWS,
   });
   assert.equal(degraded.isEmpty, false);
   assert.equal(degraded.emptinessUnknown, true);
@@ -412,12 +423,14 @@ test('CONTROL: the verdict reads the SOURCE count, so a mapped count cannot be s
   const asSourced = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([SOCIAL_READ_ALL_DROPPED]),
+    drawsContent: NOTHING_DRAWS,
   });
   const asMapped = decidePageEmptiness({
     ...COLLECTION_ONLY_PAGE,
     reads: pageDataReads([
       { sourceCount: SOCIAL_READ_ALL_DROPPED.items.length, degraded: false, fromFloor: false },
     ]),
+    drawsContent: NOTHING_DRAWS,
   });
   assert.equal(asSourced.isEmpty, false);
   assert.equal(asMapped.isEmpty, true, 'sanity: counting the mapped items IS the 404, as it was');
@@ -657,6 +670,7 @@ test('RW4-6 REFUSE: one failed read among healthy ones is reported, whatever the
     blocks: [{ id: 'h', type: { kind: 'home-section', dispatchId: 'hero' }, enabled: true }],
     hero: { title: 'Questions we hear' },
     reads,
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
 });

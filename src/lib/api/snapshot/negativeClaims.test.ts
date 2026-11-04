@@ -9,6 +9,12 @@ import { decideDetailItemMiss } from '../../detail/itemMiss.ts';
 import { decidePageEmptiness } from '../composition/pageEmptiness.ts';
 
 /**
+ * D-10: these cases pin the structural rules alone, so the renderer is told
+ * the page draws nothing. `pageEmptinessDraws.test.ts` runs the real renderer.
+ */
+const NOTHING_DRAWS = (): boolean => false;
+
+/**
  * T8 (site-first-read-fallback plan, section 5.5): negative claims are never
  * made from the floor. A page or item created after the build is absent from
  * build-time data, so a 404 drawn from that absence would deindex a live URL.
@@ -42,12 +48,12 @@ test('T8 ALLOW: an item FOUND in a floor-sourced list renders (a positive claim 
 });
 
 test('T8 REFUSE: a generic page empty on floor data is unknown, not empty', () => {
-  const verdict = decidePageEmptiness({ isHome: false, format: 'standard', reads: [{ sourceCount: 0, degraded: false, fromFloor: true }] });
+  const verdict = decidePageEmptiness({ isHome: false, format: 'standard', reads: [{ sourceCount: 0, degraded: false, fromFloor: true }], drawsContent: NOTHING_DRAWS });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
 });
 
 test('T8 ALLOW: a generic page empty on live data is empty (the 404 it always was)', () => {
-  const verdict = decidePageEmptiness({ isHome: false, format: 'standard', reads: [{ sourceCount: 0, degraded: false, fromFloor: false }] });
+  const verdict = decidePageEmptiness({ isHome: false, format: 'standard', reads: [{ sourceCount: 0, degraded: false, fromFloor: false }], drawsContent: NOTHING_DRAWS });
   assert.deepEqual(verdict, { isEmpty: true, emptinessUnknown: false });
 });
 
