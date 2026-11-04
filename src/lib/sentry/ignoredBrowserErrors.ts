@@ -12,9 +12,22 @@
  * error name, so a real `TimeoutError` or `InvalidStateError` from anything
  * else is still reported.
  *
+ * VIVREAL-TEMPLATES-H (2026-11-04, a visitor on vivreal.io in the iOS Google
+ * app): WebKit also SKIPS a transition, rejecting with "Skipping view
+ * transition because viewport size changed." (an unhandled rejection from
+ * React's `<ViewTransition>` in `app/layout.tsx`), and skips it when the tab is
+ * hidden; `skipTransition()` rejects with "Transition was skipped". The page
+ * worked each time, only the animation was dropped. The skip sentences are
+ * matched as written; "Transition was skipped" only as the whole message (an
+ * error name prefix allowed), so a sentence of ours that merely starts the
+ * same way is still reported.
+ *
  * No imports, so it runs under `node --test`.
  */
 export const IGNORED_BROWSER_ERRORS: RegExp[] = [
   /Transition was aborted because of invalid state/,
   /Transition was aborted because of timeout in DOM update/,
+  /Skipping view transition because viewport size changed/,
+  /Skipping view transition because document visibility state has become hidden/,
+  /^(?:[A-Za-z]+Error: )?Transition was skipped\.?$/,
 ];
