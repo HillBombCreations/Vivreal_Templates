@@ -40,6 +40,23 @@ test('[V7.319 REFUSE] View Transition aborts are dropped', () => {
   assert.ok(ignored('TimeoutError: Transition was aborted because of timeout in DOM update'));
 });
 
+test('[VIVREAL-TEMPLATES-H REFUSE] every skipped or abandoned View Transition is dropped', () => {
+  // The Sentry event of 2026-11-04 (iOS Google app on vivreal.io), word for word.
+  assert.ok(ignored('InvalidStateError: Skipping view transition because viewport size changed.'));
+  assert.ok(ignored('Skipping view transition because viewport size changed.'));
+  assert.ok(ignored('InvalidStateError: Skipping view transition because document visibility state has become hidden.'));
+  assert.ok(ignored('AbortError: Transition was skipped'));
+  assert.ok(ignored('Transition was skipped'));
+  assert.ok(ignored('InvalidStateError: Transition was aborted because of invalid state'));
+});
+
+test('[VIVREAL-TEMPLATES-H ALLOW] an unrelated InvalidStateError, or our own words near "skipped", are still reported', () => {
+  assert.equal(ignored("InvalidStateError: Failed to execute 'start' on 'MediaRecorder': The MediaRecorder's state is 'recording'."), false);
+  assert.equal(ignored('InvalidStateError: The object is in an invalid state.'), false);
+  assert.equal(ignored('Error: Transition was skipped because the cart failed to load'), false, 'only the exact browser sentence');
+  assert.equal(ignored('Error: Checkout failed'), false);
+});
+
 test('[V7.319 ALLOW] real errors, including other TimeoutError and InvalidStateError, are still reported', () => {
   assert.equal(ignored('TimeoutError: signal timed out'), false);
   assert.equal(ignored("InvalidStateError: Failed to execute 'put' on 'IDBObjectStore'"), false);

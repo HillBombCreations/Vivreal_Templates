@@ -47,6 +47,13 @@ export interface CartSettings {
   showDelivery: boolean;
   /** Show the promo code box. Default on. */
   showPromo: boolean;
+  /**
+   * The owner's "Offer pickup" switch (F54 L-10 D5, owner answer 2):
+   * `cart.offerPickup`. Only a stored `false` turns Pickup off, so every cart
+   * saved before the switch existed keeps Pickup. Separate from `pickup.on`,
+   * the pickup time picker.
+   */
+  offerPickup: boolean;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -78,6 +85,7 @@ export function readCartSettings(raw: unknown): CartSettings {
     minimumOrder: min,
     showDelivery: c.showDelivery !== false,
     showPromo: c.showPromo !== false,
+    offerPickup: c.offerPickup !== false,
   };
 }
 
@@ -114,14 +122,15 @@ export const FULFILMENT_LABELS: Readonly<Record<FulfilmentKind, string>> = Objec
 /**
  * The ways the cart offers, first one the default. None at all until the
  * owner has saved cart settings (review B3): that cart is today's. Once
- * saved: "Ship it to me" first when the shop ships, then Pickup, then
- * Delivery when Local delivery is on and shown.
+ * saved: "Ship it to me" first when the shop ships, then Pickup when the
+ * owner offers it (F54 L-10 D5), then Delivery when Local delivery is on and
+ * shown.
  */
 export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): FulfilmentKind[] {
   if (!settings.saved) return [];
   return [
     ...(ways.ships ? (['ship'] as const) : []),
-    'pickup' as const,
+    ...(settings.offerPickup ? (['pickup'] as const) : []),
     ...(settings.showDelivery && ways.deliveryOn ? (['delivery'] as const) : []),
   ];
 }
@@ -129,7 +138,31 @@ export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): Fulfi
 /** Whether checkout from the quick "Added to bag" card or Buy now must open the cart first. */
 export function cartNeedsChoices(settings: CartSettings, ways: ShopWays): boolean {
   if (!settings.saved) return false;
-  return settings.note.on || settings.pickup.on || settings.minimumOrder !== null || fulfilmentChoices(settings, ways).length > 1;
+  const choices = fulfilmentChoices(settings, ways);
+  // Delivery as the only way (Pickup off, no shipping, F54 L-10 D5) still needs its ZIP checked in the cart,
+  // and a cart with no way at all opens to say so rather than check out.
+  return (
+    settings.note.on ||
+    settings.pickup.on ||
+    settings.minimumOrder !== null ||
+    choices.length > 1 ||
+    choices[0] === 'delivery' ||
+    cartHasNoWay(settings, choices)
+  );
+}
+
+/** Shown in place of the checkout button when the cart offers no way to get the order. */
+export const NO_WAY_TO_GET_ORDER = "This shop can't take online orders yet. Please contact the shop.";
+
+/**
+ * Whether a saved cart offers no way at all to get the order: Pickup off, no
+ * shipping, and Delivery off or hidden (review note 1 on #226). Such a cart
+ * never checks out; VR_Client_API refuses the same case with
+ * NO_WAY_TO_GET_ORDER. A cart with no saved settings has no choices too, but
+ * that is today's cart and checks out as before.
+ */
+export function cartHasNoWay(settings: CartSettings, choices: readonly FulfilmentKind[]): boolean {
+  return settings.saved && choices.length === 0;
 }
 
 /** The shopper's current way: their pick when it is still offered, else the default (the first). */
@@ -140,8 +173,10 @@ export function currentKind(choices: readonly FulfilmentKind[], picked: Fulfilme
 /**
  * What the cart sends, from the cart's state (the dialog calls this, so the
  * rule is tested by calling it). The way is sent only when the shopper had a
- * choice, or when it is Pickup with pickup times on; a cart with no saved
- * settings therefore sends nothing new at all.
+ * choice, when it is Delivery (its ZIP and fee are decided at checkout, so it
+ * is never left out, even as the only way: a shop with Pickup off that only
+ * delivers, F54 L-10 D5), or when it is Pickup with pickup times on; a cart
+ * with no saved settings therefore sends nothing new at all.
  */
 export function checkoutChoice(input: {
   settings: CartSettings;
@@ -152,7 +187,7 @@ export function checkoutChoice(input: {
   zip: string;
 }): CheckoutChoice {
   const { settings, choices, kind } = input;
-  const sendKind = kind !== null && (choices.length > 1 || (kind === 'pickup' && settings.pickup.on));
+  const sendKind = kind !== null && (choices.length > 1 || kind === 'delivery' || (kind === 'pickup' && settings.pickup.on));
   return {
     note: settings.saved && settings.note.on ? input.note : '',
     kind: sendKind ? kind : undefined,
@@ -245,9 +280,21 @@ export function forwardedCheckoutExtras(body: unknown, siteIdPresent: boolean): 
 
 export interface DeliveryQuote {
   inArea: boolean;
+  /**
+   * VR_Client_API's answer (#135, F54 L-10 D6): `in-area`, `out-of-area`,
+   * `zip-not-recognized`, `origin-not-configured`, or `price-missing` (an
+   * in-area zone with no price, never free). Null from an older Client.
+   */
+  status: string | null;
   feeCents: number | null;
   waived: boolean;
-  /** The server's sentence, shown as is. */
+  /**
+   * Whether the shop offers pickup (`cart.offerPickup`, #135). An older
+   * Client sends none, which reads as offered, so the cart's own choices
+   * decide.
+   */
+  pickupOffered: boolean;
+  /** The server's sentence for this status, shown as is. */
   words: string;
 }
 
@@ -257,7 +304,106 @@ export function readDeliveryQuote(raw: unknown): DeliveryQuote | null {
   const d = raw.delivery;
   if (typeof d.inArea !== 'boolean' || typeof d.words !== 'string' || !d.words.trim()) return null;
   const fee = typeof d.feeCents === 'number' && Number.isInteger(d.feeCents) && d.feeCents >= 0 ? d.feeCents : null;
-  return { inArea: d.inArea, feeCents: fee, waived: d.waived === true, words: d.words.trim() };
+  const status = typeof d.status === 'string' && d.status.trim() ? d.status.trim() : null;
+  return { inArea: d.inArea, status, feeCents: fee, waived: d.waived === true, pickupOffered: d.pickupOffered !== false, words: d.words.trim() };
+}
+
+export const PICKUP_IS_AVAILABLE = 'Pickup is available.';
+
+/**
+ * The line under the ZIP box (F54 L-10 D6): the server's words for its
+ * answer, and "Pickup is available." after a no only when pickup really is
+ * offered, by the shop (the quote) and in this cart (its choices). Only an
+ * out-of-area answer gets it (review B1): VR_Client_API sends that one as the
+ * headline alone, leaving the cart to offer pickup in its place
+ * (`shopRules.js` `deliveryWords`), while a ZIP it could not check and a zone
+ * with no price arrive as complete sentences with their own way forward. No
+ * status is an older Client, which keeps today's words.
+ */
+export function deliveryAnswerLine(quote: DeliveryQuote, cartOffersPickup: boolean): string {
+  const outOfArea = quote.status === 'out-of-area' || quote.status === null;
+  if (quote.inArea || !outOfArea || !quote.pickupOffered || !cartOffersPickup) return quote.words;
+  return `${quote.words} ${PICKUP_IS_AVAILABLE}`;
+}
+
+/** Shown with Delivery chosen (F54 L-10 D11, owner answer 3): the cart takes no day. */
+export const DELIVERY_DAY_NOTE = 'The shop will confirm your delivery day.';
+
+/**
+ * The words under each line in the cart (F54 L-10 D7). Nothing when the
+ * customer chose Pickup or Delivery: neither ships, and "No shipping" there
+ * read as "this cannot be delivered". Otherwise today's words.
+ */
+export function lineShippingNote(ships: boolean, kind: FulfilmentKind | null): string | null {
+  if (kind === 'pickup' || kind === 'delivery') return null;
+  return ships ? 'Shipping calculated at checkout' : 'No shipping';
+}
+
+const OBJECT_ID = /^[0-9a-fA-F]{24}$/;
+
+/** The site's first enabled delivery check, pages in order, nested children included. */
+function firstDeliveryCheck(blocks: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(blocks)) return null;
+  for (const block of blocks) {
+    if (!isRecord(block)) continue;
+    const type = isRecord(block.type) ? block.type : {};
+    if (type.dispatchId === 'delivery-check' && block.enabled !== false) return block;
+    const nested = firstDeliveryCheck(isRecord(block.config) ? block.config.children : undefined);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+/**
+ * Whether the site's delivery check reads a zone table: its first binding
+ * names a collection, the rule VR_Client_API's `zonesCollectionOf` decides
+ * the area by.
+ */
+export function deliveryZonesBound(pages: unknown): boolean {
+  for (const page of Array.isArray(pages) ? pages : []) {
+    const block = firstDeliveryCheck(isRecord(page) ? page.blocks : undefined);
+    if (!block) continue;
+    const config = isRecord(block.config) ? block.config : {};
+    const binding = Array.isArray(config.bindings) && isRecord(config.bindings[0]) ? config.bindings[0] : {};
+    return typeof binding.collectionId === 'string' && OBJECT_ID.test(binding.collectionId);
+  }
+  return false;
+}
+
+/**
+ * The miles for "We deliver within N miles." (F54 L-10 D9), or null to say
+ * nothing: no default (an empty box is not 25 miles), and nothing when the
+ * site has zones, because the zones decide the area and the single box can
+ * disagree with them.
+ */
+export function deliveryRadiusLine(config: Record<string, unknown> | undefined, zonesBound: boolean): number | null {
+  if (zonesBound || !config) return null;
+  const miles = config.deliveryRadiusMiles;
+  return typeof miles === 'number' && Number.isFinite(miles) && miles > 0 ? miles : null;
+}
+
+/** The IANA zone as Intl names it, or null for an unknown or missing one. */
+function canonicalZone(zone: unknown): string | null {
+  if (typeof zone !== 'string' || !zone.trim()) return null;
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: zone.trim() }).resolvedOptions().timeZone;
+  } catch {
+    // Intl throws RangeError for a zone it does not know: say nothing rather than guess.
+    return null;
+  }
+}
+
+/**
+ * The line under the pickup times when the customer's clock is not the
+ * shop's (F54 L-10 D10), for example "Times are Phoenix time." The times are
+ * always the shop's; nothing when the zones match or either is unknown.
+ */
+export function shopTimeZoneNote(shopZone: unknown, browserZone: unknown): string | null {
+  const shop = canonicalZone(shopZone);
+  const browser = canonicalZone(browserZone);
+  if (!shop || !browser || shop === browser) return null;
+  const city = shop.split('/').pop()?.replace(/_/g, ' ');
+  return city ? `Times are ${city} time.` : null;
 }
 
 /** The cart's total line for delivery: "Delivery $5", "Delivery free", or nothing. Display only. */

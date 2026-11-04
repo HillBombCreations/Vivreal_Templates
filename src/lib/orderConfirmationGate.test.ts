@@ -2,7 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   resolveOrderConfirmation,
-  shopHrefFor,
+  shopHrefFrom,
+  type ShopPage,
   statusAfterTimeout,
   UNCONFIRMED_COPY,
   ORDER_CHECKING_COPY,
@@ -95,9 +96,30 @@ test("REFUSE: no unconfirmed line says the order does not exist, congratulates, 
   assert.match("a \u2014 b", /[\u2013\u2014]/);
 });
 
-test("the shop link is the first switched-on products page", () => {
+// F48: the back-link is `shopHrefFrom(findShopPage(siteData.pageConfigs))`
+// (`app/[slug]/page.tsx`, pinned in ConfirmedOrderGate.test.ts). The renderer's
+// barrel cannot load under `node --test`, so its `findShopPage` is read from the
+// INSTALLED, pinned build by file URL, and composed here exactly as the page does.
+type FindShopPage = (pages: readonly (ShopPage & { format?: string; blocks?: unknown })[] | undefined | null) => ShopPage | undefined;
+const linkStackUrl = new URL("../../node_modules/@hillbombcreations/site-renderer/dist/lib/linkStack.js", import.meta.url);
+// Cast: a module imported by file URL is untyped; only this one export is read.
+const { findShopPage } = (await import(linkStackUrl.href)) as { findShopPage: FindShopPage };
+const backToShopHref = (pages: Parameters<FindShopPage>[0]) => shopHrefFrom(findShopPage(pages));
+
+// The coordinated products group as the portal stores it on Cobalt & Crumb's /shop.
+const productsGroup = {
+  type: { kind: "group", dispatchId: "group" },
+  enabled: true,
+  config: { coordinated: "products", children: [{ type: { kind: "page-template", dispatchId: "products-grid" }, enabled: true }] },
+};
+
+test("loaded the renderer's shop rule, not nothing (control)", () => {
+  assert.equal(typeof findShopPage, "function");
+});
+
+test("ALLOW: the shop link is the first switched-on products page, as before", () => {
   assert.equal(
-    shopHrefFor([
+    backToShopHref([
       { slug: "about", format: "standard" },
       { slug: "old-shop", format: "products", enabled: false },
       { slug: "shop", format: "products" },
@@ -107,9 +129,35 @@ test("the shop link is the first switched-on products page", () => {
   );
 });
 
-test("the shop link falls back to home when there is no usable products page", () => {
-  assert.equal(shopHrefFor(undefined), "/");
-  assert.equal(shopHrefFor([]), "/");
-  assert.equal(shopHrefFor([{ slug: "shop", format: "products", enabled: false }]), "/");
-  assert.equal(shopHrefFor([{ slug: "", format: "products" }]), "/");
+test("F48 ALLOW: a Catalog page holding the products listing is the shop (Cobalt & Crumb's /shop)", () => {
+  assert.equal(
+    backToShopHref([
+      { slug: "menu", format: "menu" },
+      { slug: "events", format: "catalog" },
+      { slug: "shop", format: "catalog", blocks: [productsGroup] },
+    ]),
+    "/shop",
+  );
+});
+
+test("F48 REFUSE: several Catalog service pages and no products listing fall back to home", () => {
+  assert.equal(
+    backToShopHref([
+      { slug: "injectables-fillers", format: "catalog" },
+      { slug: "skin-treatments", format: "catalog" },
+      { slug: "wellness", format: "catalog" },
+      { slug: "about", format: "standard" },
+    ]),
+    "/",
+  );
+});
+
+test("REFUSE: no pages, a switched-off shop, an empty slug or the home page fall back to home", () => {
+  assert.equal(backToShopHref(undefined), "/");
+  assert.equal(backToShopHref([]), "/");
+  assert.equal(backToShopHref([{ slug: "shop", format: "products", enabled: false }]), "/");
+  assert.equal(backToShopHref([{ slug: "", format: "products" }]), "/");
+  assert.equal(backToShopHref([{ slug: "home", format: "catalog", blocks: [productsGroup] }]), "/");
+  assert.equal(shopHrefFrom(undefined), "/");
+  assert.equal(shopHrefFrom({ slug: "shop", enabled: false }), "/", "never a switched-off page, whoever picked it");
 });

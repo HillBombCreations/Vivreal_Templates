@@ -3,6 +3,7 @@
  * checkout will not start. Pure and free of `next/server`, so it runs under
  * `node --test`; the route is the thin call site.
  */
+import { NO_WAY_TO_GET_ORDER } from "./cart/cartSettings.ts";
 
 /** The `reason` the route adds when checkout refused a line for stock. */
 export const CHECKOUT_OUT_OF_STOCK = "out_of_stock";
@@ -27,18 +28,63 @@ export const CHECKOUT_SHOP_RULE = "shop_rule";
 /**
  * VR_Client_API's shop rules (owner ideas 3.9, 3.10, `shopRules.js`), each a
  * 409 the cart answers by staying open with everything kept. The words are
- * this app's, keyed on the stable code, never the upstream sentence.
+ * this app's, keyed on the stable code, never the upstream sentence. F54
+ * (VR_Client_API #135) added the delivery codes, each in the server's own
+ * words (`shopRules.js` `deliveryWords`, `PRICE_MISSING_WORDS`,
+ * `PICKUP_NOT_OFFERED_WORDS`): a ZIP nobody could check is never told "we do
+ * not deliver there". These are the words for a shop that offers pickup; a
+ * cart without Pickup shows `SHOP_RULE_SENTENCES_NO_PICKUP` instead (below),
+ * so no refusal suggests a pickup the shop does not offer, and OUT_OF_AREA
+ * matches the Client's no-pickup words (#135 `93490e54`, `deliveryWords`).
+ * `{zip}` is the ZIP this checkout sent.
  */
 export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   BELOW_MINIMUM: "Your order is below the shop's minimum. Add a little more, then try again.",
   BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more, or choose pickup.",
-  OUT_OF_AREA: "We don't deliver to that ZIP yet. Pickup is available.",
+  OUT_OF_AREA: "We do not deliver to {zip} yet.",
+  ZIP_NOT_RECOGNIZED: "We could not check {zip}. Send us your address and we will let you know right away.",
+  DELIVERY_ORIGIN_MISSING: "We cannot check delivery just yet. Send us your address and we will let you know right away.",
+  DELIVERY_PRICE_MISSING: "Delivery is not available online yet. Contact the shop to arrange it.",
+  PICKUP_NOT_OFFERED: "This shop does not offer pickup.",
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
+  // Review note 1 on #226: the shop offers no way to get the order; one sentence, the one the cart shows.
+  NO_WAY_TO_GET_ORDER,
 });
+
+/**
+ * The same rules' words for a cart where Pickup is not offered (the owner's
+ * "Offer pickup" is off, or the cart quote says `pickupOffered: false`).
+ * BELOW_DELIVERY_MINIMUM drops its pickup suggestion and keeps the rest word
+ * for word. OUT_OF_AREA is the Client's no-pickup sentence, the same words the
+ * cart quote line shows. The pickup-only rules answer a pickup, so they never
+ * reach a cart without one. `{zip}` is filled by the same rule as above.
+ */
+const SHOP_RULE_SENTENCES_NO_PICKUP: Readonly<Record<string, string>> = Object.freeze({
+  BELOW_DELIVERY_MINIMUM: "Your order is below the minimum for delivery. Add a little more.",
+  OUT_OF_AREA: "We do not deliver to {zip} yet. Send us a note and we will see what we can do.",
+});
+
+const ZIP_SHAPE = /^\d{5}$/;
+
+/** `{zip}` filled with a five digit ZIP, or "that ZIP" for anything else. */
+function fillZip(sentence: string, zip: string | undefined): string {
+  return sentence.replace("{zip}", typeof zip === "string" && ZIP_SHAPE.test(zip) ? zip : "that ZIP");
+}
+
+/**
+ * The words the cart shows for a shop-rule refusal, by whether this cart
+ * offers Pickup. `zip` is the ZIP the cart sent.
+ */
+export function shopRuleWords(code: string | undefined, message: string, pickupOffered: boolean, zip?: string): string {
+  if (pickupOffered || typeof code !== "string" || !Object.hasOwn(SHOP_RULE_SENTENCES_NO_PICKUP, code)) return message;
+  return fillZip(SHOP_RULE_SENTENCES_NO_PICKUP[code], zip);
+}
 
 export interface CheckoutRefusal {
   error: string;
   reason?: typeof CHECKOUT_OUT_OF_STOCK | typeof CHECKOUT_SHOP_RULE;
+  /** The shop rule's code, only with `reason: shop_rule`, and only a key of `SHOP_RULE_SENTENCES`. */
+  code?: string;
   /** Present only when VR_Client_API named the short lines (Client #117 and later). */
   items?: ShortStockLine[];
 }
@@ -113,7 +159,7 @@ function notForSaleSentence(body: unknown): string | undefined {
  * for shoppers. Every other branch says what to DO, because a cart that only
  * says no is a dead button.
  */
-export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown): CheckoutRefusal {
+export function checkoutRefusal(status: number, upstreamError: unknown, upstreamBody?: unknown, zip?: string): CheckoutRefusal {
   const stockByText = typeof upstreamError === "string" && STOCK_REFUSAL.test(upstreamError);
   if (status === 409 && (stockByText || isInsufficientStock(upstreamBody))) {
     // The bag replaces this with the exact lines and counts it can name.
@@ -130,7 +176,11 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
       : "";
   // Own keys only: a code like "constructor" must not resolve through the prototype.
   const shopRule = Object.hasOwn(SHOP_RULE_SENTENCES, ruleCode) ? SHOP_RULE_SENTENCES[ruleCode] : undefined;
-  if (shopRule) return { error: shopRule, reason: CHECKOUT_SHOP_RULE };
+  if (shopRule) {
+    // Only a well-formed ZIP is echoed back; anything else reads "that ZIP".
+    // `code` is one of this file's own keys, so the cart can pick its no-pickup words.
+    return { error: fillZip(shopRule, zip), reason: CHECKOUT_SHOP_RULE, code: ruleCode };
+  }
   const notForSale = status === 409 ? notForSaleSentence(upstreamBody) : undefined;
   if (notForSale) return { error: notForSale };
   if (status === 404 || status === 409 || status === 422) {

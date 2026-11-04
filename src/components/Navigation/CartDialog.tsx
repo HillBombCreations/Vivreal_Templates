@@ -10,16 +10,22 @@ import {
   checkoutChoice,
   checkoutExtras,
   choiceBlock,
+  cartHasNoWay,
   cleanZip,
   currentKind,
+  NO_WAY_TO_GET_ORDER,
+  deliveryRadiusLine,
   deliveryTotalLine,
+  deliveryZonesBound,
   fulfilmentChoices,
+  lineShippingNote,
   minimumLine,
   readCartSettings,
   type DeliveryQuote,
   type FulfilmentKind,
 } from "@/lib/cart/cartSettings";
 import type { CartDialogProps } from "@/types/Cart";
+import { shopRuleWords } from "@/lib/checkoutRequest";
 import {
   handleCheckout,
   CheckoutShopRuleError,
@@ -98,7 +104,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const settings = useMemo(() => readCartSettings(siteData?.cart), [siteData?.cart]);
   const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
   const deliveryOn = deliveryConfig?.enabled === true;
-  const radiusMiles = deliveryOn ? Number(deliveryConfig?.config?.deliveryRadiusMiles) || 25 : null;
+  // F54 L-10 D9: no 25 mile default, and no radius line when zones decide the area.
+  const radiusMiles = useMemo(
+    () => (deliveryOn ? deliveryRadiusLine(deliveryConfig?.config, deliveryZonesBound(siteData?.pageConfigs)) : null),
+    [deliveryOn, deliveryConfig, siteData?.pageConfigs],
+  );
   // Review B3: no choice at all until the owner saves cart settings; then
   // "Ship it to me" first (and the default) when the shop ships.
   const choices = fulfilmentChoices(settings, { deliveryOn, ships: shipsOrders(businessInfo) });
@@ -165,6 +175,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // The minimum is checked on the total after the code, as the server checks it.
   const belowMinimum = minimumLine(total, settings.minimumOrder);
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
+  // F54 L-10 D7: nothing per line once Pickup or Delivery is chosen.
+  const shippingNote = lineShippingNote(shipsOrders(businessInfo), kind);
+  // No refusal suggests Pickup when this cart, or the shop's answer, does not offer it.
+  const cartOffersPickup = choices.includes("pickup") && delivery?.pickupOffered !== false;
+  // Review note 1 on #226: saved settings that leave no way to get the order never check out.
+  const noWayToGetOrder = cartHasNoWay(settings, choices);
   // What still blocks checkout, shown, never guessed past: the server decides.
   const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
   const choiceMissing = blocked !== null;
@@ -304,6 +320,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   };
 
   const onCheckout = async () => {
+    if (noWayToGetOrder) return;
     setLoadingCheckout(true);
     setStockNotice(null);
     setRuleNotice(null);
@@ -336,7 +353,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // One of the shop's own rules refused (a minimum, the delivery area, a
       // pickup time): say so and keep every choice, the code included.
       if (err instanceof CheckoutShopRuleError) {
-        setRuleNotice(err.message);
+        setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
         return;
       }
       if (err instanceof CheckoutStockError) {
@@ -526,11 +543,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                             </button>
                           </div>
 
-                          <div className="text-xs text-black/55">
-                            {shipsOrders(businessInfo)
-                              ? "Shipping calculated at checkout"
-                              : "No shipping"}
-                          </div>
+                          {shippingNote ? <div className="text-xs text-black/55">{shippingNote}</div> : null}
                         </div>
                       </div>
                     </div>
@@ -690,30 +703,38 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </div>
           ) : null}
 
-          <button
-            type="button"
-            onClick={onCheckout}
-            disabled={!itemsArray.length || loadingCheckout || Boolean(belowMinimum) || choiceMissing}
-            className="mt-3 h-11 w-full rounded-2xl cursor-pointer font-semibold disabled:opacity-60 disabled:cursor-not-allowed text-[var(--text-inverse,#fff)] bg-[var(--primary,#365b99)] hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2"
-          >
-            {loadingCheckout ? (
-              <>
-                <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-                <span>Starting checkout&hellip;</span>
-              </>
-            ) : (
-              <span>{settings.checkoutLabel}</span>
-            )}
-          </button>
+          {noWayToGetOrder ? (
+            <div className="mt-3 text-sm font-medium" role="status">
+              {NO_WAY_TO_GET_ORDER}
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onCheckout}
+                disabled={!itemsArray.length || loadingCheckout || Boolean(belowMinimum) || choiceMissing}
+                className="mt-3 h-11 w-full rounded-2xl cursor-pointer font-semibold disabled:opacity-60 disabled:cursor-not-allowed text-[var(--text-inverse,#fff)] bg-[var(--primary,#365b99)] hover:opacity-95 active:scale-[0.99] transition flex items-center justify-center gap-2"
+              >
+                {loadingCheckout ? (
+                  <>
+                    <span className="h-4 w-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                    <span>Starting checkout&hellip;</span>
+                  </>
+                ) : (
+                  <span>{settings.checkoutLabel}</span>
+                )}
+              </button>
 
-          <div className="mt-2 text-[11px] text-black/50 text-center">
-            {/* H36: never name the payment company here. The group's active
-                provider is resolved server-side at checkout and can be Square,
-                so a hardcoded name told a Square shopper the wrong company was
-                about to take their card. This is the same neutral sentence the
-                renderer's own cart chrome uses. */}
-            You&apos;ll be redirected to a secure checkout.
-          </div>
+              <div className="mt-2 text-[11px] text-black/50 text-center">
+                {/* H36: never name the payment company here. The group's active
+                    provider is resolved server-side at checkout and can be Square,
+                    so a hardcoded name told a Square shopper the wrong company was
+                    about to take their card. This is the same neutral sentence the
+                    renderer's own cart chrome uses. */}
+                You&apos;ll be redirected to a secure checkout.
+              </div>
+            </>
+          )}
         </div>
       </section>
     </div>

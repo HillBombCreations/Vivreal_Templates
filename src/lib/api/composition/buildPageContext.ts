@@ -7,6 +7,7 @@ import type {
   SiteData as RendererSiteData,
   PageConfig as RendererPageConfig,
 } from '@hillbombcreations/site-renderer';
+import { pageDrawsContent } from '@hillbombcreations/site-renderer';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import { getCollectionItems, getIntegrationItems } from '@/lib/api/collections';
 import { getProductsAsContentItems } from './productBridge';
@@ -252,6 +253,10 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     blocks: (page as { blocks?: unknown }).blocks,
     hero: (page as { hero?: unknown }).hero,
     reads,
+    // D-10: the renderer's own answer, over the same `input` composePage gets.
+    // The getters above read the maps already fetched, so a second plan makes
+    // no upstream call. Called only when the rules would not serve the page.
+    drawsContent: () => pageDrawsContent(input),
   });
 
   return {

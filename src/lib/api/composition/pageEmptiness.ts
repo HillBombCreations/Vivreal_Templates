@@ -213,6 +213,41 @@ export interface EmptinessVerdict {
 const NEVER_EMPTY_FORMATS = new Set(['static', 'checkout-success', 'checkout-cancel']);
 
 /**
+ * D-10 (local walk 3, 2026-11-04): the renderer's own answer to "does this page
+ * draw anything", asked only when the rules in this file would not serve it.
+ *
+ * The rules here are a Templates copy of "what draws", and the copy missed
+ * sections that draw with no list items and no labels of their own: an Opening
+ * hours section reading the business hours, a Social panel drawing its follow
+ * links. A Blank page made of those answered 404 to every visitor. The caller
+ * passes `pageDrawsContent(input)` (renderer 1.96.4) over the exact input
+ * `composePage` renders, so this cannot drift from the page.
+ *
+ * It is an OR with the rules above, never a replacement. `pageDrawsContent`
+ * says false for a privacy page whose only list holds kit starter text (the
+ * renderer hides it), and the rules above serve that page today.
+ *
+ * A throw keeps the current verdict, and that is the only safe direction.
+ * `pageDrawsContent` throws only where `composePage` throws on the same input
+ * (a malformed block). A page reaching this point answers 404 or a refusal
+ * today without ever being composed, so letting the throw out would turn that
+ * answer into a 500. It is logged so the malformed block is still seen.
+ */
+function rendererDrawsContent(drawsContent: () => boolean): boolean {
+  try {
+    return drawsContent();
+  } catch (err) {
+    console.error('[pageEmptiness] pageDrawsContent threw, keeping the current verdict', err);
+    return false;
+  }
+}
+
+/** The current verdict, unless the renderer says the page draws, in which case it is served. */
+function servedIfItDraws(verdict: EmptinessVerdict, drawsContent: () => boolean): EmptinessVerdict {
+  return rendererDrawsContent(drawsContent) ? { isEmpty: false, emptinessUnknown: false } : verdict;
+}
+
+/**
  * The structural half of the verdict, from the page config alone: no read.
  *
  * QA-G1-2: `renderComposedPage` calls this BEFORE its Suspense boundary to decide
@@ -348,6 +383,11 @@ export function emptinessIsDecidable(
  * On healthy data this is byte-for-byte the old expression, including the empty
  * `reads` case: a page with no bindings at all has nothing to render and
  * `[].every(...)` was, and still is, `true`.
+ *
+ * D-10: either answer that does not serve the page (empty, or unknown) is
+ * served after all when `drawsContent` says the page draws (see
+ * `rendererDrawsContent`). A page that draws has content in hand whatever its
+ * lists returned, exactly like a page with a form or authored copy above.
  */
 export function decidePageEmptiness(args: {
   isHome: boolean;
@@ -356,6 +396,11 @@ export function decidePageEmptiness(args: {
   /** `page.hero`: where an enabled hero block's copy lives (ST3). */
   hero?: unknown;
   reads: readonly PageDataRead[];
+  /**
+   * D-10: `() => pageDrawsContent(input)` over the exact `composePage` input.
+   * Lazy, so it runs only for a page the rules here would not serve.
+   */
+  drawsContent: () => boolean;
 }): EmptinessVerdict {
   if (!pageCouldBeEmpty(args)) return { isEmpty: false, emptinessUnknown: false };
 
@@ -385,8 +430,8 @@ export function decidePageEmptiness(args: {
   // that is an answer or a silence. A build-time floor answer is a silence here
   // too (plan section 5.5): empty at build is not empty now.
   if (args.reads.some((read) => read.degraded || read.fromFloor)) {
-    return { isEmpty: false, emptinessUnknown: true };
+    return servedIfItDraws({ isEmpty: false, emptinessUnknown: true }, args.drawsContent);
   }
 
-  return { isEmpty: true, emptinessUnknown: false };
+  return servedIfItDraws({ isEmpty: true, emptinessUnknown: false }, args.drawsContent);
 }

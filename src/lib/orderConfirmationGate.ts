@@ -83,12 +83,18 @@ export async function resolveOrderConfirmation({
 }
 
 /** Structural so the node test runner can load this without tsconfig paths. */
-export type ShopPage = SwitchablePage & { slug?: string; format?: string };
+export type ShopPage = SwitchablePage & { slug?: string };
 
-/** The site's first switched-on products page, else the home page. */
-export function shopHrefFor(pages: readonly ShopPage[] | undefined | null): string {
-  const shop = (pages ?? []).find(
-    (p) => p.format === "products" && typeof p.slug === "string" && p.slug.length > 0 && !isPageTurnedOff(p),
-  );
-  return shop ? `/${shop.slug}` : "/";
+/**
+ * Where "Back to the shop" goes: the page the renderer's `findShopPage` picks,
+ * else the home page. The caller passes `findShopPage(siteData.pageConfigs)`
+ * (`app/[slug]/page.tsx`), so checkout and the Link page's "Your shop" button
+ * share one rule (F48, qa walk 2026-11-02). The old rule here knew only a
+ * Products page, so a shop built as a Catalog page (Cobalt & Crumb's /shop)
+ * sent the buyer home. The renderer is not imported here because its barrel
+ * cannot load under `node --test`; the test composes the two the same way.
+ */
+export function shopHrefFrom(shop: ShopPage | undefined | null): string {
+  if (!shop || isPageTurnedOff(shop) || typeof shop.slug !== "string" || shop.slug.length === 0) return "/";
+  return `/${shop.slug}`;
 }

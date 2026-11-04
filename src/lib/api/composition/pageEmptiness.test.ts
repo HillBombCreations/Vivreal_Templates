@@ -15,6 +15,12 @@ import {
   shopperQueryNarrows,
 } from './pageEmptiness.ts';
 
+/**
+ * D-10: these cases pin the structural rules alone, so the renderer is told
+ * the page draws nothing. `pageEmptinessDraws.test.ts` runs the real renderer.
+ */
+const NOTHING_DRAWS = (): boolean => false;
+
 test('hasStaticContentBlock: labels-bearing static block counts as content', () => {
   const blocks = [
     { id: 'hero', type: { kind: 'home-section', dispatchId: 'hero' }, enabled: true },
@@ -92,6 +98,7 @@ test('ST3: a Blank page with a Split hero titled "Hello" and an empty Long-form 
     blocks: [heroBlock, emptyLongform],
     hero: { title: 'Hello', variant: 'split-statement' },
     reads: noRowsBack,
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: false });
 });
@@ -116,6 +123,7 @@ test('ST3 REFUSE: a bound list with nothing live, alone, is still empty and stil
     blocks: [emptyLongform],
     hero: { title: 'Hello' },
     reads: noRowsBack,
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: true, emptinessUnknown: false }, 'page.hero without an enabled hero block renders nothing');
 });
@@ -143,6 +151,7 @@ test('ST3: a failed read on a page whose only content is the list still refuses 
     blocks: [heroBlock, emptyLongform],
     hero: { title: '' },
     reads: [{ sourceCount: 0, degraded: true, fromFloor: false }],
+    drawsContent: NOTHING_DRAWS,
   });
   assert.deepEqual(verdict, { isEmpty: false, emptinessUnknown: true });
 });
@@ -166,14 +175,14 @@ test('QA-G1-2 ALLOW: a page whose whole body is a bound list could be empty, so 
 test('QA-G1-2 REFUSE: a page with a written hero and an empty list cannot be empty, so it keeps streaming and answers 200', () => {
   const page = { isHome: false, format: 'standard', blocks: [heroBlock, emptyLongform], hero: { title: 'Hello' } };
   assert.equal(pageCouldBeEmpty(page), false);
-  assert.deepEqual(decidePageEmptiness({ ...page, reads: noRowsBack }), { isEmpty: false, emptinessUnknown: false });
+  assert.deepEqual(decidePageEmptiness({ ...page, reads: noRowsBack, drawsContent: NOTHING_DRAWS }), { isEmpty: false, emptinessUnknown: false });
 });
 
 test('QA-G1-2 REFUSE: the home page never could be empty, whatever it holds', () => {
   assert.equal(pageCouldBeEmpty({ isHome: true, format: 'standard', blocks: [emptyLongform] }), false);
   assert.equal(pageCouldBeEmpty({ isHome: true, format: 'home', blocks: [] }), false);
   assert.deepEqual(
-    decidePageEmptiness({ isHome: true, format: 'standard', blocks: [emptyLongform], reads: noRowsBack }),
+    decidePageEmptiness({ isHome: true, format: 'standard', blocks: [emptyLongform], reads: noRowsBack, drawsContent: NOTHING_DRAWS }),
     { isEmpty: false, emptinessUnknown: false },
   );
 });
@@ -188,7 +197,7 @@ test('QA-G1-2: the verdict never calls empty a page the structural test ruled ou
   for (const shape of shapes) {
     assert.equal(pageCouldBeEmpty(shape), false);
     for (const reads of [noRowsBack, [{ sourceCount: 0, degraded: true, fromFloor: false }], []]) {
-      assert.deepEqual(decidePageEmptiness({ ...shape, reads }), { isEmpty: false, emptinessUnknown: false });
+      assert.deepEqual(decidePageEmptiness({ ...shape, reads, drawsContent: NOTHING_DRAWS }), { isEmpty: false, emptinessUnknown: false });
     }
   }
 });

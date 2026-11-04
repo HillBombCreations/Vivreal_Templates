@@ -110,7 +110,8 @@ test('ALLOW: the cart shows the server\'s delivery words and total line; REFUSE:
   assert.equal(readDeliveryQuote({ delivery: { inArea: 'yes', words: 'x' } }), null);
   assert.equal(readDeliveryQuote({ lines: [] }), null);
   const choices = fs.readFileSync(new URL('../../components/Navigation/CartChoices.tsx', import.meta.url), 'utf8');
-  assert.match(choices, /delivery\.inArea \? delivery\.words : `\$\{delivery\.words\} Pickup is available\.`/);
+  // F54 L-10 D6 moved the "Pickup is available." rule into deliveryAnswerLine (f54Cart.test.ts pins it).
+  assert.match(choices, /\{deliveryAnswerLine\(delivery, choices\.includes\("pickup"\)\)\}/);
 });
 
 test('ALLOW: once saved, pickup and delivery are offered together only when Local delivery is on and shown', () => {
@@ -180,7 +181,8 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
   }
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'PICKUP_UNAVAILABLE' }).error, 'This pickup time is no longer available. Pick another.');
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'constructor' }).reason, undefined, 'never resolved through the prototype');
-  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(err\.message\);\s*return;/, 'the code and choices are kept');
+  // The notice now drops a pickup suggestion when Pickup is off (f54Cart.test.ts); still set, still returns.
+  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup, zip\)\);\s*return;/, 'the code and choices are kept');
 });
 
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {
