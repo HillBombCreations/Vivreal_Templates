@@ -203,6 +203,22 @@ test('ALLOW: at most one probe per 5 s per instance under a burst of 50 requests
   assert.ok(b.reads.every((r) => r.includes('&v=')), 'every read in the burst carries the version');
 });
 
+test('REFUSE: no site id (a local or preview build) never probes and reads as today', async () => {
+  const { createSiteVersionFence, versionedPath } = api();
+  let probes = 0;
+  const fence = createSiteVersionFence({
+    siteId: '',
+    probe: async () => {
+      probes += 1;
+      return { siteId: '', updatedAt: '2026-11-02T22:36:32.000Z' };
+    },
+    now: () => T0,
+    startTimeout: () => ({ cancel() {} }),
+  });
+  assert.equal(versionedPath(SHELL, await fence.versionFor(true)), SHELL);
+  assert.equal(probes, 0, 'no probe without a site id');
+});
+
 test('REFUSE: home, a cached page, a build and a route handler never probe and read as today', async () => {
   const { isOrdinaryPageRender } = api();
   assert.equal(isOrdinaryPageRender({ type: 'request' }, { page: '/[slug]/page' }), true, 'control: an ordinary page served per request');
