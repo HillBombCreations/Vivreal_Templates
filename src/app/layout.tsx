@@ -96,273 +96,12 @@ import RouteProgress from "@/components/Navigation/RouteProgress";
 import ContactButtonsChrome from "@/components/ContactButtonsChrome";
 
 const RootLayout = async ({ children }: { children: ReactNode }) => {
+  // F102 (react-hooks 7, `error-boundaries`): the try guards the site read
+  // ONLY, as the catch below has always said; the page is built after it, so
+  // no JSX is constructed inside the try. Same output for every site.
+  let siteData: Awaited<ReturnType<typeof getSiteData>>;
   try {
-    const siteData = await getSiteData();
-    // THE fleet gate for Vivreal's own instrumentation, resolved once here and
-    // passed down. It has to be resolved on the server: `SITE_ID` carries no
-    // NEXT_PUBLIC_ prefix, so it does not exist in the client bundle. Reading
-    // `process.env` costs this layout nothing and does not opt it out of static
-    // rendering (see lib/vivrealApex.ts); <SiteBeacon> below reads the same
-    // variable already. False on every customer site, and false whenever
-    // SITE_ID is unset or unrecognised, which is the safe direction.
-    const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
-    // Owner ideas T6 (D20): a customer site that connected a Google tag asks
-    // its visitors first; null on every other customer site (no banner, head
-    // tag unchanged) and always null on Vivreal's own site, which has its own.
-    const customerTags = vivrealOwnSite ? null : customerConsentTags(siteData.analytics);
-    // Owner ideas T12 (D48): a draft render says so in its head, and keeps its
-    // links on the preview nonce. `draftMode()` is prerender-safe (see
-    // lib/api/previewToken.ts, Spike A), so this costs public pages no caching.
-    const isDraft = (await draftMode()).isEnabled;
-    // The popup's consent line and the cookie banner link only to a policy
-    // page this site stores and the route would serve (see
-    // lib/pages/policyPage.ts): there is no built-in /privacy any more, so a
-    // default /privacy link would 404.
-    // `getSeedOnlyPaths` is per-request `cache`d and the Navbar and Footer
-    // already ask it, so this adds no read; it fails open to `[]`.
-    const privacyHref = resolvePrivacyPolicyHref(siteData.pageConfigs, await getSeedOnlyPaths());
-    // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
-    // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
-    const templateType = siteData.siteInfo?.templateType;
-    // F-C15: the hours go through the renderer's own parser (the one every
-    // hours surface draws from); `today` is the business's date, used only to
-    // leave passed holiday changes out of the description.
-    const contactSlice = contactButtonsSiteData(siteData);
-    const siteSchema = buildSiteJsonLd(siteData, {
-        hours: readSiteHours(siteData.businessInfo?.hours),
-        today: nowInZone(siteData.timezone).dateISO,
-    });
-    // Per-site font theming — siteData.fontFamily is the migrator's captured
-    // primary typeface (e.g. 'Geist' for vivreal.io). `null` when absent, in
-    // which case NOTHING below renders (no className, no style, no <link>) —
-    // the site keeps today's hardcoded Outfit default byte-identically. See
-    // src/lib/fonts/siteFont.ts for the full loading-strategy rationale.
-    // Storefront Phase 0.7: declared weights narrow the request; absent requests the default weights, so every site gets real bold (Contract 3).
-    const siteFont = resolveSiteFont(siteData.fontFamily, siteData.fontWeights);
-    // Gate-2 typography pairing — optional SECOND family for body copy
-    // (siteData.fontFamilyBody, e.g. Varone's Marcellus display + Montserrat
-    // body). Absent ⇒ null ⇒ --font-body keeps the display family exactly as
-    // before (byte-identical for every existing site). Only meaningful when a
-    // display font is also set (no body-only override).
-    const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
-    // The same preset shape the Providers effect writes to --font-display/--font-body.
-    const typography = (siteData as { typography?: { displayFamily?: unknown; bodyFamily?: unknown } | null }).typography;
-    const fontStylesheets = siteFontStylesheets(
-        {
-            display: siteFont,
-            body: siteFontBody,
-            typographyPreset: [typography?.displayFamily, typography?.bodyFamily].some((f) => typeof f === 'string' && f.trim() !== ''),
-            // Owner find 3: the face `--font-mono` names, by the builder's own rule.
-            mono: resolveMonoFamily(siteData as unknown as Record<string, unknown>), // SiteData is a closed interface; the resolver reads it as a plain record
-        },
-        { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
-    );
-    // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
-    // Providers' effect re-stamps both on the client; values are identical so
-    // hydration stays clean.
-    const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
-    const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
-    // Motion-signature preset (template-identity kits §6) — SSR-stamped like
-    // styleVariant so first paint gets the preset's `--motion-*` tokens from
-    // the renderer's content-grid.css; Providers re-stamps on the client.
-    const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
-    // Renderer 1.95.0 (studio contrast guard): the site's theme colours, so the
-    // docks and the fulfillment strip judge their text on the site's own ground
-    // (owner-approved contrast-fleet-list.md, the rail and bar rows). Only the
-    // eight theme colour keys; absent ones are left out.
-    const chromePalette = themePalette(siteData);
-    return (
-      <html
-        lang="en"
-        className={siteFont?.variableClassName}
-        style={themeStyle}
-        {...(styleVariant ? { 'data-style-variant': styleVariant } : {})}
-        {...(motionPreset ? { 'data-motion-preset': motionPreset } : {})}
-      >
-          <head>
-              {/* Structured data for classic crawlers + AI assistants. Emitted
-                  here so every page inherits site-level Organization/WebSite. */}
-              <JsonLd schema={siteSchema} />
-              {/* Owner ideas T12 (D48), the preview backstop: inert unless the
-                  readable preview marker cookie is set; then a page that is
-                  not a draft render reloads once with a fresh nonce. */}
-              {isDraft && <meta name={DRAFT_META_NAME} content="1" />}
-              <script dangerouslySetInnerHTML={{ __html: PREVIEW_BACKSTOP_SCRIPT }} />
-              {/* Per-site web-analytics tag (migration continuity + portal-
-                  editable). Reads siteData.analytics; absent ⇒ nothing renders
-                  (byte-identical no-op for every existing site). NOT on
-                  Vivreal's own site: there GA loads only after the visitor
-                  accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
-              {/* Owner ideas T6: on a customer site that asks first about Google
-                  Analytics, GA moves to <SiteConsent> too ("Reject, and none of
-                  this runs"). Every other customer site renders exactly as before. */}
-              {!vivrealOwnSite && !customerTags?.analytics && <SiteAnalytics analytics={siteData.analytics} />}
-              {/* C1: the literal families (Inter, Outfit, ...) load from a
-                  <link>, not from a globals.css @import, which the Turbopack
-                  build drops, and only on a site that draws one. See
-                  src/lib/fonts/siteFontStylesheets.ts. The preconnects open
-                  the font origins only when a sheet is linked; the woff2
-                  host is found only after the CSS parses otherwise. */}
-              {fontStylesheets.length > 0 && (
-                  <>
-                      <link rel="preconnect" href="https://fonts.googleapis.com" />
-                      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-                  </>
-              )}
-              {fontStylesheets.map((href) => (
-                  <link key={href} rel="stylesheet" href={href} precedence="default" />
-              ))}
-          </head>
-          <body
-              style={
-                  siteFont
-                      ? ({ '--font-display': siteFont.cssValue, '--font-body': (siteFontBody ?? siteFont).cssValue } as CSSProperties)
-                      : undefined
-              }
-          >
-              <Providers siteData={siteData} vivrealOwnSite={vivrealOwnSite}>
-                  {isDraft && <PreviewLinkNonce />}
-                  {/*
-                    Route-transition feedback. Any page this site's content
-                    keeps dynamic waits on a server render with nothing on
-                    screen changing — the site looks frozen and people click
-                    again. Suspense because RouteProgress reads
-                    useSearchParams, which opts the tree into client rendering
-                    without one.
-                  */}
-                  <Suspense fallback={null}>
-                      <RouteProgress />
-                  </Suspense>
-                  {/*
-                    View Transitions: wraps route content so the browser
-                    animates cross-fades between navigations automatically
-                    (enabled via `experimental.viewTransition` in
-                    next.config). Browsers without support (Safari <18)
-                    render without transition — no explicit fallback needed.
-                  */}
-                  <ViewTransition>
-                      {children}
-                  </ViewTransition>
-                  {/* Search R3: Call and Directions on phones, when the
-                      business has a phone or an address and the owner has not
-                      switched them off. Not with any other control fixed to the
-                      bottom of a phone (UtilityDock, FulfillmentStrip,
-                      FloatingCta): see contactButtonsSiteData. The bridge
-                      hands the bar the current path (FP2-55). */}
-                  {contactSlice && <ContactButtonsChrome siteData={contactSlice} />}
-                  {templateType === 'restaurant' && (
-                      <FloatingCta
-                          label="Reserve a Table"
-                          link="/reservations"
-                          showAfterScroll={400}
-                          hideOnPages={['/reservations']}
-                      />
-                  )}
-                  {/* Ansel kit (bakery template #3) — the viewport-bottom
-                      fulfillment/channel pill, config-driven from
-                      siteData.fulfillmentStrip (the FloatingCta precedent).
-                      The component itself gates on enabled/links; absent
-                      config ⇒ nothing renders. */}
-                  {siteData.fulfillmentStrip && (
-                      <FulfillmentStrip config={siteData.fulfillmentStrip} palette={chromePalette} />
-                  )}
-                  {/* Coastal Estate kit (wedding-venue look #3) — the persistent
-                      BOTTOM action bar (phone · address · one squared CTA),
-                      mounted at page ROOT like FulfillmentStrip. Never inside
-                      the fixed header, which would cover it. The component
-                      itself renders nothing when nothing is authored. */}
-                  {siteData.utilityDock && (
-                      <UtilityDock {...siteData.utilityDock} palette={chromePalette} />
-                  )}
-                  {/* Med-spa kit look #1 (Vesper) — the persistent VERTICAL
-                      page-EDGE action rail (rotated label + stacked actions),
-                      mounted at page ROOT on the same contract as UtilityDock.
-                      Differs from it on AXIS: side edge vs bottom bar. Desktop
-                      only; the component renders nothing when nothing is
-                      authored. */}
-                  {siteData.edgeDock && (
-                      <EdgeDock {...siteData.edgeDock} palette={chromePalette} />
-                  )}
-                  {/* #3 — site-wide "get in touch" FAB, config-driven from
-                      siteData.floatingCta (migrated marketing sites). Links to the
-                      site's contact route; absent config ⇒ nothing renders. */}
-                  {siteData.floatingCta?.label && siteData.floatingCta?.link && (
-                      <FloatingCta
-                          label={siteData.floatingCta.label}
-                          link={siteData.floatingCta.link}
-                          icon={siteData.floatingCta.icon}
-                          showAfterScroll={siteData.floatingCta.showAfterScroll ?? 400}
-                          position={siteData.floatingCta.position}
-                          hideOnPages={siteData.floatingCta.hideOnPages ?? [siteData.floatingCta.link]}
-                          /* Optional contact panel. These props are mapped
-                             EXPLICITLY, so any new floatingCta key is dropped
-                             unless it is threaded here too. */
-                          fields={siteData.floatingCta.fields}
-                          submitLabel={siteData.floatingCta.submitLabel}
-                          /* Renderer 1.81.0: with an authored EdgeDock the
-                             button hides at lg, where the rail shows, so the
-                             two never compete for the same corner. Without
-                             this prop the renderer cannot know a rail exists
-                             and both render on desktop. */
-                          edgeDockConfig={siteData.edgeDock}
-                      />
-                  )}
-                  {/*
-                    CC9 — Email-capture popup. Mounted at the layout (NOT the home
-                    route) so per-page targeting is structurally possible. The
-                    wrapper self-gates on route + config; absent emailPopup config
-                    ⇒ legacy behavior (home-only, 3000ms, 24h cap, default copy,
-                    on-iff-subscribers-collection) — byte-identical to the prior
-                    home-only mount. See EmailPopup wrapper for the resolution.
-                  */}
-                  <EmailPopup
-                      config={siteData.emailPopup ?? {}}
-                      siteData={siteData}
-                      vivrealOwnSite={vivrealOwnSite}
-                      privacyHref={privacyHref}
-                  />
-                  {/* Vivreal first-party analytics beacon (cookieless). Fires only
-                      on real deployed sites (SITE_ID set + != 'preview'); collection
-                      is ON by default for every site (basic analytics is bundled). */}
-                  <SiteBeacon siteId={process.env.SITE_ID ?? ''} vivrealOwnSite={vivrealOwnSite} />
-                  {/* Vivreal campaign attribution (G12/C1) and Vivreal cookie
-                      consent (G13/C2). BOTH are gated on the SITE ID, resolved
-                      right here because `SITE_ID` is server only and a client
-                      component cannot read it.
-
-                      These two comments used to say the gate was the vivreal.io
-                      apex and that both were inert on every customer site. That
-                      was false, and this is the fix. The apex predicate matched
-                      every subdomain of vivreal.io, which is how a customer site
-                      with no purchased domain is served, so the banner rendered
-                      and `vr_attr` was written on customer sites. See
-                      lib/vivrealApex.ts for the whole story.
-
-                      Reading `process.env` here does NOT opt the layout out of
-                      static rendering; `headers()` would, and that is what the
-                      old objection was about. <SiteBeacon> above already reads
-                      the same variable.
-
-                      Attribution exists in the fleet app at all because after
-                      the CloudFront origin swap the Templates site IS
-                      vivreal.io, and a first touch not captured on the landing
-                      page is not recoverable later. Consent is mounted LAST so
-                      the withdrawal affordance sits below the page footer
-                      rather than floating over content. */}
-                  <AttributionCapture vivrealOwnSite={vivrealOwnSite} />
-                  {/* GA4 cta_click on Vivreal's own sites only, same gate. */}
-                  <CtaClickTracking vivrealOwnSite={vivrealOwnSite} />
-                  <SiteConsent
-                      vivrealOwnSite={vivrealOwnSite}
-                      customerTags={customerTags}
-                      additional={siteData.analytics?.additional}
-                      analytics={siteData.analytics}
-                      privacyHref={resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)}
-                  />
-              </Providers>
-          </body>
-      </html>
-    );
+    siteData = await getSiteData();
   } catch (err) {
     // ─────────────────────────────────────────────────────────────────────
     // DEAD BRANCH, DELIBERATELY KEPT. Do not "fix" it into reachability.
@@ -419,6 +158,271 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
     }
     throw err; // re-throw non-quota errors to global-error.tsx
   }
+  // THE fleet gate for Vivreal's own instrumentation, resolved once here and
+  // passed down. It has to be resolved on the server: `SITE_ID` carries no
+  // NEXT_PUBLIC_ prefix, so it does not exist in the client bundle. Reading
+  // `process.env` costs this layout nothing and does not opt it out of static
+  // rendering (see lib/vivrealApex.ts); <SiteBeacon> below reads the same
+  // variable already. False on every customer site, and false whenever
+  // SITE_ID is unset or unrecognised, which is the safe direction.
+  const vivrealOwnSite = isVivrealOwnSite(process.env.SITE_ID);
+  // Owner ideas T6 (D20): a customer site that connected a Google tag asks
+  // its visitors first; null on every other customer site (no banner, head
+  // tag unchanged) and always null on Vivreal's own site, which has its own.
+  const customerTags = vivrealOwnSite ? null : customerConsentTags(siteData.analytics);
+  // Owner ideas T12 (D48): a draft render says so in its head, and keeps its
+  // links on the preview nonce. `draftMode()` is prerender-safe (see
+  // lib/api/previewToken.ts, Spike A), so this costs public pages no caching.
+  const isDraft = (await draftMode()).isEnabled;
+  // The popup's consent line and the cookie banner link only to a policy
+  // page this site stores and the route would serve (see
+  // lib/pages/policyPage.ts): there is no built-in /privacy any more, so a
+  // default /privacy link would 404.
+  // `getSeedOnlyPaths` is per-request `cache`d and the Navbar and Footer
+  // already ask it, so this adds no read; it fails open to `[]`.
+  const privacyHref = resolvePrivacyPolicyHref(siteData.pageConfigs, await getSeedOnlyPaths());
+  // `siteInfo.templateType` plumbed through VR_Client_API getSiteDetails +
+  // getSiteData (2026-04-18). Restaurant sites render a Reserve-a-Table CTA.
+  const templateType = siteData.siteInfo?.templateType;
+  // F-C15: the hours go through the renderer's own parser (the one every
+  // hours surface draws from); `today` is the business's date, used only to
+  // leave passed holiday changes out of the description.
+  const contactSlice = contactButtonsSiteData(siteData);
+  const siteSchema = buildSiteJsonLd(siteData, {
+      hours: readSiteHours(siteData.businessInfo?.hours),
+      today: nowInZone(siteData.timezone).dateISO,
+  });
+  // Per-site font theming — siteData.fontFamily is the migrator's captured
+  // primary typeface (e.g. 'Geist' for vivreal.io). `null` when absent, in
+  // which case NOTHING below renders (no className, no style, no <link>) —
+  // the site keeps today's hardcoded Outfit default byte-identically. See
+  // src/lib/fonts/siteFont.ts for the full loading-strategy rationale.
+  // Storefront Phase 0.7: declared weights narrow the request; absent requests the default weights, so every site gets real bold (Contract 3).
+  const siteFont = resolveSiteFont(siteData.fontFamily, siteData.fontWeights);
+  // Gate-2 typography pairing — optional SECOND family for body copy
+  // (siteData.fontFamilyBody, e.g. Varone's Marcellus display + Montserrat
+  // body). Absent ⇒ null ⇒ --font-body keeps the display family exactly as
+  // before (byte-identical for every existing site). Only meaningful when a
+  // display font is also set (no body-only override).
+  const siteFontBody = siteFont ? resolveSiteFont((siteData as { fontFamilyBody?: string | null }).fontFamilyBody, siteData.fontWeights) : null;
+  // The same preset shape the Providers effect writes to --font-display/--font-body.
+  const typography = (siteData as { typography?: { displayFamily?: unknown; bodyFamily?: unknown } | null }).typography;
+  const fontStylesheets = siteFontStylesheets(
+      {
+          display: siteFont,
+          body: siteFontBody,
+          typographyPreset: [typography?.displayFamily, typography?.bodyFamily].some((f) => typeof f === 'string' && f.trim() !== ''),
+          // Owner find 3: the face `--font-mono` names, by the builder's own rule.
+          mono: resolveMonoFamily(siteData as unknown as Record<string, unknown>), // SiteData is a closed interface; the resolver reads it as a plain record
+      },
+      { sheetFor: siteFontsHref, families: SITE_FONT_LITERAL_FAMILIES },
+  );
+  // SSR the palette + density BEFORE hydration (see src/lib/theme/themeVarStyle.ts).
+  // Providers' effect re-stamps both on the client; values are identical so
+  // hydration stays clean.
+  const themeStyle = themeVarStyle(siteData as unknown as Record<string, unknown>);
+  const styleVariant = (siteData as { styleVariant?: string }).styleVariant;
+  // Motion-signature preset (template-identity kits §6) — SSR-stamped like
+  // styleVariant so first paint gets the preset's `--motion-*` tokens from
+  // the renderer's content-grid.css; Providers re-stamps on the client.
+  const motionPreset = (siteData as { motionPreset?: string }).motionPreset;
+  // Renderer 1.95.0 (studio contrast guard): the site's theme colours, so the
+  // docks and the fulfillment strip judge their text on the site's own ground
+  // (owner-approved contrast-fleet-list.md, the rail and bar rows). Only the
+  // eight theme colour keys; absent ones are left out.
+  const chromePalette = themePalette(siteData);
+  return (
+    <html
+      lang="en"
+      className={siteFont?.variableClassName}
+      style={themeStyle}
+      {...(styleVariant ? { 'data-style-variant': styleVariant } : {})}
+      {...(motionPreset ? { 'data-motion-preset': motionPreset } : {})}
+    >
+        <head>
+            {/* Structured data for classic crawlers + AI assistants. Emitted
+                here so every page inherits site-level Organization/WebSite. */}
+            <JsonLd schema={siteSchema} />
+            {/* Owner ideas T12 (D48), the preview backstop: inert unless the
+                readable preview marker cookie is set; then a page that is
+                not a draft render reloads once with a fresh nonce. */}
+            {isDraft && <meta name={DRAFT_META_NAME} content="1" />}
+            <script dangerouslySetInnerHTML={{ __html: PREVIEW_BACKSTOP_SCRIPT }} />
+            {/* Per-site web-analytics tag (migration continuity + portal-
+                editable). Reads siteData.analytics; absent ⇒ nothing renders
+                (byte-identical no-op for every existing site). NOT on
+                Vivreal's own site: there GA loads only after the visitor
+                accepts, from <SiteConsent> (lib/gaConsentLoad.ts). */}
+            {/* Owner ideas T6: on a customer site that asks first about Google
+                Analytics, GA moves to <SiteConsent> too ("Reject, and none of
+                this runs"). Every other customer site renders exactly as before. */}
+            {!vivrealOwnSite && !customerTags?.analytics && <SiteAnalytics analytics={siteData.analytics} />}
+            {/* C1: the literal families (Inter, Outfit, ...) load from a
+                <link>, not from a globals.css @import, which the Turbopack
+                build drops, and only on a site that draws one. See
+                src/lib/fonts/siteFontStylesheets.ts. The preconnects open
+                the font origins only when a sheet is linked; the woff2
+                host is found only after the CSS parses otherwise. */}
+            {fontStylesheets.length > 0 && (
+                <>
+                    <link rel="preconnect" href="https://fonts.googleapis.com" />
+                    <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
+                </>
+            )}
+            {fontStylesheets.map((href) => (
+                <link key={href} rel="stylesheet" href={href} precedence="default" />
+            ))}
+        </head>
+        <body
+            style={
+                siteFont
+                    ? ({ '--font-display': siteFont.cssValue, '--font-body': (siteFontBody ?? siteFont).cssValue } as CSSProperties)
+                    : undefined
+            }
+        >
+            <Providers siteData={siteData} vivrealOwnSite={vivrealOwnSite}>
+                {isDraft && <PreviewLinkNonce />}
+                {/*
+                  Route-transition feedback. Any page this site's content
+                  keeps dynamic waits on a server render with nothing on
+                  screen changing — the site looks frozen and people click
+                  again. Suspense because RouteProgress reads
+                  useSearchParams, which opts the tree into client rendering
+                  without one.
+                */}
+                <Suspense fallback={null}>
+                    <RouteProgress />
+                </Suspense>
+                {/*
+                  View Transitions: wraps route content so the browser
+                  animates cross-fades between navigations automatically
+                  (enabled via `experimental.viewTransition` in
+                  next.config). Browsers without support (Safari <18)
+                  render without transition — no explicit fallback needed.
+                */}
+                <ViewTransition>
+                    {children}
+                </ViewTransition>
+                {/* Search R3: Call and Directions on phones, when the
+                    business has a phone or an address and the owner has not
+                    switched them off. Not with any other control fixed to the
+                    bottom of a phone (UtilityDock, FulfillmentStrip,
+                    FloatingCta): see contactButtonsSiteData. The bridge
+                    hands the bar the current path (FP2-55). */}
+                {contactSlice && <ContactButtonsChrome siteData={contactSlice} />}
+                {templateType === 'restaurant' && (
+                    <FloatingCta
+                        label="Reserve a Table"
+                        link="/reservations"
+                        showAfterScroll={400}
+                        hideOnPages={['/reservations']}
+                    />
+                )}
+                {/* Ansel kit (bakery template #3) — the viewport-bottom
+                    fulfillment/channel pill, config-driven from
+                    siteData.fulfillmentStrip (the FloatingCta precedent).
+                    The component itself gates on enabled/links; absent
+                    config ⇒ nothing renders. */}
+                {siteData.fulfillmentStrip && (
+                    <FulfillmentStrip config={siteData.fulfillmentStrip} palette={chromePalette} />
+                )}
+                {/* Coastal Estate kit (wedding-venue look #3) — the persistent
+                    BOTTOM action bar (phone · address · one squared CTA),
+                    mounted at page ROOT like FulfillmentStrip. Never inside
+                    the fixed header, which would cover it. The component
+                    itself renders nothing when nothing is authored. */}
+                {siteData.utilityDock && (
+                    <UtilityDock {...siteData.utilityDock} palette={chromePalette} />
+                )}
+                {/* Med-spa kit look #1 (Vesper) — the persistent VERTICAL
+                    page-EDGE action rail (rotated label + stacked actions),
+                    mounted at page ROOT on the same contract as UtilityDock.
+                    Differs from it on AXIS: side edge vs bottom bar. Desktop
+                    only; the component renders nothing when nothing is
+                    authored. */}
+                {siteData.edgeDock && (
+                    <EdgeDock {...siteData.edgeDock} palette={chromePalette} />
+                )}
+                {/* #3 — site-wide "get in touch" FAB, config-driven from
+                    siteData.floatingCta (migrated marketing sites). Links to the
+                    site's contact route; absent config ⇒ nothing renders. */}
+                {siteData.floatingCta?.label && siteData.floatingCta?.link && (
+                    <FloatingCta
+                        label={siteData.floatingCta.label}
+                        link={siteData.floatingCta.link}
+                        icon={siteData.floatingCta.icon}
+                        showAfterScroll={siteData.floatingCta.showAfterScroll ?? 400}
+                        position={siteData.floatingCta.position}
+                        hideOnPages={siteData.floatingCta.hideOnPages ?? [siteData.floatingCta.link]}
+                        /* Optional contact panel. These props are mapped
+                           EXPLICITLY, so any new floatingCta key is dropped
+                           unless it is threaded here too. */
+                        fields={siteData.floatingCta.fields}
+                        submitLabel={siteData.floatingCta.submitLabel}
+                        /* Renderer 1.81.0: with an authored EdgeDock the
+                           button hides at lg, where the rail shows, so the
+                           two never compete for the same corner. Without
+                           this prop the renderer cannot know a rail exists
+                           and both render on desktop. */
+                        edgeDockConfig={siteData.edgeDock}
+                    />
+                )}
+                {/*
+                  CC9 — Email-capture popup. Mounted at the layout (NOT the home
+                  route) so per-page targeting is structurally possible. The
+                  wrapper self-gates on route + config; absent emailPopup config
+                  ⇒ legacy behavior (home-only, 3000ms, 24h cap, default copy,
+                  on-iff-subscribers-collection) — byte-identical to the prior
+                  home-only mount. See EmailPopup wrapper for the resolution.
+                */}
+                <EmailPopup
+                    config={siteData.emailPopup ?? {}}
+                    siteData={siteData}
+                    vivrealOwnSite={vivrealOwnSite}
+                    privacyHref={privacyHref}
+                />
+                {/* Vivreal first-party analytics beacon (cookieless). Fires only
+                    on real deployed sites (SITE_ID set + != 'preview'); collection
+                    is ON by default for every site (basic analytics is bundled). */}
+                <SiteBeacon siteId={process.env.SITE_ID ?? ''} vivrealOwnSite={vivrealOwnSite} />
+                {/* Vivreal campaign attribution (G12/C1) and Vivreal cookie
+                    consent (G13/C2). BOTH are gated on the SITE ID, resolved
+                    right here because `SITE_ID` is server only and a client
+                    component cannot read it.
+
+                    These two comments used to say the gate was the vivreal.io
+                    apex and that both were inert on every customer site. That
+                    was false, and this is the fix. The apex predicate matched
+                    every subdomain of vivreal.io, which is how a customer site
+                    with no purchased domain is served, so the banner rendered
+                    and `vr_attr` was written on customer sites. See
+                    lib/vivrealApex.ts for the whole story.
+
+                    Reading `process.env` here does NOT opt the layout out of
+                    static rendering; `headers()` would, and that is what the
+                    old objection was about. <SiteBeacon> above already reads
+                    the same variable.
+
+                    Attribution exists in the fleet app at all because after
+                    the CloudFront origin swap the Templates site IS
+                    vivreal.io, and a first touch not captured on the landing
+                    page is not recoverable later. Consent is mounted LAST so
+                    the withdrawal affordance sits below the page footer
+                    rather than floating over content. */}
+                <AttributionCapture vivrealOwnSite={vivrealOwnSite} />
+                {/* GA4 cta_click on Vivreal's own sites only, same gate. */}
+                <CtaClickTracking vivrealOwnSite={vivrealOwnSite} />
+                <SiteConsent
+                    vivrealOwnSite={vivrealOwnSite}
+                    customerTags={customerTags}
+                    additional={siteData.analytics?.additional}
+                    analytics={siteData.analytics}
+                    privacyHref={resolveBannerPrivacyHref(privacyHref, vivrealOwnSite)}
+                />
+            </Providers>
+        </body>
+    </html>
+  );
 }
 
 export default RootLayout;

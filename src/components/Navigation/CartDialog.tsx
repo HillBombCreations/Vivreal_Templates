@@ -223,6 +223,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // into checkout.
   useEffect(() => {
     if (appliedCode && discount <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the quote lands after render; dropping the code then is RW3-4 (F102: react-hooks 7)
       setAppliedCode(null);
       setPromoCode(null);
       setCodeNewSubtotal(null);
@@ -236,6 +237,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // stored code was saved with these same lines, so its key matches.
   useEffect(() => {
     if (appliedCode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a bag change resets what the old bag decided, R2 and TB-6 (F102: react-hooks 7)
       setAppliedCode(null);
       setCodeNewSubtotal(null);
       setCodeError(null);
