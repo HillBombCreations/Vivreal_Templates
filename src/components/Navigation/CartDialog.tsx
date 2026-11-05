@@ -33,6 +33,7 @@ import {
   handleCheckout,
   CheckoutShopRuleError,
   CheckoutStockError,
+  CheckoutUnavailableError,
   fetchDeliveryQuote,
   validateCoupon,
   type CouponPreview,
@@ -40,7 +41,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { applyShortStock, capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
+import { applyShortStock, capQuantity, clampCartToStock, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -100,6 +101,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // QA-W2-1: what changed when checkout refused a line for stock. Its own state,
   // so the cart-change effect that clears a code's error cannot wipe it.
   const [stockNotice, setStockNotice] = useState<string | null>(null);
+  // Client F30: lines checkout no longer sells, by checkout price id, with the words to show.
+  const [unavailable, setUnavailable] = useState<{ message: string; priceIds: string[] } | null>(null);
 
   // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
   // defensively (absent settings are today's cart, word for word), and the
@@ -195,6 +198,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // What still blocks checkout, shown, never guessed past: the server decides.
   const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
   const choiceMissing = blocked !== null;
+  // Client F30: the bag's own names for the lines checkout no longer sells (none from an older Client).
+  const unavailableNames = unavailable ? withoutUnavailableLines(cart || {}, unavailable.priceIds).removed : [];
 
   const onCheckZip = async () => {
     const clean = cleanZip(zip);
@@ -238,6 +243,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     setSaleEnded(false);
     setDelivery(null);
     setDeliveryDay(null);
+    // Client F30: once the bag changes, a no-longer-available notice may no longer be true.
+    setUnavailable(null);
     if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
     // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,6 +344,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     setLoadingCheckout(true);
     setStockNotice(null);
     setRuleNotice(null);
+    setUnavailable(null);
     try {
       // F4: price the bag again right before paying. If a price the shopper was
       // shown went up (a sale ended), show the new total and wait for a second
@@ -371,6 +379,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         if (err.code === "DELIVERY_DAY_UNAVAILABLE") void onCheckZip();
         // F59: the picked rate is gone; fall back to the lowest the cart shows.
         if (err.code === "SHIPPING_RATE_UNAVAILABLE") setPickedRate(null);
+        return;
+      }
+      if (err instanceof CheckoutUnavailableError) {
+        // Keep every choice and the code; the shopper takes the named lines out in one tap.
+        setUnavailable({ message: err.message, priceIds: err.priceIds ?? [] });
         return;
       }
       if (err instanceof CheckoutStockError) {
@@ -685,6 +698,27 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           {ruleNotice ? (
             <div className="mb-2 text-xs font-medium" role="alert">
               {ruleNotice}
+            </div>
+          ) : null}
+
+          {unavailable ? (
+            <div className="mb-2 text-xs font-medium" role="alert">
+              <div>{unavailable.message}</div>
+              {unavailableNames.length > 0 ? (
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-black/70">{unavailableNames.join(", ")}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCart(withoutUnavailableLines(cart || {}, unavailable.priceIds).cart);
+                      setUnavailable(null);
+                    }}
+                    className="h-8 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white px-3 text-xs font-semibold hover:bg-black/5"
+                  >
+                    {REMOVE_UNAVAILABLE_LABEL}
+                  </button>
+                </div>
+              ) : null}
             </div>
           ) : null}
 

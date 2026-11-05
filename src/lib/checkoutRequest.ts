@@ -25,6 +25,16 @@ export interface ShortStockLine {
 /** The `reason` the route adds when one of the shop's own rules refused checkout. */
 export const CHECKOUT_SHOP_RULE = "shop_rule";
 
+/** The `reason` the route adds when checkout named lines the shop no longer sells (Client F30). */
+export const CHECKOUT_NO_LONGER_AVAILABLE = "no_longer_available";
+
+/**
+ * Client F30 (OD-16): a line whose product the site no longer shows. Never
+ * "refresh": the bag lives in the browser, so a reload keeps the line. The
+ * bag names the lines and removes them in one tap (CartDialog).
+ */
+export const NO_LONGER_AVAILABLE_COPY = "Something in your order is no longer available. Remove it, then check out again.";
+
 /**
  * VR_Client_API's shop rules (owner ideas 3.9, 3.10, `shopRules.js`), each a
  * 409 the cart answers by staying open with everything kept. The words are
@@ -47,6 +57,8 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   DELIVERY_PRICE_MISSING: "Delivery is not available online yet. Contact the shop to arrange it.",
   PICKUP_NOT_OFFERED: "This shop does not offer pickup.",
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
+  // Client F81 (OD-05): the Site MCP purchase's "choose in the shop's cart". A cart answered it here still asks for the way.
+  CART_NEEDS_SITE: "Choose how you'd like to get your order, then check out again.",
   // F58 (Client CL5): the picked delivery day is no longer one the shop offers; the cart asks the shop's days again.
   DELIVERY_DAY_UNAVAILABLE: "That delivery day is no longer available. Pick another day.",
   // F59 (Client CL6): the picked shipping rate is no longer one the shop offers.
@@ -86,7 +98,9 @@ export function shopRuleWords(code: string | undefined, message: string, pickupO
 
 export interface CheckoutRefusal {
   error: string;
-  reason?: typeof CHECKOUT_OUT_OF_STOCK | typeof CHECKOUT_SHOP_RULE;
+  reason?: typeof CHECKOUT_OUT_OF_STOCK | typeof CHECKOUT_SHOP_RULE | typeof CHECKOUT_NO_LONGER_AVAILABLE;
+  /** With `reason: no_longer_available`, the checkout price ids Client named, when it named any. */
+  unavailable?: string[];
   /** The shop rule's code, only with `reason: shop_rule`, and only a key of `SHOP_RULE_SENTENCES`. */
   code?: string;
   /** Present only when VR_Client_API named the short lines (Client #117 and later). */
@@ -112,6 +126,21 @@ function readShortStockLines(body: unknown): ShortStockLine[] | undefined {
     return [{ priceId, available }];
   });
   return lines.length > 0 ? lines : undefined;
+}
+
+/**
+ * Client F30's refusal names the lines it no longer sells:
+ * `{ errorCode: 'ITEM_NO_LONGER_AVAILABLE', items: [{ priceId }] }`. Read at
+ * the boundary: malformed entries dropped, none at all is `undefined`.
+ */
+function readUnavailableLines(body: unknown): string[] | undefined {
+  const items = (body as { items?: unknown }).items;
+  if (!Array.isArray(items)) return undefined;
+  const ids = items.flatMap((entry) => {
+    const priceId = typeof entry === "object" && entry !== null ? (entry as { priceId?: unknown }).priceId : undefined;
+    return typeof priceId === "string" && priceId ? [priceId] : [];
+  });
+  return ids.length > 0 ? ids : undefined;
 }
 
 const isInsufficientStock = (body: unknown) =>
@@ -178,6 +207,10 @@ export function checkoutRefusal(status: number, upstreamError: unknown, upstream
     status === 409 && typeof upstreamBody === "object" && upstreamBody !== null
       ? String((upstreamBody as { errorCode?: unknown }).errorCode)
       : "";
+  if (ruleCode === "ITEM_NO_LONGER_AVAILABLE") {
+    const unavailable = readUnavailableLines(upstreamBody);
+    return { error: NO_LONGER_AVAILABLE_COPY, reason: CHECKOUT_NO_LONGER_AVAILABLE, ...(unavailable ? { unavailable } : {}) };
+  }
   // Own keys only: a code like "constructor" must not resolve through the prototype.
   const shopRule = Object.hasOwn(SHOP_RULE_SENTENCES, ruleCode) ? SHOP_RULE_SENTENCES[ruleCode] : undefined;
   if (shopRule) {

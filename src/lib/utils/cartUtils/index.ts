@@ -7,7 +7,7 @@ import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
 import { bagLineStock, capQuantity } from "../../cartStock.ts";
-import { CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
+import { CHECKOUT_NO_LONGER_AVAILABLE, CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
 import { readDeliveryQuote, type CheckoutExtras, type DeliveryQuote } from "../../cart/cartSettings.ts";
 
 interface AddToCartProps {
@@ -111,6 +111,20 @@ export class CheckoutStockError extends Error {
     super(message);
     this.name = "CheckoutStockError";
     if (items) this.items = items;
+  }
+}
+
+/**
+ * Client F30: thrown when checkout named lines the shop no longer sells. The
+ * bag shows the words, names the lines and takes them out in one tap.
+ */
+export class CheckoutUnavailableError extends Error {
+  /** The checkout price ids Client named; absent from an older Client. */
+  readonly priceIds?: string[];
+  constructor(message: string, priceIds?: string[]) {
+    super(message);
+    this.name = "CheckoutUnavailableError";
+    if (priceIds) this.priceIds = priceIds;
   }
 }
 
@@ -230,6 +244,11 @@ export async function handleCheckout({
     "Checkout could not be started. Please try again.";
   if (data.reason === CHECKOUT_SHOP_RULE) {
     throw new CheckoutShopRuleError(message, typeof data.code === "string" ? data.code : undefined);
+  }
+  if (data.reason === CHECKOUT_NO_LONGER_AVAILABLE) {
+    // Our own route already validated `unavailable` (lib/checkoutRequest.ts).
+    const ids = Array.isArray(data.unavailable) ? data.unavailable.filter((id: unknown): id is string => typeof id === "string") : [];
+    throw new CheckoutUnavailableError(message, ids.length > 0 ? ids : undefined);
   }
   if (data.reason === CHECKOUT_OUT_OF_STOCK) {
     // Our own route already validated `items` (lib/checkoutRequest.ts).
