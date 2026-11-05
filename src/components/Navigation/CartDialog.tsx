@@ -13,6 +13,7 @@ import {
   cartHasNoWay,
   cleanZip,
   currentKind,
+  currentShipRate,
   NO_WAY_TO_GET_ORDER,
   deliveryRadiusLine,
   deliveryTotalLine,
@@ -21,6 +22,8 @@ import {
   lineShippingNote,
   minimumLine,
   readCartSettings,
+  shippingFromLine,
+  shippingSection,
   type DeliveryQuote,
   type FulfilmentKind,
 } from "@/lib/cart/cartSettings";
@@ -120,6 +123,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [pickupAt, setPickupAt] = useState<string | null>(null);
   // F58: the delivery day picked from the quote's days; a new ZIP or bag asks again.
   const [deliveryDay, setDeliveryDay] = useState<string | null>(null);
+  // F59: the shipping rate picked; until then the lowest, which is what checkout charges with no pick.
+  const [pickedRate, setPickedRate] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const pickupOffered = useMemo(
@@ -177,6 +182,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // The minimum is checked on the total after the code, as the server checks it.
   const belowMinimum = minimumLine(total, settings.minimumOrder);
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
+  // F59: "Shipping from $6, free over $50" while shipping is the way (or no way is asked), then the rates once Ship is chosen.
+  const shippingLine = shipsOrders(businessInfo) && kind !== "pickup" && kind !== "delivery" ? shippingFromLine(settings.shipping) : null;
+  const shipping = shippingSection(settings, kind, total);
+  const shipRateId = shipping.show === "rates" ? currentShipRate(shipping.rates, pickedRate) : null;
   // F54 L-10 D7: nothing per line once Pickup or Delivery is chosen.
   const shippingNote = lineShippingNote(shipsOrders(businessInfo), kind);
   // No refusal suggests Pickup when this cart, or the shop's answer, does not offer it.
@@ -347,7 +356,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay })),
+        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -360,6 +369,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
         // F58: the day moved off the list; ask the shop's days again so another can be picked.
         if (err.code === "DELIVERY_DAY_UNAVAILABLE") void onCheckZip();
+        // F59: the picked rate is gone; fall back to the lowest the cart shows.
+        if (err.code === "SHIPPING_RATE_UNAVAILABLE") setPickedRate(null);
         return;
       }
       if (err instanceof CheckoutStockError) {
@@ -573,6 +584,9 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                 setKind(next);
                 setRuleNotice(null);
               }}
+              shipping={shipping}
+              shipRateId={shipRateId}
+              onShipRateId={setPickedRate}
               radiusMiles={radiusMiles}
               zip={zip}
               onZip={(next) => {
@@ -703,6 +717,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           {deliveryLine ? (
             <div className="mt-1 flex items-center justify-between text-sm">
               <div className="text-black/60">{deliveryLine}</div>
+            </div>
+          ) : null}
+
+          {shippingLine && itemsArray.length > 0 ? (
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <div className="text-black/60">{shippingLine}</div>
             </div>
           ) : null}
 

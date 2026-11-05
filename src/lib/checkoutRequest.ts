@@ -49,6 +49,8 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
   // F58 (Client CL5): the picked delivery day is no longer one the shop offers; the cart asks the shop's days again.
   DELIVERY_DAY_UNAVAILABLE: "That delivery day is no longer available. Pick another day.",
+  // F59 (Client CL6): the picked shipping rate is no longer one the shop offers.
+  SHIPPING_RATE_UNAVAILABLE: "That shipping choice is no longer offered. Pick another.",
   // Review note 1 on #226: the shop offers no way to get the order; one sentence, the one the cart shows.
   NO_WAY_TO_GET_ORDER,
 });

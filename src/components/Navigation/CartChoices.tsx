@@ -5,6 +5,9 @@ import { pickupWindows, slotWhenLabel, type PickupDay } from "@hillbombcreations
 import {
   cartDayLabel,
   CHOOSE_DELIVERY_DAY,
+  CHOOSE_SHIPPING,
+  FREE_SHIPPING,
+  shipRateAmount,
   cleanZip,
   DELIVERY_DAY_NOTE,
   deliveryDaySection,
@@ -16,6 +19,7 @@ import {
   type CartSettings,
   type DeliveryQuote,
   type FulfilmentKind,
+  type shippingSection,
 } from "@/lib/cart/cartSettings";
 
 /**
@@ -30,6 +34,9 @@ export default function CartChoices({
   choices,
   kind,
   onKind,
+  shipping,
+  shipRateId,
+  onShipRateId,
   radiusMiles,
   zip,
   onZip,
@@ -51,6 +58,10 @@ export default function CartChoices({
   choices: FulfilmentKind[];
   kind: FulfilmentKind | null;
   onKind: (kind: FulfilmentKind) => void;
+  /** F59: the shipping rates to pick from, "Free shipping", or nothing (`shippingSection`). */
+  shipping: ReturnType<typeof shippingSection>;
+  shipRateId: string | null;
+  onShipRateId: (id: string) => void;
   radiusMiles: number | null;
   zip: string;
   onZip: (zip: string) => void;
@@ -111,6 +122,38 @@ export default function CartChoices({
               {FULFILMENT_LABELS[option]}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {shipping.show === "free" ? (
+        <div className="text-xs font-medium" role="status">
+          {FREE_SHIPPING}
+        </div>
+      ) : null}
+
+      {shipping.show === "rates" ? (
+        <div>
+          <div className="mb-1.5 text-xs font-semibold text-black/55">{CHOOSE_SHIPPING}</div>
+          <div role="radiogroup" aria-label={CHOOSE_SHIPPING} className="grid gap-1.5">
+            {shipping.rates.map((rate) => (
+              <button
+                key={rate.id}
+                type="button"
+                role="radio"
+                aria-checked={shipRateId === rate.id}
+                disabled={disabled}
+                onClick={() => onShipRateId(rate.id)}
+                className="flex min-h-10 cursor-pointer items-center justify-between gap-2 rounded-xl border px-3 py-1.5 text-left text-sm disabled:opacity-60"
+                style={shipRateId === rate.id ? { borderColor: "var(--primary,#365b99)" } : { borderColor: "rgba(0,0,0,0.1)" }}
+              >
+                <span className="min-w-0">
+                  <span className="block font-semibold">{rate.name}</span>
+                  {rate.estimate ? <span className="block text-xs text-black/60">{rate.estimate}</span> : null}
+                </span>
+                <span className="shrink-0 font-semibold">{shipRateAmount(rate)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
