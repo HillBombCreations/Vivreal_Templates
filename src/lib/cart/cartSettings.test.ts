@@ -137,7 +137,8 @@ test('REFUSE (B3): no values.cart, delivery on, ships: the checkout body is toda
   assert.deepEqual(extras, {});
   assert.equal(cartNeedsChoices(settings, ON), false, 'Buy now checks out as today');
   assert.equal(choiceBlock({ settings, kind, pickupOffered: false, pickupAt: null, deliveryInArea: false }), null, 'nothing blocks checkout');
-  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip \}\)\)/, 'the dialog sends exactly this');
+  // F58 adds the picked delivery day to the same call; checkoutChoice drops it with the switch off (deliveryDay.test.ts).
+  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay \}\)\)/, 'the dialog sends exactly this');
   assert.match(dialog, /const kind = currentKind\(choices, pickedKind\);/);
 });
 
@@ -182,7 +183,8 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'PICKUP_UNAVAILABLE' }).error, 'This pickup time is no longer available. Pick another.');
   assert.equal(checkoutRefusal(409, 'x', { errorCode: 'constructor' }).reason, undefined, 'never resolved through the prototype');
   // The notice now drops a pickup suggestion when Pickup is off (f54Cart.test.ts); still set, still returns.
-  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup, zip\)\);\s*return;/, 'the code and choices are kept');
+  // F58 adds one line between them: a day checkout no longer takes asks the shop's days again (deliveryDay.test.ts).
+  assert.match(dialog, /if \(err instanceof CheckoutShopRuleError\) \{\s*setRuleNotice\(shopRuleWords\(err\.code, err\.message, cartOffersPickup, zip\)\);\s*\/\/[^\n]*\n\s*if \(err\.code === "DELIVERY_DAY_UNAVAILABLE"\) void onCheckZip\(\);\s*return;/, 'the code and choices are kept');
 });
 
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {

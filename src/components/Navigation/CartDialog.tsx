@@ -118,6 +118,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [delivery, setDelivery] = useState<DeliveryQuote | null>(null);
   const [checkingZip, setCheckingZip] = useState(false);
   const [pickupAt, setPickupAt] = useState<string | null>(null);
+  // F58: the delivery day picked from the quote's days; a new ZIP or bag asks again.
+  const [deliveryDay, setDeliveryDay] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const pickupOffered = useMemo(
@@ -189,6 +191,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     const clean = cleanZip(zip);
     if (!clean || checkingZip) return;
     setCheckingZip(true);
+    setDeliveryDay(null);
     setDelivery(await fetchDeliveryQuote(cartLineItems, clean));
     setCheckingZip(false);
   };
@@ -225,6 +228,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     }
     setSaleEnded(false);
     setDelivery(null);
+    setDeliveryDay(null);
     if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
     // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -343,7 +347,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip })),
+        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay })),
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -354,6 +358,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // pickup time): say so and keep every choice, the code included.
       if (err instanceof CheckoutShopRuleError) {
         setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
+        // F58: the day moved off the list; ask the shop's days again so another can be picked.
+        if (err.code === "DELIVERY_DAY_UNAVAILABLE") void onCheckZip();
         return;
       }
       if (err instanceof CheckoutStockError) {
@@ -572,10 +578,13 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
               onZip={(next) => {
                 setZip(next);
                 setDelivery(null);
+                setDeliveryDay(null);
               }}
               onCheckZip={() => void onCheckZip()}
               checkingZip={checkingZip}
               delivery={delivery}
+              deliveryOn={deliveryDay}
+              onDeliveryOn={setDeliveryDay}
               hours={businessInfo?.hours}
               timeZone={siteData?.timezone}
               pickupAt={pickupAt}

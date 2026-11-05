@@ -54,6 +54,13 @@ export interface CartSettings {
    * the pickup time picker.
    */
   offerPickup: boolean;
+  /**
+   * F58 (OD-02): the owner's "Let customers choose a delivery day" switch,
+   * `cart.deliveryDay.on`. Only a stored `true` is on, as VR_Client_API reads
+   * it (`deliveryDayOn`), so the cart offers days exactly when checkout takes
+   * one. Off, the cart is today's and says the shop will confirm the day.
+   */
+  deliveryDay: { on: boolean };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -75,6 +82,7 @@ export function readCartSettings(raw: unknown): CartSettings {
       ? pickup.daysAhead
       : 7;
   const min = typeof c.minimumOrder === 'number' && Number.isFinite(c.minimumOrder) && c.minimumOrder > 0 ? c.minimumOrder : null;
+  const deliveryDay = isRecord(c.deliveryDay) ? c.deliveryDay : {};
   return {
     saved: isRecord(raw),
     title: text(c.title, 40, CART_DEFAULTS.title),
@@ -86,6 +94,7 @@ export function readCartSettings(raw: unknown): CartSettings {
     showDelivery: c.showDelivery !== false,
     showPromo: c.showPromo !== false,
     offerPickup: c.offerPickup !== false,
+    deliveryDay: { on: deliveryDay.on === true },
   };
 }
 
@@ -185,14 +194,18 @@ export function checkoutChoice(input: {
   note: string;
   pickupAt: string | null;
   zip: string;
+  /** F58: the delivery day the shopper picked (`YYYY-MM-DD`), sent only with the switch on and Delivery chosen. */
+  deliveryOn?: string | null;
 }): CheckoutChoice {
   const { settings, choices, kind } = input;
   const sendKind = kind !== null && (choices.length > 1 || kind === 'delivery' || (kind === 'pickup' && settings.pickup.on));
+  const deliveryOn = settings.deliveryDay.on && kind === 'delivery' && input.deliveryOn ? input.deliveryOn : undefined;
   return {
     note: settings.saved && settings.note.on ? input.note : '',
     kind: sendKind ? kind : undefined,
     pickupAt: input.pickupAt ?? undefined,
     zip: input.zip,
+    ...(deliveryOn ? { deliveryOn } : {}),
   };
 }
 
@@ -220,6 +233,8 @@ export function choiceBlock(input: {
 export const NO_PICKUP_TIMES = 'No pickup times right now.';
 
 const ZIP = /^\d{5}$/;
+/** A calendar day as VR_Client_API's checkout validator takes `deliveryOn` (`YYYY-MM-DD`). */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
 // Every control character but tab, newline and carriage return (VR_Client_API's rule).
 const CONTROL = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(8)}${String.fromCharCode(11)}${String.fromCharCode(12)}${String.fromCharCode(14)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`, 'g');
@@ -235,11 +250,12 @@ export interface CheckoutChoice {
   kind?: FulfilmentKind;
   pickupAt?: string;
   zip?: string;
+  deliveryOn?: string;
 }
 
 export interface CheckoutExtras {
   note?: string;
-  fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string };
+  fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string; deliveryOn?: string };
 }
 
 /**
@@ -252,7 +268,8 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
   const note = cleanNote(choice.note);
   if (note) out.note = note;
   if (choice.kind === 'delivery' && typeof choice.zip === 'string' && ZIP.test(choice.zip)) {
-    out.fulfilment = { kind: 'delivery', zip: choice.zip };
+    const day = typeof choice.deliveryOn === 'string' && DAY.test(choice.deliveryOn) ? choice.deliveryOn : null;
+    out.fulfilment = day ? { kind: 'delivery', zip: choice.zip, deliveryOn: day } : { kind: 'delivery', zip: choice.zip };
   } else if (choice.kind === 'ship') {
     out.fulfilment = { kind: 'ship' };
   } else if (choice.kind === 'pickup') {
@@ -263,7 +280,7 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
 
 /**
  * The server-side half: what `/api/checkout` forwards from a browser body.
- * Only `note` and `fulfilment.{kind,pickupAt,zip}`, re-checked here; any fee
+ * Only `note` and `fulfilment.{kind,pickupAt,zip,deliveryOn}`, re-checked here; any fee
  * key anywhere is dropped. Nothing without a site id, because VR_Client_API
  * reads the rules off the site and refuses either field without one.
  */
@@ -275,6 +292,7 @@ export function forwardedCheckoutExtras(body: unknown, siteIdPresent: boolean): 
     kind: f.kind === 'pickup' || f.kind === 'delivery' || f.kind === 'ship' ? f.kind : undefined,
     pickupAt: typeof f.pickupAt === 'string' ? f.pickupAt : undefined,
     zip: typeof f.zip === 'string' ? f.zip : undefined,
+    deliveryOn: typeof f.deliveryOn === 'string' ? f.deliveryOn : undefined,
   } as CheckoutChoice);
 }
 
@@ -296,6 +314,12 @@ export interface DeliveryQuote {
   pickupOffered: boolean;
   /** The server's sentence for this status, shown as is. */
   words: string;
+  /**
+   * F58 (CL5): the days the customer may pick (`YYYY-MM-DD`, the next 14 on
+   * the shop's clock), only on an in-area quote with the shop's delivery day
+   * switch on. Null when the quote carries none.
+   */
+  deliveryDates: string[] | null;
 }
 
 /** `cartQuote`'s `delivery` answer, or null when absent or malformed. */
@@ -305,7 +329,16 @@ export function readDeliveryQuote(raw: unknown): DeliveryQuote | null {
   if (typeof d.inArea !== 'boolean' || typeof d.words !== 'string' || !d.words.trim()) return null;
   const fee = typeof d.feeCents === 'number' && Number.isInteger(d.feeCents) && d.feeCents >= 0 ? d.feeCents : null;
   const status = typeof d.status === 'string' && d.status.trim() ? d.status.trim() : null;
-  return { inArea: d.inArea, status, feeCents: fee, waived: d.waived === true, pickupOffered: d.pickupOffered !== false, words: d.words.trim() };
+  const dates = Array.isArray(d.deliveryDates) ? d.deliveryDates.filter((day): day is string => typeof day === 'string' && DAY.test(day)) : null;
+  return {
+    inArea: d.inArea,
+    status,
+    feeCents: fee,
+    waived: d.waived === true,
+    pickupOffered: d.pickupOffered !== false,
+    words: d.words.trim(),
+    deliveryDates: d.inArea && dates ? dates : null,
+  };
 }
 
 export const PICKUP_IS_AVAILABLE = 'Pickup is available.';
@@ -328,6 +361,29 @@ export function deliveryAnswerLine(quote: DeliveryQuote, cartOffersPickup: boole
 
 /** Shown with Delivery chosen (F54 L-10 D11, owner answer 3): the cart takes no day. */
 export const DELIVERY_DAY_NOTE = 'The shop will confirm your delivery day.';
+
+/** F58: the heading over the days the shopper may pick. */
+export const CHOOSE_DELIVERY_DAY = 'Choose your delivery day';
+
+/**
+ * F58 (OD-02): what the Delivery section says about the day. With the
+ * switch off, today's note, word for word. With it on, nothing until the ZIP
+ * is checked (the days depend on the zone), then the quote's days to pick
+ * from, or the note when an in-area quote offers none (the shop arranges the
+ * day, as checkout does for a delivery that names none).
+ */
+export function deliveryDaySection(settings: CartSettings, quote: DeliveryQuote | null): { show: 'note' } | { show: 'days'; dates: string[] } | { show: 'none' } {
+  if (!settings.deliveryDay.on) return { show: 'note' };
+  if (!quote || !quote.inArea) return { show: 'none' };
+  return quote.deliveryDates && quote.deliveryDates.length > 0 ? { show: 'days', dates: quote.deliveryDates } : { show: 'note' };
+}
+
+/** A `YYYY-MM-DD` day as the cart's day buttons show it: "Sat Mar 7". */
+export function cartDayLabel(day: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })
+    .format(new Date(`${day}T12:00:00Z`))
+    .replace(',', '');
+}
 
 /**
  * The words under each line in the cart (F54 L-10 D7). Nothing when the

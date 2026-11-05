@@ -47,6 +47,8 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   DELIVERY_PRICE_MISSING: "Delivery is not available online yet. Contact the shop to arrange it.",
   PICKUP_NOT_OFFERED: "This shop does not offer pickup.",
   PICKUP_UNAVAILABLE: "This pickup time is no longer available. Pick another.",
+  // F58 (Client CL5): the picked delivery day is no longer one the shop offers; the cart asks the shop's days again.
+  DELIVERY_DAY_UNAVAILABLE: "That delivery day is no longer available. Pick another day.",
   // Review note 1 on #226: the shop offers no way to get the order; one sentence, the one the cart shows.
   NO_WAY_TO_GET_ORDER,
 });
