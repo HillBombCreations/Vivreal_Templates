@@ -190,6 +190,16 @@ test('REFUSE: a drawn row with no street in its own place has no Event, and the 
   assert.deepEqual(wall.events, [], 'an event wall badge is display text, never a date');
 });
 
+test('REFUSE: a day stored as midnight on the shop clock is a date, never a midnight start', () => {
+  const { buildListingEventsJsonLd } = helpers();
+  const row = (instant: string): Row => ({ name: 'Friday Night Standup', start: { instant, timeZone: 'America/Chicago' }, place: 'Uptown Taproom: 1265 W Wilson Ave', anchor: 'item-a1', detailUrl: '/shows/friday' });
+  const [midnight] = buildListingEventsJsonLd([row('2026-07-24T05:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows' }) as Event[];
+  assert.equal(midnight.startDate, '2026-07-24', 'the day the card draws');
+  const [evening] = buildListingEventsJsonLd([row('2026-07-25T00:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows' }) as Event[];
+  assert.equal(evening.startDate, '2026-07-24T19:00:00-05:00', 'control: a real time is kept, in the shop zone');
+  assert.equal(midnight.url, `${ORIGIN}/shows/friday`);
+});
+
 test('REFUSE: no durable origin, no Events; ALLOW: at most 50 on a page', () => {
   assert.deepEqual(serve({ format: 'standard', blocks: [layoutBlock('agenda')] }, null).events, []);
   const { buildListingEventsJsonLd } = helpers();

@@ -375,7 +375,12 @@ export function buildListingEventsJsonLd(
     if (!name) continue;
     const zone = row.start.timeZone ?? ctx.timezone;
     const date = row.start.instant ?? row.start.date;
-    const time = row.start.instant && zone ? wallClock(row.start.instant, zone) : undefined;
+    const clock = row.start.instant && zone ? wallClock(row.start.instant, zone) : undefined;
+    // A day stored as midnight on the shop's clock is a date with no time, the way
+    // owners pick one: the card draws the day, so the Event claims the day, never
+    // a midnight start (measured on a live shows list, T12; its show pages carry the
+    // typed time in their own Event).
+    const time = clock === '00:00' ? undefined : clock;
     const result = buildShowEventJsonLd({
       title: name,
       url: row.detailUrl ? `${ctx.origin}${row.detailUrl}` : `${pageUrl}#${row.anchor}`,
