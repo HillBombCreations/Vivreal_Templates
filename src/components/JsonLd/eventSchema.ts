@@ -314,6 +314,8 @@ function resolveLocation(input: ShowEventInput): EventLocation | undefined {
  * `EventRow` objects straight in.
  */
 export interface ListingEventRow {
+  /** The block that draws the row (its section id). */
+  blockId: string;
   name: string;
   start: { instant?: string; date?: string; timeZone?: string };
   place: string | null;
@@ -330,6 +332,46 @@ export interface ListingEventsContext {
   timezone?: string;
   /** The site node's `@id`, for `organizer`. */
   organizationId?: string;
+  /**
+   * The page config the rows were drawn from (the same `page` handed to
+   * `composePage` and `eventRows`). Read for its blocks' layouts only, never an
+   * item: it decides which blocks' rows are held back (`heldListingBlockIds`).
+   */
+  page: unknown;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * The blocks whose rows get no listing Event yet: every block drawn as
+ * What's On, nested children included (PR #227 review B1, owner option a).
+ *
+ * WHY. A What's On card draws the day plus the owner's TYPED time
+ * (`formatShowDate(readEventDate(r), normaliseTime(r.time), tz)` in the
+ * renderer's `WhatsOnLayout`), but renderer 1.97.0's `eventRows` gives its
+ * rows only the stored instant (`whatsOnRows`: `showDateStart(readEventDate(raw), tz)`),
+ * never that typed time. The instant's clock is not what the card says: The
+ * Comedy Collective's "Hotshots" card says 9:00 pm, the stored instant reads
+ * 01:00. Those shows' own pages already carry correct Events. Lift this when
+ * the renderer gives What's On rows the drawn time; `listingEvents.test.ts`
+ * has a tripwire that goes red on that day.
+ */
+export function heldListingBlockIds(page: unknown): Set<string> {
+  const held = new Set<string>();
+  const walk = (blocks: unknown) => {
+    if (!Array.isArray(blocks)) return;
+    for (const block of blocks) {
+      if (!isObject(block)) continue;
+      const type = isObject(block.type) ? block.type : {};
+      const config = isObject(block.config) ? block.config : {};
+      const bindings = Array.isArray(config.bindings) ? config.bindings : [];
+      const whatsOn = type.dispatchId === 'whats-on' || bindings.some((b) => isObject(b) && b.displayAs === 'whats-on');
+      if (whatsOn && typeof block.id === 'string') held.add(block.id);
+      walk(config.children);
+    }
+  };
+  walk(isObject(page) ? page.blocks : undefined);
+  return held;
 }
 
 /** At most this many Events on one listing page (owner decision OD-5, 2026-11-01). */
@@ -360,7 +402,7 @@ function wallClock(instant: string, timeZone: string): string | undefined {
  * the business's own event as far as the page shows. `url` is the row's own
  * page when it links to one, else the listing page plus the row's anchor.
  * Nothing without an origin (an Event needs a durable `url`), and at most
- * `MAX_LISTING_EVENTS`.
+ * `MAX_LISTING_EVENTS`. What's On rows are held back for now (`heldListingBlockIds`).
  */
 export function buildListingEventsJsonLd(
   rows: readonly ListingEventRow[],
@@ -368,9 +410,11 @@ export function buildListingEventsJsonLd(
 ): Array<Record<string, unknown>> {
   if (!ctx.origin) return [];
   const pageUrl = `${ctx.origin}${ctx.pagePath === '/' ? '/' : `/${ctx.pagePath.replace(/^\/+/, '')}`}`;
+  const held = heldListingBlockIds(ctx.page);
   const events: Array<Record<string, unknown>> = [];
   for (const row of rows) {
     if (events.length >= MAX_LISTING_EVENTS) break;
+    if (held.has(row.blockId)) continue;
     const name = row.name.trim();
     if (!name) continue;
     const zone = row.start.timeZone ?? ctx.timezone;

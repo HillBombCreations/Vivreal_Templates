@@ -13,7 +13,9 @@ import type { SiteData } from '@/types/SiteData';
  * same way and returns only the rows that composition draws: a past row the
  * list hides, a block that is off, a row past the item limit have no Event.
  * Every field of every Event comes from those rows, through the show rules
- * in `eventSchema.ts`; nothing here reads an item a second time.
+ * in `eventSchema.ts`; nothing here reads an item a second time. The page is
+ * passed for its blocks' layouts only: What's On rows are held back until the
+ * renderer gives them the time the card draws (`heldListingBlockIds`).
  */
 export function pageListingEventsJsonLd(
   siteData: SiteData,
@@ -31,6 +33,7 @@ export function pageListingEventsJsonLd(
     pagePath,
     timezone: siteData.timezone,
     organizationId: siteOrganizationId(siteData),
+    page: input.page,
   });
   return events.length > 0 ? events : null;
 }

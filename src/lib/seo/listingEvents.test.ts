@@ -38,7 +38,7 @@ const ORIGIN = 'https://markets.example.com';
 const PHOENIX = 'America/Phoenix';
 
 type Fn = (...args: unknown[]) => unknown;
-type Row = { name: string; start: { instant?: string; date?: string; timeZone?: string }; place: string | null; anchor: string; detailUrl: string | null };
+type Row = { blockId: string; name: string; start: { instant?: string; date?: string; timeZone?: string }; place: string | null; anchor: string; detailUrl: string | null };
 type Event = Record<string, unknown> & { name: string; startDate: string; url: string; location: Record<string, unknown> };
 
 function helpers(): { eventRows: Fn; buildListingEventsJsonLd: Fn } {
@@ -57,9 +57,13 @@ const item = (objectValue: Record<string, unknown>) =>
 
 const items = new Map<string, ContentItem[]>([
   ['markets', [
-    item({ title: 'Farmers Market', date: `${YEAR}-03-07T15:00:00.000Z`, location: 'Roosevelt Row: 305 E Roosevelt St', venue: 'Roosevelt Row' }),
-    item({ title: 'Night Market', date: `${YEAR}-03-14T01:00:00.000Z`, location: 'Heritage Square', venue: 'Heritage Square: 115 N 6th St' }),
-    item({ title: 'Old Market', date: '2020-03-14T01:00:00.000Z', location: 'Past Hall: 1 Main St', venue: 'Past Hall: 1 Main St' }),
+    item({ title: 'Farmers Market', date: `${YEAR}-03-07T15:00:00.000Z`, time: '8:00 am', location: 'Roosevelt Row: 305 E Roosevelt St', venue: 'Roosevelt Row' }),
+    item({ title: 'Night Market', date: `${YEAR}-03-14T01:00:00.000Z`, time: '6:00 pm', location: 'Heritage Square', venue: 'Heritage Square: 115 N 6th St' }),
+    item({ title: 'Old Market', date: '2020-03-14T01:00:00.000Z', time: '6:00 pm', location: 'Past Hall: 1 Main St', venue: 'Past Hall: 1 Main St' }),
+  ]],
+  // The Comedy Collective's "Hotshots", as stored: the date at 07:00Z, the time typed separately.
+  ['shows', [
+    item({ title: 'Hotshots', date: '2025-11-15T07:00:00.000Z', time: '9:00 pm', venue: '1331 N. Milwaukee Ave., Chicago IL' }),
   ]],
   ['stops', [
     item({ title: 'Downtown market', location_name: 'Downtown Phoenix Farmers Market', address: '721 N Central Ave', start: `${YEAR}-03-08T15:00:00.000Z` }),
@@ -72,6 +76,7 @@ const layoutBlock = (displayAs: string, sectionConfig?: Record<string, unknown>,
   type: { kind: 'layout', dispatchId: displayAs },
   config: { bindings: [{ collectionId: 'markets', displayAs, ...(sectionConfig ? { sectionConfig } : {}) }] },
 });
+const whatsOnShows = { id: 'blk_shows', order: 0, enabled: true, type: { kind: 'layout', dispatchId: 'whats-on' }, config: { bindings: [{ collectionId: 'shows', displayAs: 'whats-on', sectionConfig: { timezone: 'America/Chicago', showPast: true } }] } };
 const scheduleBlock = { id: 'blk_schedule', order: 0, enabled: true, type: { kind: 'page-template', dispatchId: 'schedule' }, config: { bindings: [{ collectionId: 'stops' }] } };
 
 function inputFor(page: Record<string, unknown>) {
@@ -91,7 +96,7 @@ function serve(page: Record<string, unknown>, origin: string | null = ORIGIN) {
   const input = inputFor(page);
   const html = renderToStaticMarkup(createElement('div', null, composition.composePage(input as Parameters<typeof composition.composePage>[0])));
   const rows = eventRows(input.page, input.data, { ...input.options, pages: input.pages, isHome: input.isHome }) as Row[];
-  const events = buildListingEventsJsonLd(rows, { origin, pagePath: '/markets', timezone: PHOENIX, organizationId: `${ORIGIN}/#organization` }) as Event[];
+  const events = buildListingEventsJsonLd(rows, { origin, pagePath: '/markets', timezone: PHOENIX, organizationId: `${ORIGIN}/#organization`, page: input.page }) as Event[];
   return { html, rows, events };
 }
 
@@ -106,16 +111,27 @@ function rowHtml(html: string, anchor: string): string {
 }
 const text = (h: string) => h.replace(/<style[\s\S]*?<\/style>/g, ' ').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
 
-/** Name, date and anchor of each Event are drawn: the date as a `dateTime` of the same instant, or as "MAR 7" text. */
+/**
+ * Name, date, TIME and anchor of each Event are drawn (review B1: the day alone
+ * let a wrong clock through): a `dateTime` of the same instant, or the day as
+ * "MAR 7" text and, when the Event names a time, that time as "8:00 AM" text.
+ */
 function assertDrawn(html: string, event: Event) {
   const anchor = event.url.split('#')[1] ?? `item-${event.url.split('/').pop()}`;
   const drawn = rowHtml(html, anchor);
-  assert.ok(text(drawn).includes(event.name), `${anchor} draws the name "${event.name}"`);
+  const words = text(drawn);
+  assert.ok(words.includes(event.name), `${anchor} draws the name "${event.name}"`);
   const instant = Date.parse(event.startDate);
   const times = [...drawn.matchAll(/dateTime="([^"]+)"/gi)].map((m) => Date.parse(m[1]));
+  if (times.includes(instant)) return;
   const [, month, day] = event.startDate.slice(0, 10).split('-').map(Number);
   const dayText = new RegExp(`\\b${MONTHS[month - 1]} ${day}\\b`, 'i');
-  assert.ok(times.includes(instant) || dayText.test(text(drawn)), `${anchor} draws the date of ${event.startDate}`);
+  assert.ok(dayText.test(words), `${anchor} draws the day of ${event.startDate}`);
+  const wall = /T(\d{2}):(\d{2})/.exec(event.startDate);
+  if (!wall) return;
+  const hour = Number(wall[1]);
+  const clock = `${hour % 12 || 12}:${wall[2]} ${hour < 12 ? 'AM' : 'PM'}`;
+  assert.ok(new RegExp(`\\b${clock}\\b`, 'i').test(words), `${anchor} draws the time of ${event.startDate} (${clock}), got: ${words.slice(0, 200)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -135,7 +151,6 @@ test('ALLOW (agenda): a drawn row with a street gets an Event with its name, dat
 
 for (const [name, page] of [
   ['agenda', { format: 'standard', blocks: [layoutBlock('agenda')] }],
-  ["What's On", { format: 'standard', blocks: [layoutBlock('whats-on')] }],
   ['schedule', { format: 'schedule', blocks: [scheduleBlock] }],
   ['calendar', { format: 'standard', blocks: [layoutBlock('calendar')] }],
   ['event wall', { format: 'standard', blocks: [layoutBlock('event-wall')] }],
@@ -153,12 +168,36 @@ for (const [name, page] of [
   });
 }
 
-test("ALLOW (What's On, schedule): the row's own street and detail page are used", () => {
-  const whatsOn = serve({ format: 'standard', blocks: [layoutBlock('whats-on')] }).events;
-  const night = whatsOn.find((e) => e.name === 'Night Market');
-  assert.ok(night, 'What\'s On marks the row whose drawn venue has a street');
-  assert.match(night.url, new RegExp(`^${ORIGIN}/markets/6a\\d{22}$`), 'the row links to its own page, so that is the url');
-  assert.equal(night.startDate, `${YEAR}-03-13T18:00:00-07:00`, 'the day the card draws (Mar 13 in Phoenix), never the UTC day');
+test("REFUSE (review B1): What's On rows get no Event while the renderer gives them a clock the card does not draw", () => {
+  const shows = serve({ format: 'standard', blocks: [whatsOnShows] });
+  assert.match(text(shows.html), /Hotshots/, 'control: the card is drawn');
+  assert.match(text(shows.html), /9:00 pm/i, 'control: the card draws the typed time');
+  assert.ok(shows.rows.length > 0, 'control: eventRows returns the row');
+  assert.deepEqual(shows.events, [], 'no Event, never one that says 01:00 for a 9:00 pm show');
+  const markets = serve({ format: 'standard', blocks: [layoutBlock('whats-on')] });
+  assert.ok(markets.rows.length > 0, 'control: rows with streets and typed times');
+  assert.deepEqual(markets.events, [], "no What's On Event at all");
+  // Nested inside a group, and alongside an agenda on the same page: only the What's On block is held.
+  const group = { id: 'grp', order: 0, enabled: true, type: { kind: 'group' }, config: { children: [whatsOnShows] } };
+  const held = (eventSchema as unknown as Record<string, unknown>).heldListingBlockIds; // a named export, checked next
+  assert.equal(typeof held, 'function', 'eventSchema.ts exports heldListingBlockIds');
+  assert.deepEqual([...(held as (page: unknown) => Set<string>)({ blocks: [group, layoutBlock('agenda')] })], ['blk_shows']); // checked above
+  const mixed = serve({ format: 'standard', blocks: [whatsOnShows, { ...layoutBlock('agenda'), order: 1 }] });
+  assert.ok(mixed.events.some((e) => e.name === 'Farmers Market'), 'the agenda beside it keeps its Events');
+  assert.ok(!mixed.events.some((e) => e.name === 'Hotshots'));
+});
+
+test("TRIPWIRE (review B1): renderer eventRows (whatsOnRows, showDateStart) still drops the What's On typed time", () => {
+  // When this goes red the renderer gives What's On rows the time the card draws:
+  // delete the hold in eventSchema.ts `heldListingBlockIds` and let these rows through.
+  const { rows } = serve({ format: 'standard', blocks: [whatsOnShows] });
+  const hotshots = rows.find((r) => r.name === 'Hotshots');
+  assert.ok(hotshots, 'control: the row exists');
+  assert.deepEqual(hotshots.start, { instant: '2025-11-15T07:00:00.000Z', timeZone: 'America/Chicago' }, 'the stored instant, whose clock (01:00) is not the card\'s 9:00 pm');
+  assert.doesNotMatch(JSON.stringify(hotshots), /9:00|21:00/, 'the typed time is not in the row');
+});
+
+test('ALLOW (schedule): the row\'s own street and its drawn time are used', () => {
   const schedule = serve({ format: 'schedule', blocks: [scheduleBlock] }).events;
   assert.equal(schedule.length, 1);
   assert.equal(schedule[0].name, 'Downtown Phoenix Farmers Market');
@@ -179,9 +218,9 @@ test('REFUSE: a row the body does not draw has no Event (past rows hidden, a blo
 });
 
 test('REFUSE: a drawn row with no street in its own place has no Event, and the business address is never borrowed', () => {
-  const { html, events } = serve({ format: 'standard', blocks: [layoutBlock('whats-on')] });
-  assert.match(text(html), /Farmers Market/, 'control: the row is drawn');
-  assert.ok(!events.some((e) => e.name === 'Farmers Market'), '"Roosevelt Row" names no street');
+  const { html, events } = serve({ format: 'standard', blocks: [layoutBlock('agenda')] });
+  assert.match(text(html), /Night Market/, 'control: the row is drawn');
+  assert.ok(!events.some((e) => e.name === 'Night Market'), '"Heritage Square" names no street');
   const calendar = serve({ format: 'standard', blocks: [layoutBlock('calendar')] });
   assert.ok(calendar.rows.length > 0, 'control: the calendar drew rows');
   assert.deepEqual(calendar.events, [], 'a calendar row draws no place, so it is never an Event');
@@ -192,10 +231,10 @@ test('REFUSE: a drawn row with no street in its own place has no Event, and the 
 
 test('REFUSE: a day stored as midnight on the shop clock is a date, never a midnight start', () => {
   const { buildListingEventsJsonLd } = helpers();
-  const row = (instant: string): Row => ({ name: 'Friday Night Standup', start: { instant, timeZone: 'America/Chicago' }, place: 'Uptown Taproom: 1265 W Wilson Ave', anchor: 'item-a1', detailUrl: '/shows/friday' });
-  const [midnight] = buildListingEventsJsonLd([row('2026-07-24T05:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows' }) as Event[];
+  const row = (instant: string): Row => ({ blockId: 'blk_agenda', name: 'Friday Night Standup', start: { instant, timeZone: 'America/Chicago' }, place: 'Uptown Taproom: 1265 W Wilson Ave', anchor: 'item-a1', detailUrl: '/shows/friday' });
+  const [midnight] = buildListingEventsJsonLd([row('2026-07-24T05:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows', page: { blocks: [] } }) as Event[];
   assert.equal(midnight.startDate, '2026-07-24', 'the day the card draws');
-  const [evening] = buildListingEventsJsonLd([row('2026-07-25T00:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows' }) as Event[];
+  const [evening] = buildListingEventsJsonLd([row('2026-07-25T00:00:00.000Z')], { origin: ORIGIN, pagePath: '/shows', page: { blocks: [] } }) as Event[];
   assert.equal(evening.startDate, '2026-07-24T19:00:00-05:00', 'control: a real time is kept, in the shop zone');
   assert.equal(midnight.url, `${ORIGIN}/shows/friday`);
 });
@@ -204,9 +243,9 @@ test('REFUSE: no durable origin, no Events; ALLOW: at most 50 on a page', () => 
   assert.deepEqual(serve({ format: 'standard', blocks: [layoutBlock('agenda')] }, null).events, []);
   const { buildListingEventsJsonLd } = helpers();
   const many: Row[] = Array.from({ length: 60 }, (_, i) => ({
-    name: `Stop ${i}`, start: { instant: `${YEAR}-04-01T15:00:00.000Z` }, place: `${100 + i} N Central Ave`, anchor: `item-r${i}`, detailUrl: null,
+    blockId: 'blk_schedule', name: `Stop ${i}`, start: { instant: `${YEAR}-04-01T15:00:00.000Z` }, place: `${100 + i} N Central Ave`, anchor: `item-r${i}`, detailUrl: null,
   }));
-  const events = buildListingEventsJsonLd(many, { origin: ORIGIN, pagePath: '/', timezone: PHOENIX }) as Event[];
+  const events = buildListingEventsJsonLd(many, { origin: ORIGIN, pagePath: '/', timezone: PHOENIX, page: { blocks: [] } }) as Event[];
   assert.equal(events.length, 50);
   assert.equal(events[0].url, `${ORIGIN}/#item-r0`, 'the home page anchors off the bare origin');
 });
