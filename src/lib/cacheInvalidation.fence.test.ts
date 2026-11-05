@@ -265,9 +265,37 @@ test('REFUSE: the floor still answers a versioned read by the key the build wrot
   assert.deepEqual(recorded, [SHELL], 'recorded under the unversioned key');
 });
 
+test('ALLOW (review N4): a versioned read that does not come back live tries the plain read before the floor', async () => {
+  const fallback = (invalidation as unknown as Record<string, unknown>).readVersionedShell; // a named export, checked next
+  assert.equal(typeof fallback, 'function', 'cacheInvalidation exports readVersionedShell');
+  const run = fallback as (read: (p: string) => Promise<string | null>, path: string, version: string | null, isLive: (v: string | null) => boolean) => Promise<string | null>; // checked above
+  const isLive = (v: string | null) => v !== null && v !== 'floor';
+  const V = '2026-11-05T00:00:00.000Z';
+  for (const [label, versionedAnswer, want, reads] of [
+    ['live', 'saved site', 'saved site', 1],
+    ['refused (an older Client answers v with a 400, so the seam gives the floor)', 'floor', 'plain read', 2],
+    ['failed with no floor', null, 'plain read', 2],
+  ] as const) {
+    const paths: string[] = [];
+    const out = await run(async (p) => {
+      paths.push(p);
+      return p.includes('&v=') ? versionedAnswer : 'plain read';
+    }, SHELL, V, isLive);
+    assert.equal(out, want, label);
+    assert.equal(paths.length, reads, `${label}: ${paths.join(' then ')}`);
+    assert.ok(paths[0].includes('&v='), `${label}: the versioned read goes first`);
+    if (reads === 2) assert.equal(paths[1], SHELL, `${label}: then the plain path, byte for byte`);
+  }
+  const paths: string[] = [];
+  assert.equal(await run(async (p) => { paths.push(p); return 'plain read'; }, SHELL, null, isLive), 'plain read');
+  assert.deepEqual(paths, [SHELL], 'no version: one plain read, exactly as before the fence');
+});
+
 test('SOURCE: the shell read is versioned only through the fence, with the floor on the plain key', () => {
   const siteData = fs.readFileSync(new URL('./api/siteData/index.tsx', import.meta.url), 'utf8');
-  assert.match(siteData, /versionedPath\(path, await shellReadVersion\(\)\)/);
+  // Re-pointed for review N4: the versioned read now goes through readVersionedShell (tested above).
+  assert.match(siteData, /readVersionedShell<SiteDetailsResponse \| null>\(/);
+  assert.match(siteData, /path,\s*await shellReadVersion\(\),\s*\(value\) => value !== null && value !== undefined && !isFloorValue\(value\)/);
   assert.match(siteData, /\{ floorPath: path \}/);
   const glue = fs.readFileSync(new URL('./api/siteData/siteVersionFence.ts', import.meta.url), 'utf8');
   assert.match(glue, /isOrdinaryPageRender\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);

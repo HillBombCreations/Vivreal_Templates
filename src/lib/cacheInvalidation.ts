@@ -102,6 +102,25 @@ export function versionedPath(path: string, version: string | null): string {
 }
 
 /**
+ * The shell read with this render's version, falling back to the plain read
+ * when the versioned one did not come back live (PR #227 review N4). A Client
+ * that refuses `v` (a build without #137's validator change) or any failure on
+ * the new key then answers from the plain read, today's path and at most one
+ * cache window old, before the build snapshot would. No version: the plain
+ * read alone, exactly as before the fence.
+ */
+export async function readVersionedShell<T>(
+  read: (path: string) => Promise<T>,
+  path: string,
+  version: string | null,
+  isLive: (value: T) => boolean,
+): Promise<T> {
+  if (!version) return read(path);
+  const versioned = await read(versionedPath(path, version));
+  return isLive(versioned) ? versioned : read(path);
+}
+
+/**
  * Whether this render serves an ordinary page per request, from Next's two
  * work stores (the same internals `queryReadGate.ts` reads, pinned by
  * `next ~16.4.1`): a request render (`type === 'request'`; a regeneration of a
