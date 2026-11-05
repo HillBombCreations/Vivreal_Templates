@@ -86,10 +86,10 @@ async function Resolved() {
       {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are
           Templates chrome and carry no CMS rich text, so widening the boundary
           would buy nothing and put a client component above the whole page. */}
-      {/* F33: Event markup for the dated rows this body draws, from the same input. */}
-      <JsonLd schema={pageListingEventsJsonLd(siteData, input, "/")} />
       <RichTextImages map={richTextImageUrls}>{composePage(input)}</RichTextImages>
       <Footer />
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, input, "/")} />
     </>
   );
 }

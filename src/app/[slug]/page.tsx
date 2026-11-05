@@ -878,8 +878,6 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <RecordPurchaseGoal />}
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
-      {/* F33: Event markup for the dated rows this body draws, from the same input. */}
-      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ""}`)} />
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
           See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
       {format === "checkout-success" ? (
@@ -887,6 +885,8 @@ async function ComposedFormatBody({
       ) : (
         composedBody
       )}
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ""}`)} />
     </>
   );
 }

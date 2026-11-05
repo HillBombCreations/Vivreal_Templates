@@ -378,11 +378,11 @@ async function ComposedPageBody({
   return (
     <>
       {listReadFailed && <ListLoadFailedNotice />}
-      {/* F33: Event markup for the dated rows this body draws, from the same input. */}
-      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ''}`)} />
       <RichTextImages map={richTextImageUrls}>
         {composePage(composeInput)}
       </RichTextImages>
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ''}`)} />
     </>
   );
 }

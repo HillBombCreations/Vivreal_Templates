@@ -224,6 +224,9 @@ test('SOURCE: each composed render site gives eventRows the exact input it gives
     const source = fs.readFileSync(path.join(SRC, file), 'utf8');
     assert.match(source, composed, `${file} composes from one named input`);
     assert.match(source, marked, `${file} marks up that same input`);
+    // The LAST child of its fragment: an element placed before a sibling moves that sibling's
+    // useId (measured: a capture field's id-derived class changed on two sites' home pages).
+    assert.match(source, new RegExp(`${marked.source}\\}\\s*\\/>\\s*<\\/>`), `${file} draws the Events last`);
   }
   const wrapper = fs.readFileSync(path.join(SRC, 'lib', 'seo', 'listingEvents.ts'), 'utf8');
   assert.match(wrapper, /eventRows\(input\.page, input\.data, \{/);
