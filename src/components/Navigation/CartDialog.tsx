@@ -13,6 +13,7 @@ import {
   cartHasNoWay,
   cleanZip,
   currentKind,
+  currentShipRate,
   NO_WAY_TO_GET_ORDER,
   deliveryRadiusLine,
   deliveryTotalLine,
@@ -21,6 +22,8 @@ import {
   lineShippingNote,
   minimumLine,
   readCartSettings,
+  shippingFromLine,
+  shippingSection,
   type DeliveryQuote,
   type FulfilmentKind,
 } from "@/lib/cart/cartSettings";
@@ -30,6 +33,7 @@ import {
   handleCheckout,
   CheckoutShopRuleError,
   CheckoutStockError,
+  CheckoutUnavailableError,
   fetchDeliveryQuote,
   validateCoupon,
   type CouponPreview,
@@ -37,7 +41,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { applyShortStock, capQuantity, clampCartToStock, stockAdjustedMessage } from "@/lib/cartStock";
+import { applyShortStock, capQuantity, clampCartToStock, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -97,6 +101,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // QA-W2-1: what changed when checkout refused a line for stock. Its own state,
   // so the cart-change effect that clears a code's error cannot wipe it.
   const [stockNotice, setStockNotice] = useState<string | null>(null);
+  // Client F30: lines checkout no longer sells, by checkout price id, with the words to show.
+  const [unavailable, setUnavailable] = useState<{ message: string; priceIds: string[] } | null>(null);
 
   // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
   // defensively (absent settings are today's cart, word for word), and the
@@ -118,6 +124,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [delivery, setDelivery] = useState<DeliveryQuote | null>(null);
   const [checkingZip, setCheckingZip] = useState(false);
   const [pickupAt, setPickupAt] = useState<string | null>(null);
+  // F58: the delivery day picked from the quote's days; a new ZIP or bag asks again.
+  const [deliveryDay, setDeliveryDay] = useState<string | null>(null);
+  // F59: the shipping rate picked; until then the lowest, which is what checkout charges with no pick.
+  const [pickedRate, setPickedRate] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ruleNotice, setRuleNotice] = useState<string | null>(null);
   const pickupOffered = useMemo(
@@ -175,6 +185,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // The minimum is checked on the total after the code, as the server checks it.
   const belowMinimum = minimumLine(total, settings.minimumOrder);
   const deliveryLine = kind === "delivery" ? deliveryTotalLine(delivery) : null;
+  // F59: "Shipping from $6, free over $50" while shipping is the way (or no way is asked), then the rates once Ship is chosen.
+  const shippingLine = shipsOrders(businessInfo) && kind !== "pickup" && kind !== "delivery" ? shippingFromLine(settings.shipping) : null;
+  const shipping = shippingSection(settings, kind, total);
+  const shipRateId = shipping.show === "rates" ? currentShipRate(shipping.rates, pickedRate) : null;
   // F54 L-10 D7: nothing per line once Pickup or Delivery is chosen.
   const shippingNote = lineShippingNote(shipsOrders(businessInfo), kind);
   // No refusal suggests Pickup when this cart, or the shop's answer, does not offer it.
@@ -184,11 +198,14 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // What still blocks checkout, shown, never guessed past: the server decides.
   const blocked = choiceBlock({ settings, kind, pickupOffered, pickupAt, deliveryInArea: delivery?.inArea === true });
   const choiceMissing = blocked !== null;
+  // Client F30: the bag's own names for the lines checkout no longer sells (none from an older Client).
+  const unavailableNames = unavailable ? withoutUnavailableLines(cart || {}, unavailable.priceIds).removed : [];
 
   const onCheckZip = async () => {
     const clean = cleanZip(zip);
     if (!clean || checkingZip) return;
     setCheckingZip(true);
+    setDeliveryDay(null);
     setDelivery(await fetchDeliveryQuote(cartLineItems, clean));
     setCheckingZip(false);
   };
@@ -206,6 +223,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // into checkout.
   useEffect(() => {
     if (appliedCode && discount <= 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the quote lands after render; dropping the code then is RW3-4 (F102: react-hooks 7)
       setAppliedCode(null);
       setPromoCode(null);
       setCodeNewSubtotal(null);
@@ -219,12 +237,16 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // stored code was saved with these same lines, so its key matches.
   useEffect(() => {
     if (appliedCode) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- a bag change resets what the old bag decided, R2 and TB-6 (F102: react-hooks 7)
       setAppliedCode(null);
       setCodeNewSubtotal(null);
       setCodeError(null);
     }
     setSaleEnded(false);
     setDelivery(null);
+    setDeliveryDay(null);
+    // Client F30: once the bag changes, a no-longer-available notice may no longer be true.
+    setUnavailable(null);
     if (promoCode && promoCode.linesKey !== linesKey) setPromoCode(null);
     // Intentionally keyed on the cart lines only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -324,6 +346,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
     setLoadingCheckout(true);
     setStockNotice(null);
     setRuleNotice(null);
+    setUnavailable(null);
     try {
       // F4: price the bag again right before paying. If a price the shopper was
       // shown went up (a sale ended), show the new total and wait for a second
@@ -343,7 +366,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip })),
+        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -354,6 +377,15 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // pickup time): say so and keep every choice, the code included.
       if (err instanceof CheckoutShopRuleError) {
         setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
+        // F58: the day moved off the list; ask the shop's days again so another can be picked.
+        if (err.code === "DELIVERY_DAY_UNAVAILABLE") void onCheckZip();
+        // F59: the picked rate is gone; fall back to the lowest the cart shows.
+        if (err.code === "SHIPPING_RATE_UNAVAILABLE") setPickedRate(null);
+        return;
+      }
+      if (err instanceof CheckoutUnavailableError) {
+        // Keep every choice and the code; the shopper takes the named lines out in one tap.
+        setUnavailable({ message: err.message, priceIds: err.priceIds ?? [] });
         return;
       }
       if (err instanceof CheckoutStockError) {
@@ -567,15 +599,21 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                 setKind(next);
                 setRuleNotice(null);
               }}
+              shipping={shipping}
+              shipRateId={shipRateId}
+              onShipRateId={setPickedRate}
               radiusMiles={radiusMiles}
               zip={zip}
               onZip={(next) => {
                 setZip(next);
                 setDelivery(null);
+                setDeliveryDay(null);
               }}
               onCheckZip={() => void onCheckZip()}
               checkingZip={checkingZip}
               delivery={delivery}
+              deliveryOn={deliveryDay}
+              onDeliveryOn={setDeliveryDay}
               hours={businessInfo?.hours}
               timeZone={siteData?.timezone}
               pickupAt={pickupAt}
@@ -665,6 +703,27 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </div>
           ) : null}
 
+          {unavailable ? (
+            <div className="mb-2 text-xs font-medium" role="alert">
+              <div>{unavailable.message}</div>
+              {unavailableNames.length > 0 ? (
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-black/70">{unavailableNames.join(", ")}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCart(withoutUnavailableLines(cart || {}, unavailable.priceIds).cart);
+                      setUnavailable(null);
+                    }}
+                    className="h-8 shrink-0 cursor-pointer rounded-lg border border-black/10 bg-white px-3 text-xs font-semibold hover:bg-black/5"
+                  >
+                    {REMOVE_UNAVAILABLE_LABEL}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {saleEnded ? (
             <div className="mb-2 text-xs font-medium" role="status">
               {SALE_ENDED_COPY}
@@ -694,6 +753,12 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           {deliveryLine ? (
             <div className="mt-1 flex items-center justify-between text-sm">
               <div className="text-black/60">{deliveryLine}</div>
+            </div>
+          ) : null}
+
+          {shippingLine && itemsArray.length > 0 ? (
+            <div className="mt-1 flex items-center justify-between text-sm">
+              <div className="text-black/60">{shippingLine}</div>
             </div>
           ) : null}
 

@@ -307,6 +307,138 @@ function resolveLocation(input: ShowEventInput): EventLocation | undefined {
   return undefined;
 }
 
+/**
+ * One row a listing page draws, as the renderer's `eventRows` describes it
+ * (F33). Declared here, structurally, so this module stays loadable by the
+ * plain-Node runner; `src/lib/seo/listingEvents.ts` passes the renderer's own
+ * `EventRow` objects straight in.
+ */
+export interface ListingEventRow {
+  /** The block that draws the row (its section id). */
+  blockId: string;
+  name: string;
+  start: { instant?: string; date?: string; timeZone?: string };
+  place: string | null;
+  anchor: string;
+  detailUrl: string | null;
+}
+
+export interface ListingEventsContext {
+  /** The site's durable origin (`resolveSiteOrigin`, surface `durable`), or null when none resolves. */
+  origin: string | null;
+  /** The listing page's own path on the site (`/`, `/events`, `/features/ai-sites`). */
+  pagePath: string;
+  /** IANA zone of the business (`siteDetails.values.timezone`). */
+  timezone?: string;
+  /** The site node's `@id`, for `organizer`. */
+  organizationId?: string;
+  /**
+   * The page config the rows were drawn from (the same `page` handed to
+   * `composePage` and `eventRows`). Read for its blocks' layouts only, never an
+   * item: it decides which blocks' rows are held back (`heldListingBlockIds`).
+   */
+  page: unknown;
+}
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * The blocks whose rows get no listing Event yet: every block drawn as
+ * What's On, nested children included (PR #227 review B1, owner option a).
+ *
+ * WHY. A What's On card draws the day plus the owner's TYPED time
+ * (`formatShowDate(readEventDate(r), normaliseTime(r.time), tz)` in the
+ * renderer's `WhatsOnLayout`), but renderer 1.97.0's `eventRows` gives its
+ * rows only the stored instant (`whatsOnRows`: `showDateStart(readEventDate(raw), tz)`),
+ * never that typed time. The instant's clock is not what the card says: The
+ * Comedy Collective's "Hotshots" card says 9:00 pm, the stored instant reads
+ * 01:00. Those shows' own pages already carry correct Events. Lift this when
+ * the renderer gives What's On rows the drawn time; `listingEvents.test.ts`
+ * has a tripwire that goes red on that day.
+ */
+export function heldListingBlockIds(page: unknown): Set<string> {
+  const held = new Set<string>();
+  const walk = (blocks: unknown) => {
+    if (!Array.isArray(blocks)) return;
+    for (const block of blocks) {
+      if (!isObject(block)) continue;
+      const type = isObject(block.type) ? block.type : {};
+      const config = isObject(block.config) ? block.config : {};
+      const bindings = Array.isArray(config.bindings) ? config.bindings : [];
+      const whatsOn = type.dispatchId === 'whats-on' || bindings.some((b) => isObject(b) && b.displayAs === 'whats-on');
+      if (whatsOn && typeof block.id === 'string') held.add(block.id);
+      walk(config.children);
+    }
+  };
+  walk(isObject(page) ? page.blocks : undefined);
+  return held;
+}
+
+/** At most this many Events on one listing page (owner decision OD-5, 2026-11-01). */
+export const MAX_LISTING_EVENTS = 50;
+
+/** `HH:MM` (24 hour) of `instant` on the wall clock of `timeZone`, or undefined for an unknown zone. */
+function wallClock(instant: string, timeZone: string): string | undefined {
+  const at = Date.parse(instant);
+  if (!Number.isFinite(at)) return undefined;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(at));
+    const hour = parts.find((p) => p.type === 'hour')?.value;
+    const minute = parts.find((p) => p.type === 'minute')?.value;
+    return hour && minute ? `${hour}:${minute}` : undefined;
+  } catch {
+    // An unknown IANA name: the show rule then gives the date alone.
+    return undefined;
+  }
+}
+
+/**
+ * Event JSON-LD for the rows a listing page draws (F33). Built ONLY from the
+ * renderer's `eventRows`, so the markup can never name a row, a date, a place
+ * or an anchor the page does not show; nothing here reads an item's fields.
+ * Each row goes through the show rules above (`buildShowEventJsonLd`): a valid
+ * date in the shop's zone and a real street address in the row's own place,
+ * or no Event. Never the business address: a row that names no place is not
+ * the business's own event as far as the page shows. `url` is the row's own
+ * page when it links to one, else the listing page plus the row's anchor.
+ * Nothing without an origin (an Event needs a durable `url`), and at most
+ * `MAX_LISTING_EVENTS`. What's On rows are held back for now (`heldListingBlockIds`).
+ */
+export function buildListingEventsJsonLd(
+  rows: readonly ListingEventRow[],
+  ctx: ListingEventsContext,
+): Array<Record<string, unknown>> {
+  if (!ctx.origin) return [];
+  const pageUrl = `${ctx.origin}${ctx.pagePath === '/' ? '/' : `/${ctx.pagePath.replace(/^\/+/, '')}`}`;
+  const held = heldListingBlockIds(ctx.page);
+  const events: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    if (events.length >= MAX_LISTING_EVENTS) break;
+    if (held.has(row.blockId)) continue;
+    const name = row.name.trim();
+    if (!name) continue;
+    const zone = row.start.timeZone ?? ctx.timezone;
+    const date = row.start.instant ?? row.start.date;
+    const clock = row.start.instant && zone ? wallClock(row.start.instant, zone) : undefined;
+    // A day stored as midnight on the shop's clock is a date with no time, the way
+    // owners pick one: the card draws the day, so the Event claims the day, never
+    // a midnight start (measured on a live shows list, T12; its show pages carry the
+    // typed time in their own Event).
+    const time = clock === '00:00' ? undefined : clock;
+    const result = buildShowEventJsonLd({
+      title: name,
+      url: row.detailUrl ? `${ctx.origin}${row.detailUrl}` : `${pageUrl}#${row.anchor}`,
+      date,
+      time,
+      location: row.place ?? undefined,
+      timezone: zone,
+      organizationId: ctx.organizationId,
+    });
+    if (result.schema) events.push(result.schema);
+  }
+  return events;
+}
+
 export function buildShowEventJsonLd(input: ShowEventInput): ShowEventResult {
   const startDate = showStartDate(input.date, input.time, input.timezone);
   if (!startDate) return { schema: null, skipped: 'no_date' };

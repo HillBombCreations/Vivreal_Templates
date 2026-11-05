@@ -36,6 +36,12 @@ export interface FloorSeamDeps {
 
 export interface FloorSeamRead<T> {
   readonly path: string;
+  /**
+   * The key the build's snapshot holds this read under, when the live path
+   * carries more than it (the shell read's `&v=<updatedAt>`, F41). The floor
+   * and the recorder use it; the live read uses `path`. Absent, it is `path`.
+   */
+  readonly floorPath?: string;
   readonly fallback: T;
   /** `{ floor: false }` from the caller: products and the filter list never use the floor. */
   readonly floorOptOut: boolean;
@@ -53,12 +59,13 @@ export async function readCachedWithFloor<T>(deps: FloorSeamDeps, req: FloorSeam
   if (req.preview) return req.preview();
 
   deps.floor.notePresence();
+  const floorPath = req.floorPath ?? req.path;
 
   const answerFromFloor = (reason: FloorReason, elapsedMs: number | null): T | undefined => {
     if (req.floorOptOut) return undefined;
-    const found = deps.floor.lookup<T>(req.path);
+    const found = deps.floor.lookup<T>(floorPath);
     if (!found.hit) return undefined;
-    deps.floor.noteAnswer(req.path, { reason, elapsedMs });
+    deps.floor.noteAnswer(floorPath, { reason, elapsedMs });
     return found.value;
   };
 
@@ -73,7 +80,7 @@ export async function readCachedWithFloor<T>(deps: FloorSeamDeps, req: FloorSeam
     req.path,
     async () => {
       const value = await req.read();
-      if (!req.floorOptOut) deps.recorder.record(req.path, value);
+      if (!req.floorOptOut) deps.recorder.record(floorPath, value);
       return value;
     },
     req.fallback,

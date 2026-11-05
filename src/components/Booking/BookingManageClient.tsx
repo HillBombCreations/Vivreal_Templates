@@ -29,6 +29,9 @@ export default function BookingManageClient({
   const [view, setView] = useState<View>({ kind: "loading" });
   const token = useRef<string>("");
 
+  // F102 (react-hooks 7): the token is read from the address, which exists only
+  // in the browser, once, on mount, so the expired-link state is set from here.
+  /* eslint-disable react-hooks/set-state-in-effect -- browser-only read on mount; no render can see the address */
   useEffect(() => {
     const url = new URL(window.location.href);
     const t = url.searchParams.get("t") ?? "";
@@ -62,6 +65,7 @@ export default function BookingManageClient({
       live = false;
     };
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const onCancel = useCallback(async (): Promise<BookingCancelResult> => {
     try {

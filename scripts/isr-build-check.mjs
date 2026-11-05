@@ -18,7 +18,12 @@
  *  2. starts `next start` and reads real responses: a page with no storefront
  *     answers `x-nextjs-cache: HIT` with `s-maxage=300` on the second read;
  *     a storefront page, a checkout result page, `/book` and an unlisted item
- *     answer `no-store`; nothing answers 500.
+ *     answer `no-store`; nothing answers 500;
+ *  3. (gate on) F41, the site version fence through the real `[slug]` route:
+ *     with the fixture's version route failing, an ordinary page reads the
+ *     shell exactly as before (no `v`); then a page the owner adds with NO
+ *     webhook answers 200 within one probe interval, its shell read carrying
+ *     the new `v` (before the fence it answered 404 for the whole cache TTL).
  *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
@@ -40,6 +45,10 @@ const APP_PORT = 4712;
 const REVALIDATE_SECRET = 'fixture-revalidate-secret';
 
 const block = (id, dispatchId, config = {}, order = 0) => ({ id, type: { kind: 'page-template', dispatchId }, order, enabled: true, config });
+
+/** F41: the page the owner adds after the build, with no webhook. */
+export const NEW_PAGE_SLUG = 'whats-new';
+export const NEW_PAGE_TEXT = 'Fresh this week at the fixture bakery';
 
 /** The owner's own page at the fixed route's address (review B1). */
 export const OWNER_BOOK_TEXT = 'Book a table with the fixture bakery';
@@ -93,9 +102,13 @@ export function fixtureSiteDetails(state = {}) {
       },
       { slug: 'blog', name: 'Blog', format: 'collection-list', detailPage: { enabled: true, itemCollectionId: POSTS, itemKeyField: 'slug' } },
       { slug: 'shop', name: 'Shop', format: 'catalog', blocks: [block('s1', 'products', { bindings: [{ collectionId: POSTS, role: 'primary' }] })] },
+      ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: NEW_PAGE_TEXT } })] }] : []),
     ],
   };
 }
+
+/** VR_Client_API's siteDetails query keys (`getSiteDetailsValidator`, with F41's optional `v`); any other is a 400. */
+const SITE_DETAILS_KEYS = new Set(['siteId', 'v']);
 
 export const FIXTURE_ITEMS = [
   { _id: '6a0000000000000000000d01', objectValue: { title: 'First loaf', slug: 'first-loaf', description: 'A loaf' }, publishDate: '2026-10-01T00:00:00.000Z' },
@@ -111,7 +124,17 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
       res.writeHead(status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(status < 300 ? { success: true, data } : { success: false, data: null, error: 'Not found' }));
     };
-    if (url.pathname === '/tenant/siteDetails') return send(200, fixtureSiteDetails(state));
+    if (url.pathname === '/tenant/siteDetails') {
+      // The shell read's query is logged (fixture ids only), so F41 can see `v`.
+      log(`${req.method} ${url.pathname}${url.search}`);
+      if ([...url.searchParams.keys()].some((key) => !SITE_DETAILS_KEYS.has(key))) return send(400, null);
+      return send(200, fixtureSiteDetails(state));
+    }
+    // F41 (CL7): the site's version, or a failure while `versionDown` is set.
+    if (url.pathname === '/tenant/siteVersion') {
+      if (state.versionDown) return send(500, null);
+      return send(200, { siteId: SITE_ID, updatedAt: state.updatedAt ?? '2026-11-01T00:00:00.000Z' });
+    }
     if (url.pathname === '/tenant/collectionObjects') {
       const list = url.searchParams.get('collectionId') === POSTS ? items : [];
       return send(200, { items: list, totalCount: list.length });
@@ -235,6 +258,28 @@ export function checkAfterFlip(flip, after) {
   return failures;
 }
 
+/**
+ * F41 through the real route. `down` is the ordinary page read while the
+ * version route failed and `downShellReads` the shell reads logged meanwhile;
+ * `before` is the new page's answer before the owner added it; `after` every
+ * read after (status, body); `shellReads` every shell read logged after the
+ * change.
+ */
+export function checkVersionFence({ down, downShellReads, before, after, shellReads, updatedAt }) {
+  const failures = [];
+  if (!down || down.status !== 200) failures.push(`an ordinary page answered ${down?.status} while the version route failed`);
+  const versioned = downShellReads.filter((p) => /[?&]v=/.test(p));
+  if (versioned.length) failures.push(`a shell read carried v while the version route failed: ${versioned.join(', ')}`);
+  if (!before || before.status !== 404) failures.push(`control: /${NEW_PAGE_SLUG} answered ${before?.status} before the owner added it`);
+  if (after.length === 0) failures.push('nothing was read after the change');
+  for (const r of after) if (r.status >= 500 || r.status === 0) failures.push(`/${NEW_PAGE_SLUG} answered ${r.status}`);
+  const shown = after.findIndex((r) => r.status === 200 && (r.body ?? '').includes(NEW_PAGE_TEXT));
+  if (shown === -1) failures.push(`/${NEW_PAGE_SLUG} never answered 200 with its page after the change (a stale 404)`);
+  const expected = `v=${encodeURIComponent(updatedAt)}`;
+  if (!shellReads.some((p) => p.includes(expected))) failures.push(`no shell read carried ${expected} after the change`);
+  return failures;
+}
+
 function run(cmd, args, opts) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32', ...opts });
@@ -286,8 +331,15 @@ async function main() {
   const gateOn = !process.argv.includes('--gate-off');
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const seen = new Set();
-  const state = { aboutStorefront: false };
-  const upstream = await startFixtureUpstream({ log: (line) => seen.add(line), state });
+  const shellReads = [];
+  const state = { aboutStorefront: false, newPage: false, versionDown: false, updatedAt: '2026-11-01T00:00:00.000Z' };
+  const upstream = await startFixtureUpstream({
+    log: (line) => {
+      if (line.startsWith('GET /tenant/siteDetails?')) shellReads.push(line.slice(4));
+      else seen.add(line);
+    },
+    state,
+  });
   const env = {
     ...process.env,
     NEXT_PUBLIC_CLIENT_API: `http://127.0.0.1:${UPSTREAM_PORT}`,
@@ -352,6 +404,32 @@ async function main() {
           await new Promise((res) => setTimeout(res, 1000));
         }
         failures.push(...checkAfterFlip(flip, after));
+
+        if (gateOn) {
+          // F41 REFUSE: the version route fails; an ordinary page reads the
+          // shell as before. Past one interval first, so a probe runs.
+          await new Promise((res) => setTimeout(res, 5500));
+          state.versionDown = true;
+          const downFrom = shellReads.length;
+          const down = await get('/menu');
+          const downShellReads = shellReads.slice(downFrom);
+          console.log(`  F41 version route down: ${down.status} /menu, shell reads ${JSON.stringify(downShellReads)}`);
+          // F41 ALLOW: the owner adds a page; no webhook is sent.
+          state.versionDown = false;
+          const before = await get(`/${NEW_PAGE_SLUG}`);
+          state.newPage = true;
+          state.updatedAt = new Date().toISOString();
+          const changeFrom = shellReads.length;
+          const afterChange = [];
+          for (let i = 0; i < 12; i += 1) {
+            await new Promise((res) => setTimeout(res, 1000));
+            const r = await get(`/${NEW_PAGE_SLUG}`);
+            afterChange.push({ status: r.status, body: r.body });
+            console.log(`  F41 after change +${i + 1}s: ${r.status} ${r.body.includes(NEW_PAGE_TEXT) ? 'new page' : 'not yet  '} /${NEW_PAGE_SLUG}`);
+            if (r.status === 200 && r.body.includes(NEW_PAGE_TEXT)) break;
+          }
+          failures.push(...checkVersionFence({ down, downShellReads, before, after: afterChange, shellReads: shellReads.slice(changeFrom), updatedAt: state.updatedAt }));
+        }
       }
     } finally {
       if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
@@ -362,6 +440,7 @@ async function main() {
   }
   upstream.close();
   console.log(`\nupstream paths read: ${[...seen].sort().join(', ')}`);
+  console.log(`shell reads: ${shellReads.length}, versioned ${shellReads.filter((p) => /[?&]v=/.test(p)).length}`);
   console.log(failures.length ? `\nFAIL (${gateOn ? 'gate on' : 'gate off'}):\n  ${failures.join('\n  ')}` : `\nPASS (${gateOn ? 'gate on' : 'gate off'})`);
   process.exit(failures.length ? 1 : 0);
 }

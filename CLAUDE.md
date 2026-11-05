@@ -25,7 +25,11 @@ node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lo
 node scripts/isr-build-check.mjs     # NOT in npm test (a full build, minutes). Builds against a
                                      # fixture Client API on 127.0.0.1 and checks the route table
                                      # and real cache headers. --gate-off checks SITE_RENDER_MODE unset.
-                                     # Run it on ANY change to [slug], [slug]/[itemId] or the layout.
+                                     # Run it on ANY change to [slug], [slug]/[itemId] or the layout,
+                                     # and on EVERY next bump: its F41 phase is the only real-route
+                                     # proof of the site version fence, which reads Next internals
+                                     # (lib/api/siteData/siteVersionFence.ts) and silently reads as
+                                     # before if they move.
 ```
 
 ### `npm test` runs `tsc --noEmit` first, and that is load-bearing
@@ -105,7 +109,7 @@ src/
 │   ├── PageTemplates/              # Format-specific composed pages (products, schedule, subscribe, …)
 │   ├── HomeSections/               # Home composition sections + EmailPopup
 │   ├── SiteAnalytics/, SiteBeacon/ # Two distinct analytics paths — see Key Patterns
-│   ├── JsonLd/                     # Structured data (site + detail; strips signed-URL params)
+│   ├── JsonLd/                     # Structured data (site, detail, and listing Events from the renderer's `eventRows`; strips signed-URL params)
 │   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
 │   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers

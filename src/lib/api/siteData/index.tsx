@@ -11,6 +11,8 @@ import * as Sentry from '@sentry/nextjs';
 import { cache } from 'react';
 import { clientFetchCached, floorAnswerFor, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { siteDetailsPath } from '@/lib/api/readPaths';
+import { readVersionedShell } from '@/lib/cacheInvalidation';
+import { shellReadVersion } from './siteVersionFence';
 import { hasSiteDetailsValues, resolveSiteDetailsRaw } from '@/lib/api/snapshot/resolve';
 import { isFloorValue, markFloorValue } from '@/lib/api/snapshot/floorValue';
 import { createCaptureThrottle } from '@/lib/api/captureThrottle';
@@ -179,12 +181,26 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
  */
 async function readSiteDetails(): Promise<{ raw: SiteDetailsResponse | null; fromFloor: boolean }> {
   const path = siteDetailsPath(SITE_ID);
-  const live = await clientFetchCached<SiteDetailsResponse | null>(
+  // F41 (OD-01): on an ordinary page served per request, the read carries the
+  // site's version, so a save is a new data-cache key on every instance and a
+  // new client.vivreal.io edge key. Anything else (home, a cached page, a
+  // route handler, a failed probe) reads `path` exactly as before, and a
+  // versioned read that does not come back live tries `path` before the floor
+  // (review N4). The floor keeps answering by `path`, the key the build wrote.
+  // See ./siteVersionFence and `readVersionedShell`.
+  const live = await readVersionedShell<SiteDetailsResponse | null>(
+    (readPath) =>
+      clientFetchCached<SiteDetailsResponse | null>(
+        readPath,
+        null,
+        SITE_DETAILS_REVALIDATE_SECONDS,
+        undefined,
+        SITE_CHROME_TAG,
+        { floorPath: path }
+      ),
     path,
-    null,
-    SITE_DETAILS_REVALIDATE_SECONDS,
-    undefined,
-    SITE_CHROME_TAG
+    await shellReadVersion(),
+    (value) => value !== null && value !== undefined && !isFloorValue(value)
   );
   const floor =
     live !== null && live !== undefined && !hasSiteDetailsValues(live)

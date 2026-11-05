@@ -54,6 +54,59 @@ export interface CartSettings {
    * the pickup time picker.
    */
   offerPickup: boolean;
+  /**
+   * F58 (OD-02): the owner's "Let customers choose a delivery day" switch,
+   * `cart.deliveryDay.on`. Only a stored `true` is on, as VR_Client_API reads
+   * it (`deliveryDayOn`), so the cart offers days exactly when checkout takes
+   * one. Off, the cart is today's and says the shop will confirm the day.
+   */
+  deliveryDay: { on: boolean };
+  /**
+   * F59 (OD-03, OD-04): the shop's flat shipping rates and "free over"
+   * amount, `cart.shipping`, read the way VR_Client_API charges them
+   * (`readShipping`): a rate that is not the saved shape is dropped, at most
+   * five, cents only. No rates is today's cart and today's free shipping.
+   */
+  shipping: { rates: ShipRate[]; freeOverCents: number | null };
+}
+
+/** One flat shipping rate as Secure S4 saves it; `id` is what checkout is sent. */
+export interface ShipRate {
+  id: string;
+  name: string;
+  amountCents: number;
+  estimate: string | null;
+}
+
+const SHIP_RATE_ID = /^[a-z0-9-]{1,40}$/;
+const MAX_SHIP_RATES = 5;
+
+function isShipRate(rate: unknown): rate is ShipRate {
+  if (typeof rate !== 'object' || rate === null || Array.isArray(rate)) return false;
+  const r = rate as Record<string, unknown>;
+  const name = typeof r.name === 'string' ? r.name.trim() : '';
+  return (
+    typeof r.id === 'string' && SHIP_RATE_ID.test(r.id) &&
+    name.length > 0 && name.length <= 40 &&
+    typeof r.amountCents === 'number' && Number.isInteger(r.amountCents) && r.amountCents >= 0 && r.amountCents <= 100000
+  );
+}
+
+/** `cart.shipping`, each rate only when it is the saved shape (Client's `readShipping`, rule for rule). */
+function readShipping(raw: unknown): CartSettings['shipping'] {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { rates: [], freeOverCents: null };
+  const shipping = raw as Record<string, unknown>;
+  const rates = Array.isArray(shipping.rates) ? shipping.rates.filter(isShipRate) : [];
+  const freeOver = shipping.freeOverCents;
+  return {
+    rates: rates.slice(0, MAX_SHIP_RATES).map((rate) => ({
+      id: rate.id,
+      name: rate.name.trim(),
+      amountCents: rate.amountCents,
+      estimate: typeof rate.estimate === 'string' && rate.estimate.trim() ? rate.estimate.trim() : null,
+    })),
+    freeOverCents: typeof freeOver === 'number' && Number.isInteger(freeOver) && freeOver > 0 ? freeOver : null,
+  };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -75,6 +128,7 @@ export function readCartSettings(raw: unknown): CartSettings {
       ? pickup.daysAhead
       : 7;
   const min = typeof c.minimumOrder === 'number' && Number.isFinite(c.minimumOrder) && c.minimumOrder > 0 ? c.minimumOrder : null;
+  const deliveryDay = isRecord(c.deliveryDay) ? c.deliveryDay : {};
   return {
     saved: isRecord(raw),
     title: text(c.title, 40, CART_DEFAULTS.title),
@@ -86,6 +140,8 @@ export function readCartSettings(raw: unknown): CartSettings {
     showDelivery: c.showDelivery !== false,
     showPromo: c.showPromo !== false,
     offerPickup: c.offerPickup !== false,
+    deliveryDay: { on: deliveryDay.on === true },
+    shipping: readShipping(c.shipping),
   };
 }
 
@@ -133,6 +189,18 @@ export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): Fulfi
     ...(settings.offerPickup ? (['pickup'] as const) : []),
     ...(settings.showDelivery && ways.deliveryOn ? (['delivery'] as const) : []),
   ];
+}
+
+/**
+ * F81 N-A2: a cart whose ONE way is Pickup draws no choice radio (there is
+ * nothing to choose), so it says how the order is got. Client fills the way
+ * in for that cart at checkout (F81 N-A1), and the order reads as a pickup.
+ */
+export const PICKUP_ONLY_LINE = "You'll pick up this order from the shop.";
+
+/** The pickup-only line, or null for any cart that offers another way or none. */
+export function pickupOnlyLine(choices: readonly FulfilmentKind[]): string | null {
+  return choices.length === 1 && choices[0] === 'pickup' ? PICKUP_ONLY_LINE : null;
 }
 
 /** Whether checkout from the quick "Added to bag" card or Buy now must open the cart first. */
@@ -185,14 +253,24 @@ export function checkoutChoice(input: {
   note: string;
   pickupAt: string | null;
   zip: string;
+  /** F58: the delivery day the shopper picked (`YYYY-MM-DD`), sent only with the switch on and Delivery chosen. */
+  deliveryOn?: string | null;
+  /** F59: the shipping rate picked in the cart, sent only with Ship chosen and only when it is one of the shop's rates. */
+  shipRateId?: string | null;
 }): CheckoutChoice {
   const { settings, choices, kind } = input;
-  const sendKind = kind !== null && (choices.length > 1 || kind === 'delivery' || (kind === 'pickup' && settings.pickup.on));
+  const shipRateId =
+    kind === 'ship' && input.shipRateId && settings.shipping.rates.some((rate) => rate.id === input.shipRateId) ? input.shipRateId : undefined;
+  // A picked rate names the way even when Ship is the only one, so checkout charges that rate.
+  const sendKind = kind !== null && (choices.length > 1 || kind === 'delivery' || (kind === 'pickup' && settings.pickup.on) || shipRateId !== undefined);
+  const deliveryOn = settings.deliveryDay.on && kind === 'delivery' && input.deliveryOn ? input.deliveryOn : undefined;
   return {
     note: settings.saved && settings.note.on ? input.note : '',
     kind: sendKind ? kind : undefined,
     pickupAt: input.pickupAt ?? undefined,
     zip: input.zip,
+    ...(deliveryOn ? { deliveryOn } : {}),
+    ...(shipRateId ? { shipRateId } : {}),
   };
 }
 
@@ -220,6 +298,8 @@ export function choiceBlock(input: {
 export const NO_PICKUP_TIMES = 'No pickup times right now.';
 
 const ZIP = /^\d{5}$/;
+/** A calendar day as VR_Client_API's checkout validator takes `deliveryOn` (`YYYY-MM-DD`). */
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?Z$/;
 // Every control character but tab, newline and carriage return (VR_Client_API's rule).
 const CONTROL = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(8)}${String.fromCharCode(11)}${String.fromCharCode(12)}${String.fromCharCode(14)}-${String.fromCharCode(31)}${String.fromCharCode(127)}]`, 'g');
@@ -235,11 +315,13 @@ export interface CheckoutChoice {
   kind?: FulfilmentKind;
   pickupAt?: string;
   zip?: string;
+  deliveryOn?: string;
+  shipRateId?: string;
 }
 
 export interface CheckoutExtras {
   note?: string;
-  fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string };
+  fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string; deliveryOn?: string; shipRateId?: string };
 }
 
 /**
@@ -252,9 +334,11 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
   const note = cleanNote(choice.note);
   if (note) out.note = note;
   if (choice.kind === 'delivery' && typeof choice.zip === 'string' && ZIP.test(choice.zip)) {
-    out.fulfilment = { kind: 'delivery', zip: choice.zip };
+    const day = typeof choice.deliveryOn === 'string' && DAY.test(choice.deliveryOn) ? choice.deliveryOn : null;
+    out.fulfilment = day ? { kind: 'delivery', zip: choice.zip, deliveryOn: day } : { kind: 'delivery', zip: choice.zip };
   } else if (choice.kind === 'ship') {
-    out.fulfilment = { kind: 'ship' };
+    out.fulfilment =
+      typeof choice.shipRateId === 'string' && SHIP_RATE_ID.test(choice.shipRateId) ? { kind: 'ship', shipRateId: choice.shipRateId } : { kind: 'ship' };
   } else if (choice.kind === 'pickup') {
     out.fulfilment = typeof choice.pickupAt === 'string' && ISO.test(choice.pickupAt) ? { kind: 'pickup', pickupAt: choice.pickupAt } : { kind: 'pickup' };
   }
@@ -263,7 +347,7 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
 
 /**
  * The server-side half: what `/api/checkout` forwards from a browser body.
- * Only `note` and `fulfilment.{kind,pickupAt,zip}`, re-checked here; any fee
+ * Only `note` and `fulfilment.{kind,pickupAt,zip,deliveryOn,shipRateId}`, re-checked here; any fee
  * key anywhere is dropped. Nothing without a site id, because VR_Client_API
  * reads the rules off the site and refuses either field without one.
  */
@@ -275,6 +359,8 @@ export function forwardedCheckoutExtras(body: unknown, siteIdPresent: boolean): 
     kind: f.kind === 'pickup' || f.kind === 'delivery' || f.kind === 'ship' ? f.kind : undefined,
     pickupAt: typeof f.pickupAt === 'string' ? f.pickupAt : undefined,
     zip: typeof f.zip === 'string' ? f.zip : undefined,
+    deliveryOn: typeof f.deliveryOn === 'string' ? f.deliveryOn : undefined,
+    shipRateId: typeof f.shipRateId === 'string' ? f.shipRateId : undefined,
   } as CheckoutChoice);
 }
 
@@ -296,6 +382,12 @@ export interface DeliveryQuote {
   pickupOffered: boolean;
   /** The server's sentence for this status, shown as is. */
   words: string;
+  /**
+   * F58 (CL5): the days the customer may pick (`YYYY-MM-DD`, the next 14 on
+   * the shop's clock), only on an in-area quote with the shop's delivery day
+   * switch on. Null when the quote carries none.
+   */
+  deliveryDates: string[] | null;
 }
 
 /** `cartQuote`'s `delivery` answer, or null when absent or malformed. */
@@ -305,7 +397,16 @@ export function readDeliveryQuote(raw: unknown): DeliveryQuote | null {
   if (typeof d.inArea !== 'boolean' || typeof d.words !== 'string' || !d.words.trim()) return null;
   const fee = typeof d.feeCents === 'number' && Number.isInteger(d.feeCents) && d.feeCents >= 0 ? d.feeCents : null;
   const status = typeof d.status === 'string' && d.status.trim() ? d.status.trim() : null;
-  return { inArea: d.inArea, status, feeCents: fee, waived: d.waived === true, pickupOffered: d.pickupOffered !== false, words: d.words.trim() };
+  const dates = Array.isArray(d.deliveryDates) ? d.deliveryDates.filter((day): day is string => typeof day === 'string' && DAY.test(day)) : null;
+  return {
+    inArea: d.inArea,
+    status,
+    feeCents: fee,
+    waived: d.waived === true,
+    pickupOffered: d.pickupOffered !== false,
+    words: d.words.trim(),
+    deliveryDates: d.inArea && dates ? dates : null,
+  };
 }
 
 export const PICKUP_IS_AVAILABLE = 'Pickup is available.';
@@ -328,6 +429,29 @@ export function deliveryAnswerLine(quote: DeliveryQuote, cartOffersPickup: boole
 
 /** Shown with Delivery chosen (F54 L-10 D11, owner answer 3): the cart takes no day. */
 export const DELIVERY_DAY_NOTE = 'The shop will confirm your delivery day.';
+
+/** F58: the heading over the days the shopper may pick. */
+export const CHOOSE_DELIVERY_DAY = 'Choose your delivery day';
+
+/**
+ * F58 (OD-02): what the Delivery section says about the day. With the
+ * switch off, today's note, word for word. With it on, nothing until the ZIP
+ * is checked (the days depend on the zone), then the quote's days to pick
+ * from, or the note when an in-area quote offers none (the shop arranges the
+ * day, as checkout does for a delivery that names none).
+ */
+export function deliveryDaySection(settings: CartSettings, quote: DeliveryQuote | null): { show: 'note' } | { show: 'days'; dates: string[] } | { show: 'none' } {
+  if (!settings.deliveryDay.on) return { show: 'note' };
+  if (!quote || !quote.inArea) return { show: 'none' };
+  return quote.deliveryDates && quote.deliveryDates.length > 0 ? { show: 'days', dates: quote.deliveryDates } : { show: 'note' };
+}
+
+/** A `YYYY-MM-DD` day as the cart's day buttons show it: "Sat Mar 7". */
+export function cartDayLabel(day: string): string {
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' })
+    .format(new Date(`${day}T12:00:00Z`))
+    .replace(',', '');
+}
 
 /**
  * The words under each line in the cart (F54 L-10 D7). Nothing when the
@@ -411,6 +535,54 @@ export function deliveryTotalLine(quote: DeliveryQuote | null): string | null {
   if (!quote || !quote.inArea) return null;
   if (quote.waived || quote.feeCents === 0) return 'Delivery free';
   return quote.feeCents === null ? null : `Delivery ${usd(quote.feeCents / 100)}`;
+}
+
+/** F59: the lowest rate, the first of equals in the shop's own order (Client's `lowestShipRate`), or null. */
+export function lowestShipRate(rates: readonly ShipRate[]): ShipRate | null {
+  return rates.reduce<ShipRate | null>((low, rate) => (low === null || rate.amountCents < low.amountCents ? rate : low), null);
+}
+
+/**
+ * F59: the cart line when the shop has rates, "Shipping from $6, free over
+ * $50" (the second half only with a free-over amount), or null. "From" is
+ * true of Buy now too: with no pick checkout charges the lowest rate.
+ */
+export function shippingFromLine(shipping: CartSettings['shipping']): string | null {
+  const lowest = lowestShipRate(shipping.rates);
+  if (!lowest) return null;
+  const from = `Shipping from ${usd(lowest.amountCents / 100)}`;
+  return shipping.freeOverCents !== null ? `${from}, free over ${usd(shipping.freeOverCents / 100)}` : from;
+}
+
+export const CHOOSE_SHIPPING = 'Choose shipping';
+export const FREE_SHIPPING = 'Free shipping';
+
+/**
+ * F59: what the cart shows about shipping once the way is Ship: the rates to
+ * pick from, or "Free shipping" when the total after the code reaches the
+ * free-over amount (checkout then charges $0 whichever rate), or nothing for
+ * another way or a shop without rates.
+ */
+export function shippingSection(
+  settings: CartSettings,
+  kind: FulfilmentKind | null,
+  totalDollars: number,
+): { show: 'none' } | { show: 'free' } | { show: 'rates'; rates: ShipRate[] } {
+  const { rates, freeOverCents } = settings.shipping;
+  if (kind !== 'ship' || rates.length === 0) return { show: 'none' };
+  if (freeOverCents !== null && Math.round(totalDollars * 100) >= freeOverCents) return { show: 'free' };
+  return { show: 'rates', rates };
+}
+
+/** F59: the shopper's rate, their pick while it is still offered, else the lowest; null without rates. */
+export function currentShipRate(rates: readonly ShipRate[], picked: string | null): string | null {
+  if (picked && rates.some((rate) => rate.id === picked)) return picked;
+  return lowestShipRate(rates)?.id ?? null;
+}
+
+/** A rate's price as the list shows it: "$6", "$6.50", or "Free" for $0. */
+export function shipRateAmount(rate: ShipRate): string {
+  return rate.amountCents === 0 ? 'Free' : usd(rate.amountCents / 100);
 }
 
 /** The ZIP as the cart sends it, or null. */

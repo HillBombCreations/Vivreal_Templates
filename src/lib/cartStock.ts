@@ -197,6 +197,25 @@ export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): {
   return { cart: next, changed };
 }
 
+/**
+ * Client F30: the bag without the lines checkout said it no longer sells
+ * (by checkout price id), and the names it took out, for the one-tap
+ * "Remove from bag". A line checkout did not name stays as it is.
+ */
+export function withoutUnavailableLines(cart: Cart, priceIds: readonly string[]): { cart: Cart; removed: string[] } {
+  const gone = new Set(priceIds);
+  const next: Cart = {};
+  const removed: string[] = [];
+  for (const [key, line] of Object.entries(cart)) {
+    if (gone.has(line.priceID)) removed.push(line.name);
+    else next[key] = line;
+  }
+  return { cart: next, removed };
+}
+
+/** The bag's one-tap button for lines checkout no longer sells. */
+export const REMOVE_UNAVAILABLE_LABEL = "Remove from bag";
+
 /** Shown when checkout refuses for stock and the bag cannot tell which line. */
 export const STOCK_REFUSAL_FALLBACK_COPY =
   "Some of your bag has sold out since you added it. Lower the amount, then try again.";

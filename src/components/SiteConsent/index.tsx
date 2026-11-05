@@ -135,6 +135,7 @@ export default function SiteConsent({
     // Ads conversions (customer sites only) fire later, from a result, and
     // only after an Accept; see lib/adsTag.ts `fireAdsConversion`.
     configureAdsConversions(!vivrealOwnSite && customerTags ? readAdsConfig(analytics) : null);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the stored choice lives in the browser; restoring it on mount is the D3 fix (F102: react-hooks 7)
     setState(runConsentMount(gate, vendors, ga, opts));
     // `vendors` and `vivrealOwnSite` are both derived from server-rendered
     // props and are stable for the page's lifetime; re-running this effect

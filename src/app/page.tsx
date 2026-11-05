@@ -8,6 +8,8 @@ import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage, renderedHeroFor } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEventsJsonLd } from "@/lib/seo/listingEvents";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import { darkRenderedHero } from "@/components/Navigation/darkRenderedHero";
@@ -86,6 +88,8 @@ async function Resolved() {
           would buy nothing and put a client component above the whole page. */}
       <RichTextImages map={richTextImageUrls}>{composePage(input)}</RichTextImages>
       <Footer />
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, input, "/")} />
     </>
   );
 }
