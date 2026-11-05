@@ -7,7 +7,7 @@
  * `site.updated` with the page's `slug`. Every page render reads its page
  * through `getSiteData()`, whose read carries `site:<SITE_ID>`, so dropping
  * that one tag refreshes the saved page whatever its address; no per-path
- * purge is needed. `revalidateTags.test.ts` pins both halves.
+ * purge is needed. `src/lib/pages/pageReadsQuery.test.ts` pins both halves.
  */
 /**
  * Derive the cache tags to invalidate from a webhook event. Returns the set of
