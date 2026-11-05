@@ -37,6 +37,8 @@ import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPag
 import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEventsJsonLd } from "@/lib/seo/listingEvents";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import type { PageContextResult } from "@/lib/api/composition/buildPageContext";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
@@ -833,28 +835,26 @@ async function ComposedFormatBody({
   }
 
   // H177: resolver around the composed body. See src/components/RichTextImages.
+  const composeInput =
+    components || scheduleView || suppressSrTitle
+      ? {
+          ...input,
+          options: {
+            ...input.options!,
+            ...(components ? { components } : {}),
+            // S2/OD#3: thread the validated ?view= param so the coordinated
+            // schedule arm can pass it as `initialView` to the override.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(scheduleView ? ({ scheduleView } as any) : {}),
+            // §11.8: the transitional title band owns the page h1 — the
+            // renderer's sr-only fallback must not stack a second one.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
+          },
+        }
+      : input;
   const composedBody = (
-      <RichTextImages map={richTextImageUrls}>
-      {composePage(
-        components || scheduleView || suppressSrTitle
-          ? {
-              ...input,
-              options: {
-                ...input.options!,
-                ...(components ? { components } : {}),
-                // S2/OD#3: thread the validated ?view= param so the coordinated
-                // schedule arm can pass it as `initialView` to the override.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ...(scheduleView ? ({ scheduleView } as any) : {}),
-                // §11.8: the transitional title band owns the page h1 — the
-                // renderer's sr-only fallback must not stack a second one.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
-              },
-            }
-          : input,
-      )}
-      </RichTextImages>
+    <RichTextImages map={richTextImageUrls}>{composePage(composeInput)}</RichTextImages>
   );
 
   return (
@@ -878,6 +878,8 @@ async function ComposedFormatBody({
       {format === "checkout-success" && <RecordPurchaseGoal />}
       {/* RW4-6: a failed list read on a page with other content. See the component. */}
       {listReadFailed && <ListLoadFailedNotice />}
+      {/* F33: Event markup for the dated rows this body draws, from the same input. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ""}`)} />
       {/* TB-5: "Order confirmed!" only for an order the server confirmed paid.
           See ConfirmedOrderGate.tsx and lib/orderConfirmationGate.ts. */}
       {format === "checkout-success" ? (

@@ -307,6 +307,89 @@ function resolveLocation(input: ShowEventInput): EventLocation | undefined {
   return undefined;
 }
 
+/**
+ * One row a listing page draws, as the renderer's `eventRows` describes it
+ * (F33). Declared here, structurally, so this module stays loadable by the
+ * plain-Node runner; `src/lib/seo/listingEvents.ts` passes the renderer's own
+ * `EventRow` objects straight in.
+ */
+export interface ListingEventRow {
+  name: string;
+  start: { instant?: string; date?: string; timeZone?: string };
+  place: string | null;
+  anchor: string;
+  detailUrl: string | null;
+}
+
+export interface ListingEventsContext {
+  /** The site's durable origin (`resolveSiteOrigin`, surface `durable`), or null when none resolves. */
+  origin: string | null;
+  /** The listing page's own path on the site (`/`, `/events`, `/features/ai-sites`). */
+  pagePath: string;
+  /** IANA zone of the business (`siteDetails.values.timezone`). */
+  timezone?: string;
+  /** The site node's `@id`, for `organizer`. */
+  organizationId?: string;
+}
+
+/** At most this many Events on one listing page (owner decision OD-5, 2026-11-01). */
+export const MAX_LISTING_EVENTS = 50;
+
+/** `HH:MM` (24 hour) of `instant` on the wall clock of `timeZone`, or undefined for an unknown zone. */
+function wallClock(instant: string, timeZone: string): string | undefined {
+  const at = Date.parse(instant);
+  if (!Number.isFinite(at)) return undefined;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(at));
+    const hour = parts.find((p) => p.type === 'hour')?.value;
+    const minute = parts.find((p) => p.type === 'minute')?.value;
+    return hour && minute ? `${hour}:${minute}` : undefined;
+  } catch {
+    // An unknown IANA name: the show rule then gives the date alone.
+    return undefined;
+  }
+}
+
+/**
+ * Event JSON-LD for the rows a listing page draws (F33). Built ONLY from the
+ * renderer's `eventRows`, so the markup can never name a row, a date, a place
+ * or an anchor the page does not show; nothing here reads an item's fields.
+ * Each row goes through the show rules above (`buildShowEventJsonLd`): a valid
+ * date in the shop's zone and a real street address in the row's own place,
+ * or no Event. Never the business address: a row that names no place is not
+ * the business's own event as far as the page shows. `url` is the row's own
+ * page when it links to one, else the listing page plus the row's anchor.
+ * Nothing without an origin (an Event needs a durable `url`), and at most
+ * `MAX_LISTING_EVENTS`.
+ */
+export function buildListingEventsJsonLd(
+  rows: readonly ListingEventRow[],
+  ctx: ListingEventsContext,
+): Array<Record<string, unknown>> {
+  if (!ctx.origin) return [];
+  const pageUrl = `${ctx.origin}${ctx.pagePath === '/' ? '/' : `/${ctx.pagePath.replace(/^\/+/, '')}`}`;
+  const events: Array<Record<string, unknown>> = [];
+  for (const row of rows) {
+    if (events.length >= MAX_LISTING_EVENTS) break;
+    const name = row.name.trim();
+    if (!name) continue;
+    const zone = row.start.timeZone ?? ctx.timezone;
+    const date = row.start.instant ?? row.start.date;
+    const time = row.start.instant && zone ? wallClock(row.start.instant, zone) : undefined;
+    const result = buildShowEventJsonLd({
+      title: name,
+      url: row.detailUrl ? `${ctx.origin}${row.detailUrl}` : `${pageUrl}#${row.anchor}`,
+      date,
+      time,
+      location: row.place ?? undefined,
+      timezone: zone,
+      organizationId: ctx.organizationId,
+    });
+    if (result.schema) events.push(result.schema);
+  }
+  return events;
+}
+
 export function buildShowEventJsonLd(input: ShowEventInput): ShowEventResult {
   const startDate = showStartDate(input.date, input.time, input.timezone);
   if (!startDate) return { schema: null, skipped: 'no_date' };

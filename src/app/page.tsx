@@ -8,6 +8,8 @@ import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import { composePage, renderedHeroFor } from "@hillbombcreations/site-renderer";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEventsJsonLd } from "@/lib/seo/listingEvents";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
 import Navbar from "@/components/Navigation/Navbar";
 import { darkRenderedHero } from "@/components/Navigation/darkRenderedHero";
@@ -84,6 +86,8 @@ async function Resolved() {
       {/* H177: the resolver wraps the COMPOSED BODY only. Navbar and Footer are
           Templates chrome and carry no CMS rich text, so widening the boundary
           would buy nothing and put a client component above the whole page. */}
+      {/* F33: Event markup for the dated rows this body draws, from the same input. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, input, "/")} />
       <RichTextImages map={richTextImageUrls}>{composePage(input)}</RichTextImages>
       <Footer />
     </>
