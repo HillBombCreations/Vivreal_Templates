@@ -25,6 +25,14 @@ async function reportRejection(upstreamStatus: number | undefined): Promise<void
   );
 }
 
+/**
+ * F103: VR_Client_API answers 429 when a shop's reviews arrive faster than it
+ * takes them (REVIEW_RATE_LIMIT). The review form shows a server `error` first
+ * (the renderer's `resolveErrorMessage`), so the visitor reads this and sends
+ * it again later. A by-design answer, so not reported as a lost review.
+ */
+const REVIEW_RATE_LIMITED = "Lots of reviews are coming in right now. Try again shortly.";
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -40,6 +48,10 @@ export async function POST(req: Request) {
       // Pass the honeypot through so the backend's spam check receives it.
       company_website: body.company_website,
     });
+
+    if (!result.ok && result.status === 429) {
+      return NextResponse.json({ success: false, error: REVIEW_RATE_LIMITED }, { status: 429 });
+    }
 
     if (!result.ok) {
       await reportRejection(result.status);
