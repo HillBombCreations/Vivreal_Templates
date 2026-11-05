@@ -7,6 +7,7 @@ import {
   CHOOSE_DELIVERY_DAY,
   CHOOSE_SHIPPING,
   FREE_SHIPPING,
+  pickupOnlyLine,
   shipRateAmount,
   cleanZip,
   DELIVERY_DAY_NOTE,
@@ -98,6 +99,8 @@ export default function CartChoices({
   const zoneNote = useMemo(() => shopTimeZoneNote(timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone), [timeZone]);
   // F58: the day note, the days to pick, or nothing until the ZIP is checked.
   const daySection = deliveryDaySection(settings, delivery);
+  // F81 N-A2: one way, Pickup: no radio to read, so say it.
+  const pickupOnly = pickupOnlyLine(choices);
 
   return (
     <div className="mb-3 space-y-3">
@@ -122,6 +125,12 @@ export default function CartChoices({
               {FULFILMENT_LABELS[option]}
             </button>
           ))}
+        </div>
+      ) : null}
+
+      {pickupOnly ? (
+        <div className="text-xs font-medium" role="status">
+          {pickupOnly}
         </div>
       ) : null}
 

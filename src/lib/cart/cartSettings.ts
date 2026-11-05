@@ -191,6 +191,18 @@ export function fulfilmentChoices(settings: CartSettings, ways: ShopWays): Fulfi
   ];
 }
 
+/**
+ * F81 N-A2: a cart whose ONE way is Pickup draws no choice radio (there is
+ * nothing to choose), so it says how the order is got. Client fills the way
+ * in for that cart at checkout (F81 N-A1), and the order reads as a pickup.
+ */
+export const PICKUP_ONLY_LINE = "You'll pick up this order from the shop.";
+
+/** The pickup-only line, or null for any cart that offers another way or none. */
+export function pickupOnlyLine(choices: readonly FulfilmentKind[]): string | null {
+  return choices.length === 1 && choices[0] === 'pickup' ? PICKUP_ONLY_LINE : null;
+}
+
 /** Whether checkout from the quick "Added to bag" card or Buy now must open the cart first. */
 export function cartNeedsChoices(settings: CartSettings, ways: ShopWays): boolean {
   if (!settings.saved) return false;
