@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkManifest, checkResponses, routeTable } from './isr-build-check.mjs';
+import { NEW_PAGE_TEXT, OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkManifest, checkResponses, checkVersionFence, routeTable } from './isr-build-check.mjs';
 
 const GOOD = {
   routes: {
@@ -90,4 +90,23 @@ test('route table rows', () => {
     { route: '/[slug]', kind: 'fallback' },
     { route: '/a', kind: 'static' },
   ]);
+});
+
+test('F41: the fence phase passes only on the plain read while down, a 404 before, then the new page with its v', () => {
+  const at = '2026-11-05T01:02:03.000Z';
+  const good = {
+    down: { status: 200 },
+    downShellReads: ['/tenant/siteDetails?siteId=6a0000000000000000000a01'],
+    before: { status: 404 },
+    after: [{ status: 404, body: '' }, { status: 200, body: `<h2>${NEW_PAGE_TEXT}</h2>` }],
+    shellReads: [`/tenant/siteDetails?siteId=6a0000000000000000000a01&v=${encodeURIComponent(at)}`],
+    updatedAt: at,
+  };
+  assert.deepEqual(checkVersionFence(good), []);
+  assert.equal(checkVersionFence({ ...good, after: [{ status: 404, body: '' }, { status: 404, body: '' }] }).length, 1, 'a stale 404 fails');
+  assert.equal(checkVersionFence({ ...good, downShellReads: [`${good.downShellReads[0]}&v=x`] }).length, 1, 'v while the version route failed fails');
+  assert.equal(checkVersionFence({ ...good, shellReads: [good.downShellReads[0]] }).length, 1, 'no versioned read fails');
+  assert.equal(checkVersionFence({ ...good, before: { status: 200 } }).length, 1, 'the control must be a 404');
+  assert.equal(checkVersionFence({ ...good, after: [] }).length, 2, 'nothing read is not a pass');
+  assert.equal(checkVersionFence({ ...good, after: [{ status: 500, body: '' }, good.after[1]] }).length, 1, 'a 500 fails');
 });

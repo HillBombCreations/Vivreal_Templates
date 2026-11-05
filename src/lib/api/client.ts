@@ -27,6 +27,7 @@ import {
   statSnapshotFile,
 } from './snapshot/snapshotFile';
 import { parseSiteCacheTtlSeconds } from '../siteCacheTtl';
+import { siteVersionPath } from '../cacheInvalidation';
 
 export { ApiError, isQuotaError };
 
@@ -232,6 +233,16 @@ export async function clientFetch<T>(
 }
 
 /**
+ * F41: VR_Client_API's site version (`GET /tenant/siteVersion`, CL7), the
+ * envelope's `data` or a throw. Never cached and never a preview read: it is
+ * the question "has the site changed", asked by `./siteData/siteVersionFence.ts`
+ * at most once per 5 s per instance, aborted by `signal` on its timeout.
+ */
+export async function fetchSiteVersion(siteId: string, signal: AbortSignal): Promise<unknown> {
+  return doClientFetch<unknown>(CLIENT_API, siteVersionPath(siteId), null, { signal });
+}
+
+/**
  * Safe version — returns fallback on error instead of throwing.
  * Re-throws ApiError with status 402 (quota exceeded) so the page can render
  * the QuotaExceeded component.
@@ -311,7 +322,7 @@ export async function clientFetchCached<T>(
   revalidateSeconds: number,
   init?: RequestInit,
   tags?: string[],
-  opts?: { floor?: boolean }
+  opts?: { floor?: boolean; floorPath?: string }
 ): Promise<T> {
   const previewToken = await readPreviewToken();
 
@@ -346,6 +357,7 @@ export async function clientFetchCached<T>(
     },
     {
       path,
+      ...(opts?.floorPath ? { floorPath: opts.floorPath } : {}),
       fallback,
       floorOptOut: opts?.floor === false,
       // Never cache preview traffic, and never answer it from the floor.
