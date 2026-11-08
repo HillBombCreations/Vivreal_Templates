@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { execFile, execSync, spawnSync } from "node:child_process";
+import { execFile, execSync, spawn, spawnSync } from "node:child_process";
 
 import { createAwsCliClient } from "./fleet-build.mjs";
 
@@ -62,10 +62,17 @@ test("REFUSE: every child_process door to the AWS CLI throws before a process st
   assert.throws(() => execFile("C:/Program Files/Amazon/AWSCLIV2/aws.exe", ["--version"]), REFUSED);
   assert.throws(() => spawnSync("AWS.CMD", ["--version"]), REFUSED);
   assert.throws(() => execSync("aws --version"), REFUSED);
+  // review-t-pr227.md pass 3, N4: a whole command line handed to spawn with a
+  // shell, and a quoted path with a space in it. `--version` only: if the
+  // guard ever misses these, nothing reaches AWS.
+  assert.throws(() => spawn("aws --version", { shell: true }), REFUSED);
+  assert.throws(() => execSync('"C:/Program Files/Amazon/AWSCLIV2/aws.exe" --version'), REFUSED);
 
   const out = await new Promise((resolve, reject) => {
     execFile(process.execPath, ["-e", "process.stdout.write('ran')"], (err, stdout) => (err ? reject(err) : resolve(stdout)));
   });
   assert.equal(out, "ran");
   assert.equal(execSync(`"${process.execPath}" -e "process.stdout.write('ran')"`, { encoding: "utf8" }), "ran");
+  const shellRun = spawnSync(`"${process.execPath}" -e "process.stdout.write('ran')"`, { shell: true, encoding: "utf8" });
+  assert.equal(shellRun.stdout, "ran", "a whole command line for another program still runs");
 });

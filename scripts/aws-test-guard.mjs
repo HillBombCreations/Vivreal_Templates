@@ -52,8 +52,18 @@ process.env.AWS_EC2_METADATA_DISABLED = 'true';
 
 /** `aws`, `aws.exe` or `aws.cmd`, by any path, in any letter case. */
 const isAwsCli = (file) => /^aws(\.exe|\.cmd)?$/i.test(path.basename(String(file)));
+/** The program a shell command line starts: the quoted path it opens with, or its first word. */
+function programOf(commandLine) {
+  const text = String(commandLine).trim();
+  const quote = text[0];
+  if (quote === '"' || quote === "'") {
+    const end = text.indexOf(quote, 1);
+    return end === -1 ? text.slice(1) : text.slice(1, end);
+  }
+  return text.split(/\s+/)[0] ?? '';
+}
 /** A shell command line whose program is the AWS CLI. */
-const isAwsCommandLine = (command) => isAwsCli(String(command).trim().split(/\s+/)[0] ?? '');
+const isAwsCommandLine = (command) => isAwsCli(programOf(command));
 
 function refuse(api, what) {
   throw new Error(`${AWS_TEST_GUARD_REFUSAL} (${api} ${what})`);
@@ -62,14 +72,16 @@ function refuse(api, what) {
 for (const api of ['execFile', 'execFileSync', 'spawn', 'spawnSync']) {
   const original = childProcess[api];
   childProcess[api] = function awsTestGuard(file, ...rest) {
-    if (isAwsCli(file)) refuse(api, file);
+    // A whole command line as the file (`spawn("aws amplify ...", { shell: true })`)
+    // is read like `exec`'s (review-t-pr227.md pass 3, N4).
+    if (isAwsCli(file) || isAwsCommandLine(file)) refuse(api, programOf(file));
     return original.call(this, file, ...rest);
   };
 }
 for (const api of ['exec', 'execSync']) {
   const original = childProcess[api];
   childProcess[api] = function awsTestGuard(command, ...rest) {
-    if (isAwsCommandLine(command)) refuse(api, String(command).trim().split(/\s+/)[0]);
+    if (isAwsCommandLine(command)) refuse(api, programOf(command));
     return original.call(this, command, ...rest);
   };
 }
