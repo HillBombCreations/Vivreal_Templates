@@ -4,6 +4,10 @@
  * paired with an ALLOW case (a build that must start), so a selector that
  * starts nothing, or everything, cannot pass both.
  */
+// First, so the fake AWS credentials and the CLI refusal are in place before
+// `./fleet-build.mjs` loads, however this file is run (`npm test` preloads it
+// as well). See ./aws-test-guard.mjs.
+import "./aws-test-guard.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
