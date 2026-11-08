@@ -1,4 +1,5 @@
-// Loader for `../scrubbedCapture.sdk.test.ts` ONLY. It is the subscribe
+// Loader for `../scrubbedCapture.sdk.test.ts` and
+// `src/lib/sentry/requestBody.sdk.test.ts` ONLY. It is the subscribe
 // route's loader (`src/app/api/subscribe/testSupport/routeLoader.mjs`, which
 // fakes `next/server`, `server-only` and the config half of
 // `@/lib/api/client`) with ONE difference: `@sentry/nextjs` resolves to

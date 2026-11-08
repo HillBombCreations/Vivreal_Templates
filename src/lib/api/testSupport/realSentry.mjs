@@ -1,5 +1,6 @@
 // The REAL `@sentry/nextjs`, loaded ONLY through `realSentryLoader.mjs` for
-// `../scrubbedCapture.sdk.test.ts`. Nothing about the SDK is faked: this is
+// `../scrubbedCapture.sdk.test.ts` and `src/lib/sentry/requestBody.sdk.test.ts`.
+// Nothing about the SDK is faked: this is
 // the package's Node server build (`exports["."].node`,
 // `build/cjs/index.server.js`), the same one a Templates route runs on.
 //
@@ -39,6 +40,12 @@ export function init(options) {
 }
 
 export const withScope = Sentry.withScope;
+// `src/instrumentation.ts` builds its Http integration with this (the
+// request-body switch); the route wrapper is the SDK's own capture of a route
+// handler that throws, which `src/lib/sentry/requestBody.sdk.test.ts` drives.
+export const httpIntegration = Sentry.httpIntegration;
+export const wrapRouteHandlerWithSentry = Sentry.wrapRouteHandlerWithSentry;
+export const captureException = Sentry.captureException;
 export const captureMessage = Sentry.captureMessage;
 export const flush = Sentry.flush;
 export const close = Sentry.close;

@@ -1,6 +1,7 @@
 /**
- * Credentials and the visitor's IP never leave in a Sentry event (next release
- * 2026-11, plan 3.PII, T8; owner Q14).
+ * Credentials, the visitor's IP and the request body never leave in a Sentry
+ * event (next release 2026-11, plan 3.PII, T8; owner Q14; the body since the
+ * open-backlog release).
  *
  * `sendDefaultPii: false` (set explicitly in all three Templates inits) only
  * stops the SDK adding the IP itself: measured on the fleet's SDKs, the
@@ -20,7 +21,17 @@
  *    (`tracesSampleRate: 0`), so no transaction or span is sent today; the
  *    transaction hook and the span walk are here so turning tracing on can
  *    never ship these keys;
- *  - the same header and attribute keys from a breadcrumb's `data`.
+ *  - the same header and attribute keys from a breadcrumb's `data`;
+ *  - `request.data`, the request BODY, whatever its shape (open-backlog
+ *    release 2026-11, Sentry body leak). The Node SDK reads every JSON and
+ *    form body a request carries (it wraps `req.on("data")`, which Next 16
+ *    reads bodies with) and attaches it to every event of that request,
+ *    whatever `sendDefaultPii` says. On this site that is a contact form's
+ *    name, email, phone and message, or a booking's. The Node init also
+ *    stops the SDK reading the body at all
+ *    (`maxIncomingRequestBodySize: "none"`, `src/instrumentation.ts`); this
+ *    delete is the hook's half, and the only one the edge and browser
+ *    inits have.
  *
  * One list for the whole fleet, never this repo's own names (plan 3.PII,
  * Revision 26, 33 names): the 4 always-names, the 21 found by the unfiltered
@@ -100,14 +111,15 @@ function deleteSecretHeaderAttributes(data: unknown): void {
 }
 
 /**
- * `beforeSend` and `beforeSendTransaction`: the event, with every credential
- * and the IP removed in place. Never drops the event and never throws on a
- * shape it does not expect.
+ * `beforeSend` and `beforeSendTransaction`: the event, with every credential,
+ * the IP and the request body removed in place. Never drops the event and
+ * never throws on a shape it does not expect.
  */
 export function scrubCredentials<E>(event: E): E {
   if (!isBag(event)) return event;
   const request = event.request;
   if (isBag(request)) {
+    delete request.data;
     delete request.cookies;
     deleteSecretHeaders(request.headers);
   }

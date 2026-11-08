@@ -129,6 +129,45 @@ test('REFUSE: a breadcrumb carries no listed header or cookie key; ALLOW: its ur
   assert.deepEqual(crumb.data, { url: 'https://client.vivreal.io/tenant/siteDetails', status_code: 200 });
 });
 
+/**
+ * Open-backlog release 2026-11, Sentry body leak: the request BODY. The Node
+ * SDK attaches a JSON or form body as a string; the Express-shaped fleet
+ * services attach a parsed object or a Buffer. The hook runs in all three
+ * Templates runtimes, so every shape goes, on an error and on a transaction.
+ * `requestBody.sdk.test.ts` proves the same thing through the real SDK.
+ */
+test('REFUSE: no request body of any shape leaves, on an error or a transaction', () => {
+  const NAME = 'Sentinel Bodyname 5e1a';
+  const EMAIL = 'sentinel-body-5e1a@visitor.example';
+  const PHONE = '+1 415 555 0193';
+  const MESSAGE = 'sentinel body message 5e1a';
+  const shapes: unknown[] = [
+    JSON.stringify({ name: NAME, customerEmail: EMAIL, phone: PHONE, message: MESSAGE }),
+    new URLSearchParams({ name: NAME, email: EMAIL, phone: PHONE, message: MESSAGE }).toString(),
+    { name: NAME, customerEmail: EMAIL, phone: PHONE, message: MESSAGE },
+    { type: 'Buffer', data: [...Buffer.from(`${NAME} ${EMAIL} ${PHONE} ${MESSAGE}`)] },
+  ];
+  // Positive control for the text search below: three of the four shapes carry
+  // the marker as text (the Buffer carries it as bytes, which the key check covers).
+  assert.equal(shapes.filter((data) => JSON.stringify(data).includes('5e1a')).length, 3);
+  for (const type of [undefined, 'transaction'] as const) {
+    for (const data of shapes) {
+      const event = { ...(type ? { type } : {}), request: { method: 'POST', url: 'https://shop.example/api/contact', data } };
+      const out = scrubCredentials(event);
+      assert.equal('data' in out.request, false, `request.data left on a ${type ?? 'error'} event`);
+      const raw = JSON.stringify(out);
+      for (const s of ['5e1a', 'Bodyname', 'visitor.example', '0193']) assert.ok(!raw.includes(s), `${s} survived`);
+    }
+  }
+});
+
+test('ALLOW: the hook keeps the request method, URL, query and harmless headers when it removes the body', () => {
+  const out = scrubCredentials({
+    request: { method: 'POST', url: 'https://shop.example/api/booking/create', query_string: 'a=1', data: '{"name":"x"}', headers: { accept: 'a' } },
+  });
+  assert.deepEqual(out.request, { method: 'POST', url: 'https://shop.example/api/booking/create', query_string: 'a=1', headers: { accept: 'a' } });
+});
+
 test('ALLOW: shapes the hooks do not expect pass through untouched and never throw', () => {
   for (const v of [null, undefined, 'x', 1, {}, { request: null }, { request: { headers: 'x' } }, { contexts: { trace: null } }, { spans: 'x' }]) {
     assert.doesNotThrow(() => scrubCredentials(v));

@@ -7,7 +7,8 @@
 // `next/server` and `@sentry/nextjs` cannot be loaded as-is under plain node.
 //
 // What is faked, and only this:
-//   - `next/server`: `NextResponse.json` returns a plain `{ status, body }`.
+//   - `next/server`: `NextResponse.json` returns a plain `{ status, body }`;
+//     `NextRequest` is an empty class (a type-only name).
 //   - `@sentry/nextjs`: the contact route's controllable stub, the same file,
 //     so the test can read captures and settle `flush()` on its own schedule.
 //   - `server-only`: an empty module (it exists to fail a client bundle).
@@ -56,6 +57,10 @@ export async function load(url, context, nextLoad) {
       format: 'module',
       shortCircuit: true,
       source: `
+        // The contact route (driven by src/lib/sentry/requestBody.sdk.test.ts
+        // through this loader) imports NextRequest by name for its type;
+        // type stripping keeps the import, so the name has to exist.
+        export class NextRequest {}
         export class NextResponse {
           static json(body, init) {
             return { status: (init && init.status) || 200, body };
