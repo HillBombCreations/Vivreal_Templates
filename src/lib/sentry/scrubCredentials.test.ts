@@ -154,7 +154,7 @@ test('REFUSE: no request body of any shape leaves, on an error or a transaction'
     for (const data of shapes) {
       const event = { ...(type ? { type } : {}), request: { method: 'POST', url: 'https://shop.example/api/contact', data } };
       const out = scrubCredentials(event);
-      assert.equal('data' in out.request, false, `request.data left on a ${type ?? 'error'} event`);
+      assert.equal('data' in out.request, false, `request.data left on ${type ? 'a transaction' : 'an error'} event`);
       const raw = JSON.stringify(out);
       for (const s of ['5e1a', 'Bodyname', 'visitor.example', '0193']) assert.ok(!raw.includes(s), `${s} survived`);
     }

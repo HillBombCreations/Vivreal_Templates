@@ -19,6 +19,8 @@ npm test             # `tsc --noEmit` FIRST, then the node test runner over THRE
                      # globs, not one:
                      #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
                      # Hermetic and offline capable. Nothing in it touches the network.
+                     # Every test process preloads scripts/aws-test-guard.mjs (`--import`):
+                     # fake AWS credentials, and starting the AWS CLI throws. Keep the --import.
 npm run check:free-year             # NOT in `npm test`: reads the npm registry.
                                     # Runs weekly in CI. See "The free-year sentence".
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
@@ -159,6 +161,14 @@ All three inits (`instrumentation.ts` nodejs and edge, `instrumentation-client.t
 false` alone removes only the SDK's own IP; the hooks delete `request.cookies`, every header on the 33-name FLEET list
 (`FLEET_SECRET_HEADERS`, the same array in every repo; never add the release check's `x-vr-check-control` to it), the
 IP, and the same names as span keys in both spellings, cookies by prefix. Tracing is off (`tracesSampleRate: 0`).
+
+**The request body never leaves (open-backlog release 2026-11).** The Node SDK reads every JSON and form body
+(`req.on("data")`, which Next 16 uses) and puts it on every event of that request as `request.data`, whatever
+`sendDefaultPii` says: a contact form's name, email, phone and message, or a booking's. Two layers stop it: the Node
+init's `httpIntegration({ maxIncomingRequestBodySize: "none" })` means the SDK never reads it, and the hooks delete
+`request.data` in all three runtimes. `lib/sentry/requestBody.sdk.test.ts` proves both through the real SDK and the
+real contact route. Never set the size back, and never add `sendDefaultPii: true` or a hook that copies a body into
+`extra` or `contexts`.
 
 ### API Response Format
 
