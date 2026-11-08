@@ -1,7 +1,7 @@
 /**
- * Credentials, the visitor's IP and the request body never leave in a Sentry
- * event (next release 2026-11, plan 3.PII, T8; owner Q14; the body since the
- * open-backlog release).
+ * Credentials, the visitor's IP, the request body and URL queries never leave
+ * in a Sentry event (next release 2026-11, plan 3.PII, T8; owner Q14; the body
+ * and the query since the open-backlog release).
  *
  * `sendDefaultPii: false` (set explicitly in all three Templates inits) only
  * stops the SDK adding the IP itself: measured on the fleet's SDKs, the
@@ -26,12 +26,21 @@
  *    release 2026-11, Sentry body leak). The Node SDK reads every JSON and
  *    form body a request carries (it wraps `req.on("data")`, which Next 16
  *    reads bodies with) and attaches it to every event of that request,
- *    whatever `sendDefaultPii` says. On this site that is a contact form's
- *    name, email, phone and message, or a booking's. The Node init also
- *    stops the SDK reading the body at all
+ *    whatever `sendDefaultPii` says. On this site that was a form-encoded
+ *    POST to a Node-rendered page (Next reads it as a possible server
+ *    action), on every capture the render makes; contact, booking and
+ *    checkout run on the edge runtime, which records no body. The Node init
+ *    also stops the SDK reading the body at all
  *    (`maxIncomingRequestBodySize: "none"`, `src/instrumentation.ts`); this
  *    delete is the hook's half, and the only one the edge and browser
- *    inits have.
+ *    inits have;
+ *  - every URL QUERY (open-backlog release 2026-11, review P1): a renderer
+ *    form submitted before the page's script loads sends a GET, so its
+ *    name, email, phone and message ride the page URL. `request.query_string`
+ *    goes, and `request.url`, a `Referer` header, the transaction name, a
+ *    breadcrumb's `url`, `from` and `to`, and a span's URL keys are cut at
+ *    `?` or `#`; the path stays, so an error still says which page. The
+ *    renderer's own fix (no form ever GETs) is backlog F179.
  *
  * One list for the whole fleet, never this repo's own names (plan 3.PII,
  * Revision 26, 33 names): the 4 always-names, the 21 found by the unfiltered
@@ -110,10 +119,54 @@ function deleteSecretHeaderAttributes(data: unknown): void {
   }
 }
 
+/** The URL up to its query or fragment: the path stays, what a GET form put after it does not. */
+function withoutQuery(url: string): string {
+  const cut = url.search(/[?#]/);
+  return cut === -1 ? url : url.slice(0, cut);
+}
+
+/** A request header that carries the previous page's whole URL. */
+const REFERER_HEADERS: ReadonlySet<string> = new Set(['referer', 'referrer']);
+/**
+ * Breadcrumb and span keys that hold a whole URL (cut at its query), and keys
+ * that hold only a query or a fragment (deleted). The SDK's outgoing request
+ * breadcrumbs split a URL into `url`, `http.query` and `http.fragment`;
+ * navigation breadcrumbs carry `from` and `to`.
+ */
+const URL_KEYS: ReadonlySet<string> = new Set([
+  'url', 'from', 'to', 'url.full', 'http.url', 'http.target',
+  'http.request.header.referer', 'http.request.header.referrer',
+]);
+const QUERY_KEYS: ReadonlySet<string> = new Set(['http.query', 'http.fragment', 'url.query', 'url.fragment']);
+
+function cutRefererQueries(headers: unknown): void {
+  if (!isBag(headers)) return;
+  for (const name of Object.keys(headers)) {
+    const value = headers[name];
+    if (REFERER_HEADERS.has(name.toLowerCase()) && typeof value === 'string') headers[name] = withoutQuery(value);
+  }
+}
+
+function cutUrlQueries(data: unknown): void {
+  if (!isBag(data)) return;
+  for (const key of Object.keys(data)) {
+    const lower = key.toLowerCase();
+    const value = data[key];
+    if (QUERY_KEYS.has(lower)) delete data[key];
+    else if (URL_KEYS.has(lower) && typeof value === 'string') data[key] = withoutQuery(value);
+  }
+}
+
+/** A span's or the trace context's attributes: credentials and URL queries out. */
+function scrubAttributes(data: unknown): void {
+  deleteSecretHeaderAttributes(data);
+  cutUrlQueries(data);
+}
+
 /**
  * `beforeSend` and `beforeSendTransaction`: the event, with every credential,
- * the IP and the request body removed in place. Never drops the event and
- * never throws on a shape it does not expect.
+ * the IP, the request body and every URL query removed in place. Never drops
+ * the event and never throws on a shape it does not expect.
  */
 export function scrubCredentials<E>(event: E): E {
   if (!isBag(event)) return event;
@@ -121,21 +174,33 @@ export function scrubCredentials<E>(event: E): E {
   if (isBag(request)) {
     delete request.data;
     delete request.cookies;
+    delete request.query_string;
+    if (typeof request.url === 'string') request.url = withoutQuery(request.url);
     deleteSecretHeaders(request.headers);
+    cutRefererQueries(request.headers);
   }
+  // Written through the plain record view: a generic `E` has no `transaction` to assign.
+  const fields: Bag = event;
+  if (typeof fields.transaction === 'string') fields.transaction = withoutQuery(fields.transaction);
   if (isBag(event.user)) delete event.user.ip_address;
   const contexts = event.contexts;
-  if (isBag(contexts) && isBag(contexts.trace)) deleteSecretHeaderAttributes(contexts.trace.data);
+  if (isBag(contexts) && isBag(contexts.trace)) scrubAttributes(contexts.trace.data);
   if (Array.isArray(event.spans)) {
-    for (const span of event.spans) if (isBag(span)) deleteSecretHeaderAttributes(span.data);
+    for (const span of event.spans) if (isBag(span)) scrubAttributes(span.data);
+  }
+  // Breadcrumbs already passed `beforeBreadcrumb` when they were added; this
+  // covers any an event brings with it.
+  if (Array.isArray(event.breadcrumbs)) {
+    for (const crumb of event.breadcrumbs) scrubBreadcrumbCredentials(crumb);
   }
   return event;
 }
 
-/** `beforeBreadcrumb`: the same header and attribute keys out of `data`. */
+/** `beforeBreadcrumb`: the same header and attribute keys, and every URL query, out of `data`. */
 export function scrubBreadcrumbCredentials<B>(breadcrumb: B): B {
   if (!isBag(breadcrumb) || !isBag(breadcrumb.data)) return breadcrumb;
   deleteSecretHeaders(breadcrumb.data);
   deleteSecretHeaderAttributes(breadcrumb.data);
+  cutUrlQueries(breadcrumb.data);
   return breadcrumb;
 }

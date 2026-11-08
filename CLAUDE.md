@@ -164,11 +164,18 @@ IP, and the same names as span keys in both spellings, cookies by prefix. Tracin
 
 **The request body never leaves (open-backlog release 2026-11).** The Node SDK reads every JSON and form body
 (`req.on("data")`, which Next 16 uses) and puts it on every event of that request as `request.data`, whatever
-`sendDefaultPii` says: a contact form's name, email, phone and message, or a booking's. Two layers stop it: the Node
-init's `httpIntegration({ maxIncomingRequestBodySize: "none" })` means the SDK never reads it, and the hooks delete
-`request.data` in all three runtimes. `lib/sentry/requestBody.sdk.test.ts` proves both through the real SDK and the
-real contact route. Never set the size back, and never add `sendDefaultPii: true` or a hook that copies a body into
-`extra` or `contexts`.
+`sendDefaultPii` says. On this site that was a form-encoded POST to a Node-rendered page (Next reads it as a possible
+server action), on every capture the render makes; contact, booking and checkout run on the edge runtime, which
+records no body. Two layers stop it: the Node init's `httpIntegration({ maxIncomingRequestBodySize: "none" })` means
+the SDK never reads it, and the hooks delete `request.data` in all three runtimes. Never set the size back, and never
+add `sendDefaultPii: true` or a hook that copies a body into `extra` or `contexts`.
+
+**No URL query leaves either (same release, review P1).** A renderer form submitted before the page's script loads
+sends a GET, so the visitor's name, email, phone and message ride the page URL. The hooks delete
+`request.query_string` and cut at `?` or `#`: `request.url`, a `Referer` header, the transaction name, a breadcrumb's
+`url`, `from` and `to`, and a span's URL keys. The path stays. The renderer's own fix (no form ever GETs) is backlog
+F179. `lib/sentry/requestBody.sdk.test.ts` proves the body and the query through the real SDK on a real node server
+(the contact route's own captures, a form POST to a page, a page URL with a query).
 
 ### API Response Format
 

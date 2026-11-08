@@ -30,9 +30,12 @@ export async function register() {
       beforeBreadcrumb: scrubBreadcrumbCredentials,
       // Open-backlog release 2026-11 (Sentry body leak): the SDK never reads
       // a request body. By default it wraps `req.on("data")`, which Next 16
-      // reads every body with, and puts the body (a contact form's name,
-      // email, phone and message) on every event of that request, whatever
-      // `sendDefaultPii` says. "none" skips that wrapper entirely
+      // reads every body with, and puts the body on every event of that
+      // request, whatever `sendDefaultPii` says: on this site, a form-encoded
+      // POST to a Node-rendered page (Next reads it as a possible server
+      // action), on every capture the render makes; contact, booking and
+      // checkout run on the edge runtime, which records no body. "none"
+      // skips that wrapper entirely
       // (`@sentry/core` 10.75.3 `integrations/http/server-subscription.js`).
       // `disableIncomingRequestSpans: true` repeats the Next.js SDK's own
       // default for this integration, which this one replaces by name. The

@@ -161,11 +161,67 @@ test('REFUSE: no request body of any shape leaves, on an error or a transaction'
   }
 });
 
-test('ALLOW: the hook keeps the request method, URL, query and harmless headers when it removes the body', () => {
+// Was "keeps the request method, URL, query and harmless headers": the query
+// now goes too (review P1), so `query_string` left the expected request.
+test('ALLOW: the hook keeps the request method, path and harmless headers when it removes the body and the query', () => {
   const out = scrubCredentials({
-    request: { method: 'POST', url: 'https://shop.example/api/booking/create', query_string: 'a=1', data: '{"name":"x"}', headers: { accept: 'a' } },
+    request: { method: 'POST', url: 'https://shop.example/api/booking/create?a=1', query_string: 'a=1', data: '{"name":"x"}', headers: { accept: 'a' } },
   });
-  assert.deepEqual(out.request, { method: 'POST', url: 'https://shop.example/api/booking/create', query_string: 'a=1', headers: { accept: 'a' } });
+  assert.deepEqual(out.request, { method: 'POST', url: 'https://shop.example/api/booking/create', headers: { accept: 'a' } });
+});
+
+/**
+ * Open-backlog release 2026-11, review P1: a renderer form submitted before
+ * the page's script loads sends a GET, so its fields ride the page URL, the
+ * next request's Referer, a navigation breadcrumb and any span that records
+ * the URL. `requestBody.sdk.test.ts` proves the request half through the
+ * real SDK.
+ */
+test('REFUSE: no URL query leaves, from the request, its Referer, the transaction, a breadcrumb or a span', () => {
+  const query = new URLSearchParams({ name: 'Q kq7name', email: 'kq7email@visitor.example', phone: '+14155550177', message: 'kq7message' }).toString();
+  const page = `https://shop.example/contact?${query}#form`;
+  const event = {
+    transaction: `GET /contact?${query}`,
+    request: { method: 'GET', url: page, query_string: query, headers: { Referer: page, referrer: page, accept: 'text/html' } },
+    breadcrumbs: [{ category: 'navigation', data: { from: page, to: '/thanks?ok=1' } }],
+    contexts: { trace: { data: { 'url.full': page, 'http.target': `/contact?${query}`, 'url.query': query, 'http.request.header.referer': page } } },
+    spans: [{ data: { 'http.url': page, 'http.query': query, 'http.fragment': 'form', 'url.fragment': 'form' } }],
+  };
+  // Positive control: every marker is in the event before the hook.
+  for (const marker of ['kq7name', 'kq7email', '4155550177', 'kq7message']) assert.ok(JSON.stringify(event).includes(marker), `control: ${marker}`);
+  const out = scrubCredentials(event);
+  const raw = JSON.stringify(out);
+  for (const marker of ['kq7name', 'kq7email', '4155550177', 'kq7message', 'ok=1', 'form"']) assert.ok(!raw.includes(marker), `${marker} survived`);
+  assert.equal('query_string' in out.request, false);
+  assert.equal(out.request.url, 'https://shop.example/contact');
+  assert.deepEqual(out.request.headers, { Referer: 'https://shop.example/contact', referrer: 'https://shop.example/contact', accept: 'text/html' });
+  assert.equal(out.transaction, 'GET /contact');
+  assert.deepEqual(out.breadcrumbs[0].data, { from: 'https://shop.example/contact', to: '/thanks' });
+  assert.deepEqual(out.contexts.trace.data, {
+    'url.full': 'https://shop.example/contact',
+    'http.target': '/contact',
+    'http.request.header.referer': 'https://shop.example/contact',
+  });
+  assert.deepEqual(out.spans[0].data, { 'http.url': 'https://shop.example/contact' });
+});
+
+test('REFUSE: a breadcrumb added with a query loses it; ALLOW: its path, method and status stay', () => {
+  const crumb = scrubBreadcrumbCredentials({
+    category: 'http',
+    data: { url: 'https://client.vivreal.io/tenant/collectionObjects', 'http.method': 'GET', status_code: 500, 'http.query': 'search=kq8email%40visitor.example' },
+  });
+  assert.deepEqual(crumb.data, { url: 'https://client.vivreal.io/tenant/collectionObjects', 'http.method': 'GET', status_code: 500 });
+  const nav = scrubBreadcrumbCredentials({ category: 'navigation', data: { from: '/contact?email=kq8email%40visitor.example', to: '/contact' } });
+  assert.deepEqual(nav.data, { from: '/contact', to: '/contact' });
+});
+
+test('ALLOW: a URL with no query, and a non-string URL value, pass through unchanged', () => {
+  const event = {
+    transaction: 'GET /contact',
+    request: { method: 'GET', url: 'https://shop.example/contact', headers: { referer: 'https://shop.example/' } },
+    contexts: { trace: { data: { 'url.full': 'https://shop.example/contact', 'http.status_code': 200, url: 42 } } },
+  };
+  assert.deepEqual(scrubCredentials(structuredClone(event)), event);
 });
 
 test('ALLOW: shapes the hooks do not expect pass through untouched and never throw', () => {

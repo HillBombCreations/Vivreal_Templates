@@ -21,10 +21,11 @@ registerLoader(new URL("./testSupport/realSentryLoader.mjs", import.meta.url).hr
  * (the `console.error` lines as breadcrumbs). Without that, an absent sentinel
  * would prove nothing. If an SDK upgrade changes the processor order or adds
  * a new place for the body, this fails. Since the open-backlog release the
- * request BODY never rides on any event, route scrub or not (the Node init
- * turns the SDK's body reader off and the global hooks delete
- * `request.data`); `../sentry/requestBody.sdk.test.ts` proves that, and the
- * control below now asserts it too.
+ * request BODY and the URL QUERY never ride on any event, route scrub or not
+ * (the Node init turns the SDK's body reader off; the global hooks delete
+ * `request.data` and `request.query_string` and cut the URL at its query);
+ * `../sentry/requestBody.sdk.test.ts` proves that, and the control below now
+ * asserts it too.
  */
 
 const EMAIL_SENTINEL = "sentinel-sdk-4d2e@subscriber.example";
@@ -170,7 +171,7 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     collectionId: COLLECTION_ID,
   };
 
-  await t.test("the repo's own config initialises the SDK, enabled, with only the credential and body scrub ahead of us", () => {
+  await t.test("the repo's own config initialises the SDK, enabled, with only the credential, body and query scrub ahead of us", () => {
     const options = Sentry.__realSentryControl.initOptions;
     assert.ok(options, "src/instrumentation.ts called init");
     assert.equal(Sentry.SDK_VERSION, "10.75.3", "the installed SDK this was proved against; re-run on a bump");
@@ -178,8 +179,9 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
     // Next release 2026-11, plan 3.PII, T8 (owner Q14): explicit, never the default.
     assert.equal(options.sendDefaultPii, false, "sendDefaultPii is set false explicitly");
     // The global hooks remove credentials, the IP and (open-backlog release)
-    // the request body. A console line passes them untouched, so the CONTROL
-    // below still proves the route scrub is what removes that.
+    // the request body and every URL query. A console line passes them
+    // untouched, so the CONTROL below still proves the route scrub is what
+    // removes that.
     for (const hook of ["beforeSend", "beforeSendTransaction"] as const) {
       const fn = options[hook] as ((e: unknown) => unknown) | undefined;
       assert.equal(typeof fn, "function", `${hook} is set`);
@@ -192,12 +194,12 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
         request: { headers: { accept: "a" } },
         breadcrumbs: [{ category: "console", message: EMAIL_SENTINEL }],
         user: {},
-      }, `${hook} removes credentials, the IP and the body, and nothing else`);
+      }, `${hook} removes credentials, the IP, the body and the query, and nothing else`);
     }
     assert.equal(typeof options.beforeBreadcrumb, "function", "beforeBreadcrumb is set");
   });
 
-  await t.test("CONTROL: without the route scrub the SDK sends the console line, and never the body", async () => {
+  await t.test("CONTROL: without the route scrub the SDK sends the console line, and never the body or the query", async () => {
     assert.equal(await post(`/control?ref=${EMAIL_SENTINEL}`, reviewBody), 200);
 
     const control = sentEvents(Sentry.__realSentryControl.envelopes).filter(
@@ -216,7 +218,11 @@ test("the shared scrub strips a visitor's details from what the real Sentry SDK 
       (event.breadcrumbs ?? []).some((crumb) => crumb.category === "console" && crumb.message?.includes(EMAIL_SENTINEL)),
       "control: the console.error line rides as a breadcrumb",
     );
-    assert.ok(JSON.stringify(event.request).includes(`ref=${EMAIL_SENTINEL}`), "control: the query rides on the request (C2)");
+    // Was "the query rides on the request (C2)". Review P1 of the open-backlog
+    // release makes the global hooks cut every URL query, so this turns into
+    // its REFUSE as well; the sentinel still rides in the console line above.
+    assert.equal(JSON.stringify(event.request).includes("ref="), false, "no URL query, even with no route scrub");
+    assert.equal(event.request?.url, `${origin}/control`, "control: the request and its path still ride");
   });
 
   await t.test("REFUSE: a lost sign-up reaches Sentry with no address anywhere in the envelope", async () => {
