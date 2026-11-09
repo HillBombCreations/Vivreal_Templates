@@ -4,7 +4,22 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COLD_PAGE_TEXT, NEW_PAGE_TEXT, OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkColdFirstRead, checkManifest, checkResponses, checkVersionFence, routeTable } from './isr-build-check.mjs';
+import {
+  COLD_PAGE_TEXT,
+  NEW_PAGE_TEXT,
+  OWNER_BOOK_TEXT,
+  SHARE_IMAGE_MARKER,
+  SHARE_PAGE_SLUG,
+  SHARE_PAGE_TEXT,
+  STOREFRONT_TEXT,
+  checkAfterFlip,
+  checkColdFirstRead,
+  checkManifest,
+  checkResponses,
+  checkShareAndSitemap,
+  checkVersionFence,
+  routeTable,
+} from './isr-build-check.mjs';
 
 const GOOD = {
   routes: {
@@ -118,6 +133,29 @@ test('F41: the fence phase passes only on a 404 before, the new page with its v,
   assert.equal(checkVersionFence({ ...good, keptShellReads: [SHELL] }).length, 1, 'a plain shell read while it fails fails');
   assert.equal(checkVersionFence({ ...good, kept: [] }).length, 1, 'nothing read while it fails is not a pass');
   assert.equal(checkVersionFence({ ...good, failedProbes: 1 }).length, 1, 'control: a phase in which the probes did not fail tests nothing');
+});
+
+test('F41 (RW-4 follow-up): the share image and the sitemap pass only when current on the first read, one probe across three readers, and held while the version route fails', () => {
+  const listed = { status: 200, body: `<url><loc>https://fixture.example/${SHARE_PAGE_SLUG}</loc></url>` };
+  const unlisted = { status: 200, body: '<url><loc>https://fixture.example/about</loc></url>' };
+  const own = { status: 200, body: `\u0089PNG${SHARE_IMAGE_MARKER}` };
+  const card = { status: 200, body: '\u0089PNG generated card' };
+  const good = {
+    before: { og: card, sitemap: unlisted },
+    first: { og: own, sitemap: listed, page: { status: 200, body: `<h2>${SHARE_PAGE_TEXT}</h2>` } },
+    probesInWindow: 1,
+    windowMs: 900,
+    kept: { sitemap: listed, failedProbes: 1, shellReads: [`${SHELL}&v=x`] },
+  };
+  assert.deepEqual(checkShareAndSitemap(good), []);
+  assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, sitemap: unlisted } }).length, 1, 'a sitemap without the new page on the first read fails');
+  assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, og: card } }).length, 1, 'a share image that is not the page\'s own fails');
+  assert.equal(checkShareAndSitemap({ ...good, probesInWindow: 2 }).length, 1, 'a probe per reader (or per bundle layer) fails');
+  assert.equal(checkShareAndSitemap({ ...good, probesInWindow: 2, windowMs: 6000 }).length, 1, 'a window past one interval cannot be judged');
+  assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, sitemap: unlisted } }).length, 1, 'an older sitemap while the version route fails fails');
+  assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, shellReads: [SHELL] } }).length, 1, 'a plain shell read while it fails fails');
+  assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, failedProbes: 0 } }).length, 1, 'control: no failed probe tests nothing');
+  assert.equal(checkShareAndSitemap({ ...good, before: { og: own, sitemap: listed } }).length, 2, 'control: both must be old before the save');
 });
 
 test('F41 (RW-4): the first read with a slow version route passes only on the page added after the build, and its version kept', () => {

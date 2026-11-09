@@ -40,13 +40,13 @@ type ReadShell = <T extends { readonly updatedAt?: unknown } | null | undefined>
 
 function api() {
   const ns = invalidation as unknown as Record<string, unknown>; // named exports, each checked below
-  for (const name of ['createSiteVersionFence', 'versionedPath', 'readSiteVersion', 'isOrdinaryPageRender', 'siteVersionPath', 'readShell']) {
+  for (const name of ['createSiteVersionFence', 'versionedPath', 'readSiteVersion', 'isFencedRender', 'siteVersionPath', 'readShell']) {
     assert.equal(typeof ns[name], 'function', `cacheInvalidation exports ${name}`);
   }
   return {
     createSiteVersionFence: ns.createSiteVersionFence as (deps: Record<string, unknown>) => Fence,
     versionedPath: ns.versionedPath as (path: string, version: string | null) => string,
-    isOrdinaryPageRender: ns.isOrdinaryPageRender as (u: unknown, w: unknown) => boolean,
+    isFencedRender: ns.isFencedRender as (u: unknown, w: unknown) => boolean,
     siteVersionPath: ns.siteVersionPath as (id: string) => string,
     readShell: ns.readShell as ReadShell,
   };
@@ -284,6 +284,35 @@ test('ALLOW (RW-4 row 3): a probe that recovers moves forward to a newer version
   assert.equal(a.reads.at(-1), invalidation.versionedPath(SHELL, client.state.updatedAt));
 });
 
+test('ALLOW (RW-4 follow-up): a page, its share image and the sitemap share one probe per 5 s, and the sitemap never lags the page', async () => {
+  const { isFencedRender } = api();
+  const client = fakeClient();
+  const clock = { now: T0 };
+  const a = instance(client, clock);
+  const served = (page: string) => isFencedRender({ type: 'request' }, { page });
+  // Before the save, all three readers on one instance, as a crawler would hit them.
+  for (const page of ['/[slug]/page', '/og/[slug]/route', '/sitemap.xml/route']) await a.shell(served(page));
+  assert.equal(client.probes.length, 1, 'one probe for the three readers');
+  clock.now += 2_000;
+  client.save(['about', 'compare', 'new'], clock.now);
+  clock.now += 5_000;
+  // The first read after the save is the sitemap's, and it is the one that probes.
+  assert.ok(has(await a.shell(served('/sitemap.xml/route')), 'new'), 'the sitemap lists the new page on the first read after the save');
+  assert.ok(has(await a.shell(served('/og/[slug]/route')), 'new'), 'the share image reads the page that exists');
+  assert.ok(has(await a.shell(served('/[slug]/page')), 'new'));
+  assert.equal(client.probes.length, 2, 'still one probe per interval across all three');
+  const saved = client.state.updatedAt;
+  assert.ok(a.reads.slice(-3).every((r) => r === invalidation.versionedPath(SHELL, saved)), 'all three by one key');
+
+  a.probeMode('timeout');
+  for (const step of [5_000, 60_000]) {
+    clock.now += step;
+    const from = a.reads.length;
+    assert.ok(has(await a.shell(served('/sitemap.xml/route')), 'new'), `+${step} ms, probe timing out: never an older sitemap`);
+    assert.ok(!a.reads.slice(from).includes(SHELL), 'never the plain key');
+  }
+});
+
 test('REFUSE: an older answer (a lagging read) never moves the version back', async () => {
   const client = fakeClient();
   const clock = { now: T0 };
@@ -421,15 +450,28 @@ test('REFUSE: no site id (a local or preview build) never probes and reads as to
   assert.equal(probes, 0, 'no probe without a site id');
 });
 
-test('REFUSE: home, a cached page, a build and a route handler never probe, never read fresh, and read as today', async () => {
-  const { isOrdinaryPageRender } = api();
-  assert.equal(isOrdinaryPageRender({ type: 'request' }, { page: '/[slug]/page' }), true, 'control: an ordinary page served per request');
-  assert.equal(isOrdinaryPageRender({ type: 'request' }, { page: '/[slug]/[itemId]/page' }), true);
-  assert.equal(isOrdinaryPageRender({ type: 'request' }, { page: '/page' }), false, 'home keeps its timing');
-  assert.equal(isOrdinaryPageRender({ type: 'prerender-legacy' }, { page: '/[slug]/page' }), false, 'a regeneration of a cached page');
-  assert.equal(isOrdinaryPageRender({ type: 'prerender' }, { page: '/[slug]/page' }), false, 'a build prerender');
-  assert.equal(isOrdinaryPageRender({ type: 'request' }, { page: '/sitemap.xml/route' }), false, 'a route handler');
-  assert.equal(isOrdinaryPageRender(undefined, undefined), false, 'outside a render');
+/** The routes that read the shell through the fence, besides ordinary pages (RW-4 follow-up). */
+const FENCED_ROUTE_PAGES = ['/og/[slug]/route', '/og/[slug]/[itemId]/route', '/sitemap.xml/route', '/sitemaps/[file]/route'];
+
+test('ALLOW (RW-4 follow-up): the share image and the sitemap read through the fence, served per request', () => {
+  const { isFencedRender } = api();
+  for (const page of FENCED_ROUTE_PAGES) {
+    assert.equal(isFencedRender({ type: 'request' }, { page }), true, page);
+    assert.equal(isFencedRender({ type: 'prerender' }, { page }), false, `${page} at build: no probe, no fresh read`);
+  }
+});
+
+test('REFUSE: home, a cached page, a build and any other route handler never probe, never read fresh, and read as today', async () => {
+  const { isFencedRender } = api();
+  assert.equal(isFencedRender({ type: 'request' }, { page: '/[slug]/page' }), true, 'control: an ordinary page served per request');
+  assert.equal(isFencedRender({ type: 'request' }, { page: '/[slug]/[itemId]/page' }), true);
+  assert.equal(isFencedRender({ type: 'request' }, { page: '/page' }), false, 'home keeps its timing');
+  assert.equal(isFencedRender({ type: 'prerender-legacy' }, { page: '/[slug]/page' }), false, 'a regeneration of a cached page');
+  assert.equal(isFencedRender({ type: 'prerender' }, { page: '/[slug]/page' }), false, 'a build prerender');
+  for (const page of ['/robots.txt/route', '/icon/route', '/api/indexnow/urls/route', '/og/route', '/sitemap.xml/page']) {
+    assert.equal(isFencedRender({ type: 'request' }, { page }), page === '/sitemap.xml/page', `${page}`);
+  }
+  assert.equal(isFencedRender(undefined, undefined), false, 'outside a render');
   const client = fakeClient();
   const b = instance(client, { now: T0 });
   b.probeMode('error');
@@ -492,9 +534,12 @@ test('SOURCE: the shell read goes through the fence, the fresh read skips the da
   assert.match(siteData, /\{ floorPath: path, \.\.\.opts \}/);
   assert.doesNotMatch(siteData, /readVersionedShell|shellReadVersion/);
   const glue = fs.readFileSync(new URL('./api/siteData/siteVersionFence.ts', import.meta.url), 'utf8');
-  assert.match(glue, /isOrdinaryPageRender\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
+  assert.match(glue, /isFencedRender\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
+  // One fence per process, on globalThis, so a page and a route handler bundled in different layers share it.
+  assert.match(glue, /const FENCE: SiteVersionFence = \(slot\[FENCE_SLOT\] \?\?= createSiteVersionFence\(\{/);
+  assert.match(glue, /Symbol\.for\('vivreal\.templates\.siteVersionFence'\)/);
   assert.match(glue, /startAwakeTimeout\(ms, onExpire\)/, 'an awake-time timer, never a wall-clock one');
-  assert.match(glue, /return readShell\(FENCE, servesOrdinaryPage\(\), reads, path, isLive\);/);
+  assert.match(glue, /return readShell\(FENCE, readsThroughFence\(\), reads, path, isLive\);/);
   const client = fs.readFileSync(new URL('./api/client.ts', import.meta.url), 'utf8');
   assert.match(client, /doClientFetch<unknown>\(CLIENT_API, siteVersionPath\(siteId\), null, \{ signal \}\)/);
   assert.match(client, /path: opts\?\.fresh \? `\$\{path\}#fresh` : path,/, 'a fresh read never joins a cached read of the same path');

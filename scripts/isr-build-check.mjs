@@ -29,7 +29,12 @@
  *        answered 404 for the whole cache TTL);
  *     c. (RW-4) the version route then fails, then is slow, across two probe
  *        intervals: the new page keeps answering 200, and no shell read is the
- *        plain one (until 2026-11-09 a failed probe went back to it).
+ *        plain one (until 2026-11-09 a failed probe went back to it);
+ *     d. (RW-4 follow-up) the owner adds a page with its own share image: on
+ *        the first reads after the save its share image is its own and the
+ *        sitemap lists it, the page, the share image and the sitemap make ONE
+ *        version probe per interval between them, and a version route failure
+ *        never takes the sitemap back to an older list.
  *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
@@ -62,6 +67,13 @@ export const COLD_PAGE_TEXT = 'Just opened at the fixture bakery';
 
 /** RW-4: how long the slow version route takes, past the probe timeout (1500 awake ms). */
 const VERSION_SLOW_MS = 3_000;
+
+/** RW-4 follow-up: a page added with its own share image, read through /og and /sitemap.xml. */
+export const SHARE_PAGE_SLUG = 'new-arrivals';
+export const SHARE_PAGE_TEXT = 'New arrivals at the fixture bakery';
+/** Bytes only the share page's own image carries, after a PNG signature. */
+export const SHARE_IMAGE_MARKER = 'RW4-OWN-SHARE-IMAGE';
+const SHARE_IMAGE_PATH = '/media/rw4-share.png';
 
 /** The owner's own page at the fixed route's address (review B1). */
 export const OWNER_BOOK_TEXT = 'Book a table with the fixture bakery';
@@ -117,6 +129,15 @@ export function fixtureSiteDetails(state = {}) {
       { slug: 'shop', name: 'Shop', format: 'catalog', blocks: [block('s1', 'products', { bindings: [{ collectionId: POSTS, role: 'primary' }] })] },
       ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: NEW_PAGE_TEXT } })] }] : []),
       ...(state.coldPage ? [{ slug: COLD_PAGE_SLUG, name: 'Just opened', format: 'about', blocks: [block('j1', 'section-header', { labels: { title: COLD_PAGE_TEXT } })] }] : []),
+      ...(state.sharePage
+        ? [{
+            slug: SHARE_PAGE_SLUG,
+            name: 'New arrivals',
+            format: 'about',
+            labels: { ogImage: { currentFile: { source: `http://127.0.0.1:${UPSTREAM_PORT}${SHARE_IMAGE_PATH}` } } },
+            blocks: [block('s9', 'section-header', { labels: { title: SHARE_PAGE_TEXT } })],
+          }]
+        : []),
     ],
     // R5: when the site document last changed, the same instant the version route answers.
     updatedAt: state.updatedAt ?? null,
@@ -148,7 +169,13 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
     }
     // F41 (CL7): the site's version, a failure while `versionDown` is set, or
     // (RW-4) an answer later than the probe waits while `versionSlowMs` is.
+    // RW-4 follow-up: the share page's own image (a PNG signature, then the marker).
+    if (url.pathname === SHARE_IMAGE_PATH) {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      return res.end(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(SHARE_IMAGE_MARKER)]));
+    }
     if (url.pathname === '/tenant/siteVersion') {
+      state.versionAsked = (state.versionAsked ?? 0) + 1;
       const answer = () => send(200, { siteId: SITE_ID, updatedAt: state.updatedAt ?? '2026-11-01T00:00:00.000Z' });
       if (state.versionDown || state.versionSlowMs) state.versionFailures = (state.versionFailures ?? 0) + 1;
       if (state.versionDown) return send(500, null);
@@ -326,6 +353,33 @@ export function checkVersionFence({ before, after, shellReads, updatedAt, kept, 
   return failures;
 }
 
+/**
+ * RW-4 follow-up: the share image and the sitemap through the fence. `before`
+ * are the reads before the owner added the page, `first` the first reads
+ * after (share image, then sitemap, then the page), `probesInWindow` how many
+ * version probes the three readers made inside one interval (one, across all
+ * three), `kept` the sitemap read one interval into a version route failure,
+ * with the probes that failed and the shell reads logged meanwhile.
+ */
+export function checkShareAndSitemap({ before, first, probesInWindow, windowMs, kept }) {
+  const failures = [];
+  const listed = (r) => r?.status === 200 && (r.body ?? '').includes(`/${SHARE_PAGE_SLUG}</loc>`);
+  const ownImage = (r) => r?.status === 200 && (r.body ?? '').includes(SHARE_IMAGE_MARKER);
+  if (listed(before.sitemap)) failures.push(`control: the sitemap listed /${SHARE_PAGE_SLUG} before the owner added it`);
+  if (before.sitemap?.status !== 200) failures.push(`control: /sitemap.xml answered ${before.sitemap?.status}`);
+  if (ownImage(before.og)) failures.push(`control: /og/${SHARE_PAGE_SLUG} drew the page's own image before the owner added it`);
+  if (!ownImage(first.og)) failures.push(`/og/${SHARE_PAGE_SLUG} answered ${first.og?.status} without the page's own image on the first read after the save`);
+  if (!listed(first.sitemap)) failures.push(`/sitemap.xml answered ${first.sitemap?.status} without /${SHARE_PAGE_SLUG} on the first read after the save`);
+  if (first.page?.status !== 200 || !(first.page.body ?? '').includes(SHARE_PAGE_TEXT)) failures.push(`/${SHARE_PAGE_SLUG} answered ${first.page?.status} without its page`);
+  if (!(windowMs < 5000)) failures.push(`the three readers took ${windowMs} ms, past one probe interval, so the shared limit could not be judged`);
+  else if (probesInWindow !== 1) failures.push(`${probesInWindow} version probes inside one interval across the page, the share image and the sitemap (the limit is one per server)`);
+  if (kept.failedProbes < 1) failures.push('control: no probe failed while the sitemap was read, so the keep was not tested');
+  if (!listed(kept.sitemap)) failures.push(`/sitemap.xml answered ${kept.sitemap?.status} without /${SHARE_PAGE_SLUG} while the version route failed: an older sitemap than the server already served`);
+  const plain = kept.shellReads.filter((p) => !/[?&]v=/.test(p));
+  if (plain.length) failures.push(`a sitemap shell read went back to the plain key while the version route failed: ${plain.join(', ')}`);
+  return failures;
+}
+
 function run(cmd, args, opts) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], shell: process.platform === 'win32', ...opts });
@@ -382,9 +436,11 @@ async function main() {
     aboutStorefront: false,
     newPage: false,
     coldPage: false,
+    sharePage: false,
     versionDown: false,
     versionSlowMs: 0,
     versionFailures: 0,
+    versionAsked: 0,
     updatedAt: '2026-11-01T00:00:00.000Z',
   };
   const upstream = await startFixtureUpstream({
@@ -522,6 +578,47 @@ async function main() {
               kept,
               keptShellReads: shellReads.slice(keptFrom),
               failedProbes: state.versionFailures - failuresBefore,
+            }),
+          );
+
+          // RW-4 follow-up: the owner adds a page with its own share image; no
+          // webhook. Past one interval before each step, so a probe is due.
+          const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+          const read = async (p) => {
+            const r = await get(p);
+            return { status: r.status, body: r.body };
+          };
+          await wait(5500);
+          const shareBefore = { og: await read(`/og/${SHARE_PAGE_SLUG}`), sitemap: await read('/sitemap.xml') };
+          state.sharePage = true;
+          state.updatedAt = new Date().toISOString();
+          await wait(5500);
+          // The first reads after the save, the share image first, then a burst
+          // of all three readers, all inside one probe interval.
+          const askedFrom = state.versionAsked;
+          const windowFrom = Date.now();
+          const shareFirst = { og: await read(`/og/${SHARE_PAGE_SLUG}`), sitemap: await read('/sitemap.xml'), page: await read(`/${SHARE_PAGE_SLUG}`) };
+          await Promise.all([read('/sitemap.xml'), read(`/og/${SHARE_PAGE_SLUG}`), read(`/${SHARE_PAGE_SLUG}`)]);
+          const probesInWindow = state.versionAsked - askedFrom;
+          const windowMs = Date.now() - windowFrom;
+          console.log(`  F41 share image after the save: ${shareFirst.og.status} ${shareFirst.og.body.includes(SHARE_IMAGE_MARKER) ? 'own image' : 'not its own'} /og/${SHARE_PAGE_SLUG}`);
+          console.log(`  F41 sitemap after the save: ${shareFirst.sitemap.status} ${shareFirst.sitemap.body.includes(`/${SHARE_PAGE_SLUG}</loc>`) ? 'lists it' : 'missing  '} /sitemap.xml; probes across three readers in ${windowMs} ms: ${probesInWindow}`);
+          // Then the version route fails for an interval: the sitemap holds.
+          state.versionDown = true;
+          const shareFailuresFrom = state.versionFailures;
+          await wait(5500);
+          const sitemapKeptFrom = shellReads.length;
+          const sitemapKept = await read('/sitemap.xml');
+          const sitemapKeptShellReads = shellReads.slice(sitemapKeptFrom);
+          state.versionDown = false;
+          console.log(`  F41 sitemap, version route down: ${sitemapKept.status} ${sitemapKept.body.includes(`/${SHARE_PAGE_SLUG}</loc>`) ? 'lists it' : 'missing  '} /sitemap.xml`);
+          failures.push(
+            ...checkShareAndSitemap({
+              before: shareBefore,
+              first: shareFirst,
+              probesInWindow,
+              windowMs,
+              kept: { sitemap: sitemapKept, failedProbes: state.versionFailures - shareFailuresFrom, shellReads: sitemapKeptShellReads },
             }),
           );
         }

@@ -1,4 +1,3 @@
-import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
 import { getSiteData } from '@/lib/api/siteData';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
@@ -10,16 +9,17 @@ import { rootSitemapXml } from '@/lib/seo/sitemapXml';
 // than Next's sitemap.ts because generateSitemaps serves nothing at this
 // address; see src/lib/seo/sitemapXml.ts.
 //
-// ISR migration Phase 3. `revalidate` MUST be a literal: Next 16 parses route
-// segment config out of this file's source and hard-fails the build on any
-// expression. Keep 300 in step with ISR_REVALIDATE_SECONDS
-// (`src/lib/renderMode.ts`); `renderMode.test.ts` fails if they drift.
-export const revalidate = 300;
+// Rendered per request, in every render mode (RW-4 follow-up). The page list
+// reads the shell through the site version fence (`isFencedRender`), so a page
+// the instance already serves is in the list on the first read after a save,
+// and a failed probe never lists an older site. Under ISR (SITE_RENDER_MODE
+// isr) it used to be cached for 300 s, so a new page stayed out of the list
+// that long; with the gate unset it was already per request. The reads under
+// it are still data-cached, and the fence's one probe per 5 s per instance is
+// shared with every page and share image.
+export const dynamic = 'force-dynamic';
 
 export async function GET(): Promise<Response> {
-  // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
-  // line runs during `next build`.
-  await enforceDynamicUnlessIsr();
   const [entries, siteData] = await Promise.all([loadSitemapEntries(), getSiteData()]);
   // Discovery batch 3.4, route layer: a demo's (empty) list is noindex even
   // when middleware's edge map was cold. See demoRobotsHeader.ts.

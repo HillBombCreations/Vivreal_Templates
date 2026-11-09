@@ -55,11 +55,18 @@ export const HARD_INVALIDATION = { expire: 0 } as const;
  * (`createRevalidateDuringRenderError`, next 16.4.1
  * `server/web/spec-extension/revalidate.js`), and the key change needs none.
  *
+ * The share image (`/og/...`) and the sitemap (`/sitemap.xml`, `/sitemaps/..`)
+ * read the shell through the same fence, so a new page's share image and its
+ * sitemap entry never lag the page the instance serves (RW-4 follow-up). They
+ * share the one fence per instance, so its probe limit holds across all of
+ * them, not per route.
+ *
  * WHAT IT NEVER DOES.
- *  - It never runs outside a request render of an ordinary page
- *    (`isOrdinaryPageRender`): not at build, not in a regeneration of a page
- *    served from the page cache, not on the home page, not in a route
- *    handler. Those read the shell exactly as before.
+ *  - It never runs outside a fenced render (`isFencedRender`: a request render
+ *    of an ordinary page, a share image or the sitemap): not at build, not in
+ *    a regeneration of a page served from the page cache, not on the home
+ *    page, not in any other route handler. Those read the shell exactly as
+ *    before.
  *  - A failed or slow probe never takes an instance back to an older site
  *    than it has served (RW-4, vivreal-hq rewalk-2026-11-defects.md). The
  *    instance keeps the newest version it knows, and moves only forward: once
@@ -140,7 +147,7 @@ function isLater(a: string, b: string): boolean {
 /**
  * What one render's shell read is (RW-4).
  *  - `plain`: the unversioned read, exactly as before the fence. Only for a
- *    render that is not an ordinary page served per request, or while nothing
+ *    render that is not fenced (`isFencedRender`), or while nothing
  *    is known and the Client answered that the site has no version (a site
  *    with no `updatedAt` gives the fence nothing to key on, so its reads stay
  *    as before the fence; reading fresh for it would skip every cache on every
@@ -164,8 +171,8 @@ export interface ShellReads<T> {
   /**
    * A read no cache can answer from before it began: past the data cache, and
    * keyed at the edge by its own start instant (`clientFetchCached`'s
-   * `fresh`). Only ever made in a request render of an ordinary page, the one
-   * place an uncached fetch cannot turn a cached page dynamic.
+   * `fresh`). Only ever made in a fenced render (`isFencedRender`), rendered
+   * per request, where an uncached fetch cannot turn a cached response dynamic.
    */
   readonly fresh: () => Promise<T>;
 }
@@ -208,20 +215,36 @@ export async function readShell<T extends { readonly updatedAt?: unknown } | nul
 }
 
 /**
- * Whether this render serves an ordinary page per request, from Next's two
- * work stores (the same internals `queryReadGate.ts` reads, pinned by
- * `next ~16.4.1`): a request render (`type === 'request'`; a regeneration of a
- * cached page and a build prerender are other types) of a page module
- * (`/…/page`) that is not the home page (`/page`). Route handlers end in
- * `/route`. Anything unreadable answers false: today's read.
+ * The route handlers that read the shell through the fence (RW-4 follow-up):
+ * a page's share image and its sitemap entry, which must never lag the page.
+ * Each is rendered per request (`force-dynamic`), so a probe or a fresh read
+ * there cannot turn a cached response dynamic. Next names a route handler by
+ * its file, ending in `/route`.
  */
-export function isOrdinaryPageRender(
+const FENCED_ROUTES: ReadonlySet<string> = new Set([
+  '/og/[slug]/route',
+  '/og/[slug]/[itemId]/route',
+  '/sitemap.xml/route',
+  '/sitemaps/[file]/route',
+]);
+
+/**
+ * Whether this render reads the shell through the fence, from Next's two work
+ * stores (the same internals `queryReadGate.ts` reads, pinned by
+ * `next ~16.4.1`): a request render (`type === 'request'`; a regeneration of a
+ * cached page and a build prerender are other types) of either a page module
+ * (`/<path>/page`) that is not the home page (`/page`), or one of
+ * `FENCED_ROUTES`. Every other route handler, and anything unreadable, answers
+ * false: today's read.
+ */
+export function isFencedRender(
   unitStore: { type?: unknown } | undefined,
   workStore: { page?: unknown } | undefined,
 ): boolean {
   if (unitStore?.type !== 'request') return false;
   const page = workStore?.page;
-  return typeof page === 'string' && page.endsWith('/page') && page !== '/page';
+  if (typeof page !== 'string') return false;
+  return FENCED_ROUTES.has(page) || (page.endsWith('/page') && page !== '/page');
 }
 
 export interface SiteVersionFenceDeps {
@@ -238,7 +261,7 @@ export interface SiteVersionFenceDeps {
 }
 
 export interface SiteVersionFence {
-  /** What THIS render's shell read is. `serving` is `isOrdinaryPageRender` for this render. */
+  /** What THIS render's shell read is. `serving` is `isFencedRender` for this render. */
   shellReadFor(serving: boolean): Promise<ShellRead>;
   /**
    * A version read off a live fresh shell (its `updatedAt`, the same instant

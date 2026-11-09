@@ -180,14 +180,15 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
  */
 async function readSiteDetails(): Promise<{ raw: SiteDetailsResponse | null; fromFloor: boolean }> {
   const path = siteDetailsPath(SITE_ID);
-  // F41 (OD-01): on an ordinary page served per request, the read carries the
-  // newest site version this instance knows, so a save is a new data-cache key
-  // on every instance and a new client.vivreal.io edge key. A failed or slow
+  // F41 (OD-01): on an ordinary page served per request, and on the share
+  // image and sitemap routes (RW-4 follow-up), the read carries the newest
+  // site version this instance knows, so a save is a new data-cache key on
+  // every instance and a new client.vivreal.io edge key. A failed or slow
   // probe keeps that version, and a first read with nothing known reads fresh,
-  // so no ordinary page goes back to the plain key's older copy (RW-4). Home,
-  // a cached page and a route handler read `path` exactly as before. The floor
-  // keeps answering by `path`, the key the build wrote. See ./siteVersionFence
-  // and `readShell`.
+  // so none of them goes back to the plain key's older copy (RW-4). Home, a
+  // cached page and every other route handler read `path` exactly as before.
+  // The floor keeps answering by `path`, the key the build wrote. See
+  // ./siteVersionFence and `readShell`.
   const read = (readPath: string, opts: { fresh?: boolean } = {}) =>
     clientFetchCached<SiteDetailsResponse | null>(
       readPath,

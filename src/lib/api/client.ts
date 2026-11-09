@@ -323,7 +323,8 @@ export async function clientFetchSafe<T>(
  * string is in that edge key; the Client takes `v` as a cache key and nothing
  * else). It still goes through the memo and the floor below, on its own memo
  * key, so concurrent fresh reads share one call and never join a cached read.
- * Only ever asked for in a request render of an ordinary page.
+ * Only ever asked for in a fenced render (`isFencedRender`), rendered per
+ * request.
  */
 export async function clientFetchCached<T>(
   path: string,
