@@ -4,7 +4,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NEW_PAGE_TEXT, OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkManifest, checkResponses, checkVersionFence, routeTable } from './isr-build-check.mjs';
+import { COLD_PAGE_TEXT, NEW_PAGE_TEXT, OWNER_BOOK_TEXT, STOREFRONT_TEXT, checkAfterFlip, checkColdFirstRead, checkManifest, checkResponses, checkVersionFence, routeTable } from './isr-build-check.mjs';
 
 const GOOD = {
   routes: {
@@ -92,21 +92,45 @@ test('route table rows', () => {
   ]);
 });
 
-test('F41: the fence phase passes only on the plain read while down, a 404 before, then the new page with its v', () => {
+const SHELL = '/tenant/siteDetails?siteId=6a0000000000000000000a01';
+
+test('F41: the fence phase passes only on a 404 before, the new page with its v, then the page held with no plain read while the version route fails (RW-4)', () => {
   const at = '2026-11-05T01:02:03.000Z';
+  const page = { status: 200, body: `<h2>${NEW_PAGE_TEXT}</h2>` };
   const good = {
-    down: { status: 200 },
-    downShellReads: ['/tenant/siteDetails?siteId=6a0000000000000000000a01'],
     before: { status: 404 },
-    after: [{ status: 404, body: '' }, { status: 200, body: `<h2>${NEW_PAGE_TEXT}</h2>` }],
-    shellReads: [`/tenant/siteDetails?siteId=6a0000000000000000000a01&v=${encodeURIComponent(at)}`],
+    after: [{ status: 404, body: '' }, page],
+    shellReads: [`${SHELL}&v=${encodeURIComponent(at)}`],
     updatedAt: at,
+    kept: [page, page, page, page],
+    keptShellReads: [`${SHELL}&v=${encodeURIComponent(at)}`],
+    failedProbes: 2,
   };
   assert.deepEqual(checkVersionFence(good), []);
   assert.equal(checkVersionFence({ ...good, after: [{ status: 404, body: '' }, { status: 404, body: '' }] }).length, 1, 'a stale 404 fails');
-  assert.equal(checkVersionFence({ ...good, downShellReads: [`${good.downShellReads[0]}&v=x`] }).length, 1, 'v while the version route failed fails');
-  assert.equal(checkVersionFence({ ...good, shellReads: [good.downShellReads[0]] }).length, 1, 'no versioned read fails');
+  assert.equal(checkVersionFence({ ...good, shellReads: [SHELL] }).length, 1, 'no versioned read fails');
   assert.equal(checkVersionFence({ ...good, before: { status: 200 } }).length, 1, 'the control must be a 404');
   assert.equal(checkVersionFence({ ...good, after: [] }).length, 2, 'nothing read is not a pass');
   assert.equal(checkVersionFence({ ...good, after: [{ status: 500, body: '' }, good.after[1]] }).length, 1, 'a 500 fails');
+  // RW-4: the walk's 180 s round, the page going back to 404 and to the old words.
+  assert.equal(checkVersionFence({ ...good, kept: [page, { status: 404, body: '' }, page, page] }).length, 1, 'a stale 404 while the version route fails fails');
+  assert.equal(checkVersionFence({ ...good, kept: [page, { status: 200, body: '<h2>old words</h2>' }, page, page] }).length, 1, 'the old page while it fails fails');
+  assert.equal(checkVersionFence({ ...good, keptShellReads: [SHELL] }).length, 1, 'a plain shell read while it fails fails');
+  assert.equal(checkVersionFence({ ...good, kept: [] }).length, 1, 'nothing read while it fails is not a pass');
+  assert.equal(checkVersionFence({ ...good, failedProbes: 1 }).length, 1, 'control: a phase in which the probes did not fail tests nothing');
+});
+
+test('F41 (RW-4): the first read with a slow version route passes only on the page added after the build, and its version kept', () => {
+  const at = '2026-11-09T15:06:46.367Z';
+  const page = { status: 200, body: `<h2>${COLD_PAGE_TEXT}</h2>` };
+  const good = {
+    reads: [page, page],
+    shellReads: [`${SHELL}&v=${encodeURIComponent('2026-11-09T15:07:00.120Z')}`, `${SHELL}&v=${encodeURIComponent(at)}`],
+    updatedAt: at,
+  };
+  assert.deepEqual(checkColdFirstRead(good), []);
+  assert.equal(checkColdFirstRead({ ...good, reads: [{ status: 404, body: '' }, page] }).length, 1, 'the build copy (a 404) on the first read fails');
+  assert.equal(checkColdFirstRead({ ...good, reads: [page, { status: 404, body: '' }] }).length, 1, 'a 404 on the second read fails');
+  assert.equal(checkColdFirstRead({ ...good, shellReads: [SHELL] }).length, 1, 'no read by the fresh read\'s version fails');
+  assert.equal(checkColdFirstRead({ ...good, reads: [page] }).length, 1, 'one read is not a pass');
 });

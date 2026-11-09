@@ -20,10 +20,16 @@
  *     a storefront page, a checkout result page, `/book` and an unlisted item
  *     answer `no-store`; nothing answers 500;
  *  3. (gate on) F41, the site version fence through the real `[slug]` route:
- *     with the fixture's version route failing, an ordinary page reads the
- *     shell exactly as before (no `v`); then a page the owner adds with NO
- *     webhook answers 200 within one probe interval, its shell read carrying
- *     the new `v` (before the fence it answered 404 for the whole cache TTL).
+ *     a. (RW-4) on the server's first ordinary read, with the version route
+ *        slower than the probe timeout, a page added after the build answers
+ *        200: the read is fresh, never the build's plain copy, and its
+ *        `updatedAt` keys the next read;
+ *     b. a page the owner adds with NO webhook answers 200 within one probe
+ *        interval, its shell read carrying the new `v` (before the fence it
+ *        answered 404 for the whole cache TTL);
+ *     c. (RW-4) the version route then fails, then is slow, across two probe
+ *        intervals: the new page keeps answering 200, and no shell read is the
+ *        plain one (until 2026-11-09 a failed probe went back to it).
  *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
@@ -49,6 +55,13 @@ const block = (id, dispatchId, config = {}, order = 0) => ({ id, type: { kind: '
 /** F41: the page the owner adds after the build, with no webhook. */
 export const NEW_PAGE_SLUG = 'whats-new';
 export const NEW_PAGE_TEXT = 'Fresh this week at the fixture bakery';
+
+/** RW-4: the page added after the build that the server's first ordinary read asks for. */
+export const COLD_PAGE_SLUG = 'just-opened';
+export const COLD_PAGE_TEXT = 'Just opened at the fixture bakery';
+
+/** RW-4: how long the slow version route takes, past the probe timeout (1500 awake ms). */
+const VERSION_SLOW_MS = 3_000;
 
 /** The owner's own page at the fixed route's address (review B1). */
 export const OWNER_BOOK_TEXT = 'Book a table with the fixture bakery';
@@ -103,7 +116,10 @@ export function fixtureSiteDetails(state = {}) {
       { slug: 'blog', name: 'Blog', format: 'collection-list', detailPage: { enabled: true, itemCollectionId: POSTS, itemKeyField: 'slug' } },
       { slug: 'shop', name: 'Shop', format: 'catalog', blocks: [block('s1', 'products', { bindings: [{ collectionId: POSTS, role: 'primary' }] })] },
       ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: NEW_PAGE_TEXT } })] }] : []),
+      ...(state.coldPage ? [{ slug: COLD_PAGE_SLUG, name: 'Just opened', format: 'about', blocks: [block('j1', 'section-header', { labels: { title: COLD_PAGE_TEXT } })] }] : []),
     ],
+    // R5: when the site document last changed, the same instant the version route answers.
+    updatedAt: state.updatedAt ?? null,
   };
 }
 
@@ -130,10 +146,14 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
       if ([...url.searchParams.keys()].some((key) => !SITE_DETAILS_KEYS.has(key))) return send(400, null);
       return send(200, fixtureSiteDetails(state));
     }
-    // F41 (CL7): the site's version, or a failure while `versionDown` is set.
+    // F41 (CL7): the site's version, a failure while `versionDown` is set, or
+    // (RW-4) an answer later than the probe waits while `versionSlowMs` is.
     if (url.pathname === '/tenant/siteVersion') {
+      const answer = () => send(200, { siteId: SITE_ID, updatedAt: state.updatedAt ?? '2026-11-01T00:00:00.000Z' });
+      if (state.versionDown || state.versionSlowMs) state.versionFailures = (state.versionFailures ?? 0) + 1;
       if (state.versionDown) return send(500, null);
-      return send(200, { siteId: SITE_ID, updatedAt: state.updatedAt ?? '2026-11-01T00:00:00.000Z' });
+      if (state.versionSlowMs) return void setTimeout(answer, state.versionSlowMs);
+      return answer();
     }
     if (url.pathname === '/tenant/collectionObjects') {
       const list = url.searchParams.get('collectionId') === POSTS ? items : [];
@@ -259,17 +279,34 @@ export function checkAfterFlip(flip, after) {
 }
 
 /**
- * F41 through the real route. `down` is the ordinary page read while the
- * version route failed and `downShellReads` the shell reads logged meanwhile;
- * `before` is the new page's answer before the owner added it; `after` every
- * read after (status, body); `shellReads` every shell read logged after the
- * change.
+ * RW-4, the server's first ordinary read with the version route slow. `reads`
+ * are the reads of the page added after the build (status, body), the first
+ * of them the server's first ordinary read; `shellReads` the shell reads
+ * logged meanwhile; `updatedAt` the stored site's version.
  */
-export function checkVersionFence({ down, downShellReads, before, after, shellReads, updatedAt }) {
+export function checkColdFirstRead({ reads, shellReads, updatedAt }) {
   const failures = [];
-  if (!down || down.status !== 200) failures.push(`an ordinary page answered ${down?.status} while the version route failed`);
-  const versioned = downShellReads.filter((p) => /[?&]v=/.test(p));
-  if (versioned.length) failures.push(`a shell read carried v while the version route failed: ${versioned.join(', ')}`);
+  if (reads.length < 2) failures.push('the cold phase read the new page fewer than twice');
+  reads.forEach((r, i) => {
+    if (r.status !== 200 || !(r.body ?? '').includes(COLD_PAGE_TEXT)) {
+      failures.push(`/${COLD_PAGE_SLUG} read ${i + 1} answered ${r.status}${r.status === 200 ? ' without its page' : ''}: a first read with a slow probe took a copy from before the stored site`);
+    }
+  });
+  const learned = `v=${encodeURIComponent(updatedAt)}`;
+  if (!shellReads.some((p) => p.includes(learned))) failures.push(`no shell read carried ${learned}: the fresh read's version was not kept`);
+  return failures;
+}
+
+/**
+ * F41 through the real route. `before` is the new page's answer before the
+ * owner added it; `after` every read after (status, body); `shellReads` every
+ * shell read logged after the change. RW-4: `kept` are the reads of the new
+ * page while the version route failed and then was slow, `keptShellReads` the
+ * shell reads logged meanwhile, `failedProbes` how many probes the version
+ * route failed or held in that time.
+ */
+export function checkVersionFence({ before, after, shellReads, updatedAt, kept, keptShellReads, failedProbes }) {
+  const failures = [];
   if (!before || before.status !== 404) failures.push(`control: /${NEW_PAGE_SLUG} answered ${before?.status} before the owner added it`);
   if (after.length === 0) failures.push('nothing was read after the change');
   for (const r of after) if (r.status >= 500 || r.status === 0) failures.push(`/${NEW_PAGE_SLUG} answered ${r.status}`);
@@ -277,6 +314,15 @@ export function checkVersionFence({ down, downShellReads, before, after, shellRe
   if (shown === -1) failures.push(`/${NEW_PAGE_SLUG} never answered 200 with its page after the change (a stale 404)`);
   const expected = `v=${encodeURIComponent(updatedAt)}`;
   if (!shellReads.some((p) => p.includes(expected))) failures.push(`no shell read carried ${expected} after the change`);
+  if (kept.length === 0) failures.push('nothing was read while the version route failed');
+  if (failedProbes < 2) failures.push(`control: ${failedProbes} probe(s) failed or were held while the page was read, so the keep was not tested`);
+  kept.forEach((r, i) => {
+    if (r.status !== 200 || !(r.body ?? '').includes(NEW_PAGE_TEXT)) {
+      failures.push(`/${NEW_PAGE_SLUG} answered ${r.status}${r.status === 200 ? ' without its page' : ''} on read ${i + 1} while the version route failed: the server went back to an older site`);
+    }
+  });
+  const plain = keptShellReads.filter((p) => !/[?&]v=/.test(p));
+  if (plain.length) failures.push(`a shell read went back to the plain key while the version route failed: ${plain.join(', ')}`);
   return failures;
 }
 
@@ -332,7 +378,15 @@ async function main() {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const seen = new Set();
   const shellReads = [];
-  const state = { aboutStorefront: false, newPage: false, versionDown: false, updatedAt: '2026-11-01T00:00:00.000Z' };
+  const state = {
+    aboutStorefront: false,
+    newPage: false,
+    coldPage: false,
+    versionDown: false,
+    versionSlowMs: 0,
+    versionFailures: 0,
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  };
   const upstream = await startFixtureUpstream({
     log: (line) => {
       if (line.startsWith('GET /tenant/siteDetails?')) shellReads.push(line.slice(4));
@@ -384,6 +438,26 @@ async function main() {
     try {
       if (!(await waitUp())) failures.push('next start did not come up');
       else {
+        if (gateOn) {
+          // RW-4 row 2: the server's first ordinary read, with the version
+          // route slower than the probe waits. The data cache holds the build's
+          // plain shell, from before this page was added. Settle first, so a
+          // background refresh started by the readiness read cannot pick up
+          // the page.
+          await new Promise((res) => setTimeout(res, 1500));
+          state.versionSlowMs = VERSION_SLOW_MS;
+          state.coldPage = true;
+          state.updatedAt = new Date().toISOString();
+          const coldFrom = shellReads.length;
+          const coldReads = [];
+          for (let i = 0; i < 2; i += 1) {
+            const r = await get(`/${COLD_PAGE_SLUG}`);
+            coldReads.push({ status: r.status, body: r.body });
+            console.log(`  F41 first read, version route slow, read ${i + 1}: ${r.status} ${r.body.includes(COLD_PAGE_TEXT) ? 'new page' : 'old copy'} /${COLD_PAGE_SLUG}`);
+          }
+          state.versionSlowMs = 0;
+          failures.push(...checkColdFirstRead({ reads: coldReads, shellReads: shellReads.slice(coldFrom), updatedAt: state.updatedAt }));
+        }
         const reads = [];
         for (const p of READ_PATHS) {
           const first = await get(p);
@@ -406,16 +480,9 @@ async function main() {
         failures.push(...checkAfterFlip(flip, after));
 
         if (gateOn) {
-          // F41 REFUSE: the version route fails; an ordinary page reads the
-          // shell as before. Past one interval first, so a probe runs.
+          // F41 ALLOW: the owner adds a page; no webhook is sent. Past one
+          // interval first, so a probe runs.
           await new Promise((res) => setTimeout(res, 5500));
-          state.versionDown = true;
-          const downFrom = shellReads.length;
-          const down = await get('/menu');
-          const downShellReads = shellReads.slice(downFrom);
-          console.log(`  F41 version route down: ${down.status} /menu, shell reads ${JSON.stringify(downShellReads)}`);
-          // F41 ALLOW: the owner adds a page; no webhook is sent.
-          state.versionDown = false;
           const before = await get(`/${NEW_PAGE_SLUG}`);
           state.newPage = true;
           state.updatedAt = new Date().toISOString();
@@ -428,7 +495,35 @@ async function main() {
             console.log(`  F41 after change +${i + 1}s: ${r.status} ${r.body.includes(NEW_PAGE_TEXT) ? 'new page' : 'not yet  '} /${NEW_PAGE_SLUG}`);
             if (r.status === 200 && r.body.includes(NEW_PAGE_TEXT)) break;
           }
-          failures.push(...checkVersionFence({ down, downShellReads, before, after: afterChange, shellReads: shellReads.slice(changeFrom), updatedAt: state.updatedAt }));
+          const changeShellReads = shellReads.slice(changeFrom);
+          // RW-4 row 1: the version route fails (a 500), then is slow (a
+          // timeout), each across one probe interval. The new page must hold.
+          const keptFrom = shellReads.length;
+          const failuresBefore = state.versionFailures;
+          const kept = [];
+          for (const mode of ['down', 'slow']) {
+            state.versionDown = mode === 'down';
+            state.versionSlowMs = mode === 'slow' ? VERSION_SLOW_MS : 0;
+            for (let i = 0; i < 3; i += 1) {
+              await new Promise((res) => setTimeout(res, 2500));
+              const r = await get(`/${NEW_PAGE_SLUG}`);
+              kept.push({ status: r.status, body: r.body });
+              console.log(`  F41 version route ${mode} +${(i + 1) * 2.5}s: ${r.status} ${r.body.includes(NEW_PAGE_TEXT) ? 'new page' : 'old copy'} /${NEW_PAGE_SLUG}`);
+            }
+          }
+          state.versionDown = false;
+          state.versionSlowMs = 0;
+          failures.push(
+            ...checkVersionFence({
+              before,
+              after: afterChange,
+              shellReads: changeShellReads,
+              updatedAt: state.updatedAt,
+              kept,
+              keptShellReads: shellReads.slice(keptFrom),
+              failedProbes: state.versionFailures - failuresBefore,
+            }),
+          );
         }
       }
     } finally {

@@ -27,7 +27,7 @@ import {
   statSnapshotFile,
 } from './snapshot/snapshotFile';
 import { parseSiteCacheTtlSeconds } from '../siteCacheTtl';
-import { siteVersionPath } from '../cacheInvalidation';
+import { siteVersionPath, versionedPath } from '../cacheInvalidation';
 
 export { ApiError, isQuotaError };
 
@@ -315,6 +315,15 @@ export async function clientFetchSafe<T>(
  *   portal. The time `revalidateSeconds` then acts purely as a backstop for
  *   missed webhooks.
  * - Tags are additive and backward-compatible; omit for time-only caching.
+ *
+ * `opts.fresh` (RW-4, the site shell only, see `readShell` in
+ * `../cacheInvalidation`): the same render read with no cache that can answer
+ * from before it began. It skips the data cache, and it carries its own start
+ * instant as `v`, a key no client.vivreal.io copy can predate (every query
+ * string is in that edge key; the Client takes `v` as a cache key and nothing
+ * else). It still goes through the memo and the floor below, on its own memo
+ * key, so concurrent fresh reads share one call and never join a cached read.
+ * Only ever asked for in a request render of an ordinary page.
  */
 export async function clientFetchCached<T>(
   path: string,
@@ -322,20 +331,24 @@ export async function clientFetchCached<T>(
   revalidateSeconds: number,
   init?: RequestInit,
   tags?: string[],
-  opts?: { floor?: boolean; floorPath?: string }
+  opts?: { floor?: boolean; floorPath?: string; fresh?: boolean }
 ): Promise<T> {
   const previewToken = await readPreviewToken();
 
   // F0 (next release 2026-11, T4): a cached read that goes upstream is a page
   // render read (a build, an ISR regeneration, a revalidation), so it carries
-  // the internal-meter token, minted here, inside the closure, so each upstream
-  // call gets a fresh one and nothing per-request reaches the cache key. The
-  // preview path below and every uncached `clientFetch` never mint.
+  // the internal-meter token, minted here, per upstream call, so each call gets
+  // a fresh one and nothing per-request reaches the cache key. A fresh shell
+  // read (RW-4) is the same render read and mints here too. The preview path
+  // below and every uncached `clientFetch` never mint.
+  const renderRead = async (readPath: string) =>
+    doClientFetch<T>(CLIENT_API, readPath, null, init, await internalTokenFor(readPath, init));
   const cached = unstable_cache(
-    async () => doClientFetch<T>(CLIENT_API, path, null, init, await internalTokenFor(path, init)),
+    async () => renderRead(path),
     ['vr-client-api', path],
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
+  const fresh = () => renderRead(versionedPath(path, new Date().toISOString()));
 
   // V2: a read whose failures have REPEATED in the last 5 s answers without
   // going upstream again, so an outage costs one call per page request rather
@@ -356,13 +369,15 @@ export async function clientFetchCached<T>(
       now: Date.now,
     },
     {
-      path,
+      // The memo key: a fresh read has its own, so it never joins (or waits
+      // out the pause of) a cached read of the same path.
+      path: opts?.fresh ? `${path}#fresh` : path,
       ...(opts?.floorPath ? { floorPath: opts.floorPath } : {}),
       fallback,
       floorOptOut: opts?.floor === false,
       // Never cache preview traffic, and never answer it from the floor.
       preview: previewToken ? () => clientFetchSafe<T>(path, fallback, init) : null,
-      read: cached,
+      read: opts?.fresh ? fresh : cached,
       onFailure: (err) => {
         // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
         // never cache it, and never memoise it (a throw here records nothing).

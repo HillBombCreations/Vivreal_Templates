@@ -60,10 +60,14 @@ export const HARD_INVALIDATION = { expire: 0 } as const;
  *    (`isOrdinaryPageRender`): not at build, not in a regeneration of a page
  *    served from the page cache, not on the home page, not in a route
  *    handler. Those read the shell exactly as before.
- *  - Any failure (an error, the timeout, a 4xx or 5xx, an answer that is not
- *    this site's version) forgets the version, so the shell read is the
- *    unversioned one, byte for byte today's. A Client without CL7 answers
- *    404, so before CL7 ships every read is today's.
+ *  - A failed or slow probe never takes an instance back to an older site
+ *    than it has served (RW-4, vivreal-hq rewalk-2026-11-defects.md). The
+ *    instance keeps the newest version it knows, and moves only forward: once
+ *    a version is known, no ordinary page reads the unversioned shell again.
+ *    Until 2026-11-09 a failure forgot the version, so the read fell back to
+ *    the unversioned key, which still held the shell from before the save: a
+ *    page that already showed the save flipped back to the old words, and a
+ *    new page answered 404 again. See `readShell` for what each read does.
  *  - Concurrent requests share one probe; a burst never multiplies it.
  *
  * Pure: the probe, the clock and the timer are injected, so `node --test`
@@ -73,8 +77,23 @@ export const HARD_INVALIDATION = { expire: 0 } as const;
 /** At most one probe per this many milliseconds per instance (OD-01). */
 export const SITE_VERSION_INTERVAL_MS = 5_000;
 
-/** A probe that has not answered in this much awake time is a failure. */
-export const SITE_VERSION_TIMEOUT_MS = 500;
+/**
+ * A probe that has not answered in this much awake time is a failure.
+ *
+ * Warm: the RW-4 walk measured the Client answering in 250 to 483 ms and the
+ * probe taking 524 to 566 ms end to end, against the 500 that was here, so
+ * every probe failed. That Client ran from source against Atlas over the
+ * internet, slower than a warm Lambda, so 1500 holds a warm Client about three
+ * times over. Cold: a Client cold start takes seconds and still times out,
+ * which is now safe (the known version is kept, or the first read is fresh).
+ * Render budget: the probe holds at most one render per instance per
+ * `SITE_VERSION_INTERVAL_MS` (concurrent renders join it, later ones inside
+ * the interval skip it), and 1500 is the bound the middleware already accepts
+ * for a visitor's first site map lookup against the same Client
+ * (`COLD_FETCH_DEADLINE_MS`, `./edgeSiteMap.ts`), far under Amplify's 28 s
+ * origin timeout.
+ */
+export const SITE_VERSION_TIMEOUT_MS = 1_500;
 
 /** CL7's own path, built in one place. */
 export function siteVersionPath(siteId: string): string {
@@ -86,7 +105,8 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 /**
  * The version in a CL7 answer (the envelope's `data`), or null when it is not
  * this site's or not an ISO instant. A site stored without `updatedAt`
- * answers null, which reads as "no version": today's read.
+ * answers null, which reads as "no version": the plain read while nothing is
+ * known (`answersNoVersion`).
  */
 export function readSiteVersion(data: unknown, siteId: string): string | null {
   if (typeof data !== 'object' || data === null) return null;
@@ -95,29 +115,96 @@ export function readSiteVersion(data: unknown, siteId: string): string | null {
   return typeof updatedAt === 'string' && ISO_INSTANT.test(updatedAt) ? updatedAt : null;
 }
 
+/**
+ * Whether a CL7 answer is this site's, stored with no `updatedAt`: a real
+ * "this site has no version", unlike another site's id or a value that is not
+ * an instant, which are failures.
+ */
+function answersNoVersion(data: unknown, siteId: string): boolean {
+  if (typeof data !== 'object' || data === null) return false;
+  const { siteId: answered, updatedAt } = data as { siteId?: unknown; updatedAt?: unknown }; // both read as unknown and checked here
+  return answered === siteId && (updatedAt === null || updatedAt === undefined);
+}
+
 /** The shell read's path with the version on it, or the path as given when there is none. */
 export function versionedPath(path: string, version: string | null): string {
   if (!version) return path;
   return `${path}${path.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}`;
 }
 
+/** Whether `a` is a later instant than `b` (both pass `ISO_INSTANT`). */
+function isLater(a: string, b: string): boolean {
+  return Date.parse(a) > Date.parse(b);
+}
+
 /**
- * The shell read with this render's version, falling back to the plain read
- * when the versioned one did not come back live (PR #227 review N4). A Client
- * that refuses `v` (a build without #137's validator change) or any failure on
- * the new key then answers from the plain read, today's path and at most one
- * cache window old, before the build snapshot would. No version: the plain
- * read alone, exactly as before the fence.
+ * What one render's shell read is (RW-4).
+ *  - `plain`: the unversioned read, exactly as before the fence. Only for a
+ *    render that is not an ordinary page served per request, or while nothing
+ *    is known and the Client answered that the site has no version (a site
+ *    with no `updatedAt` gives the fence nothing to key on, so its reads stay
+ *    as before the fence; reading fresh for it would skip every cache on every
+ *    page).
+ *  - `versioned`: the newest version this instance knows, kept across failed
+ *    and slow probes.
+ *  - `fresh`: nothing is known yet and the probe failed or was slow.
  */
-export async function readVersionedShell<T>(
-  read: (path: string) => Promise<T>,
+export type ShellRead =
+  | { readonly kind: 'plain' }
+  | { readonly kind: 'versioned'; readonly version: string }
+  | { readonly kind: 'fresh' };
+
+const PLAIN_READ: ShellRead = Object.freeze({ kind: 'plain' });
+const FRESH_READ: ShellRead = Object.freeze({ kind: 'fresh' });
+
+/** The two shell reads a render can make. */
+export interface ShellReads<T> {
+  /** The cached read of this path: the Next data cache, then client.vivreal.io. */
+  readonly cached: (path: string) => Promise<T>;
+  /**
+   * A read no cache can answer from before it began: past the data cache, and
+   * keyed at the edge by its own start instant (`clientFetchCached`'s
+   * `fresh`). Only ever made in a request render of an ordinary page, the one
+   * place an uncached fetch cannot turn a cached page dynamic.
+   */
+  readonly fresh: () => Promise<T>;
+}
+
+/**
+ * This render's site shell, by the fence's answer (RW-4):
+ *  - plain: the cached plain read, as before the fence.
+ *  - versioned: the cached read of that version. If it does not come back live
+ *    (its key is not cached here and the Client failed), a fresh read, never
+ *    the plain key, which can hold the site from before a save this instance
+ *    has already served. If that fails too, the floor the seam answered (a
+ *    floor value refuses every "not found").
+ *  - fresh: a fresh read, so a first read never takes a plain copy from before
+ *    the stored site. Its `updatedAt` becomes the known version, so the next
+ *    render reads that version through the caches instead of another fresh
+ *    read. Only when the fresh read fails too (the Client answered neither the
+ *    probe nor the read, so nothing newer can be had) does it take the plain
+ *    read: today's outage answer, never older than the build floor, and the
+ *    one read a Client that refuses `v` still answers (review N4).
+ */
+export async function readShell<T extends { readonly updatedAt?: unknown } | null | undefined>(
+  fence: SiteVersionFence,
+  serving: boolean,
+  reads: ShellReads<T>,
   path: string,
-  version: string | null,
   isLive: (value: T) => boolean,
 ): Promise<T> {
-  if (!version) return read(path);
-  const versioned = await read(versionedPath(path, version));
-  return isLive(versioned) ? versioned : read(path);
+  const plan = await fence.shellReadFor(serving);
+  if (plan.kind === 'plain') return reads.cached(path);
+  if (plan.kind === 'versioned') {
+    const versioned = await reads.cached(versionedPath(path, plan.version));
+    if (isLive(versioned)) return versioned;
+  }
+  const fresh = await reads.fresh();
+  if (isLive(fresh)) {
+    fence.learn(fresh?.updatedAt);
+    return fresh;
+  }
+  return plan.kind === 'fresh' ? reads.cached(path) : fresh;
 }
 
 /**
@@ -146,24 +233,37 @@ export interface SiteVersionFenceDeps {
   readonly startTimeout: (ms: number, onExpire: () => void) => { cancel(): void };
   readonly intervalMs?: number;
   readonly timeoutMs?: number;
-  /** One line per probe that failed; the read itself goes on as today. */
+  /** One line per probe that failed; the read itself goes on (see `readShell`). */
   readonly onFailure?: (reason: string) => void;
 }
 
 export interface SiteVersionFence {
+  /** What THIS render's shell read is. `serving` is `isOrdinaryPageRender` for this render. */
+  shellReadFor(serving: boolean): Promise<ShellRead>;
   /**
-   * The version the shell read of THIS render carries, or null for today's
-   * unversioned read. `serving` is `isOrdinaryPageRender` for this render.
+   * A version read off a live fresh shell (its `updatedAt`, the same instant
+   * CL7 answers). Moves the known version forward only; anything that is not
+   * an ISO instant is ignored.
    */
-  versionFor(serving: boolean): Promise<string | null>;
+  learn(version: unknown): void;
 }
 
 export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionFence {
   const intervalMs = deps.intervalMs ?? SITE_VERSION_INTERVAL_MS;
   const timeoutMs = deps.timeoutMs ?? SITE_VERSION_TIMEOUT_MS;
-  let lastSeen: string | null = null;
+  // The newest version this instance has seen. Never cleared and never moved
+  // back (RW-4): a failed probe leaves it, and an older answer (a lagging
+  // read) does not replace it.
+  let known: string | null = null;
+  // Only read while nothing is known: whether the last probe answered "this
+  // site has no version" (a plain read) or failed (a fresh read).
+  let unversioned = false;
   let probedAt = Number.NEGATIVE_INFINITY;
   let inFlight: Promise<void> | null = null;
+
+  const moveForward = (version: string): void => {
+    if (known === null || isLater(version, known)) known = version;
+  };
 
   const runProbe = async (): Promise<void> => {
     const controller = new AbortController();
@@ -179,16 +279,20 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
       // signal still cannot hold the page past the budget.
       const answer = await Promise.race([deps.probe(controller.signal), timedOut]);
       if (answer === 'timeout') {
-        lastSeen = null;
+        unversioned = false;
         deps.onFailure?.('timeout');
         return;
       }
       const version = readSiteVersion(answer, deps.siteId);
-      lastSeen = version;
-      if (!version) deps.onFailure?.('no_version');
+      if (version) {
+        moveForward(version);
+        return;
+      }
+      unversioned = answersNoVersion(answer, deps.siteId);
+      deps.onFailure?.('no_version');
     } catch (err) {
-      // An error, a 4xx or a 5xx: forget the version, so the read is today's.
-      lastSeen = null;
+      // An error, a 4xx or a 5xx: the known version stays (RW-4).
+      unversioned = false;
       deps.onFailure?.(err instanceof Error ? err.message : 'error');
     } finally {
       timer?.cancel();
@@ -196,8 +300,8 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
   };
 
   return {
-    async versionFor(serving: boolean): Promise<string | null> {
-      if (!serving || !deps.siteId) return null;
+    async shellReadFor(serving: boolean): Promise<ShellRead> {
+      if (!serving || !deps.siteId) return PLAIN_READ;
       if (!inFlight && deps.now() - probedAt >= intervalMs) {
         probedAt = deps.now();
         inFlight = runProbe().finally(() => {
@@ -205,7 +309,11 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
         });
       }
       if (inFlight) await inFlight;
-      return lastSeen;
+      if (known !== null) return { kind: 'versioned', version: known };
+      return unversioned ? PLAIN_READ : FRESH_READ;
+    },
+    learn(version: unknown): void {
+      if (typeof version === 'string' && ISO_INSTANT.test(version)) moveForward(version);
     },
   };
 }
