@@ -117,10 +117,12 @@ export const SNAPSHOT_RECORDER = createSnapshotRecorder({ siteId: SITE_ID });
  * The floor answer for `path` with the given reason, logged as
  * `site.snapshot.floor`, or undefined when the snapshot has none. For a caller
  * that decides on a value the seam already returned (a siteDetails read that
- * "succeeded" with no `values`, research 2.3), never for a failed read: the
- * seam answers those itself.
+ * "succeeded" with no `values`, research 2.3), or (`own_read`) for a shell
+ * resolution whose every read hit its deadline, so no seam answered at all
+ * (RW-4, the site version fence). A read the seam answered is never asked
+ * again: the seam answers those itself.
  */
-export function floorAnswerFor<T>(path: string, reason: 'values_missing'): T | undefined {
+export function floorAnswerFor<T>(path: string, reason: 'values_missing' | 'own_read'): T | undefined {
   const found = SNAPSHOT_FLOOR.lookup<T>(path);
   if (!found.hit) return undefined;
   SNAPSHOT_FLOOR.noteAnswer(path, { reason, elapsedMs: null });
@@ -177,6 +179,15 @@ async function readPreviewToken(): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether this render is a portal preview, by the same decision every read
+ * here makes. The site version fence reads a preview as before the fence and
+ * learns nothing from it (RW-4, I9).
+ */
+export async function isPreviewRender(): Promise<boolean> {
+  return (await readPreviewToken()) !== null;
 }
 
 /**
@@ -316,15 +327,19 @@ export async function clientFetchSafe<T>(
  *   missed webhooks.
  * - Tags are additive and backward-compatible; omit for time-only caching.
  *
- * `opts.fresh` (RW-4, the site shell only, see `readShell` in
+ * `opts.fresh` (RW-4, the site shell only, see `createSiteVersionFence` in
  * `../cacheInvalidation`): the same render read with no cache that can answer
  * from before it began. It skips the data cache, and it carries its own start
  * instant as `v`, a key no client.vivreal.io copy can predate (every query
  * string is in that edge key; the Client takes `v` as a cache key and nothing
  * else). It still goes through the memo and the floor below, on its own memo
  * key, so concurrent fresh reads share one call and never join a cached read.
- * Only ever asked for in a fenced render (`isFencedRender`), rendered per
- * request.
+ * Only ever asked for by a FULL reader, rendered per request. Its deadline
+ * arrives as `init.signal`, like any read's.
+ *
+ * `opts.onUpstreamError` sees the error of a read that went upstream and
+ * failed, before the capture: the fence tells a refusal (a 4xx) from a
+ * timeout, a 5xx or a network error by it (R1).
  */
 export async function clientFetchCached<T>(
   path: string,
@@ -332,7 +347,7 @@ export async function clientFetchCached<T>(
   revalidateSeconds: number,
   init?: RequestInit,
   tags?: string[],
-  opts?: { floor?: boolean; floorPath?: string; fresh?: boolean }
+  opts?: { floor?: boolean; floorPath?: string; fresh?: boolean; onUpstreamError?: (err: unknown) => void }
 ): Promise<T> {
   const previewToken = await readPreviewToken();
 
@@ -380,6 +395,7 @@ export async function clientFetchCached<T>(
       preview: previewToken ? () => clientFetchSafe<T>(path, fallback, init) : null,
       read: opts?.fresh ? fresh : cached,
       onFailure: (err) => {
+        opts?.onUpstreamError?.(err);
         // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
         // never cache it, and never memoise it (a throw here records nothing).
         if (err instanceof ApiError && err.status === 402) {

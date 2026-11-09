@@ -5,19 +5,30 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  CHANGED_TEXT,
   COLD_PAGE_TEXT,
+  HOME_AFTER_TEXT,
+  HOME_BEFORE_TEXT,
   NEW_PAGE_TEXT,
   OWNER_BOOK_TEXT,
+  ROLLED_PAGE_TEXT,
   SHARE_IMAGE_MARKER,
   SHARE_PAGE_SLUG,
   SHARE_PAGE_TEXT,
   STOREFRONT_TEXT,
   checkAfterFlip,
+  checkColdBudget,
   checkColdFirstRead,
+  checkHeldShell,
+  checkHomeNotOlder,
   checkManifest,
+  checkRefusedV,
+  checkRegenerationKnown,
   checkResponses,
   checkShareAndSitemap,
+  checkShellDown,
   checkVersionFence,
+  checkWebhookProbe,
   routeTable,
 } from './isr-build-check.mjs';
 
@@ -133,16 +144,20 @@ test('F41: the fence phase passes only on a 404 before, the new page with its v,
   assert.equal(checkVersionFence({ ...good, keptShellReads: [SHELL] }).length, 1, 'a plain shell read while it fails fails');
   assert.equal(checkVersionFence({ ...good, kept: [] }).length, 1, 'nothing read while it fails is not a pass');
   assert.equal(checkVersionFence({ ...good, failedProbes: 1 }).length, 1, 'control: a phase in which the probes did not fail tests nothing');
+  // N1: the forget plant reads fresh (another v) while the version is known; that fails too.
+  assert.equal(checkVersionFence({ ...good, keptShellReads: [`${SHELL}&v=${encodeURIComponent('2026-11-05T01:09:00.000Z')}`] }).length, 1, 'a fresh instant while the version is known fails');
 });
 
-test('F41 (RW-4 follow-up): the share image and the sitemap pass only when current on the first read, one probe across three readers, and held while the version route fails', () => {
+test('F41 d (RW-4 follow-up, B4): the share image, the sitemap and IndexNow pass only when current on the first read, one probe across four readers, and held while the version route fails', () => {
   const listed = { status: 200, body: `<url><loc>https://fixture.example/${SHARE_PAGE_SLUG}</loc></url>` };
   const unlisted = { status: 200, body: '<url><loc>https://fixture.example/about</loc></url>' };
   const own = { status: 200, body: `\u0089PNG${SHARE_IMAGE_MARKER}` };
   const card = { status: 200, body: '\u0089PNG generated card' };
+  const indexed = { status: 200, body: `{"eligible":true,"urls":[{"loc":"https://fixture.example/${SHARE_PAGE_SLUG}"}]}` };
+  const notIndexed = { status: 200, body: '{"eligible":true,"urls":[{"loc":"https://fixture.example/about"}]}' };
   const good = {
-    before: { og: card, sitemap: unlisted },
-    first: { og: own, sitemap: listed, page: { status: 200, body: `<h2>${SHARE_PAGE_TEXT}</h2>` } },
+    before: { og: card, sitemap: unlisted, indexnow: notIndexed },
+    first: { og: own, sitemap: listed, indexnow: indexed, page: { status: 200, body: `<h2>${SHARE_PAGE_TEXT}</h2>` } },
     probesInWindow: 1,
     windowMs: 900,
     kept: { sitemap: listed, failedProbes: 1, shellReads: [`${SHELL}&v=x`] },
@@ -150,12 +165,68 @@ test('F41 (RW-4 follow-up): the share image and the sitemap pass only when curre
   assert.deepEqual(checkShareAndSitemap(good), []);
   assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, sitemap: unlisted } }).length, 1, 'a sitemap without the new page on the first read fails');
   assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, og: card } }).length, 1, 'a share image that is not the page\'s own fails');
+  assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, indexnow: notIndexed } }).length, 1, 'an IndexNow list without the new page fails');
+  assert.equal(checkShareAndSitemap({ ...good, first: { ...good.first, indexnow: { status: 503, body: '{}' } } }).length, 1, 'an IndexNow 503 on the first read after the save fails');
   assert.equal(checkShareAndSitemap({ ...good, probesInWindow: 2 }).length, 1, 'a probe per reader (or per bundle layer) fails');
   assert.equal(checkShareAndSitemap({ ...good, probesInWindow: 2, windowMs: 6000 }).length, 1, 'a window past one interval cannot be judged');
   assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, sitemap: unlisted } }).length, 1, 'an older sitemap while the version route fails fails');
   assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, shellReads: [SHELL] } }).length, 1, 'a plain shell read while it fails fails');
   assert.equal(checkShareAndSitemap({ ...good, kept: { ...good.kept, failedProbes: 0 } }).length, 1, 'control: no failed probe tests nothing');
-  assert.equal(checkShareAndSitemap({ ...good, before: { og: own, sitemap: listed } }).length, 2, 'control: both must be old before the save');
+  assert.equal(checkShareAndSitemap({ ...good, before: { og: own, sitemap: listed, indexnow: indexed } }).length, 3, 'control: all three must be old before the save');
+});
+
+test('F41 a (RW-4 I3, I7): the first read with the probe slow and the fresh read held passes only inside the budget and never as a 404', () => {
+  assert.deepEqual(checkColdBudget({ read: { status: 500, body: '' }, elapsedMs: 7_100 }), [], 'a refusal inside the budget passes');
+  assert.deepEqual(checkColdBudget({ read: { status: 200, body: '' }, elapsedMs: 3_000 }), []);
+  assert.equal(checkColdBudget({ read: { status: 200, body: '' }, elapsedMs: 21_600 }).length, 1, 'an unbounded fresh read (B2) fails');
+  assert.equal(checkColdBudget({ read: { status: 404, body: '' }, elapsedMs: 600 }).length, 1, 'a 404 from a plain copy older than the stored site fails');
+  assert.equal(checkColdBudget({ read: { status: 0, body: '' }, elapsedMs: 600 }).length, 1, 'no answer fails');
+});
+
+test('F41 e (RW-4 I2, G5): the read after a signed site.updated inside the interval passes only with the new v', () => {
+  const at = '2026-11-09T16:00:00.000Z';
+  const good = {
+    hook: { status: 200 },
+    read: { status: 200, body: `<h2>${CHANGED_TEXT}</h2>` },
+    shellReads: [`${SHELL}&v=${encodeURIComponent(at)}`],
+    updatedAt: at,
+  };
+  assert.deepEqual(checkWebhookProbe(good), []);
+  assert.equal(checkWebhookProbe({ ...good, shellReads: [`${SHELL}&v=${encodeURIComponent('2026-11-09T15:59:50.000Z')}`] }).length, 1, 'the old v (the probe was not made due) fails');
+  assert.equal(checkWebhookProbe({ ...good, read: { status: 200, body: `<h2>${NEW_PAGE_TEXT}</h2>` } }).length, 1, 'the old words fail');
+  assert.equal(checkWebhookProbe({ ...good, hook: { status: 401 } }).length, 1, 'an unaccepted webhook fails');
+});
+
+test('F41 g and h (RW-4 I1, I3, I4): with every shell read held or failing, only the page from the newest shell served, in time, passes', () => {
+  const page = { status: 200, body: `<h2>${CHANGED_TEXT}</h2>` };
+  assert.deepEqual(checkHeldShell({ read: page, elapsedMs: 3_400 }), []);
+  assert.equal(checkHeldShell({ read: page, elapsedMs: 20_300 }).length, 1, 'a read that waits out the hold fails');
+  assert.equal(checkHeldShell({ read: { status: 500, body: '' }, elapsedMs: 3_400 }).length, 1, 'the floor or a 5xx fails');
+  assert.deepEqual(checkShellDown({ read: page }), []);
+  assert.equal(checkShellDown({ read: { status: 500, body: '' } }).length, 1, 'the floor or a 5xx fails');
+  assert.equal(checkShellDown({ read: { status: 200, body: '<h2>Welcome</h2>' } }).length, 1, 'a page without its own words fails');
+});
+
+test('F41 i (RW-4 B1, G2): with every v refused, only both pages answering passes', () => {
+  const rolled = { status: 200, body: `<h2>${ROLLED_PAGE_TEXT}</h2>` };
+  const kept = { status: 200, body: `<h2>${CHANGED_TEXT}</h2>` };
+  assert.deepEqual(checkRefusedV({ rolled, kept }), []);
+  assert.equal(checkRefusedV({ rolled: { status: 500, body: '' }, kept }).length, 1, 'the page saved meanwhile answering 500 (B1) fails');
+  assert.equal(checkRefusedV({ rolled: { status: 404, body: '' }, kept }).length, 1, 'a 404 fails');
+  assert.equal(checkRefusedV({ rolled, kept: { status: 500, body: '' } }).length, 1, 'the page already served answering 500 fails');
+});
+
+test('F41 f (RW-4 P1): the home regeneration passes only on the known version; with the gate unset, home only with the new words', () => {
+  const at = '2026-11-09T16:10:00.000Z';
+  assert.deepEqual(checkRegenerationKnown({ shellReads: [`${SHELL}&v=${encodeURIComponent(at)}`], updatedAt: at }), []);
+  assert.equal(checkRegenerationKnown({ shellReads: [SHELL], updatedAt: at }).length, 2, 'a plain read fails (and carries no v)');
+  assert.equal(checkRegenerationKnown({ shellReads: [], updatedAt: at }).length, 1, 'control: no shell read tests nothing');
+  const before = { status: 200, body: `<h2>${HOME_BEFORE_TEXT}</h2>` };
+  const after = { status: 200, body: `<h2>${HOME_AFTER_TEXT}</h2>` };
+  const page = { status: 200, body: '' };
+  assert.deepEqual(checkHomeNotOlder({ before, page, after }), []);
+  assert.equal(checkHomeNotOlder({ before, page, after: before }).length, 1, 'home older than the page just served fails');
+  assert.equal(checkHomeNotOlder({ before: after, page, after }).length, 1, 'control: home must show the old words before the save');
 });
 
 test('F41 (RW-4): the first read with a slow version route passes only on the page added after the build, and its version kept', () => {

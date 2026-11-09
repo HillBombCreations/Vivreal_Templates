@@ -9,7 +9,7 @@ import type {
 } from '@/types/SiteData';
 import * as Sentry from '@sentry/nextjs';
 import { cache } from 'react';
-import { clientFetchCached, floorAnswerFor, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
+import { ApiError, clientFetchCached, floorAnswerFor, SITE_CACHE_TTL_SECONDS } from '@/lib/api/client';
 import { siteDetailsPath } from '@/lib/api/readPaths';
 import { readShellThroughFence } from './siteVersionFence';
 import { hasSiteDetailsValues, resolveSiteDetailsRaw } from '@/lib/api/snapshot/resolve';
@@ -175,31 +175,45 @@ function indexNowKeyField(value: unknown): Pick<SiteData, 'indexNowKey'> {
  * seam already asked and found nothing.
  *
  * `fromFloor` is true whenever the shell came from the floor by either route,
- * and the caller marks what it builds so a route about to 404 can refuse
+ * or the fence served a shell that may be older than the stored site (RW-4,
+ * I7), and the caller marks what it builds so a route about to 404 can refuse
  * instead (`refuseNegativeClaimFromFloor`).
  */
 async function readSiteDetails(): Promise<{ raw: SiteDetailsResponse | null; fromFloor: boolean }> {
   const path = siteDetailsPath(SITE_ID);
-  // F41 (OD-01): on an ordinary page served per request, and on the share
-  // image and sitemap routes (RW-4 follow-up), the read carries the newest
-  // site version this instance knows, so a save is a new data-cache key on
-  // every instance and a new client.vivreal.io edge key. A failed or slow
-  // probe keeps that version, and a first read with nothing known reads fresh,
-  // so none of them goes back to the plain key's older copy (RW-4). Home, a
-  // cached page and every other route handler read `path` exactly as before.
-  // The floor keeps answering by `path`, the key the build wrote. See
-  // ./siteVersionFence and `readShell`.
-  const read = (readPath: string, opts: { fresh?: boolean } = {}) =>
+  // F41 and RW-4: every shell reader resolves through the site version fence
+  // (vivreal-hq design-t2-fence-state.md, ./siteVersionFence and
+  // `createSiteVersionFence`). This is the ONE `clientFetchCached` call for the
+  // shell (I6): the fence picks the key (`path`, or `path&v=<a stored
+  // version>`), the deadline (`signal`) and whether the read is fresh. The
+  // floor keeps answering by `path`, the key the build wrote. A `stale` answer
+  // may be older than the stored site, so it is marked like the floor: every
+  // negative claim built from it refuses (I7).
+  const read = (readPath: string, signal: AbortSignal, opts: { fresh?: boolean; onUpstreamError?: (err: unknown) => void } = {}) =>
     clientFetchCached<SiteDetailsResponse | null>(
       readPath,
       null,
       SITE_DETAILS_REVALIDATE_SECONDS,
-      undefined,
+      { signal },
       SITE_CHROME_TAG,
       { floorPath: path, ...opts }
     );
-  const live = await readShellThroughFence<SiteDetailsResponse | null>(
-    { cached: (readPath) => read(readPath), fresh: () => read(path, { fresh: true }) },
+  const { value: live, stale } = await readShellThroughFence<SiteDetailsResponse | null>(
+    {
+      cached: (readPath, signal) => read(readPath, signal),
+      fresh: async (signal) => {
+        let refused = false;
+        const value = await read(path, signal, {
+          fresh: true,
+          // R1: only a 4xx refusal (a Client without #137 refuses `v`) is a refusal.
+          onUpstreamError: (err) => {
+            refused = err instanceof ApiError && err.status >= 400 && err.status < 500;
+          },
+        });
+        return { value, refused };
+      },
+      floor: () => floorAnswerFor<SiteDetailsResponse>(path, 'own_read') ?? null,
+    },
     path,
     (value) => value !== null && value !== undefined && !isFloorValue(value)
   );
@@ -208,7 +222,7 @@ async function readSiteDetails(): Promise<{ raw: SiteDetailsResponse | null; fro
       ? floorAnswerFor<SiteDetailsResponse>(path, 'values_missing')
       : undefined;
   const { raw, source } = resolveSiteDetailsRaw(live, floor);
-  return { raw, fromFloor: source === 'floor' || (source === 'live' && isFloorValue(live)) };
+  return { raw, fromFloor: source === 'floor' || (source === 'live' && isFloorValue(live)) || stale };
 }
 
 /**

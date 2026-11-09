@@ -19,22 +19,32 @@
  *     answers `x-nextjs-cache: HIT` with `s-maxage=300` on the second read;
  *     a storefront page, a checkout result page, `/book` and an unlisted item
  *     answer `no-store`; nothing answers 500;
- *  3. (gate on) F41, the site version fence through the real `[slug]` route:
- *     a. (RW-4) on the server's first ordinary read, with the version route
- *        slower than the probe timeout, a page added after the build answers
- *        200: the read is fresh, never the build's plain copy, and its
- *        `updatedAt` keys the next read;
- *     b. a page the owner adds with NO webhook answers 200 within one probe
- *        interval, its shell read carrying the new `v` (before the fence it
- *        answered 404 for the whole cache TTL);
- *     c. (RW-4) the version route then fails, then is slow, across two probe
- *        intervals: the new page keeps answering 200, and no shell read is the
- *        plain one (until 2026-11-09 a failed probe went back to it);
- *     d. (RW-4 follow-up) the owner adds a page with its own share image: on
- *        the first reads after the save its share image is its own and the
- *        sitemap lists it, the page, the share image and the sitemap make ONE
- *        version probe per interval between them, and a version route failure
- *        never takes the sitemap back to an older list.
+ *  3. F41, the site version fence (RW-4, vivreal-hq design-t2-fence-state.md)
+ *     through the real routes. Gate on:
+ *     a. the server's first ordinary read, the version route slow and every
+ *        fresh read held: it answers within the 6.5 s budget, and a page the
+ *        stale plain copy lacks is never a 404 (I3, I7, T3b);
+ *     b. still nothing learned: home first (it teaches nothing), then with the
+ *        probe slow and a cold fresh read (4 s), a page added after the build
+ *        answers 200 and its `updatedAt` keys the next read (R3, G6);
+ *     c. a page the owner adds with NO webhook answers 200 within one probe
+ *        interval; then the version route fails, then is slow: the page holds
+ *        and every shell read carries the known version (I1, N1);
+ *     e. a signed site.updated inside the interval makes the probe due: the
+ *        next read carries the new `v` (I2, G5);
+ *     g. after a purge the Client holds every shell read: the page answers
+ *        from the newest shell served within 4.5 s (I3, T11);
+ *     h. after a purge every shell read fails: the same (I1, I4);
+ *     i. the Client refuses every `v` (a rollback past #137): a page saved
+ *        meanwhile and a page already served answer (B1, G2);
+ *     d. a page added with its own share image: on the first reads after the
+ *        save its share image is its own and the sitemap and the signed
+ *        IndexNow list name it; the page, the share image, the sitemap and
+ *        IndexNow make ONE probe per interval; a version route failure never
+ *        takes the sitemap back (I5, I6, B4);
+ *     f. after a purge the home regeneration reads the known version (P1).
+ *     Gate unset: f. home never shows words older than a page the same
+ *     server served (P1, I1).
  *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
@@ -67,6 +77,29 @@ export const COLD_PAGE_TEXT = 'Just opened at the fixture bakery';
 
 /** RW-4: how long the slow version route takes, past the probe timeout (1500 awake ms). */
 const VERSION_SLOW_MS = 3_000;
+
+/** RW-4: the words the owner changes `/whats-new` to, before a signed `site.updated`. */
+export const CHANGED_TEXT = 'Changed this morning at the fixture bakery';
+
+/** RW-4 (B1, G2): a page added while the Client refuses every `v`. */
+export const ROLLED_PAGE_SLUG = 'rolled-out';
+export const ROLLED_PAGE_TEXT = 'Rolled out while the Client refused v';
+
+/** RW-4 (P1, gate unset): the home page's words before and after one save. */
+export const HOME_BEFORE_TEXT = 'Welcome';
+export const HOME_AFTER_TEXT = 'Welcome to the new season at the fixture bakery';
+
+/** A fixture IndexNow key (32 lowercase hex, `INDEXNOW_KEY_PATTERN`), never a real one. */
+const INDEXNOW_KEY = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
+
+/** RW-4 (I3): how long the fixture holds a read it is told to hold, past every deadline. */
+const HOLD_MS = 20_000;
+
+/** RW-4 (G6): a cold Client's answer to the first fresh read, inside its 5 s deadline. */
+const COLD_FRESH_MS = 4_000;
+
+/** RW-4 (I3): what a real render adds to the fence's budget (Next's own work, the awake timer's tick). */
+const RENDER_ALLOWANCE_MS = 1_000;
 
 /** RW-4 follow-up: a page added with its own share image, read through /og and /sitemap.xml. */
 export const SHARE_PAGE_SLUG = 'new-arrivals';
@@ -105,7 +138,7 @@ export function fixtureSiteDetails(state = {}) {
     businessInfo: { name: 'Fixture Bakery', contactInfo: { phoneNumber: '555 0100' } },
     socialLinks: [],
     pages: [
-      { slug: 'home', name: 'Home', format: 'home', blocks: [block('h1', 'section-header', { labels: { title: 'Welcome' } })] },
+      { slug: 'home', name: 'Home', format: 'home', blocks: [block('h1', 'section-header', { labels: { title: state.homeTitle ?? HOME_BEFORE_TEXT } })] },
       { slug: 'about', name: 'About', format: 'about', blocks: aboutBlocks },
       // Review B1: owner pages at the two booking addresses, booking off.
       { slug: 'book', name: 'Book', format: 'about', blocks: [block('b1', 'section-header', { labels: { title: OWNER_BOOK_TEXT } })] },
@@ -127,7 +160,8 @@ export function fixtureSiteDetails(state = {}) {
       },
       { slug: 'blog', name: 'Blog', format: 'collection-list', detailPage: { enabled: true, itemCollectionId: POSTS, itemKeyField: 'slug' } },
       { slug: 'shop', name: 'Shop', format: 'catalog', blocks: [block('s1', 'products', { bindings: [{ collectionId: POSTS, role: 'primary' }] })] },
-      ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: NEW_PAGE_TEXT } })] }] : []),
+      ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: state.newPageText ?? NEW_PAGE_TEXT } })] }] : []),
+      ...(state.rolledPage ? [{ slug: ROLLED_PAGE_SLUG, name: 'Rolled out', format: 'about', blocks: [block('r1', 'section-header', { labels: { title: ROLLED_PAGE_TEXT } })] }] : []),
       ...(state.coldPage ? [{ slug: COLD_PAGE_SLUG, name: 'Just opened', format: 'about', blocks: [block('j1', 'section-header', { labels: { title: COLD_PAGE_TEXT } })] }] : []),
       ...(state.sharePage
         ? [{
@@ -141,6 +175,8 @@ export function fixtureSiteDetails(state = {}) {
     ],
     // R5: when the site document last changed, the same instant the version route answers.
     updatedAt: state.updatedAt ?? null,
+    // C1: the IndexNow key, so `/api/indexnow/urls` answers an eligible list (RW-4, B4).
+    indexNowKey: INDEXNOW_KEY,
   };
 }
 
@@ -165,15 +201,24 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
       // The shell read's query is logged (fixture ids only), so F41 can see `v`.
       log(`${req.method} ${url.pathname}${url.search}`);
       if ([...url.searchParams.keys()].some((key) => !SITE_DETAILS_KEYS.has(key))) return send(400, null);
+      // RW-4: a Client that refuses `v` (a rollback past #137), one that is
+      // down, one that holds every shell read, and a cold or held answer to a
+      // `v` other than the stored version (a fresh read). The answer is built
+      // when it is sent, so a held read answers the site as it is then.
+      const v = url.searchParams.get('v');
+      if (state.refuseV && v !== null) return send(400, null);
+      if (state.shellDown) return send(503, null);
+      const delayMs = state.shellHoldMs || (v !== null && v !== state.updatedAt ? state.foreignVDelayMs : 0);
+      if (delayMs) return void setTimeout(() => send(200, fixtureSiteDetails(state)), delayMs);
       return send(200, fixtureSiteDetails(state));
     }
-    // F41 (CL7): the site's version, a failure while `versionDown` is set, or
-    // (RW-4) an answer later than the probe waits while `versionSlowMs` is.
     // RW-4 follow-up: the share page's own image (a PNG signature, then the marker).
     if (url.pathname === SHARE_IMAGE_PATH) {
       res.writeHead(200, { 'Content-Type': 'image/png' });
       return res.end(Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from(SHARE_IMAGE_MARKER)]));
     }
+    // F41 (CL7): the site's version, a failure while `versionDown` is set, or
+    // (RW-4) an answer later than the probe waits while `versionSlowMs` is.
     if (url.pathname === '/tenant/siteVersion') {
       state.versionAsked = (state.versionAsked ?? 0) + 1;
       const answer = () => send(200, { siteId: SITE_ID, updatedAt: state.updatedAt ?? '2026-11-01T00:00:00.000Z' });
@@ -350,6 +395,97 @@ export function checkVersionFence({ before, after, shellReads, updatedAt, kept, 
   });
   const plain = keptShellReads.filter((p) => !/[?&]v=/.test(p));
   if (plain.length) failures.push(`a shell read went back to the plain key while the version route failed: ${plain.join(', ')}`);
+  // N1: once the version is known, every shell read carries it (no fresh instant either).
+  const other = keptShellReads.filter((p) => /[?&]v=/.test(p) && !p.includes(`v=${encodeURIComponent(updatedAt)}`));
+  if (other.length) failures.push(`a shell read carried another v while the version was known: ${other.join(', ')}`);
+  return failures;
+}
+
+/** Whether a read answered 200 with `text` in its page. */
+const shows = (r, text) => r?.status === 200 && (r.body ?? '').includes(text);
+
+/**
+ * RW-4 (I3, I7, T3b): the server's first ordinary read, the version route
+ * slow and every fresh read held. It answers within the 6.5 s budget (plus the
+ * render's own time), and a page the stale plain copy lacks is never a 404.
+ */
+export function checkColdBudget({ read, elapsedMs }) {
+  const failures = [];
+  if (elapsedMs > 6_500 + RENDER_ALLOWANCE_MS) failures.push(`/${COLD_PAGE_SLUG} took ${elapsedMs} ms with the probe slow and the fresh read held (budget 6500 ms)`);
+  if (read?.status === 404) failures.push(`/${COLD_PAGE_SLUG} answered 404 from a plain copy older than the stored site (it must refuse, 5xx)`);
+  if (!read || read.status === 0) failures.push(`/${COLD_PAGE_SLUG} never answered`);
+  return failures;
+}
+
+/**
+ * RW-4 (I2, G5): a signed `site.updated` inside the probe interval. The read
+ * after it probes first, so its shell read carries the new version and the
+ * page shows the changed words.
+ */
+export function checkWebhookProbe({ hook, read, shellReads, updatedAt }) {
+  const failures = [];
+  if (hook?.status !== 200) failures.push(`the signed site.updated answered ${hook?.status}`);
+  if (!shows(read, CHANGED_TEXT)) failures.push(`/${NEW_PAGE_SLUG} answered ${read?.status} without the changed words after the webhook`);
+  const expected = `v=${encodeURIComponent(updatedAt)}`;
+  if (!shellReads.some((p) => p.includes(expected))) failures.push(`no shell read after the webhook carried ${expected}: the webhook did not make the probe due (${shellReads.join(', ') || 'no shell read'})`);
+  return failures;
+}
+
+/**
+ * RW-4 (I3 with L, T11): after a purge, the Client holds every shell read.
+ * The page answers from the newest shell this server served, within 4.5 s.
+ */
+export function checkHeldShell({ read, elapsedMs }) {
+  const failures = [];
+  if (elapsedMs > 4_500 + RENDER_ALLOWANCE_MS) failures.push(`/${NEW_PAGE_SLUG} took ${elapsedMs} ms with every shell read held (budget 4500 ms)`);
+  if (!shows(read, CHANGED_TEXT)) failures.push(`/${NEW_PAGE_SLUG} answered ${read?.status} without its page while every shell read was held`);
+  return failures;
+}
+
+/**
+ * RW-4 (I1, I4, T11): after a purge, every shell read fails. The page answers
+ * from the newest shell this server served, never the floor or a 5xx.
+ */
+export function checkShellDown({ read }) {
+  return shows(read, CHANGED_TEXT) ? [] : [`/${NEW_PAGE_SLUG} answered ${read?.status} without its page while every shell read failed (the floor, not the newest shell served)`];
+}
+
+/**
+ * RW-4 (B1, G2, T15b and T15a): the Client refuses every `v` (a rollback past
+ * #137). A page saved meanwhile answers from the plain read (K learned above
+ * L by the probe), and a page already served still answers.
+ */
+export function checkRefusedV({ rolled, kept }) {
+  const failures = [];
+  if (!shows(rolled, ROLLED_PAGE_TEXT)) failures.push(`/${ROLLED_PAGE_SLUG} answered ${rolled?.status} without its page while the Client refused v (K above L)`);
+  if (!shows(kept, CHANGED_TEXT)) failures.push(`/${NEW_PAGE_SLUG} answered ${kept?.status} without its page while the Client refused v (K = L)`);
+  return failures;
+}
+
+/**
+ * RW-4 (P1, gate on): a regeneration is a KNOWN reader. After a purge, the
+ * home page's regeneration reads the known version, never the plain key.
+ */
+export function checkRegenerationKnown({ shellReads, updatedAt }) {
+  const failures = [];
+  if (shellReads.length === 0) failures.push('control: the purged home page made no shell read, so the regeneration was not tested');
+  const expected = `v=${encodeURIComponent(updatedAt)}`;
+  if (shellReads.length && !shellReads.some((p) => p.includes(expected))) failures.push(`the regeneration's shell reads never carried ${expected}: ${shellReads.join(', ')}`);
+  const plain = shellReads.filter((p) => !/[?&]v=/.test(p));
+  if (plain.length) failures.push(`the regeneration read the plain key while the version was known: ${plain.join(', ')}`);
+  return failures;
+}
+
+/**
+ * RW-4 (P1, I1, gate unset): home never shows words older than a page the
+ * same server served. `before` is home before the save, `page` an ordinary
+ * page after it (it probes), `after` home after that.
+ */
+export function checkHomeNotOlder({ before, page, after }) {
+  const failures = [];
+  if (!shows(before, HOME_BEFORE_TEXT) || shows(before, HOME_AFTER_TEXT)) failures.push(`control: / answered ${before?.status} without the words from before the save`);
+  if (page?.status !== 200) failures.push(`the ordinary page read after the save answered ${page?.status}`);
+  if (!shows(after, HOME_AFTER_TEXT)) failures.push(`/ answered ${after?.status} with words older than the page this server just served`);
   return failures;
 }
 
@@ -365,14 +501,18 @@ export function checkShareAndSitemap({ before, first, probesInWindow, windowMs, 
   const failures = [];
   const listed = (r) => r?.status === 200 && (r.body ?? '').includes(`/${SHARE_PAGE_SLUG}</loc>`);
   const ownImage = (r) => r?.status === 200 && (r.body ?? '').includes(SHARE_IMAGE_MARKER);
+  // RW-4 B4: the signed IndexNow list is the sitemap, so it lists the page too.
+  const inIndexNow = (r) => r?.status === 200 && (r.body ?? '').includes(`/${SHARE_PAGE_SLUG}"`);
   if (listed(before.sitemap)) failures.push(`control: the sitemap listed /${SHARE_PAGE_SLUG} before the owner added it`);
   if (before.sitemap?.status !== 200) failures.push(`control: /sitemap.xml answered ${before.sitemap?.status}`);
   if (ownImage(before.og)) failures.push(`control: /og/${SHARE_PAGE_SLUG} drew the page's own image before the owner added it`);
+  if (before.indexnow?.status !== 200 || inIndexNow(before.indexnow)) failures.push(`control: /api/indexnow/urls answered ${before.indexnow?.status}${inIndexNow(before.indexnow) ? ' with the page before the owner added it' : ''}`);
   if (!ownImage(first.og)) failures.push(`/og/${SHARE_PAGE_SLUG} answered ${first.og?.status} without the page's own image on the first read after the save`);
   if (!listed(first.sitemap)) failures.push(`/sitemap.xml answered ${first.sitemap?.status} without /${SHARE_PAGE_SLUG} on the first read after the save`);
+  if (!inIndexNow(first.indexnow)) failures.push(`/api/indexnow/urls answered ${first.indexnow?.status} without /${SHARE_PAGE_SLUG} on the first read after the save`);
   if (first.page?.status !== 200 || !(first.page.body ?? '').includes(SHARE_PAGE_TEXT)) failures.push(`/${SHARE_PAGE_SLUG} answered ${first.page?.status} without its page`);
-  if (!(windowMs < 5000)) failures.push(`the three readers took ${windowMs} ms, past one probe interval, so the shared limit could not be judged`);
-  else if (probesInWindow !== 1) failures.push(`${probesInWindow} version probes inside one interval across the page, the share image and the sitemap (the limit is one per server)`);
+  if (!(windowMs < 5000)) failures.push(`the four readers took ${windowMs} ms, past one probe interval, so the shared limit could not be judged`);
+  else if (probesInWindow !== 1) failures.push(`${probesInWindow} version probes inside one interval across the page, the share image, the sitemap and the IndexNow list (the limit is one per server)`);
   if (kept.failedProbes < 1) failures.push('control: no probe failed while the sitemap was read, so the keep was not tested');
   if (!listed(kept.sitemap)) failures.push(`/sitemap.xml answered ${kept.sitemap?.status} without /${SHARE_PAGE_SLUG} while the version route failed: an older sitemap than the server already served`);
   const plain = kept.shellReads.filter((p) => !/[?&]v=/.test(p));
@@ -419,6 +559,42 @@ function postSigned(p, payload) {
   });
 }
 
+/** The signed IndexNow snapshot request the EventHandler worker makes (`{ ts }`, same secret as revalidate). */
+function postSnapshot() {
+  const raw = JSON.stringify({ ts: Date.now() });
+  const signature = crypto.createHmac('sha256', REVALIDATE_SECRET).update(raw).digest('hex');
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: '127.0.0.1', port: APP_PORT, path: '/api/indexnow/urls', method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Vivreal-Signature': `sha256=${signature}` } },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    req.on('error', () => resolve({ status: 0, body: '' }));
+    req.end(raw);
+  });
+}
+
+/** A signed `site.updated` for the whole site (the purge, and the fence's probe made due). */
+const siteUpdated = () => postSigned('/api/revalidate', { id: `evt-${Date.now()}`, event: 'site.updated', timestamp: new Date().toISOString(), data: { siteId: SITE_ID } });
+
+const wait = (ms) => new Promise((res) => setTimeout(res, ms));
+
+async function read(p) {
+  const r = await get(p);
+  return { status: r.status, body: r.body };
+}
+
+/** A read and how long it took, in ms. */
+async function timedRead(p) {
+  const startedAt = Date.now();
+  const r = await read(p);
+  return { read: r, elapsedMs: Date.now() - startedAt };
+}
+
 async function waitUp() {
   for (let i = 0; i < 120; i += 1) {
     if ((await get('/robots.txt')).status > 0) return true;
@@ -435,12 +611,19 @@ async function main() {
   const state = {
     aboutStorefront: false,
     newPage: false,
+    newPageText: NEW_PAGE_TEXT,
     coldPage: false,
+    rolledPage: false,
     sharePage: false,
+    homeTitle: HOME_BEFORE_TEXT,
     versionDown: false,
     versionSlowMs: 0,
     versionFailures: 0,
     versionAsked: 0,
+    refuseV: false,
+    shellDown: false,
+    shellHoldMs: 0,
+    foreignVDelayMs: 0,
     updatedAt: '2026-11-01T00:00:00.000Z',
   };
   const upstream = await startFixtureUpstream({
@@ -495,23 +678,35 @@ async function main() {
       if (!(await waitUp())) failures.push('next start did not come up');
       else {
         if (gateOn) {
-          // RW-4 row 2: the server's first ordinary read, with the version
-          // route slower than the probe waits. The data cache holds the build's
-          // plain shell, from before this page was added. Settle first, so a
-          // background refresh started by the readiness read cannot pick up
-          // the page.
-          await new Promise((res) => setTimeout(res, 1500));
+          // F41 a (RW-4 I3, I7, T3b): the server's first ordinary read, the
+          // version route slow and every fresh read held. The data cache holds
+          // the build's plain shell, from before this page was added. Settle
+          // first, so a background refresh started by the readiness read
+          // cannot pick up the page.
+          await wait(1500);
           state.versionSlowMs = VERSION_SLOW_MS;
+          state.foreignVDelayMs = HOLD_MS;
           state.coldPage = true;
           state.updatedAt = new Date().toISOString();
+          const cold = await timedRead(`/${COLD_PAGE_SLUG}`);
+          console.log(`  F41 a first read, probe slow, fresh read held: ${cold.read.status} in ${cold.elapsedMs} ms /${COLD_PAGE_SLUG}`);
+          failures.push(...checkColdBudget(cold));
+
+          // F41 b (RW-4 row 2, R3, G6): still a server with nothing learned.
+          // Home first (it reads plain and teaches nothing), then with the
+          // probe slow the fresh read answers like a cold Client, in 4 s.
+          await wait(5500);
+          state.foreignVDelayMs = COLD_FRESH_MS;
+          await read('/');
           const coldFrom = shellReads.length;
           const coldReads = [];
           for (let i = 0; i < 2; i += 1) {
-            const r = await get(`/${COLD_PAGE_SLUG}`);
-            coldReads.push({ status: r.status, body: r.body });
-            console.log(`  F41 first read, version route slow, read ${i + 1}: ${r.status} ${r.body.includes(COLD_PAGE_TEXT) ? 'new page' : 'old copy'} /${COLD_PAGE_SLUG}`);
+            const r = await read(`/${COLD_PAGE_SLUG}`);
+            coldReads.push(r);
+            console.log(`  F41 b home first, probe slow, cold fresh read, read ${i + 1}: ${r.status} ${r.body.includes(COLD_PAGE_TEXT) ? 'new page' : 'old copy'} /${COLD_PAGE_SLUG}`);
           }
           state.versionSlowMs = 0;
+          state.foreignVDelayMs = 0;
           failures.push(...checkColdFirstRead({ reads: coldReads, shellReads: shellReads.slice(coldFrom), updatedAt: state.updatedAt }));
         }
         const reads = [];
@@ -534,6 +729,20 @@ async function main() {
           await new Promise((res) => setTimeout(res, 1000));
         }
         failures.push(...checkAfterFlip(flip, after));
+
+        if (!gateOn) {
+          // F41 f, gate unset (RW-4 P1, I1): home is a KNOWN reader, so it
+          // never shows words older than a page this server served.
+          await wait(5500);
+          const homeBefore = await read('/');
+          state.homeTitle = HOME_AFTER_TEXT;
+          state.updatedAt = new Date().toISOString();
+          await wait(5500);
+          const page = await read('/about');
+          const homeAfter = await read('/');
+          console.log(`  F41 f home after an ordinary page served the save: ${homeAfter.status} ${homeAfter.body.includes(HOME_AFTER_TEXT) ? 'new words' : 'old words'} /`);
+          failures.push(...checkHomeNotOlder({ before: homeBefore, page, after: homeAfter }));
+        }
 
         if (gateOn) {
           // F41 ALLOW: the owner adds a page; no webhook is sent. Past one
@@ -581,28 +790,74 @@ async function main() {
             }),
           );
 
-          // RW-4 follow-up: the owner adds a page with its own share image; no
-          // webhook. Past one interval before each step, so a probe is due.
-          const wait = (ms) => new Promise((res) => setTimeout(res, ms));
-          const read = async (p) => {
-            const r = await get(p);
-            return { status: r.status, body: r.body };
-          };
+          // F41 e (RW-4 I2, G5): inside the probe interval, the owner changes
+          // the page's words and the save sends a signed site.updated. The
+          // webhook makes the probe due, so the next read carries the new v.
           await wait(5500);
-          const shareBefore = { og: await read(`/og/${SHARE_PAGE_SLUG}`), sitemap: await read('/sitemap.xml') };
+          await read(`/${NEW_PAGE_SLUG}`); // a probe runs now
+          state.newPageText = CHANGED_TEXT;
+          state.updatedAt = new Date().toISOString();
+          const hookFrom = shellReads.length;
+          const hook = await siteUpdated();
+          const changed = await read(`/${NEW_PAGE_SLUG}`);
+          console.log(`  F41 e after the webhook, inside the interval: ${changed.status} ${changed.body.includes(CHANGED_TEXT) ? 'changed words' : 'old words'}, shell reads ${JSON.stringify(shellReads.slice(hookFrom))}`);
+          failures.push(...checkWebhookProbe({ hook, read: changed, shellReads: shellReads.slice(hookFrom), updatedAt: state.updatedAt }));
+
+          // F41 g (RW-4 I3 with L, T11): after a purge the Client holds every
+          // shell read; the page answers from the newest shell served, in time.
+          await wait(5500);
+          await siteUpdated();
+          state.shellHoldMs = HOLD_MS;
+          const held = await timedRead(`/${NEW_PAGE_SLUG}`);
+          state.shellHoldMs = 0;
+          console.log(`  F41 g every shell read held: ${held.read.status} in ${held.elapsedMs} ms /${NEW_PAGE_SLUG}`);
+          failures.push(...checkHeldShell(held));
+
+          // F41 h (RW-4 I1, I4, T11): after a purge every shell read fails.
+          await wait(5500);
+          await siteUpdated();
+          state.shellDown = true;
+          const down = await read(`/${NEW_PAGE_SLUG}`);
+          state.shellDown = false;
+          console.log(`  F41 h every shell read failing: ${down.status} ${down.body.includes(CHANGED_TEXT) ? 'its page' : 'not its page'} /${NEW_PAGE_SLUG}`);
+          failures.push(...checkShellDown({ read: down }));
+
+          // F41 i (RW-4 B1, G2): the Client refuses every v (a rollback past
+          // #137). A page saved meanwhile, and a page already served, answer.
+          await wait(5500);
+          state.rolledPage = true;
+          state.updatedAt = new Date().toISOString();
+          state.refuseV = true;
+          await siteUpdated();
+          const rolled = await read(`/${ROLLED_PAGE_SLUG}`);
+          const keptPage = await read(`/${NEW_PAGE_SLUG}`);
+          state.refuseV = false;
+          console.log(`  F41 i Client refusing v: ${rolled.status} /${ROLLED_PAGE_SLUG}, ${keptPage.status} /${NEW_PAGE_SLUG}`);
+          failures.push(...checkRefusedV({ rolled, kept: keptPage }));
+
+          // F41 d (RW-4 follow-up, B4): the owner adds a page with its own
+          // share image; no webhook. Past one interval before each step.
+          await wait(5500);
+          const shareBefore = { og: await read(`/og/${SHARE_PAGE_SLUG}`), sitemap: await read('/sitemap.xml'), indexnow: await postSnapshot() };
           state.sharePage = true;
           state.updatedAt = new Date().toISOString();
           await wait(5500);
           // The first reads after the save, the share image first, then a burst
-          // of all three readers, all inside one probe interval.
+          // of all four readers, all inside one probe interval.
           const askedFrom = state.versionAsked;
           const windowFrom = Date.now();
-          const shareFirst = { og: await read(`/og/${SHARE_PAGE_SLUG}`), sitemap: await read('/sitemap.xml'), page: await read(`/${SHARE_PAGE_SLUG}`) };
-          await Promise.all([read('/sitemap.xml'), read(`/og/${SHARE_PAGE_SLUG}`), read(`/${SHARE_PAGE_SLUG}`)]);
+          const shareFirst = {
+            og: await read(`/og/${SHARE_PAGE_SLUG}`),
+            sitemap: await read('/sitemap.xml'),
+            indexnow: await postSnapshot(),
+            page: await read(`/${SHARE_PAGE_SLUG}`),
+          };
+          await Promise.all([read('/sitemap.xml'), read(`/og/${SHARE_PAGE_SLUG}`), postSnapshot(), read(`/${SHARE_PAGE_SLUG}`)]);
           const probesInWindow = state.versionAsked - askedFrom;
           const windowMs = Date.now() - windowFrom;
+          console.log(`  F41 d IndexNow list after the save: ${shareFirst.indexnow.status} ${shareFirst.indexnow.body.includes(`/${SHARE_PAGE_SLUG}"`) ? 'lists it' : 'missing'}`);
           console.log(`  F41 share image after the save: ${shareFirst.og.status} ${shareFirst.og.body.includes(SHARE_IMAGE_MARKER) ? 'own image' : 'not its own'} /og/${SHARE_PAGE_SLUG}`);
-          console.log(`  F41 sitemap after the save: ${shareFirst.sitemap.status} ${shareFirst.sitemap.body.includes(`/${SHARE_PAGE_SLUG}</loc>`) ? 'lists it' : 'missing  '} /sitemap.xml; probes across three readers in ${windowMs} ms: ${probesInWindow}`);
+          console.log(`  F41 sitemap after the save: ${shareFirst.sitemap.status} ${shareFirst.sitemap.body.includes(`/${SHARE_PAGE_SLUG}</loc>`) ? 'lists it' : 'missing  '} /sitemap.xml; probes across four readers in ${windowMs} ms: ${probesInWindow}`);
           // Then the version route fails for an interval: the sitemap holds.
           state.versionDown = true;
           const shareFailuresFrom = state.versionFailures;
@@ -621,6 +876,18 @@ async function main() {
               kept: { sitemap: sitemapKept, failedProbes: state.versionFailures - shareFailuresFrom, shellReads: sitemapKeptShellReads },
             }),
           );
+
+          // F41 f, gate on (RW-4 P1): after a purge, the home page's
+          // regeneration (a KNOWN reader) reads the known version.
+          await wait(1000);
+          await siteUpdated();
+          const regenFrom = shellReads.length;
+          await read('/');
+          await read('/');
+          await wait(2000); // a regeneration that runs after the answer completes
+          const regenShellReads = shellReads.slice(regenFrom);
+          console.log(`  F41 f home regeneration after a purge, shell reads ${JSON.stringify(regenShellReads)}`);
+          failures.push(...checkRegenerationKnown({ shellReads: regenShellReads, updatedAt: state.updatedAt }));
         }
       }
     } finally {

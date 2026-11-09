@@ -1,13 +1,15 @@
 import 'server-only';
 import { workAsyncStorage } from 'next/dist/server/app-render/work-async-storage.external';
 import { workUnitAsyncStorage } from 'next/dist/server/app-render/work-unit-async-storage.external';
-import { fetchSiteVersion } from '@/lib/api/client';
-import { startAwakeTimeout } from '@/lib/awakeTimeout';
+import { fetchSiteVersion, isPreviewRender } from '@/lib/api/client';
+import { RECORD_DIR_ENV } from '@/lib/api/snapshot/constants';
+import { startAwakeStopwatch, startAwakeTimeout } from '@/lib/awakeTimeout';
 import {
   createSiteVersionFence,
-  isFencedRender,
-  readShell,
+  readerClassFor,
+  type ReaderClass,
   type ShellReads,
+  type ShellResolution,
   type SiteVersionFence,
 } from '@/lib/cacheInvalidation';
 
@@ -17,15 +19,13 @@ const SITE_ID = process.env.SITE_ID || '';
 const FENCE_SLOT = Symbol.for('vivreal.templates.siteVersionFence');
 
 /**
- * This instance's site version fence (F41, OD-01): ONE per server process,
- * so "at most one probe per 5 s" is per instance, the unit the stale copies
- * live in, and the version it knows lives as long as the instance does
- * (RW-4). Held on `globalThis`, not in module scope, because pages and route
- * handlers can be bundled in different layers, each with its own copy of this
- * module: the share image and sitemap routes must share the page's probe limit
- * and known version, never keep their own (RW-4 follow-up). See
- * `createSiteVersionFence` in `@/lib/cacheInvalidation` for the rule and what
- * it never does.
+ * This instance's site version fence (F41, RW-4): ONE per server process, on
+ * `globalThis`, not in module scope. Next 16 bundles pages and route handlers
+ * in different layers, each with its own copy of this module; measured, a
+ * module-scope fence made 2 probes in one interval across a page, its share
+ * image and the sitemap. Held here, every reader shares one probe slot and one
+ * `K`, `NV` and `L` (I5). The rule is `createSiteVersionFence` in
+ * `@/lib/cacheInvalidation`.
  */
 const slot = globalThis as unknown as Record<symbol, SiteVersionFence | undefined>; // a symbol-keyed slot on the process global
 const FENCE: SiteVersionFence = (slot[FENCE_SLOT] ??= createSiteVersionFence({
@@ -33,24 +33,59 @@ const FENCE: SiteVersionFence = (slot[FENCE_SLOT] ??= createSiteVersionFence({
   probe: (signal) => fetchSiteVersion(SITE_ID, signal),
   now: Date.now,
   startTimeout: (ms, onExpire) => startAwakeTimeout(ms, onExpire),
-  onFailure: (reason) => console.warn(`[siteVersion] probe failed, the shell read keeps the last version it knew (a fresh read if none): ${reason}`),
+  startStopwatch: startAwakeStopwatch,
+  onProbeFailure: (reason) => console.warn(`[siteVersion] probe failed: ${reason}`),
+  onDegraded: (line) => console.warn(JSON.stringify({ event: 'site.shell.degraded', siteId: SITE_ID || 'unknown', ...line })),
 }));
 
-/** Whether this render reads the shell through the fence. Unreadable stores answer false: today's read. */
-function readsThroughFence(): boolean {
+/** Inside `next build` (or the snapshot wrapper's build): PLAIN, as `client.ts`'s floor decides. */
+function isBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build' || !!process.env[RECORD_DIR_ENV];
+}
+
+/** This render's reader class (design section 6). */
+async function readerClass(): Promise<ReaderClass> {
+  if (!SITE_ID || isBuildPhase()) return 'plain';
+  if (await isPreviewRender()) return 'plain';
   try {
-    return isFencedRender(workUnitAsyncStorage.getStore(), workAsyncStorage.getStore());
+    return readerClassFor(workUnitAsyncStorage.getStore(), workAsyncStorage.getStore());
   } catch {
-    // Next moved its internals: read the site exactly as before.
-    return false;
+    // Next moved its internals: KNOWN only ever reads through the data cache.
+    return 'known';
   }
 }
 
-/** This render's site shell through the fence (`readShell` in `@/lib/cacheInvalidation`). */
-export function readShellThroughFence<T extends { readonly updatedAt?: unknown } | null | undefined>(
+/**
+ * One resolution per request, keyed by Next's work store. React `cache` is one
+ * render pass, but a refused page (a stale shell, I7) makes Next render the
+ * 500 in a second pass of the same request (`app-render.js`, the error payload
+ * runs inside the same `workAsyncStorage.run`), and a route handler reads the
+ * shell two or three times (N3). Without this each pass resolves again, and a
+ * request on a cold server waits out the fresh read's deadline twice (I3,
+ * measured: 13.5 s for one request against the 6.5 s budget).
+ */
+const RESOLUTIONS = new WeakMap<object, Promise<ShellResolution<unknown>>>();
+
+/** This render's site shell through the fence. */
+export function readShellThroughFence<T>(
   reads: ShellReads<T>,
   path: string,
   isLive: (value: T) => boolean,
-): Promise<T> {
-  return readShell(FENCE, readsThroughFence(), reads, path, isLive);
+): Promise<ShellResolution<T>> {
+  let request: object | undefined;
+  try {
+    request = workAsyncStorage.getStore();
+  } catch {
+    request = undefined;
+  }
+  const shared = request ? RESOLUTIONS.get(request) : undefined;
+  if (shared) return shared as Promise<ShellResolution<T>>; // the one shell read of this request, always this type
+  const resolution = (async () => FENCE.resolve(await readerClass(), reads, path, isLive))();
+  if (request) RESOLUTIONS.set(request, resolution);
+  return resolution;
+}
+
+/** A `site.*` webhook reached this instance: the next FULL render probes first. Never waits (G5). */
+export function markSiteVersionProbeDue(): void {
+  FENCE.markProbeDue();
 }

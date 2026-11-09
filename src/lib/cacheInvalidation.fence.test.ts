@@ -2,22 +2,28 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import * as invalidation from './cacheInvalidation.ts';
-import { COLD_FETCH_DEADLINE_MS } from './edgeSiteMap.ts';
 import { siteDetailsPath } from './api/readPaths.ts';
 import { readCachedWithFloor, type FloorSeamDeps } from './api/snapshot/seam.ts';
 import { createFailureMemo } from './api/failureMemo.ts';
 import { floorHarness, snapshotOf } from './api/snapshot/testSupport.ts';
+import { isFloorValue, markFloorValue } from './api/snapshot/floorValue.ts';
+import { DegradedUpstreamError, refuseNegativeClaimFromFloor } from './api/siteData/degraded.ts';
 
 /**
- * F41 (OD-01, plan 5.T T2) and RW-4 (vivreal-hq rewalk-2026-11-defects.md):
- * the site version fence, driven as server instances over one fake
- * VR_Client_API. Each instance is a fence, its own data cache keyed by the
- * exact read path (how Next's data cache keys `clientFetchCached`,
- * `['vr-client-api', path]`), and the production read decision `readShell`.
- * The fake Client keeps a 60 s edge copy of every URL, as client.vivreal.io
- * does. The real route is driven by `scripts/isr-build-check.mjs` (phase F41).
+ * F41 and RW-4: the site version fence as one read state machine, driven per
+ * vivreal-hq docs/projects/release-plan-open-backlog/design-t2-fence-state.md
+ * (revision 3). Rows are named by the design's cells (T1 to T24) and
+ * invariants (I1 to I9); its mutation map names the row each plant turns red.
  *
- * A namespace import, so at a base without the fence each test fails on its
+ * Each server instance is a fence, its own data cache keyed by the exact read
+ * path (how Next keys `clientFetchCached`), and the reads `readSiteDetails`
+ * hands the fence. The fake Client keeps a 60 s edge copy of every URL, as
+ * client.vivreal.io does, and answers each kind of read (V, F, Pl, the probe)
+ * as the row sets it. Time is a fake awake clock: timers fire only when the
+ * row advances it, so every budget is measured exactly. The real route is
+ * `scripts/isr-build-check.mjs` (phase F41).
+ *
+ * A namespace import, so at a base without the machine each row fails on its
  * own assertion rather than the file failing to load.
  */
 
@@ -28,472 +34,672 @@ const T0 = Date.UTC(2026, 10, 9, 15, 6, 0);
 const iso = (ms: number) => new Date(ms).toISOString();
 
 type Body = { pages: string[]; updatedAt: string | null };
-type Fence = { shellReadFor(serving: boolean): Promise<unknown>; learn(version: unknown): void };
-type Reads<T> = { cached(path: string): Promise<T>; fresh(): Promise<T> };
-type ReadShell = <T extends { readonly updatedAt?: unknown } | null | undefined>(
-  fence: Fence,
-  serving: boolean,
-  reads: Reads<T>,
-  path: string,
-  isLive: (value: T) => boolean,
-) => Promise<T>;
+type Answer = Body | null;
+type Reader = 'full' | 'known' | 'plain';
+type Resolution = { value: Answer; stale: boolean };
+type Reads = {
+  cached(path: string, signal: AbortSignal): Promise<Answer>;
+  fresh(signal: AbortSignal): Promise<{ value: Answer; refused: boolean }>;
+  floor(): Answer;
+};
+type Fence = {
+  resolve(reader: Reader, reads: Reads, path: string, isLive: (value: Answer) => boolean): Promise<Resolution>;
+  markProbeDue(): unknown;
+};
+type Line = { reader: string; probe: string; target: string; answeredBy: string; stale: boolean; ms: number };
 
 function api() {
   const ns = invalidation as unknown as Record<string, unknown>; // named exports, each checked below
-  for (const name of ['createSiteVersionFence', 'versionedPath', 'readSiteVersion', 'isFencedRender', 'siteVersionPath', 'readShell']) {
+  for (const name of ['createSiteVersionFence', 'versionedPath', 'readSiteVersion', 'readerClassFor', 'siteVersionPath']) {
     assert.equal(typeof ns[name], 'function', `cacheInvalidation exports ${name}`);
   }
   return {
     createSiteVersionFence: ns.createSiteVersionFence as (deps: Record<string, unknown>) => Fence,
     versionedPath: ns.versionedPath as (path: string, version: string | null) => string,
-    isFencedRender: ns.isFencedRender as (u: unknown, w: unknown) => boolean,
+    readerClassFor: ns.readerClassFor as (u: unknown, w: unknown) => string,
     siteVersionPath: ns.siteVersionPath as (id: string) => string,
-    readShell: ns.readShell as ReadShell,
   };
 }
 
-/** One fake VR_Client_API: the stored site, its version, and a 60 s edge copy of each URL. */
-function fakeClient() {
+/** A fake awake clock: timers fire only when a row advances it. */
+function fakeClock() {
+  const clock = {
+    now: T0,
+    timers: [] as Array<{ at: number; fn: () => void; live: boolean }>,
+    startTimeout(ms: number, fn: () => void) {
+      const timer = { at: clock.now + ms, fn, live: true };
+      clock.timers.push(timer);
+      return { cancel: () => { timer.live = false; } };
+    },
+    startStopwatch() {
+      const start = clock.now;
+      let stoppedAt: number | null = null;
+      return { awakeMs: () => (stoppedAt ?? clock.now) - start, stop: () => { stoppedAt ??= clock.now; } };
+    },
+    /** Move time forward, firing every timer due on the way, in order. */
+    advance(ms: number) {
+      const until = clock.now + ms;
+      for (;;) {
+        const next = clock.timers.filter((t) => t.live && t.at <= until).sort((a, b) => a.at - b.at)[0];
+        if (!next) break;
+        clock.now = next.at;
+        next.live = false;
+        next.fn();
+      }
+      clock.now = until;
+    },
+    nextDue(): number | undefined {
+      const live = clock.timers.filter((t) => t.live).map((t) => t.at);
+      return live.length ? Math.min(...live) : undefined;
+    },
+  };
+  return clock;
+}
+type Clock = ReturnType<typeof fakeClock>;
+
+const flush = async () => {
+  for (let i = 0; i < 30; i += 1) await new Promise((resolve) => setImmediate(resolve));
+};
+
+/** Run a promise on the fake clock, advancing to each due timer until it settles. */
+async function drive<T>(clock: Clock, promise: Promise<T>, limitMs = 120_000): Promise<{ value: T; ms: number }> {
+  const start = clock.now;
+  let done = false;
+  let value: T | undefined;
+  let error: unknown;
+  promise.then((v) => { done = true; value = v; }, (e) => { done = true; error = e; });
+  await flush();
+  while (!done) {
+    const due = clock.nextDue();
+    if (due === undefined || due - start > limitMs) throw new Error(`no answer after ${clock.now - start} ms: the resolution hangs`);
+    clock.advance(due - clock.now);
+    await flush();
+  }
+  if (error !== undefined) throw error;
+  return { value: value as T, ms: clock.now - start }; // settled above, so value is set
+}
+
+type Behaviour = 'ok' | 'fail' | 'refuse' | 'hang' | { delayMs: number };
+const FAILED = Symbol('5xx or network');
+const REFUSED = Symbol('4xx');
+
+/** One fake VR_Client_API: the stored site, its version, a 60 s edge copy of each URL, and how each read kind answers. */
+function fakeClient(clock: Clock) {
   const state = { pages: ['about', 'compare'], updatedAt: '2026-11-09T14:20:00.000Z' as string | null };
   const edge = new Map<string, { body: Body; at: number }>();
-  const probes: string[] = [];
+  const mode = { probe: 'up' as 'up' | 'slow' | 'fail', V: 'ok' as Behaviour, F: 'ok' as Behaviour, Pl: 'ok' as Behaviour };
+  const probes: number[] = [];
   return {
     state,
+    mode,
     probes,
-    save(pages: string[], at: number) {
+    save(pages: string[]) {
       state.pages = pages;
-      state.updatedAt = iso(at);
+      state.updatedAt = iso(clock.now);
     },
-    /** GET siteDetails through the edge: a copy younger than 60 s is served as is. */
-    shell(path: string, now: number): Body {
+    /** A GET through the edge: a copy younger than 60 s is served as is. */
+    body(path: string): Body {
       const hit = edge.get(path);
-      if (hit && now - hit.at < 60_000) return hit.body;
+      if (hit && clock.now - hit.at < 60_000) return hit.body;
       const body = { pages: [...state.pages], updatedAt: state.updatedAt };
-      edge.set(path, { body, at: now });
+      edge.set(path, { body, at: clock.now });
       return body;
     },
-    version(): unknown {
-      probes.push(SITE);
-      return { siteId: SITE, updatedAt: state.updatedAt };
+    /** One upstream read of kind `kind`, by the row's behaviour; aborted by `signal`. */
+    upstream(kind: 'V' | 'F' | 'Pl', path: string, signal: AbortSignal): Promise<Body | typeof FAILED | typeof REFUSED> {
+      if (signal.aborted) return Promise.resolve(FAILED);
+      const how = mode[kind];
+      if (how === 'ok') return Promise.resolve(this.body(path));
+      if (how === 'fail') return Promise.resolve(FAILED);
+      if (how === 'refuse') return Promise.resolve(REFUSED);
+      return new Promise((resolve) => {
+        const onAbort = () => resolve(FAILED);
+        signal.addEventListener('abort', onAbort);
+        if (how !== 'hang') {
+          clock.startTimeout(how.delayMs, () => {
+            signal.removeEventListener('abort', onAbort);
+            resolve(this.body(path));
+          });
+        }
+      });
+    },
+    probe(signal: AbortSignal): Promise<unknown> {
+      probes.push(clock.now);
+      if (mode.probe === 'fail') return Promise.reject(new Error('VR_Client_API 503'));
+      if (mode.probe === 'slow') return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
+      return Promise.resolve({ siteId: SITE, updatedAt: state.updatedAt });
     },
   };
 }
+type Client = ReturnType<typeof fakeClient>;
 
-type ProbeMode = 'up' | 'timeout' | 'error';
+const BUILD_FLOOR: Body = markFloorValue({ pages: ['from-the-build'], updatedAt: null });
+const isLive = (value: Answer) => value !== null && !isFloorValue(value);
 
 /**
- * One server instance: its fence, its own data cache keyed by the read path,
- * and the two reads `readShell` makes (the cached one, and the fresh one that
- * skips this cache and carries its own start instant as `v`).
+ * One server instance: its fence (on `deps`), its own data cache, the reads
+ * `readSiteDetails` makes, and a failure memo on the fresh key (two failures
+ * within 5 s pause it, as `failureMemo.ts` does).
  */
-function instance(client: ReturnType<typeof fakeClient>, clock: { now: number }, probe?: (signal: AbortSignal) => Promise<unknown>) {
-  const { createSiteVersionFence, versionedPath, readShell } = api();
+function instance(client: Client, clock: Clock, opts: { probe?: (signal: AbortSignal) => Promise<unknown>; floor?: boolean; clone?: <V>(v: V) => V } = {}) {
+  const { createSiteVersionFence, versionedPath } = api();
   const cache = new Map<string, { body: Body; at: number }>();
-  const reads: string[] = [];
+  const asked: string[] = [];
   const fresh: string[] = [];
-  let mode: ProbeMode = 'up';
+  const lines: Line[] = [];
+  const freshFailures: number[] = [];
+  const floorAnswer = (): Answer => (opts.floor ? BUILD_FLOOR : null);
   const fence = createSiteVersionFence({
     siteId: SITE,
-    probe:
-      probe ??
-      ((signal: AbortSignal) => {
-        if (mode === 'error') return Promise.reject(new Error('VR_Client_API 503'));
-        // A slow Client: no answer until the timeout aborts it.
-        if (mode === 'timeout') return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))));
-        return Promise.resolve(client.version());
-      }),
+    probe: opts.probe ?? ((signal: AbortSignal) => client.probe(signal)),
     now: () => clock.now,
-    startTimeout: (_ms: number, onExpire: () => void) => {
-      if (mode === 'timeout') queueMicrotask(onExpire);
-      return { cancel() {} };
-    },
+    startTimeout: (ms: number, fn: () => void) => clock.startTimeout(ms, fn),
+    startStopwatch: () => clock.startStopwatch(),
+    onDegraded: (line: Line) => lines.push(line),
+    ...(opts.clone ? { clone: opts.clone } : {}),
   });
-  const reader: Reads<Body> = {
-    async cached(path) {
-      reads.push(path);
+  const reads: Reads = {
+    async cached(path, signal) {
+      asked.push(path);
       const hit = cache.get(path);
       if (hit && clock.now - hit.at < TTL_MS) return hit.body;
-      const body = client.shell(path, clock.now);
-      cache.set(path, { body, at: clock.now });
-      return body;
+      const out = await client.upstream(path.includes('&v=') ? 'V' : 'Pl', path, signal);
+      if (out === FAILED || out === REFUSED) return floorAnswer();
+      cache.set(path, { body: out, at: clock.now });
+      return out;
     },
-    async fresh() {
+    async fresh(signal) {
       const path = versionedPath(SHELL, iso(clock.now));
-      reads.push(path);
+      asked.push(path);
       fresh.push(path);
-      return client.shell(path, clock.now);
+      const recent = freshFailures.filter((at) => clock.now - at < 5_000);
+      if (recent.length >= 2) return { value: floorAnswer(), refused: false }; // the memo's short-circuit
+      const out = await client.upstream('F', path, signal);
+      if (out !== FAILED && out !== REFUSED) return { value: out, refused: false };
+      freshFailures.push(clock.now);
+      return { value: floorAnswer(), refused: out === REFUSED };
     },
+    floor: floorAnswer,
   };
   return {
-    reads,
+    fence,
+    asked,
     fresh,
-    probeMode(next: ProbeMode) {
-      mode = next;
-    },
+    lines,
     /** The webhook's purge, which only the instance that receives it gets. */
     purge: () => cache.clear(),
-    /** `serving` false is home, a cached page or a route handler: today's read. */
-    async shell(serving = true): Promise<string[]> {
-      return (await readShell<Body>(fence, serving, reader, SHELL, (value) => value !== null)).pages;
+    async shell(reader: Reader = 'full'): Promise<Resolution & { ms: number }> {
+      const { value, ms } = await drive(clock, fence.resolve(reader, reads, SHELL, isLive));
+      return { ...value, ms };
     },
   };
 }
 
-const has = (pages: string[], page: string) => pages.includes(page);
+const pagesOf = (r: Resolution) => r.value?.pages ?? [];
+const has = (r: Resolution, page: string) => pagesOf(r).includes(page);
+const vOf = (path: string | undefined) => new URL(path ?? '', 'http://x').searchParams.get('v');
 
-test('ALLOW (two instances): a save the webhook never told instance B about shows on B within one probe interval', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
+/** An instance that has served the stored version `v1` once (K = L = v1). */
+async function servedOnce(opts: Parameters<typeof instance>[2] = {}) {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock, opts);
+  await a.shell(); // T1: K = L = v1
+  const v1 = client.state.updatedAt;
+  return { clock, client, a, v1 };
+}
+
+test('ALLOW (T1, T9, two instances): a save the webhook never told instance B about shows on B within one probe interval', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
   const a = instance(client, clock);
   const b = instance(client, clock);
-  assert.deepEqual(new Set(await a.shell()), new Set(['about', 'compare']));
-  assert.deepEqual(new Set(await b.shell()), new Set(['about', 'compare']), 'control: B holds the shell from before the save');
-
-  clock.now += 2_000;
-  client.save(['about', 'compare', 'product/phone-app'], clock.now);
+  assert.deepEqual(pagesOf(await a.shell()), ['about', 'compare']);
+  assert.deepEqual(pagesOf(await b.shell()), ['about', 'compare'], 'control: B holds the shell from before the save');
+  clock.advance(2_000);
+  client.save(['about', 'compare', 'new']);
   a.purge(); // the webhook reaches A only
-  clock.now += invalidation.SITE_VERSION_INTERVAL_MS ?? 5_000;
-  assert.deepEqual(new Set(await b.shell()), new Set(['about', 'compare', 'product/phone-app']), 'B lists the new page');
-  assert.deepEqual(new Set(await a.shell()), new Set(['about', 'compare', 'product/phone-app']));
+  clock.advance(5_000);
+  assert.ok(has(await b.shell(), 'new'), 'B lists the new page');
+  assert.ok(has(await a.shell(), 'new'));
+  assert.equal(vOf(b.asked.at(-1)), client.state.updatedAt, 'by the saved version');
 });
 
-test('ALLOW (edge race): after a save the shell read carries the new version, so a pre-save edge copy is never re-cached', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
-  const a = instance(client, clock);
-  await a.shell();
-  // The edge copy of the plain URL was refreshed 4 s before the save.
-  client.shell(SHELL, clock.now);
-  clock.now += 4_000;
-  client.save(['about', 'compare', 'linktree'], clock.now);
-  a.purge();
-  clock.now += 5_000;
-  const pages = await a.shell();
-  assert.ok(has(pages, 'linktree'), `the receiving instance reads the saved site, got ${JSON.stringify(pages)}`);
-  const last = a.reads.at(-1) ?? '';
-  assert.match(last, new RegExp(`^/tenant/siteDetails\\?siteId=${SITE}&v=`), 'the read after the change carries v');
-  assert.equal(new URL(last, 'http://x').searchParams.get('v'), client.state.updatedAt);
-});
-
-test('REFUSE (RW-4 row 1): after a save, a probe timeout on an instance that served the new version still serves the new version', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
-  const a = instance(client, clock);
-  // Warm, and the home page's plain read caches the shell from before the save (RW-4's warm reads).
-  await a.shell();
-  await a.shell(false);
-  clock.now += 22_000;
-  client.save(['about', 'compare', 'qa-test-rewalk-t2-about'], clock.now);
-  clock.now += 30_000;
+test('REFUSE (RW-4 row 1, I1, T10): after a save, a slow or failed probe on an instance that served it still serves it, by the known version only', async () => {
+  const { clock, client, a } = await servedOnce();
+  clock.advance(22_000);
+  client.save(['about', 'compare', 'qa-test-rewalk-t2-about']);
+  clock.advance(30_000);
   assert.ok(has(await a.shell(), 'qa-test-rewalk-t2-about'), 'control: the instance served the saved site');
-  const saved = client.state.updatedAt ?? '';
-
-  a.probeMode('timeout');
-  for (const step of [60_000, 90_000, 5_000, 5_000]) {
-    clock.now += step;
-    const from = a.reads.length;
-    const pages = await a.shell();
-    assert.ok(has(pages, 'qa-test-rewalk-t2-about'), `+${step} ms with the probe timing out: still the saved site, got ${JSON.stringify(pages)}`);
-    assert.ok(!a.reads.slice(from).includes(SHELL), 'never the plain key once a version is known');
-    assert.equal(new URL(a.reads.at(-1) ?? '', 'http://x').searchParams.get('v'), saved, 'the kept version');
+  const saved = client.state.updatedAt;
+  await a.shell('known'); // home's plain-or-known read in between
+  for (const probe of ['slow', 'fail', 'slow'] as const) {
+    client.mode.probe = probe;
+    clock.advance(60_000);
+    const from = a.asked.length;
+    const r = await a.shell();
+    assert.ok(has(r, 'qa-test-rewalk-t2-about'), `probe ${probe}: still the saved site`);
+    assert.equal(r.stale, false);
+    assert.ok(a.asked.slice(from).every((p) => vOf(p) === saved), `probe ${probe}: every read carries the known version (no plain read, no fresh instant)`);
   }
-  assert.equal(a.fresh.length, 0, 'a kept version is read through the caches, never fresh on every failed probe');
-  // The same holds for an error or a 5xx.
-  a.probeMode('error');
-  clock.now += 5_000;
-  assert.ok(has(await a.shell(), 'qa-test-rewalk-t2-about'), 'a failed probe keeps the version too');
+  assert.equal(a.fresh.length, 0, 'a known version is read through the caches, never fresh on a failed probe');
 });
 
-test('REFUSE (RW-4 row 2): a first read with a failed probe never serves an entry older than the stored site', async () => {
-  const kinds: Array<[string, ProbeMode | ((signal: AbortSignal) => Promise<unknown>)]> = [
-    ['timeout', 'timeout'],
-    ['error', 'error'],
-    ['404', async () => { throw Object.assign(new Error('VR_Client_API 404'), { status: 404 }); }],
-    ['500', async () => { throw Object.assign(new Error('VR_Client_API 500'), { status: 500 }); }],
-    ['another site', async () => ({ siteId: '6a0000000000000000000000', updatedAt: '2026-11-09T15:06:46.367Z' })],
-    ['not a date', async () => ({ siteId: SITE, updatedAt: 'yesterday' })],
-  ];
-  for (const [label, kind] of kinds) {
-    // (a) this instance's own plain copy predates the save (it served the home page).
-    const client = fakeClient();
-    const clock = { now: T0 };
-    const a = instance(client, clock, typeof kind === 'function' ? kind : undefined);
-    if (typeof kind === 'string') a.probeMode(kind);
-    assert.ok(!has(await a.shell(false), 'new'), `${label}: control, the plain copy is from before the save`);
-    clock.now += 2_000;
-    client.save(['about', 'compare', 'new'], clock.now);
-    clock.now += 1_000;
-    const from = a.reads.length;
-    assert.ok(has(await a.shell(), 'new'), `${label}: the first ordinary read shows the stored site`);
-    assert.ok(!a.reads.slice(from).includes(SHELL), `${label}: not the plain key`);
-    assert.equal(a.fresh.length, 1, `${label}: one fresh read`);
-    // Its version is kept: the next read goes through the caches by it, not fresh again.
-    clock.now += 1_000;
-    assert.ok(has(await a.shell(), 'new'), `${label}: still the stored site`);
-    assert.equal(a.reads.at(-1), invalidation.versionedPath(SHELL, client.state.updatedAt), `${label}: read by the version the fresh read carried`);
-    assert.equal(a.fresh.length, 1, `${label}: no second fresh read`);
+test('REFUSE (RW-4 row 2, T2, I2, I7): a first read with a failed or slow probe serves the stored site, never an older plain copy', async () => {
+  for (const probe of ['slow', 'fail'] as const) {
+    // (a) this instance's own plain copy predates the save (home read it, KNOWN at S0).
+    const clock = fakeClock();
+    const client = fakeClient(clock);
+    const a = instance(client, clock);
+    assert.ok(!has(await a.shell('known'), 'new'), `${probe}: control, the plain copy is from before the save`);
+    clock.advance(2_000);
+    client.save(['about', 'compare', 'new']);
+    clock.advance(1_000);
+    client.mode.probe = probe;
+    const first = await a.shell();
+    assert.ok(has(first, 'new'), `${probe}: the first FULL read shows the stored site`);
+    assert.equal(first.stale, false);
+    assert.equal(a.fresh.length, 1, `${probe}: one fresh read`);
+    clock.advance(1_000);
+    assert.ok(has(await a.shell(), 'new'));
+    assert.equal(a.asked.at(-1), api().versionedPath(SHELL, client.state.updatedAt), `${probe}: then by the version the fresh read carried`);
+    assert.equal(a.fresh.length, 1, `${probe}: no second fresh read`);
 
-    // (b) a cold instance, but client.vivreal.io holds a plain copy from before the save.
-    const client2 = fakeClient();
-    const clock2 = { now: T0 };
-    client2.shell(SHELL, clock2.now); // another instance read the plain URL
-    clock2.now += 2_000;
-    client2.save(['about', 'compare', 'new'], clock2.now);
-    clock2.now += 1_000;
-    const cold = instance(client2, clock2, typeof kind === 'function' ? kind : undefined);
-    if (typeof kind === 'string') cold.probeMode(kind);
-    assert.ok(has(await cold.shell(), 'new'), `${label}: a cold instance never takes the edge's plain copy from before the save`);
+    // (b) a cold instance, while client.vivreal.io holds a plain copy from before the save.
+    const clock2 = fakeClock();
+    const client2 = fakeClient(clock2);
+    client2.body(SHELL);
+    clock2.advance(2_000);
+    client2.save(['about', 'compare', 'new']);
+    clock2.advance(1_000);
+    client2.mode.probe = probe;
+    assert.ok(has(await instance(client2, clock2).shell(), 'new'), `${probe}: never the edge's plain copy from before the save`);
   }
 });
 
-test('ALLOW: a site whose Client answers "no version" reads the plain key, never fresh on every page', async () => {
-  const client = fakeClient();
+test('REFUSE (T3b, I7, R3): S0, the fresh read times out, the plain copy answers stale and teaches nothing', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock);
+  await a.shell('known'); // the build-age plain copy, cached
+  clock.advance(2_000);
+  client.save(['about', 'compare', 'new']);
+  client.mode.probe = 'slow';
+  client.mode.F = 'hang';
+  const r = await a.shell();
+  assert.ok(!has(r, 'new'), 'control: the plain copy is from before the save');
+  assert.equal(r.stale, true, 'stale: a page missing from it must answer 503, not 404');
+  const site = markFloorValue({ pageConfigs: [] });
+  assert.throws(() => refuseNegativeClaimFromFloor(r.stale ? site : {}), DegradedUpstreamError, 'the 404 verdict refuses');
+  // Then: F runs again; K and L were not taught by the plain copy.
+  client.mode.F = 'ok';
+  clock.advance(6_000);
+  const next = await a.shell();
+  assert.ok(has(next, 'new'), 'the next render reads fresh and shows the stored site');
+  assert.equal(a.fresh.length, 2, 'F ran again');
+});
+
+test('ALLOW (T3a, R1): S0, the fresh read refused with a 4xx (no #137): the plain copy is today\'s answer, unmarked, and teaches', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock);
+  client.mode.probe = 'fail';
+  client.mode.F = 'refuse';
+  const r = await a.shell();
+  assert.deepEqual(pagesOf(r), ['about', 'compare']);
+  assert.equal(r.stale, false, 'unmarked: a missing page answers 404, as today');
+  clock.advance(6_000);
+  await a.shell();
+  assert.equal(vOf(a.asked.at(-1)), client.state.updatedAt, 'K was learned: the next render targets V');
+});
+
+test('REFUSE (R1): a fresh timeout, then a fast 5xx within 5 s, then a render whose fresh read short-circuits in the memo: the plain copy stays stale', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock);
+  await a.shell('known'); // the plain copy, cached
+  client.mode.probe = 'slow';
+  client.mode.F = 'hang';
+  const first = await a.shell();
+  assert.equal(first.stale, true, 'a timeout leaves the plain copy stale');
+  client.mode.F = 'fail';
+  const second = await a.shell();
+  assert.equal(second.stale, true, 'a 5xx, fast, is not a refusal');
+  client.mode.F = 'refuse'; // never reached: the memo answers first
+  const third = await a.shell();
+  assert.equal(a.fresh.length, 3);
+  assert.equal(third.ms, 0, 'the memo short-circuit costs no wait');
+  assert.equal(third.stale, true, 'decided by cause, not speed: a missing page answers 503, not 404');
+});
+
+test('ALLOW (T5, T6, I5): a site with no version reads plain, and reads fresh at most once', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
   client.state.updatedAt = null;
-  const clock = { now: T0 };
   const a = instance(client, clock);
   for (let i = 0; i < 3; i += 1) {
     await a.shell();
-    clock.now += 5_000;
+    clock.advance(5_000);
   }
-  assert.deepEqual(a.reads, [SHELL, SHELL, SHELL]);
-  assert.equal(a.fresh.length, 0);
-});
-
-test('ALLOW (RW-4 row 3): a probe that recovers moves forward to a newer version', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
-  const a = instance(client, clock);
-  await a.shell(false); // the plain copy, from before both saves
-  clock.now += 1_000;
-  client.save(['about', 'compare', 'menu'], clock.now);
-  clock.now += 5_000;
-  assert.ok(has(await a.shell(), 'menu'));
-  const first = client.state.updatedAt;
-
-  a.probeMode('error');
-  clock.now += 5_000;
-  assert.ok(has(await a.shell(), 'menu'), 'down: the known version holds');
-  clock.now += 1_000;
-  client.save(['about', 'compare', 'menu', 'new'], clock.now);
-  clock.now += 5_000;
-  assert.equal(new URL(a.reads.at(-1) ?? '', 'http://x').searchParams.get('v'), first, 'control: still down, still the first version');
-
-  a.probeMode('up');
-  clock.now += 5_000;
-  assert.ok(has(await a.shell(), 'new'), 'recovered: the newer save shows');
-  assert.equal(a.reads.at(-1), invalidation.versionedPath(SHELL, client.state.updatedAt));
-});
-
-test('ALLOW (RW-4 follow-up): a page, its share image and the sitemap share one probe per 5 s, and the sitemap never lags the page', async () => {
-  const { isFencedRender } = api();
-  const client = fakeClient();
-  const clock = { now: T0 };
-  const a = instance(client, clock);
-  const served = (page: string) => isFencedRender({ type: 'request' }, { page });
-  // Before the save, all three readers on one instance, as a crawler would hit them.
-  for (const page of ['/[slug]/page', '/og/[slug]/route', '/sitemap.xml/route']) await a.shell(served(page));
-  assert.equal(client.probes.length, 1, 'one probe for the three readers');
-  clock.now += 2_000;
-  client.save(['about', 'compare', 'new'], clock.now);
-  clock.now += 5_000;
-  // The first read after the save is the sitemap's, and it is the one that probes.
-  assert.ok(has(await a.shell(served('/sitemap.xml/route')), 'new'), 'the sitemap lists the new page on the first read after the save');
-  assert.ok(has(await a.shell(served('/og/[slug]/route')), 'new'), 'the share image reads the page that exists');
-  assert.ok(has(await a.shell(served('/[slug]/page')), 'new'));
-  assert.equal(client.probes.length, 2, 'still one probe per interval across all three');
-  const saved = client.state.updatedAt;
-  assert.ok(a.reads.slice(-3).every((r) => r === invalidation.versionedPath(SHELL, saved)), 'all three by one key');
-
-  a.probeMode('timeout');
-  for (const step of [5_000, 60_000]) {
-    clock.now += step;
-    const from = a.reads.length;
-    assert.ok(has(await a.shell(served('/sitemap.xml/route')), 'new'), `+${step} ms, probe timing out: never an older sitemap`);
-    assert.ok(!a.reads.slice(from).includes(SHELL), 'never the plain key');
+  assert.equal(a.fresh.length, 0, 'T5: the probe answered "no version", so never fresh');
+  assert.deepEqual(a.asked, [SHELL, SHELL, SHELL]);
+  // T6: the probe failed, the fresh read answered with no version.
+  const clock2 = fakeClock();
+  const client2 = fakeClient(clock2);
+  client2.state.updatedAt = null;
+  client2.mode.probe = 'fail';
+  const b = instance(client2, clock2);
+  for (let i = 0; i < 3; i += 1) {
+    await b.shell();
+    clock2.advance(5_000);
   }
+  assert.equal(b.fresh.length, 1, 'T6: one fresh read, then plain');
 });
 
-test('REFUSE: an older answer (a lagging read) never moves the version back', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
+test('REFUSE (T11, I1, I4): known and served, the versioned and plain reads fail after a purge: L answers, never the floor, and F is skipped', async () => {
+  const { clock, client, a, v1 } = await servedOnce({ floor: true });
+  a.purge();
+  client.mode.V = 'fail';
+  client.mode.Pl = 'fail';
+  clock.advance(6_000);
+  const r = await a.shell();
+  assert.deepEqual(pagesOf(r), ['about', 'compare'], 'the newest shell served, not the build floor');
+  assert.ok(!isFloorValue(r.value));
+  assert.equal(r.stale, false, 'L holds K');
+  assert.equal(a.fresh.length, 0, 'F skipped: L already holds K');
+  // An older plain copy (an edge copy) loses to L.
+  client.mode.Pl = 'ok';
+  client.state.pages = ['older'];
+  client.state.updatedAt = iso(Date.parse(v1 ?? '') - 60_000);
+  clock.advance(6_000);
+  assert.deepEqual(pagesOf(await a.shell()), ['about', 'compare'], 'newest of Pl and L');
+});
+
+test('ALLOW (review N4, re-pointed for B1): known v2 above L, V and F refused: reads [versioned, fresh, plain], the plain read answers', async () => {
+  const { clock, client, a } = await servedOnce({ floor: true });
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  a.purge();
+  client.mode.V = 'refuse';
+  client.mode.F = 'refuse';
+  clock.advance(5_000);
+  const from = a.asked.length;
+  const r = await a.shell();
+  const kinds = a.asked.slice(from).map((p) => (vOf(p) === null ? 'plain' : a.fresh.includes(p) ? 'fresh' : 'versioned'));
+  assert.deepEqual(kinds, ['versioned', 'fresh', 'plain']);
+  assert.ok(has(r, 'new'), 'the plain read lists the saved page');
+  assert.equal(r.stale, false);
+});
+
+test('REFUSE (T15b, G2, I4): K learned by the probe above L, then every v refused: the plain read still goes upstream (the budget is time, not a count)', async () => {
+  const { clock, client, a } = await servedOnce({ floor: true });
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  a.purge();
+  client.mode.V = 'refuse';
+  client.mode.F = 'refuse';
+  client.mode.Pl = { delayMs: 800 };
+  clock.advance(5_000);
+  const r = await a.shell();
+  assert.ok(has(r, 'new'), `the stored words, from the plain read, got ${JSON.stringify(pagesOf(r))}`);
+  assert.ok(r.ms <= 1_500 + 800, 'two refusals cost no wait');
+});
+
+test('REFUSE (T14, R2, I4, I7): a stale plain answer is served stale, a present page still renders, and it moves L but never K', async () => {
+  const { clock, client, a } = await servedOnce({ floor: true });
+  // v1.5: a save whose plain URL client.vivreal.io then holds for 60 s.
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'v15']);
+  client.body(SHELL);
+  // v2: the stored site; the probe will teach K = v2 while L = v1.
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'v15', 'menu']);
+  const v2 = client.state.updatedAt;
+  a.purge();
+  client.mode.V = 'fail';
+  client.mode.F = 'fail';
+  clock.advance(6_000);
+  const r = await a.shell();
+  assert.ok(has(r, 'v15') && !has(r, 'menu'), `served the newer of Pl (v1.5) and L (v1), got ${JSON.stringify(pagesOf(r))}`);
+  assert.equal(r.stale, true, 'older than K: stale');
+  assert.ok(has(r, 'about'), 'G7: a page present in the stale shell is there to render (a positive claim stands)');
+  const built = r.stale ? markFloorValue({ pageConfigs: pagesOf(r) }) : { pageConfigs: pagesOf(r) };
+  assert.throws(() => refuseNegativeClaimFromFloor(built), DegradedUpstreamError, 'a page missing from it refuses (503), never 404');
+  // Then every read fails: the answer is v1.5, never back to v1 (R2).
+  a.purge();
+  client.mode.Pl = 'fail';
+  clock.advance(6_000);
+  const all = await a.shell();
+  assert.ok(has(all, 'v15'), `never back to v1, got ${JSON.stringify(pagesOf(all))}`);
+  assert.equal(all.stale, true);
+  // K stayed v2: with the probe slow, the recovered V reads v2.
+  client.mode.probe = 'slow';
+  client.mode.V = 'ok';
+  clock.advance(6_000);
+  const back = await a.shell();
+  assert.equal(vOf(a.asked.at(-1)), v2, 'K never moved back');
+  assert.ok(has(back, 'menu'));
+});
+
+test('REFUSE (I1): an older probe answer (a lagging read) never moves the version back', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  client.state.updatedAt = '2026-11-09T15:06:46.367Z';
   let answer: unknown = { siteId: SITE, updatedAt: '2026-11-09T15:06:46.367Z' };
-  const a = instance(client, clock, async () => answer);
+  const a = instance(client, clock, { probe: async () => answer });
   await a.shell();
   answer = { siteId: SITE, updatedAt: '2026-11-09T15:06:40.000Z' };
-  clock.now += 5_000;
+  clock.advance(5_000);
   await a.shell();
-  assert.equal(new URL(a.reads.at(-1) ?? '', 'http://x').searchParams.get('v'), '2026-11-09T15:06:46.367Z');
+  assert.equal(vOf(a.asked.at(-1)), '2026-11-09T15:06:46.367Z');
 });
 
-test('ALLOW (RW-4 row 4): the pair converges, and the instance whose probe timed out never goes back meanwhile', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
+test('ALLOW (T17, T17\', I2, G5): a site webhook marks the probe due, never waits for it, and the next FULL render probes inside the interval', async () => {
+  const { clock, client, a } = await servedOnce();
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  a.purge();
+  const probesBefore = client.probes.length;
+  assert.equal(a.fence.markProbeDue(), undefined, 'answers at once, nothing to await');
+  clock.advance(1_000); // well inside the 5 s interval
+  const r = await a.shell();
+  assert.equal(client.probes.length, probesBefore + 1, 'the next FULL render probed first');
+  assert.ok(has(r, 'new'));
+  assert.equal(vOf(a.asked.at(-1)), client.state.updatedAt, 'and read the new version');
+  // With a probe that never settles, the webhook still answers at once.
+  client.mode.probe = 'slow';
+  a.fence.markProbeDue();
+  const pending = a.fence.resolve('full', { cached: async () => null, fresh: async () => ({ value: null, refused: false }), floor: () => null }, SHELL, isLive);
+  await flush();
+  assert.equal(a.fence.markProbeDue(), undefined, 'not a promise: the webhook never waits on the probe in flight');
+  await drive(clock, pending);
+});
+
+test('REFUSE (I3): every read hangs: the answer comes within 4.5 s with L and within 6.5 s without', async () => {
+  // With L, and K above L so F runs too: probe 1.5 s, then V, F and a plain miss share 3.0 s.
+  const { clock, client, a } = await servedOnce({ floor: true });
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  a.purge();
+  client.mode.V = 'fail';
+  client.mode.F = 'fail';
+  client.mode.Pl = 'fail';
+  clock.advance(5_000);
+  const kAboveL = await a.shell();
+  assert.equal(kAboveL.stale, true, 'control: the probe taught K above L, and every read failed');
+  client.mode.probe = 'slow';
+  client.mode.V = 'hang';
+  client.mode.F = 'hang';
+  client.mode.Pl = 'hang';
+  clock.advance(6_000);
+  const withL = await a.shell();
+  assert.ok(withL.ms <= 4_500, `with L: ${withL.ms} ms`);
+  assert.ok(!isFloorValue(withL.value), 'L answers');
+  // S0: probe 1.5 s, then F 5 s, then the plain read is cache-only.
+  const clock2 = fakeClock();
+  const client2 = fakeClient(clock2);
+  client2.mode.probe = 'slow';
+  client2.mode.F = 'hang';
+  client2.mode.Pl = 'hang';
+  const cold = await instance(client2, clock2, { floor: true }).shell();
+  assert.ok(cold.ms <= 6_500, `without L: ${cold.ms} ms`);
+});
+
+test('ALLOW (G6, I2, I7): S0 with a cold Client, the fresh read answering at 4.5 s is served, not the plain copy or the floor', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock, { floor: true });
+  await a.shell('known');
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  client.mode.probe = 'slow';
+  client.mode.F = { delayMs: 4_500 };
+  const r = await a.shell();
+  assert.ok(has(r, 'new'), `the fresh read, got ${JSON.stringify(pagesOf(r))}`);
+  assert.equal(r.stale, false);
+});
+
+test('ALLOW (R3, T19): KNOWN at S0 reads plain as today and teaches nothing, so the next FULL render with a slow probe reads fresh', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
   const a = instance(client, clock);
-  const b = instance(client, clock);
-  // Both served the home page from the plain key before the first save.
-  await a.shell(false);
-  await b.shell(false);
-  clock.now += 1_000;
-  client.save(['about', 'compare', 'menu'], clock.now);
-  clock.now += 5_000;
-  assert.ok(has(await a.shell(), 'menu') && has(await b.shell(), 'menu'), 'control: both served the first save');
-  const first = client.state.updatedAt;
-
-  clock.now += 2_000;
-  client.save(['about', 'compare', 'menu', 'new'], clock.now);
-  clock.now += 5_000;
-  b.probeMode('timeout');
-  assert.ok(has(await a.shell(), 'new'), 'A: probe up, the second save');
-  const onB = await b.shell();
-  assert.ok(has(onB, 'menu'), `B: probe timed out, still the first save it served, got ${JSON.stringify(onB)}`);
-  assert.equal(b.reads.at(-1), invalidation.versionedPath(SHELL, first), 'B: by the version it knew, through its caches');
-  assert.equal(b.fresh.length, 0, 'B: no fresh read while it knows a version');
-
-  b.probeMode('up');
-  clock.now += 5_000;
-  const [onA, onB2] = [await a.shell(), await b.shell()];
-  assert.deepEqual(onB2, onA, 'the pair serves the same site');
-  assert.ok(has(onB2, 'new'));
-  assert.equal(a.reads.at(-1), b.reads.at(-1), 'by the same key');
+  const home = await a.shell('known');
+  assert.equal(home.stale, false, 'T19: today\'s answer, unmarked');
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  client.mode.probe = 'slow';
+  const page = await a.shell();
+  assert.ok(has(page, 'new'), 'the page added since answers');
+  assert.equal(a.fresh.length, 1, 'F ran: the plain copy taught no version');
 });
 
-test('ALLOW (review N4, re-pointed for RW-4): a versioned read that does not come back live reads fresh, never the plain key', async () => {
-  const { createSiteVersionFence, readShell } = api();
-  type Answer = { name: string; updatedAt?: string } | null;
-  const V = '2026-11-09T15:06:46.367Z';
-  const isLive = (value: Answer) => value !== null && value.name !== 'floor';
-  for (const [label, versionedAnswer, freshAnswer, want, reads] of [
-    ['live', 'saved site', 'unused', 'saved site', ['versioned']],
-    ['refused or failed (the seam gave the floor)', 'floor', 'fresh site', 'fresh site', ['versioned', 'fresh']],
-    ['failed with no floor', null, 'fresh site', 'fresh site', ['versioned', 'fresh']],
-    ['the fresh read failed too', 'floor', 'floor', 'floor', ['versioned', 'fresh']],
-  ] as const) {
-    const fence = createSiteVersionFence({ siteId: SITE, probe: async () => ({ siteId: SITE, updatedAt: V }), now: () => T0, startTimeout: () => ({ cancel() {} }) });
-    const seen: string[] = [];
-    const out = await readShell<Answer>(
-      fence,
-      true,
-      {
-        async cached(path) {
-          seen.push(path === SHELL ? 'plain' : 'versioned');
-          return versionedAnswer === null ? null : { name: versionedAnswer };
-        },
-        async fresh() {
-          seen.push('fresh');
-          return { name: freshAnswer };
-        },
-      },
-      SHELL,
-      isLive,
-    );
-    assert.equal(out?.name, want, label);
-    assert.deepEqual(seen, reads, `${label}: ${seen.join(' then ')}`);
+test('ALLOW (T19b, G4, I4): KNOWN at S0 with the plain read failing answers the floor, marked', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  client.mode.Pl = 'fail';
+  const r = await instance(client, clock, { floor: true }).shell('known');
+  assert.equal(r.value, BUILD_FLOOR);
+  assert.equal(r.stale, true);
+});
+
+test('REFUSE (T18, I5, I6): a KNOWN reader never probes and never reads fresh, and reads the known version once there is one', async () => {
+  const { clock, client, a, v1 } = await servedOnce();
+  const probes = client.probes.length;
+  clock.advance(10_000);
+  client.mode.probe = 'slow';
+  await a.shell('known');
+  assert.equal(client.probes.length, probes, 'no probe, even when one is due');
+  assert.equal(a.fresh.length, 0);
+  assert.equal(vOf(a.asked.at(-1)), v1, 'v = K, never the plain key while K is known');
+});
+
+test('ALLOW (section 6, I6): the reader classes', () => {
+  const { readerClassFor } = api();
+  for (const page of [
+    '/[slug]/page',
+    '/[slug]/[itemId]/page',
+    '/[...segments]/page',
+    '/book/page',
+    '/booking/manage/page',
+    '/og/[slug]/route',
+    '/og/[slug]/[itemId]/route',
+    '/sitemap.xml/route',
+    '/sitemaps/[file]/route',
+    '/api/indexnow/urls/route',
+  ]) {
+    assert.equal(readerClassFor({ type: 'request' }, { page }), 'full', page);
+    assert.equal(readerClassFor({ type: 'prerender-legacy' }, { page }), 'known', `${page} regenerating`);
+    assert.equal(readerClassFor({ type: 'prerender' }, { page }), 'known', `${page} at build (the glue makes the build PLAIN)`);
   }
+  for (const page of ['/page', '/domains/page', '/robots.txt/route', '/icon/route', '/brand/logo/route', '/img/[slug]/[itemId]/route', '/api/revalidate/route']) {
+    assert.equal(readerClassFor({ type: 'request' }, { page }), 'known', page);
+  }
+  assert.equal(readerClassFor(undefined, undefined), 'known', 'outside a render');
 });
 
-test('ALLOW: a first read whose fresh read also fails takes the plain read (today\'s outage answer) and learns nothing from it', async () => {
-  const { createSiteVersionFence, readShell } = api();
-  type Answer = { name: string; updatedAt?: string } | null;
-  const fence = createSiteVersionFence({ siteId: SITE, probe: async () => { throw new Error('fetch failed'); }, now: () => T0, startTimeout: () => ({ cancel() {} }) });
-  const seen: string[] = [];
-  const reads = {
-    async cached(path: string): Promise<Answer> {
-      seen.push(path);
-      return { name: 'plain copy', updatedAt: '2026-11-09T14:00:00.000Z' };
-    },
-    async fresh(): Promise<Answer> {
-      seen.push('fresh');
-      return null;
-    },
-  };
-  const isLive = (value: Answer) => value !== null;
-  assert.equal((await readShell<Answer>(fence, true, reads, SHELL, isLive))?.name, 'plain copy');
-  assert.deepEqual(seen, ['fresh', SHELL]);
-  assert.deepEqual(await fence.shellReadFor(true), { kind: 'fresh' }, 'the plain copy taught it no version');
+test('REFUSE (I8): one degraded line per answer that is not the target, none when the target answers (T8)', async () => {
+  const { clock, client, a } = await servedOnce();
+  clock.advance(6_000);
+  await a.shell();
+  assert.equal(a.lines.length, 0, 'T8: the target answered');
+  a.purge();
+  client.mode.V = 'fail';
+  clock.advance(6_000);
+  await a.shell();
+  assert.equal(a.lines.length, 1);
+  assert.deepEqual(
+    { reader: a.lines[0].reader, target: a.lines[0].target, answeredBy: a.lines[0].answeredBy, stale: a.lines[0].stale },
+    { reader: 'full', target: 'V', answeredBy: 'Pl', stale: false },
+  );
 });
 
-test('ALLOW: at most one probe per 5 s per instance under a burst of 50 requests', async () => {
-  const client = fakeClient();
-  const clock = { now: T0 };
-  let release: () => void = () => {};
-  const gate = new Promise<void>((resolve) => { release = resolve; });
-  const b = instance(client, clock, async () => {
-    await gate;
-    return client.version();
-  });
-  const burst = Array.from({ length: 50 }, () => b.shell());
-  release();
-  await Promise.all(burst);
+test('REFUSE (I9, T21, T22): the build and a preview learn nothing, and one render\'s edits never reach the next served copy of L', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock);
+  await a.shell('plain');
+  await a.shell('plain');
+  assert.equal(client.probes.length, 0, 'PLAIN never probes');
+  assert.deepEqual(a.asked, [SHELL, SHELL], 'PLAIN reads the plain key only: no version, no fresh read');
+  client.mode.probe = 'slow';
+  clock.advance(1_000);
+  client.save(['about', 'compare', 'new']);
+  await a.shell();
+  assert.equal(a.fresh.length, 1, 'nothing was learned from the PLAIN reads, so the first FULL read is fresh');
+  assert.ok(a.fresh[0] === a.asked[2], 'and that fresh read is the FULL render\'s, the first read after the PLAIN ones');
+  // L served twice: a write into one served copy is not in the next.
+  a.purge();
+  client.mode.V = 'fail';
+  client.mode.Pl = 'fail';
+  clock.advance(6_000);
+  const one = await a.shell();
+  one.value?.pages.push('written-by-a-render');
+  clock.advance(6_000);
+  const two = await a.shell();
+  assert.ok(!has(two, 'written-by-a-render'), 'L is cloned in and out');
+});
+
+test('ALLOW (T24, I5): at most one probe per 5 s per instance under a burst of 50 requests', async () => {
+  const clock = fakeClock();
+  const client = fakeClient(clock);
+  const a = instance(client, clock);
+  await Promise.all(Array.from({ length: 50 }, () => a.shell()));
   assert.equal(client.probes.length, 1, 'one probe for 50 concurrent requests');
-  clock.now += 4_999;
-  await Promise.all(Array.from({ length: 50 }, () => b.shell()));
+  clock.advance(4_999);
+  await Promise.all(Array.from({ length: 50 }, () => a.shell()));
   assert.equal(client.probes.length, 1, 'still one inside the interval');
-  clock.now += 1;
-  await Promise.all(Array.from({ length: 50 }, () => b.shell()));
+  clock.advance(1);
+  await Promise.all(Array.from({ length: 50 }, () => a.shell()));
   assert.equal(client.probes.length, 2, 'the next interval asks once more');
-  assert.ok(b.reads.every((r) => r.includes('&v=')), 'every read in the burst carries the version');
 });
 
-test('REFUSE: no site id (a local or preview build) never probes and reads as today', async () => {
+test('REFUSE: no site id never probes and reads as today', async () => {
   const { createSiteVersionFence } = api();
+  const clock = fakeClock();
   let probes = 0;
   const fence = createSiteVersionFence({
     siteId: '',
-    probe: async () => {
-      probes += 1;
-      return { siteId: '', updatedAt: '2026-11-02T22:36:32.000Z' };
-    },
-    now: () => T0,
-    startTimeout: () => ({ cancel() {} }),
+    probe: async () => { probes += 1; return null; },
+    now: () => clock.now,
+    startTimeout: (ms: number, fn: () => void) => clock.startTimeout(ms, fn),
+    startStopwatch: () => clock.startStopwatch(),
   });
-  assert.deepEqual(await fence.shellReadFor(true), { kind: 'plain' });
-  assert.equal(probes, 0, 'no probe without a site id');
+  const asked: string[] = [];
+  const reads: Reads = { cached: async (p) => { asked.push(p); return { pages: ['x'], updatedAt: null }; }, fresh: async () => ({ value: null, refused: false }), floor: () => null };
+  await drive(clock, fence.resolve('full', reads, SHELL, isLive));
+  assert.equal(probes, 0);
+  assert.deepEqual(asked, [SHELL]);
 });
 
-/** The routes that read the shell through the fence, besides ordinary pages (RW-4 follow-up). */
-const FENCED_ROUTE_PAGES = ['/og/[slug]/route', '/og/[slug]/[itemId]/route', '/sitemap.xml/route', '/sitemaps/[file]/route'];
-
-test('ALLOW (RW-4 follow-up): the share image and the sitemap read through the fence, served per request', () => {
-  const { isFencedRender } = api();
-  for (const page of FENCED_ROUTE_PAGES) {
-    assert.equal(isFencedRender({ type: 'request' }, { page }), true, page);
-    assert.equal(isFencedRender({ type: 'prerender' }, { page }), false, `${page} at build: no probe, no fresh read`);
-  }
-});
-
-test('REFUSE: home, a cached page, a build and any other route handler never probe, never read fresh, and read as today', async () => {
-  const { isFencedRender } = api();
-  assert.equal(isFencedRender({ type: 'request' }, { page: '/[slug]/page' }), true, 'control: an ordinary page served per request');
-  assert.equal(isFencedRender({ type: 'request' }, { page: '/[slug]/[itemId]/page' }), true);
-  assert.equal(isFencedRender({ type: 'request' }, { page: '/page' }), false, 'home keeps its timing');
-  assert.equal(isFencedRender({ type: 'prerender-legacy' }, { page: '/[slug]/page' }), false, 'a regeneration of a cached page');
-  assert.equal(isFencedRender({ type: 'prerender' }, { page: '/[slug]/page' }), false, 'a build prerender');
-  for (const page of ['/robots.txt/route', '/icon/route', '/api/indexnow/urls/route', '/og/route', '/sitemap.xml/page']) {
-    assert.equal(isFencedRender({ type: 'request' }, { page }), page === '/sitemap.xml/page', `${page}`);
-  }
-  assert.equal(isFencedRender(undefined, undefined), false, 'outside a render');
-  const client = fakeClient();
-  const b = instance(client, { now: T0 });
-  b.probeMode('error');
-  await b.shell(false);
-  assert.equal(client.probes.length, 0, 'not serving an ordinary page: no probe');
-  assert.deepEqual(b.reads, [SHELL]);
-  assert.equal(b.fresh.length, 0, 'an uncached read would turn a cached page dynamic');
-});
-
-test('REFUSE: a fresh shell read that is not an ISO instant teaches the fence nothing', async () => {
-  const { createSiteVersionFence } = api();
-  const fence = createSiteVersionFence({ siteId: SITE, probe: async () => { throw new Error('down'); }, now: () => T0, startTimeout: () => ({ cancel() {} }) });
-  for (const bad of [null, undefined, 'yesterday', 42, '2026-11-09 15:06:46']) fence.learn(bad);
-  assert.deepEqual(await fence.shellReadFor(true), { kind: 'fresh' });
-  fence.learn('2026-11-09T15:06:46.367Z');
-  assert.deepEqual(await fence.shellReadFor(true), { kind: 'versioned', version: '2026-11-09T15:06:46.367Z' }, 'control: an instant is learned');
-});
-
-test('the probe timeout holds a warm Client and stays inside the cold lookup budget', () => {
-  // RW-4 measured warm probes at 524 to 566 ms end to end against a 500 ms bound.
-  assert.ok(invalidation.SITE_VERSION_TIMEOUT_MS >= 2 * 566, `at least twice the slowest warm probe, got ${invalidation.SITE_VERSION_TIMEOUT_MS}`);
-  assert.ok(invalidation.SITE_VERSION_TIMEOUT_MS <= COLD_FETCH_DEADLINE_MS, 'never longer than the cold site map lookup a visitor already waits for');
+test('the probe wait, the budgets and the deadlines are the design\'s (I3)', () => {
+  const n = invalidation as unknown as Record<string, number>; // numeric constants, each compared below
+  assert.equal(n.SITE_VERSION_TIMEOUT_MS, 1_500);
+  assert.equal(n.SHELL_READS_BUDGET_MS, 3_000);
+  assert.equal(n.SHELL_READS_BUDGET_COLD_MS, 5_000);
+  assert.equal(n.SHELL_READ_DEADLINE_MS, 1_500);
+  assert.equal(n.SHELL_READ_DEADLINE_COLD_MS, 5_000);
+  assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_COLD_MS <= 6_500, 'FULL at S0 at most 6.5 s');
+  assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_MS <= 4_500, 'FULL with L at most 4.5 s');
 });
 
 test('REFUSE: the floor still answers a versioned read by the key the build wrote', async () => {
@@ -526,24 +732,26 @@ test('REFUSE: the floor still answers a versioned read by the key the build wrot
   assert.deepEqual(recorded, [SHELL], 'recorded under the unversioned key');
 });
 
-test('SOURCE: the shell read goes through the fence, the fresh read skips the data cache on its own memo key, the floor stays on the plain key', () => {
+test('SOURCE: one shell call site, the fence on globalThis, a stale answer marked like the floor, the webhook never waits', () => {
   const siteData = fs.readFileSync(new URL('./api/siteData/index.tsx', import.meta.url), 'utf8');
-  // Re-pointed for RW-4: readShellThroughFence replaces readVersionedShell, with a fresh read of the plain path.
+  assert.equal((siteData.match(/clientFetchCached</g) ?? []).length, 1, 'G8, I6: exactly one clientFetchCached call for the shell');
   assert.match(siteData, /readShellThroughFence<SiteDetailsResponse \| null>\(/);
-  assert.match(siteData, /\{ cached: \(readPath\) => read\(readPath\), fresh: \(\) => read\(path, \{ fresh: true \}\) \}/);
-  assert.match(siteData, /\{ floorPath: path, \.\.\.opts \}/);
-  assert.doesNotMatch(siteData, /readVersionedShell|shellReadVersion/);
+  assert.match(siteData, /fromFloor: source === 'floor' \|\| \(source === 'live' && isFloorValue\(live\)\) \|\| stale/, 'I7: stale is marked like the floor');
+  assert.match(siteData, /refused = err instanceof ApiError && err\.status >= 400 && err\.status < 500;/, 'R1: only a 4xx is a refusal');
+  assert.match(siteData, /floor: \(\) => floorAnswerFor<SiteDetailsResponse>\(path, 'own_read'\) \?\? null/);
   const glue = fs.readFileSync(new URL('./api/siteData/siteVersionFence.ts', import.meta.url), 'utf8');
-  assert.match(glue, /isFencedRender\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
-  // One fence per process, on globalThis, so a page and a route handler bundled in different layers share it.
-  assert.match(glue, /const FENCE: SiteVersionFence = \(slot\[FENCE_SLOT\] \?\?= createSiteVersionFence\(\{/);
-  assert.match(glue, /Symbol\.for\('vivreal\.templates\.siteVersionFence'\)/);
+  assert.match(glue, /const FENCE: SiteVersionFence = \(slot\[FENCE_SLOT\] \?\?= createSiteVersionFence\(\{/, 'I5: one fence per process');
+  assert.match(glue, /readerClassFor\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
   assert.match(glue, /startAwakeTimeout\(ms, onExpire\)/, 'an awake-time timer, never a wall-clock one');
-  assert.match(glue, /return readShell\(FENCE, readsThroughFence\(\), reads, path, isLive\);/);
+  assert.match(glue, /if \(!SITE_ID \|\| isBuildPhase\(\)\) return 'plain';\s*if \(await isPreviewRender\(\)\) return 'plain';/, 'I9: build and preview are PLAIN');
+  assert.match(glue, /const shared = request \? RESOLUTIONS\.get\(request\) : undefined;\s*if \(shared\) return shared/, 'I3: one resolution per request (the 500 pass reuses it)');
+  const route = fs.readFileSync(new URL('../app/api/revalidate/route.ts', import.meta.url), 'utf8');
+  assert.match(route, /if \(event\.startsWith\("site\."\)\) markSiteVersionProbeDue\(\);/, 'G5: marked, not awaited');
+  assert.doesNotMatch(route, /await markSiteVersionProbeDue/);
   const client = fs.readFileSync(new URL('./api/client.ts', import.meta.url), 'utf8');
   assert.match(client, /doClientFetch<unknown>\(CLIENT_API, siteVersionPath\(siteId\), null, \{ signal \}\)/);
-  assert.match(client, /path: opts\?\.fresh \? `\$\{path\}#fresh` : path,/, 'a fresh read never joins a cached read of the same path');
-  assert.match(client, /read: opts\?\.fresh \? fresh : cached,/);
+  assert.match(client, /path: opts\?\.fresh \? `\$\{path\}#fresh` : path,/, 'I5: concurrent fresh reads share one memo key');
+  assert.match(client, /onFailure: \(err\) => \{\s*opts\?\.onUpstreamError\?\.\(err\);/);
   const { siteVersionPath } = api();
   assert.equal(siteVersionPath(SITE), `/tenant/siteVersion?siteId=${SITE}`);
 });

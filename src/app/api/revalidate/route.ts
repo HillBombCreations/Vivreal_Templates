@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { HARD_INVALIDATION } from "@/lib/cacheInvalidation";
 import { purgesWholeSite, tagsForEvent } from "@/lib/revalidateTags";
+import { markSiteVersionProbeDue } from "@/lib/api/siteData/siteVersionFence";
 import crypto from "node:crypto";
 
 // MUST be the Node.js runtime, not edge: revalidateTag drives the Next.js Data
@@ -94,6 +95,11 @@ export async function POST(request: NextRequest) {
   // carry, so the tag purge alone could miss it; its path tag never is. See
   // purgesWholeSite in lib/revalidateTags.ts.
   if (purgesWholeSite(tags)) revalidatePath("/", "layout");
+  // RW-4, design step 8 (G5): a site save makes this instance's next FULL
+  // render probe first, even inside the probe interval. Only marked, never
+  // awaited: delivery gives this request 5 s, and 10 failures in a row disable
+  // the subscription.
+  if (event.startsWith("site.")) markSiteVersionProbeDue();
 
   return NextResponse.json({ revalidated: true, event, tags, now: Date.now() });
 }

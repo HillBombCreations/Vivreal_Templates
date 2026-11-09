@@ -31,6 +31,7 @@ import { isDemoSite } from '../seo/demoSafety.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
 import { readIndexNowKey } from './keyFile.ts';
 import { DegradedUpstreamError } from '../api/siteData/degraded.ts';
+import { isFloorValue } from '../api/snapshot/floorValue.ts';
 
 /** How far `ts` may be from the clock, either way. */
 export const SNAPSHOT_MAX_SKEW_MS = 5 * 60 * 1000;
@@ -119,12 +120,17 @@ export interface SnapshotAnswer {
  * A degraded site read, or a page list refused as degraded, is a 503 and
  * never an empty list: an empty snapshot would tell the worker every URL was
  * removed. The page list is read only for an eligible site.
+ *
+ * So is a shell from the build floor, or one the site version fence marked
+ * stale (RW-4 I7, OQ4; both carry the floor's mark): a non-empty list drawn
+ * from it would still tell the worker that every page added since was removed.
  */
 export async function snapshotAnswer(
   siteData: Parameters<typeof snapshotPayload>[0],
   loadEntries: () => Promise<MetadataRoute.Sitemap>,
 ): Promise<SnapshotAnswer> {
   if (siteData.degraded === true) return { status: 503, body: { error: 'site data unavailable' } };
+  if (isFloorValue(siteData)) return { status: 503, body: { error: 'site data may be older than the stored site' } };
   const verdict = snapshotPayload(siteData, []);
   if (!verdict.eligible) return { status: 200, body: verdict };
   try {

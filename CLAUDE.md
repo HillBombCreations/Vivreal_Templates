@@ -143,9 +143,10 @@ All data fetching goes through `src/lib/api/client.ts`:
 `isQuotaError()` detects 402 quota responses — the root layout renders `<QuotaExceeded />` instead of crashing.
 
 **Render reads are not billed (next release 2026-11, F0).** A `clientFetchCached` read that goes upstream (a build,
-an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted inside its `unstable_cache` closure by
+an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted per upstream call in `clientFetchCached` (its
+`unstable_cache` closure, and the fenced fresh shell read, RW-4) by
 `lib/api/internalToken.ts` (`server-only`) from `INTERNAL_METER_KEY` and `INTERNAL_METER_GROUP_ID`, and VR_Client_API
-counts it to `internalCalls` instead of the billable `totalCalls`. Minted ONLY there and only for Client's render-read
+counts it to `internalCalls` instead of the billable `totalCalls`. Minted nowhere else, and only for Client's render-read
 rule (GET of `siteDetails`, `collectionObjects` or `integrationObjects`, no non-empty `search`;
 `lib/api/internalTokenCore.ts`). A cached read mints whichever route triggers the fill (pages, and also the
 sitemap, OG, icon and `/api/indexnow/urls` routes, which read the same cached site data); the uncached `clientFetch`

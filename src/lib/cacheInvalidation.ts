@@ -25,82 +25,70 @@
  *
  * SCOPE: this repairs the invalidation on the Amplify compute instance that
  * receives the webhook. It cannot reach the OTHER instances serving the same
- * site, because the tag manifest is a per-process Map. For the site shell on
- * ordinary pages that window is now closed by the site version fence below
- * (F41); everywhere else it is still bounded by SITE_CACHE_TTL_SECONDS.
+ * site, because the tag manifest is a per-process Map. For the site shell that
+ * window is now closed by the site version fence below (F41), which every
+ * shell reader goes through; other reads are still bounded by
+ * SITE_CACHE_TTL_SECONDS.
  */
 export const HARD_INVALIDATION = { expire: 0 } as const;
 
 /**
- * The site version fence (F41, owner decision OD-01, 2026-11-05: "ordinary
- * pages check a tiny 'has this site changed' marker and refresh straight
- * away; the home and pricing pages keep their current timing").
+ * The site version fence (F41, owner decision OD-01, 2026-11-05), as ONE read
+ * state machine for every shell reader (RW-4). The design, with its
+ * invariants I1 to I9, its transitions table and its mutation map, is vivreal-hq
+ * docs/projects/release-plan-open-backlog/design-t2-fence-state.md (revision 3).
+ * This comment names the parts; the design is the spec.
  *
- * WHAT WAS WRONG. A Studio save reaches ONE compute instance of a live site
- * (the revalidate webhook). Every other instance kept rendering its own copy
- * of the site shell for up to `SITE_CACHE_TTL_SECONDS`, and the instance the
- * webhook did reach could refetch through a client.vivreal.io edge copy from
- * before the save and cache THAT for a fresh window. So a new page answered
- * "Not Found" on some visits for minutes (vivreal-hq
- * docs/bugs/f41-stale-pages-after-save/research.md).
+ * WHY. A Studio save reaches ONE compute instance (the revalidate webhook).
+ * Every other instance kept its copy of the shell for up to the cache TTL, and
+ * the edge copy at client.vivreal.io lives 60 s. The fence asks VR_Client_API
+ * `GET /tenant/siteVersion` (CL7) for the site's `updatedAt` and reads the
+ * shell keyed by it (`&v=<updatedAt>`), so a save is a new data-cache key and a
+ * new edge key everywhere. Its state lives for the life of the instance, while
+ * the content it names lives in layers with other lifetimes. So when a layer
+ * misses, the machine decides, never the reader.
  *
- * THE FENCE. While serving an ordinary page, an instance asks VR_Client_API
- * `GET /tenant/siteVersion` (CL7: `{ siteId, updatedAt }`, never cached,
- * never billed) at most once per `SITE_VERSION_INTERVAL_MS`, giving it
- * `SITE_VERSION_TIMEOUT_MS`. The shell read then carries `&v=<updatedAt>`:
- * a save is a NEW Next data-cache key on every instance and a NEW edge key
- * at client.vivreal.io (every query string is in its cache key), so the next
- * ordinary page on any instance reads the saved site. That new key is this
- * instance's purge of the shell: Next refuses `revalidateTag` during a render
- * (`createRevalidateDuringRenderError`, next 16.4.1
- * `server/web/spec-extension/revalidate.js`), and the key change needs none.
+ * STATE (one per process, `../api/siteData/siteVersionFence.ts`):
+ *  - `K`, the newest version known; only moves forward.
+ *  - `NV`, the site answered "no `updatedAt`" while nothing was known.
+ *  - `L`, the newest public live shell served; only moves forward, kept as a
+ *    clone and served as a clone.
+ *  - the probe slot: at most one probe per `SITE_VERSION_INTERVAL_MS`.
  *
- * The share image (`/og/...`) and the sitemap (`/sitemap.xml`, `/sitemaps/..`)
- * read the shell through the same fence, so a new page's share image and its
- * sitemap entry never lag the page the instance serves (RW-4 follow-up). They
- * share the one fence per instance, so its probe limit holds across all of
- * them, not per route.
+ * READERS (`readerClassFor`): FULL (an ordinary page, a share image, a
+ * sitemap, the IndexNow list, each rendered per request) probes and may read
+ * fresh; KNOWN (home, any regeneration, every other route) reads `K` with no
+ * probe and no uncached call; PLAIN (the build, a preview, no site id) reads
+ * as before the fence and learns nothing.
  *
- * WHAT IT NEVER DOES.
- *  - It never runs outside a fenced render (`isFencedRender`: a request render
- *    of an ordinary page, a share image or the sitemap): not at build, not in
- *    a regeneration of a page served from the page cache, not on the home
- *    page, not in any other route handler. Those read the shell exactly as
- *    before.
- *  - A failed or slow probe never takes an instance back to an older site
- *    than it has served (RW-4, vivreal-hq rewalk-2026-11-defects.md). The
- *    instance keeps the newest version it knows, and moves only forward: once
- *    a version is known, no ordinary page reads the unversioned shell again.
- *    Until 2026-11-09 a failure forgot the version, so the read fell back to
- *    the unversioned key, which still held the shell from before the save: a
- *    page that already showed the save flipped back to the old words, and a
- *    new page answered 404 again. See `readShell` for what each read does.
- *  - Concurrent requests share one probe; a burst never multiplies it.
- *
- * Pure: the probe, the clock and the timer are injected, so `node --test`
- * drives two "instances" over one fake Client (cacheInvalidation.fence.test.ts).
+ * ONE RESOLUTION (`resolve`): plan a target (V = the version `K`, F = fresh,
+ * Pl = plain), follow the chain V, F, Pl on a non-live answer inside a time
+ * budget, choose the newest of the live answers and `L`, mark the answer stale
+ * when it may be older than the stored site (a stale shell refuses every
+ * negative claim), learn, and log one line when the answer is not the target.
  */
 
 /** At most one probe per this many milliseconds per instance (OD-01). */
 export const SITE_VERSION_INTERVAL_MS = 5_000;
 
 /**
- * A probe that has not answered in this much awake time is a failure.
- *
- * Warm: the RW-4 walk measured the Client answering in 250 to 483 ms and the
- * probe taking 524 to 566 ms end to end, against the 500 that was here, so
- * every probe failed. That Client ran from source against Atlas over the
- * internet, slower than a warm Lambda, so 1500 holds a warm Client about three
- * times over. Cold: a Client cold start takes seconds and still times out,
- * which is now safe (the known version is kept, or the first read is fresh).
- * Render budget: the probe holds at most one render per instance per
- * `SITE_VERSION_INTERVAL_MS` (concurrent renders join it, later ones inside
- * the interval skip it), and 1500 is the bound the middleware already accepts
- * for a visitor's first site map lookup against the same Client
- * (`COLD_FETCH_DEADLINE_MS`, `./edgeSiteMap.ts`), far under Amplify's 28 s
- * origin timeout.
+ * The probe step's wait, in awake time. A warm Client answers in under 0.9 s
+ * (7 days of Client logs: p99 742 ms, slowest `siteDetails` 881 ms); a cold one
+ * takes seconds and is a failed probe, which the reads below absorb.
  */
 export const SITE_VERSION_TIMEOUT_MS = 1_500;
+
+/** The reads budget after the probe step, awake time, while this instance has served a shell (`L`). */
+export const SHELL_READS_BUDGET_MS = 3_000;
+
+/** The reads budget before any shell was served: room for one cold Client (Init max 4.13 s plus 0.88 s). */
+export const SHELL_READS_BUDGET_COLD_MS = 5_000;
+
+/** One read's deadline while `L` exists: clears the slowest warm handler (881 ms). */
+export const SHELL_READ_DEADLINE_MS = 1_500;
+
+/** One read's deadline before any shell was served: a cold Client still answers. */
+export const SHELL_READ_DEADLINE_COLD_MS = 5_000;
 
 /** CL7's own path, built in one place. */
 export function siteVersionPath(siteId: string): string {
@@ -112,12 +100,11 @@ const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
 /**
  * The version in a CL7 answer (the envelope's `data`), or null when it is not
  * this site's or not an ISO instant. A site stored without `updatedAt`
- * answers null, which reads as "no version": the plain read while nothing is
- * known (`answersNoVersion`).
+ * answers null, which reads as "no version" (`answersNoVersion`).
  */
 export function readSiteVersion(data: unknown, siteId: string): string | null {
   if (typeof data !== 'object' || data === null) return null;
-  const { siteId: answered, updatedAt } = data as { siteId?: unknown; updatedAt?: unknown };
+  const { siteId: answered, updatedAt } = data as { siteId?: unknown; updatedAt?: unknown }; // both read as unknown and checked here
   if (answered !== siteId) return null;
   return typeof updatedAt === 'string' && ISO_INSTANT.test(updatedAt) ? updatedAt : null;
 }
@@ -145,106 +132,94 @@ function isLater(a: string, b: string): boolean {
 }
 
 /**
- * What one render's shell read is (RW-4).
- *  - `plain`: the unversioned read, exactly as before the fence. Only for a
- *    render that is not fenced (`isFencedRender`), or while nothing
- *    is known and the Client answered that the site has no version (a site
- *    with no `updatedAt` gives the fence nothing to key on, so its reads stay
- *    as before the fence; reading fresh for it would skip every cache on every
- *    page).
- *  - `versioned`: the newest version this instance knows, kept across failed
- *    and slow probes.
- *  - `fresh`: nothing is known yet and the probe failed or was slow.
+ * A shell's own version (R5 `updatedAt`, the instant CL7 answers): `nv` when the
+ * site has none, `u` when it is an ISO instant, neither when it is malformed.
  */
-export type ShellRead =
-  | { readonly kind: 'plain' }
-  | { readonly kind: 'versioned'; readonly version: string }
-  | { readonly kind: 'fresh' };
-
-const PLAIN_READ: ShellRead = Object.freeze({ kind: 'plain' });
-const FRESH_READ: ShellRead = Object.freeze({ kind: 'fresh' });
-
-/** The two shell reads a render can make. */
-export interface ShellReads<T> {
-  /** The cached read of this path: the Next data cache, then client.vivreal.io. */
-  readonly cached: (path: string) => Promise<T>;
-  /**
-   * A read no cache can answer from before it began: past the data cache, and
-   * keyed at the edge by its own start instant (`clientFetchCached`'s
-   * `fresh`). Only ever made in a fenced render (`isFencedRender`), rendered
-   * per request, where an uncached fetch cannot turn a cached response dynamic.
-   */
-  readonly fresh: () => Promise<T>;
+function shellVersion(value: unknown): { u: string | null; nv: boolean } {
+  if (typeof value !== 'object' || value === null) return { u: null, nv: false };
+  const raw = (value as { updatedAt?: unknown }).updatedAt; // read as unknown and checked here
+  if (raw === null || raw === undefined) return { u: null, nv: true };
+  return { u: typeof raw === 'string' && ISO_INSTANT.test(raw) ? raw : null, nv: false };
 }
 
-/**
- * This render's site shell, by the fence's answer (RW-4):
- *  - plain: the cached plain read, as before the fence.
- *  - versioned: the cached read of that version. If it does not come back live
- *    (its key is not cached here and the Client failed), a fresh read, never
- *    the plain key, which can hold the site from before a save this instance
- *    has already served. If that fails too, the floor the seam answered (a
- *    floor value refuses every "not found").
- *  - fresh: a fresh read, so a first read never takes a plain copy from before
- *    the stored site. Its `updatedAt` becomes the known version, so the next
- *    render reads that version through the caches instead of another fresh
- *    read. Only when the fresh read fails too (the Client answered neither the
- *    probe nor the read, so nothing newer can be had) does it take the plain
- *    read: today's outage answer, never older than the build floor, and the
- *    one read a Client that refuses `v` still answers (review N4).
- */
-export async function readShell<T extends { readonly updatedAt?: unknown } | null | undefined>(
-  fence: SiteVersionFence,
-  serving: boolean,
-  reads: ShellReads<T>,
-  path: string,
-  isLive: (value: T) => boolean,
-): Promise<T> {
-  const plan = await fence.shellReadFor(serving);
-  if (plan.kind === 'plain') return reads.cached(path);
-  if (plan.kind === 'versioned') {
-    const versioned = await reads.cached(versionedPath(path, plan.version));
-    if (isLive(versioned)) return versioned;
-  }
-  const fresh = await reads.fresh();
-  if (isLive(fresh)) {
-    fence.learn(fresh?.updatedAt);
-    return fresh;
-  }
-  return plan.kind === 'fresh' ? reads.cached(path) : fresh;
-}
+/** FULL, KNOWN or PLAIN (design section 6). PLAIN is decided by the caller (build, preview, no site id). */
+export type ReaderClass = 'full' | 'known' | 'plain';
 
 /**
- * The route handlers that read the shell through the fence (RW-4 follow-up):
- * a page's share image and its sitemap entry, which must never lag the page.
- * Each is rendered per request (`force-dynamic`), so a probe or a fresh read
- * there cannot turn a cached response dynamic. Next names a route handler by
- * its file, ending in `/route`.
+ * The readers that probe and may read fresh, by the name Next gives the render
+ * (`workStore.page`), only in a request render (`type === 'request'`; a
+ * regeneration and a build prerender are other types). Design section 6:
+ * OD-01's ordinary pages (`/book` and `/booking/manage` were FULL at the
+ * approved base under the "every page but home" rule and stay FULL), and the
+ * share image, sitemap and IndexNow routes, which must never lag the page.
+ * Each is rendered per request, so a probe or an uncached read there cannot
+ * turn a cached response dynamic.
  */
-const FENCED_ROUTES: ReadonlySet<string> = new Set([
+const FULL_READERS: ReadonlySet<string> = new Set([
+  '/[slug]/page',
+  '/[slug]/[itemId]/page',
+  '/[...segments]/page',
+  '/book/page',
+  '/booking/manage/page',
   '/og/[slug]/route',
   '/og/[slug]/[itemId]/route',
   '/sitemap.xml/route',
   '/sitemaps/[file]/route',
+  '/api/indexnow/urls/route',
 ]);
 
 /**
- * Whether this render reads the shell through the fence, from Next's two work
- * stores (the same internals `queryReadGate.ts` reads, pinned by
- * `next ~16.4.1`): a request render (`type === 'request'`; a regeneration of a
- * cached page and a build prerender are other types) of either a page module
- * (`/<path>/page`) that is not the home page (`/page`), or one of
- * `FENCED_ROUTES`. Every other route handler, and anything unreadable, answers
- * false: today's read.
+ * FULL or KNOWN from Next's two work stores (the same internals
+ * `queryReadGate.ts` reads, pinned by `next ~16.4.1`). Everything that is not a
+ * FULL reader in a request render is KNOWN: home, every regeneration, every
+ * other route handler, and anything unreadable. KNOWN only ever reads through
+ * the data cache.
  */
-export function isFencedRender(
+export function readerClassFor(
   unitStore: { type?: unknown } | undefined,
   workStore: { page?: unknown } | undefined,
-): boolean {
-  if (unitStore?.type !== 'request') return false;
+): 'full' | 'known' {
+  if (unitStore?.type !== 'request') return 'known';
   const page = workStore?.page;
-  if (typeof page !== 'string') return false;
-  return FENCED_ROUTES.has(page) || (page.endsWith('/page') && page !== '/page');
+  return typeof page === 'string' && FULL_READERS.has(page) ? 'full' : 'known';
+}
+
+/** V reads the known version, F reads fresh, Pl reads the plain key. */
+export type ShellStep = 'V' | 'F' | 'Pl';
+
+/** The shell reads one resolution may make. Each takes the abort signal of its deadline. */
+export interface ShellReads<T> {
+  /** A data-cache read of `path` (the plain key, or `path&v=<K>`). An aborted signal makes it cache-only. */
+  readonly cached: (path: string, signal: AbortSignal) => Promise<T>;
+  /**
+   * A read no cache can answer from before it began (past the data cache,
+   * keyed at the edge by its own start instant). `refused` is true only when
+   * the Client refused it with a 4xx (a Client without #137), never for a
+   * timeout, a memo short-circuit, a 5xx or a network error (R1).
+   */
+  readonly fresh: (signal: AbortSignal) => Promise<{ value: T; refused: boolean }>;
+  /** The build floor for this path when no read answered at all, else the fallback. */
+  readonly floor: () => T;
+}
+
+/** What one resolution serves, and whether it may be older than the stored site. */
+export interface ShellResolution<T> {
+  readonly value: T;
+  /** A stale shell refuses every negative claim (a 404, an IndexNow list, an empty sitemap). */
+  readonly stale: boolean;
+}
+
+/** The probe step's outcome for this render. */
+export type ProbeOutcome = 'fresh' | 'slow' | 'failed' | 'skipped';
+
+/** One `site.shell.degraded` line: the answer did not come from the plan's target (I8). */
+export interface DegradedShellLine {
+  readonly reader: ReaderClass;
+  readonly probe: ProbeOutcome;
+  readonly target: ShellStep;
+  readonly answeredBy: ShellStep | 'L' | 'floor';
+  readonly stale: boolean;
+  readonly ms: number;
 }
 
 export interface SiteVersionFenceDeps {
@@ -254,89 +229,223 @@ export interface SiteVersionFenceDeps {
   readonly now: () => number;
   /** An awake-time timer (`startAwakeTimeout`), so a frozen instance never times out on thaw. */
   readonly startTimeout: (ms: number, onExpire: () => void) => { cancel(): void };
-  readonly intervalMs?: number;
-  readonly timeoutMs?: number;
-  /** One line per probe that failed; the read itself goes on (see `readShell`). */
-  readonly onFailure?: (reason: string) => void;
+  /** An awake-time stopwatch (`startAwakeStopwatch`): the budget's clock. */
+  readonly startStopwatch: () => { awakeMs(): number; stop(): void };
+  readonly onProbeFailure?: (reason: string) => void;
+  readonly onDegraded?: (line: DegradedShellLine) => void;
+  /** How `L` is copied in and out (default `structuredClone`): one render's edits never reach another (I9). */
+  readonly clone?: <V>(value: V) => V;
 }
 
 export interface SiteVersionFence {
-  /** What THIS render's shell read is. `serving` is `isFencedRender` for this render. */
-  shellReadFor(serving: boolean): Promise<ShellRead>;
-  /**
-   * A version read off a live fresh shell (its `updatedAt`, the same instant
-   * CL7 answers). Moves the known version forward only; anything that is not
-   * an ISO instant is ignored.
-   */
-  learn(version: unknown): void;
+  /** One shell resolution for a reader of class `reader` (design section 3). */
+  resolve<T>(reader: ReaderClass, reads: ShellReads<T>, path: string, isLive: (value: T) => boolean): Promise<ShellResolution<T>>;
+  /** A `site.*` webhook: the next FULL render probes first. Never waits (G5). */
+  markProbeDue(): void;
 }
 
-export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionFence {
-  const intervalMs = deps.intervalMs ?? SITE_VERSION_INTERVAL_MS;
-  const timeoutMs = deps.timeoutMs ?? SITE_VERSION_TIMEOUT_MS;
-  // The newest version this instance has seen. Never cleared and never moved
-  // back (RW-4): a failed probe leaves it, and an older answer (a lagging
-  // read) does not replace it.
-  let known: string | null = null;
-  // Only read while nothing is known: whether the last probe answered "this
-  // site has no version" (a plain read) or failed (a fresh read).
-  let unversioned = false;
-  let probedAt = Number.NEGATIVE_INFINITY;
-  let inFlight: Promise<void> | null = null;
+const TIMED_OUT: unique symbol = Symbol('shell read timed out');
 
-  const moveForward = (version: string): void => {
-    if (known === null || isLater(version, known)) known = version;
+/** A signal that never aborts: a PLAIN read keeps today's (unbounded) behaviour. */
+const NEVER_ABORTED: AbortSignal = new AbortController().signal;
+
+export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionFence {
+  const clone = deps.clone ?? (<V>(value: V): V => structuredClone(value));
+  let known: string | null = null;
+  let noVersion = false;
+  let newest: { u: string; value: unknown } | null = null;
+  let probedAt = Number.NEGATIVE_INFINITY;
+  let inFlight: Promise<ProbeOutcome> | null = null;
+
+  const moveKnown = (u: string): void => {
+    if (known === null || isLater(u, known)) known = u;
+  };
+  const moveNewest = (u: string, value: unknown): void => {
+    if (newest === null || isLater(u, newest.u)) newest = { u, value: clone(value) };
   };
 
-  const runProbe = async (): Promise<void> => {
+  const runProbe = async (): Promise<ProbeOutcome> => {
     const controller = new AbortController();
     let timer: { cancel(): void } | undefined;
     const timedOut = new Promise<'timeout'>((resolve) => {
-      timer = deps.startTimeout(timeoutMs, () => {
-        controller.abort();
+      timer = deps.startTimeout(SITE_VERSION_TIMEOUT_MS, () => {
         resolve('timeout');
+        controller.abort();
       });
     });
     try {
       // Raced, not trusted to the abort alone: a transport that ignores the
-      // signal still cannot hold the page past the budget.
+      // signal still cannot hold the render past the probe's wait.
       const answer = await Promise.race([deps.probe(controller.signal), timedOut]);
       if (answer === 'timeout') {
-        unversioned = false;
-        deps.onFailure?.('timeout');
-        return;
+        deps.onProbeFailure?.('timeout');
+        return 'slow';
       }
       const version = readSiteVersion(answer, deps.siteId);
       if (version) {
-        moveForward(version);
-        return;
+        moveKnown(version);
+        noVersion = false;
+        return 'fresh';
       }
-      unversioned = answersNoVersion(answer, deps.siteId);
-      deps.onFailure?.('no_version');
+      if (answersNoVersion(answer, deps.siteId)) {
+        if (known === null) noVersion = true;
+        return 'fresh';
+      }
+      deps.onProbeFailure?.('not_this_site_or_not_an_instant');
+      return 'failed';
     } catch (err) {
-      // An error, a 4xx or a 5xx: the known version stays (RW-4).
-      unversioned = false;
-      deps.onFailure?.(err instanceof Error ? err.message : 'error');
+      deps.onProbeFailure?.(err instanceof Error ? err.message : 'error');
+      return 'failed';
     } finally {
       timer?.cancel();
     }
   };
 
+  /** Start a probe if one is due, join one in flight, or skip (I5: one per interval per instance). */
+  const probeStep = (): Promise<ProbeOutcome> => {
+    if (!inFlight && deps.now() - probedAt >= SITE_VERSION_INTERVAL_MS) {
+      probedAt = deps.now();
+      inFlight = runProbe().finally(() => {
+        inFlight = null;
+      });
+    }
+    return inFlight ?? Promise.resolve('skipped');
+  };
+
+  /**
+   * Learn from one live, public, runtime answer (design step 6). `refused`: F
+   * was refused with a 4xx earlier in this resolution.
+   */
+  const learn = (step: ShellStep, value: unknown, refused: boolean): void => {
+    // R3: with nothing known, a plain copy is of unknown age (the build's data
+    // cache, an edge copy) and teaches nothing, unless F was refused (no #137).
+    if (step === 'Pl' && known === null && !refused) return;
+    const { u, nv } = shellVersion(value);
+    if (nv) {
+      if (known === null) noVersion = true;
+      return;
+    }
+    if (u === null) return;
+    // R2: an answer older than K moves L forward, never K.
+    if (known !== null && isLater(known, u)) {
+      moveNewest(u, value);
+      return;
+    }
+    moveKnown(u);
+    moveNewest(u, value);
+  };
+
   return {
-    async shellReadFor(serving: boolean): Promise<ShellRead> {
-      if (!serving || !deps.siteId) return PLAIN_READ;
-      if (!inFlight && deps.now() - probedAt >= intervalMs) {
-        probedAt = deps.now();
-        inFlight = runProbe().finally(() => {
-          inFlight = null;
-        });
-      }
-      if (inFlight) await inFlight;
-      if (known !== null) return { kind: 'versioned', version: known };
-      return unversioned ? PLAIN_READ : FRESH_READ;
+    markProbeDue(): void {
+      probedAt = Number.NEGATIVE_INFINITY;
     },
-    learn(version: unknown): void {
-      if (typeof version === 'string' && ISO_INSTANT.test(version)) moveForward(version);
+
+    async resolve<T>(reader: ReaderClass, reads: ShellReads<T>, path: string, isLive: (value: T) => boolean): Promise<ShellResolution<T>> {
+      if (reader === 'plain' || !deps.siteId) {
+        // The build, a preview, no site id: today's read; nothing learned (T21, T22).
+        return { value: await reads.cached(path, NEVER_ABORTED), stale: false };
+      }
+      const clock = deps.startStopwatch();
+      try {
+        const probe = reader === 'full' ? await probeStep() : 'skipped';
+        const planKnown = known;
+        const planNoVersion = noVersion;
+        const hasNewest = newest !== null;
+        const budget = hasNewest ? SHELL_READS_BUDGET_MS : SHELL_READS_BUDGET_COLD_MS;
+        const deadline = hasNewest ? SHELL_READ_DEADLINE_MS : SHELL_READ_DEADLINE_COLD_MS;
+        const readsFrom = clock.awakeMs();
+
+        /** One read, aborted at min(deadline, budget left); with nothing left it is cache-only. */
+        const bounded = async <R>(run: (signal: AbortSignal) => Promise<R>): Promise<R | typeof TIMED_OUT> => {
+          const ms = Math.max(0, Math.min(deadline, budget - (clock.awakeMs() - readsFrom)));
+          const controller = new AbortController();
+          if (ms === 0) controller.abort();
+          let timer: { cancel(): void } | undefined;
+          const expired = new Promise<typeof TIMED_OUT>((resolve) => {
+            timer = deps.startTimeout(ms, () => {
+              resolve(TIMED_OUT);
+              controller.abort();
+            });
+          });
+          try {
+            return await Promise.race([run(controller.signal), expired]);
+          } finally {
+            timer?.cancel();
+          }
+        };
+
+        // 1. Plan.
+        const target: ShellStep = planKnown !== null ? 'V' : planNoVersion || reader === 'known' ? 'Pl' : 'F';
+        const chain: ShellStep[] =
+          target === 'V' ? (reader === 'full' ? ['V', 'F', 'Pl'] : ['V', 'Pl']) : target === 'F' ? ['F', 'Pl'] : ['Pl'];
+
+        // 2 and 3. The chain, inside the budget.
+        let refused = false;
+        let nonLive: T | undefined;
+        const lives: Array<{ step: ShellStep; value: T; u: string | null }> = [];
+        for (const step of chain) {
+          // F is skipped once L already holds K (it could only return what L has).
+          if (step === 'F' && known !== null && newest !== null && !isLater(known, newest.u)) continue;
+          let value: T | undefined;
+          if (step === 'F') {
+            const out = await bounded((signal) => reads.fresh(signal));
+            if (out !== TIMED_OUT) {
+              value = out.value;
+              if (out.refused) refused = true;
+            }
+          } else {
+            const out = await bounded((signal) => reads.cached(step === 'V' ? versionedPath(path, planKnown) : path, signal));
+            if (out !== TIMED_OUT) value = out;
+          }
+          if (value === undefined) continue;
+          if (!isLive(value)) {
+            if (nonLive === undefined || (nonLive === null && value !== null)) nonLive = value;
+            continue;
+          }
+          const before = known;
+          const { u } = shellVersion(value);
+          learn(step, value, refused);
+          lives.push({ step, value, u });
+          if (before === null || (u !== null && !isLater(before, u))) break;
+        }
+
+        // 4. Choose the newest of the live answers and L; a tie goes to the live answer.
+        let best: { step: ShellStep; value: T; u: string | null } | undefined;
+        for (const live of lives) {
+          if (!best || (live.u !== null && (best.u === null || isLater(live.u, best.u)))) best = live;
+        }
+        const fromNewest = newest !== null && (best === undefined || best.u === null || isLater(newest.u, best.u));
+        let value: T;
+        let answeredBy: DegradedShellLine['answeredBy'];
+        let servedU: string | null | undefined;
+        if (fromNewest && newest !== null) {
+          value = clone(newest.value) as T; // L holds an earlier live answer of this same shell read
+          answeredBy = 'L';
+          servedU = newest.u;
+        } else if (best) {
+          value = best.value;
+          answeredBy = best.step;
+          servedU = best.u;
+        } else {
+          value = nonLive !== undefined && nonLive !== null ? nonLive : reads.floor();
+          answeredBy = 'floor';
+          servedU = undefined;
+        }
+
+        // 5. Stale: older than K, the floor, or a FULL plain read of unknown age (T3b, R1).
+        const stale =
+          answeredBy === 'floor' ||
+          (known !== null && servedU !== undefined && (servedU === null || isLater(known, servedU))) ||
+          (reader === 'full' && answeredBy === 'Pl' && planKnown === null && !planNoVersion && !refused);
+
+        // 7. One line when the answer is not the target (I8).
+        if (answeredBy !== target) {
+          deps.onDegraded?.({ reader, probe, target, answeredBy, stale, ms: Math.round(clock.awakeMs()) });
+        }
+        return { value, stale };
+      } finally {
+        clock.stop();
+      }
     },
   };
 }
