@@ -42,7 +42,11 @@
  *        IndexNow list name it; the page, the share image, the sitemap and
  *        IndexNow make ONE probe per interval; a version route failure never
  *        takes the sitemap back (I5, I6, B4);
- *     f. after a purge the home regeneration reads the known version (P1).
+ *     f. after a purge the home regeneration reads the known version (P1);
+ *     j. a portal preview learns nothing: after a save, the owner's preview
+ *        reads the draft words, then with every public shell read failing the
+ *        public page answers from the newest PUBLIC shell this server served,
+ *        never the draft (I9, review pass 6 N1).
  *     Gate unset: f. home never shows words older than a page the same
  *     server served (P1, I1).
  *
@@ -111,6 +115,11 @@ const SHARE_IMAGE_PATH = '/media/rw4-share.png';
 /** The owner's own page at the fixed route's address (review B1). */
 export const OWNER_BOOK_TEXT = 'Book a table with the fixture bakery';
 
+/** RW-4 (I9, N1): what the fixture serves for `/whats-new` to a PREVIEW read only (the `x-vivreal-preview` header present). */
+export const DRAFT_TEXT = 'Draft words only the owner should see';
+/** A well-formed preview token (`isWellFormedPreviewToken`: base64url, a dot, hex). The fixture verifies nothing; never a real one. */
+const PREVIEW_TOKEN = 'Zml4dHVyZS1wcmV2aWV3.0123456789abcdef0123456789abcdef';
+
 /** A coordinated storefront group, the shape a Studio "add a shop section" writes. */
 const storefrontGroup = (id) => ({
   id,
@@ -128,8 +137,10 @@ const storefrontGroup = (id) => ({
  * is flipped after the build to model an owner adding a shop section to a page
  * that was prerendered (review B2).
  */
-export function fixtureSiteDetails(state = {}) {
+export function fixtureSiteDetails(state = {}, { preview = false } = {}) {
   const aboutBlocks = [block('a1', 'section-header', { labels: { title: 'About us', subtitle: 'Our story' } })];
+  // RW-4 (I9, N1): a preview read sees the owner's draft of the new page.
+  const newPageText = preview ? DRAFT_TEXT : (state.newPageText ?? NEW_PAGE_TEXT);
   if (state.aboutStorefront) aboutBlocks.push(storefrontGroup('a2'));
   return {
     name: 'Fixture Bakery',
@@ -160,7 +171,7 @@ export function fixtureSiteDetails(state = {}) {
       },
       { slug: 'blog', name: 'Blog', format: 'collection-list', detailPage: { enabled: true, itemCollectionId: POSTS, itemKeyField: 'slug' } },
       { slug: 'shop', name: 'Shop', format: 'catalog', blocks: [block('s1', 'products', { bindings: [{ collectionId: POSTS, role: 'primary' }] })] },
-      ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: state.newPageText ?? NEW_PAGE_TEXT } })] }] : []),
+      ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: newPageText } })] }] : []),
       ...(state.rolledPage ? [{ slug: ROLLED_PAGE_SLUG, name: 'Rolled out', format: 'about', blocks: [block('r1', 'section-header', { labels: { title: ROLLED_PAGE_TEXT } })] }] : []),
       ...(state.coldPage ? [{ slug: COLD_PAGE_SLUG, name: 'Just opened', format: 'about', blocks: [block('j1', 'section-header', { labels: { title: COLD_PAGE_TEXT } })] }] : []),
       ...(state.sharePage
@@ -208,9 +219,12 @@ export function startFixtureUpstream({ port = UPSTREAM_PORT, items = FIXTURE_ITE
       const v = url.searchParams.get('v');
       if (state.refuseV && v !== null) return send(400, null);
       if (state.shellDown) return send(503, null);
+      // RW-4 (I9, N1): a preview read carries `x-vivreal-preview`. Presence
+      // only, read here and never logged, as the request-header rule above.
+      const preview = req.headers['x-vivreal-preview'] !== undefined;
       const delayMs = state.shellHoldMs || (v !== null && v !== state.updatedAt ? state.foreignVDelayMs : 0);
-      if (delayMs) return void setTimeout(() => send(200, fixtureSiteDetails(state)), delayMs);
-      return send(200, fixtureSiteDetails(state));
+      if (delayMs) return void setTimeout(() => send(200, fixtureSiteDetails(state, { preview })), delayMs);
+      return send(200, fixtureSiteDetails(state, { preview }));
     }
     // RW-4 follow-up: the share page's own image (a PNG signature, then the marker).
     if (url.pathname === SHARE_IMAGE_PATH) {
@@ -477,6 +491,23 @@ export function checkRegenerationKnown({ shellReads, updatedAt }) {
 }
 
 /**
+ * RW-4 (I9, review pass 6 N1): a portal preview learns nothing. `preview` is
+ * the owner's draft render after a save (it must show the draft words: the
+ * control that the preview session ran and the fixture saw the preview
+ * header); `publicRead` the public page after that, with every shell read
+ * failing: it answers from the newest PUBLIC shell this server served, never
+ * the draft. A preview that taught `L` would show the draft to every visitor
+ * in an all-fail render.
+ */
+export function checkPreviewNeverLearned({ preview, publicRead }) {
+  const failures = [];
+  if (!shows(preview, DRAFT_TEXT)) failures.push(`control: the preview render answered ${preview?.status} without the draft words (no preview session, or the fixture saw no preview header)`);
+  if (!shows(publicRead, CHANGED_TEXT)) failures.push(`/${NEW_PAGE_SLUG} answered ${publicRead?.status} without its public page while every shell read failed`);
+  if ((publicRead?.body ?? '').includes(DRAFT_TEXT)) failures.push(`/${NEW_PAGE_SLUG} showed the preview's draft words to the public: the preview render taught L`);
+  return failures;
+}
+
+/**
  * RW-4 (P1, I1, gate unset): home never shows words older than a page the
  * same server served. `before` is home before the save, `page` an ordinary
  * page after it (it probes), `after` home after that.
@@ -530,9 +561,9 @@ function run(cmd, args, opts) {
   });
 }
 
-function get(p) {
+function get(p, headers = {}) {
   return new Promise((resolve) => {
-    http.get({ host: '127.0.0.1', port: APP_PORT, path: p }, (res) => {
+    http.get({ host: '127.0.0.1', port: APP_PORT, path: p, headers }, (res) => {
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (d) => { body += d; });
@@ -586,6 +617,26 @@ const wait = (ms) => new Promise((res) => setTimeout(res, ms));
 async function read(p) {
   const r = await get(p);
   return { status: r.status, body: r.body };
+}
+
+/** A `Location` as a site-relative path, whether the server sent it absolute or relative. */
+function relativeLocation(location) {
+  const url = new URL(location ?? '/', `http://127.0.0.1:${APP_PORT}`);
+  return `${url.pathname}${url.search}`;
+}
+
+/**
+ * The owner's portal preview of `p`: the `?vivreal_preview=<token>` link the
+ * portal emits, through middleware's 307 to `/api/preview/enable`, which
+ * starts the draft session (its cookies), then the page itself with those
+ * cookies, as the browser would load it. `hops` are the two redirect statuses.
+ */
+async function previewRead(p) {
+  const link = await get(`${p}?vivreal_preview=${PREVIEW_TOKEN}`);
+  const enable = await get(relativeLocation(link.headers.location));
+  const cookies = (enable.headers['set-cookie'] ?? []).map((c) => c.split(';')[0]).join('; ');
+  const page = await get(relativeLocation(enable.headers.location), cookies ? { cookie: cookies } : {});
+  return { status: page.status, body: page.body, hops: [link.status, enable.status], cookies: cookies ? cookies.split('; ').length : 0 };
 }
 
 /** A read and how long it took, in ms. */
@@ -888,6 +939,22 @@ async function main() {
           const regenShellReads = shellReads.slice(regenFrom);
           console.log(`  F41 f home regeneration after a purge, shell reads ${JSON.stringify(regenShellReads)}`);
           failures.push(...checkRegenerationKnown({ shellReads: regenShellReads, updatedAt: state.updatedAt }));
+
+          // F41 j (RW-4 I9, review pass 6 N1): a portal preview learns
+          // nothing. The owner saves (no webhook), their preview reads the
+          // draft first, and then, with every public shell read failing, the
+          // public page answers from the newest PUBLIC shell this server
+          // served. A preview classed FULL would teach L the draft here.
+          await wait(5500);
+          state.updatedAt = new Date().toISOString();
+          const preview = await previewRead(`/${NEW_PAGE_SLUG}`);
+          console.log(`  F41 j preview render: ${preview.status} ${preview.body.includes(DRAFT_TEXT) ? 'draft words' : 'public words'}, hops ${preview.hops.join(' ')}, cookies ${preview.cookies} /${NEW_PAGE_SLUG}`);
+          await siteUpdated();
+          state.shellDown = true;
+          const publicRead = await read(`/${NEW_PAGE_SLUG}`);
+          state.shellDown = false;
+          console.log(`  F41 j public page, every shell read failing: ${publicRead.status} ${publicRead.body.includes(DRAFT_TEXT) ? 'DRAFT WORDS' : publicRead.body.includes(CHANGED_TEXT) ? 'public page' : 'not its page'} /${NEW_PAGE_SLUG}`);
+          failures.push(...checkPreviewNeverLearned({ preview, publicRead }));
         }
       }
     } finally {

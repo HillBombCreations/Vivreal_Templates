@@ -644,19 +644,23 @@ test('REFUSE (I9, T21, T22): the build and a preview learn nothing, and one rend
   client.mode.probe = 'slow';
   clock.advance(1_000);
   client.save(['about', 'compare', 'new']);
-  await a.shell();
+  const seed = await a.shell();
   assert.equal(a.fresh.length, 1, 'nothing was learned from the PLAIN reads, so the first FULL read is fresh');
   assert.ok(a.fresh[0] === a.asked[2], 'and that fresh read is the FULL render\'s, the first read after the PLAIN ones');
+  // The render that seeded L writes into its own answer (design section 8,
+  // review pass 6 N2): L was taken as a clone, so the write never reaches it.
+  seed.value?.pages.push('written-by-the-render-that-seeded-L');
   // L served twice: a write into one served copy is not in the next.
   a.purge();
   client.mode.V = 'fail';
   client.mode.Pl = 'fail';
   clock.advance(6_000);
   const one = await a.shell();
+  assert.ok(!has(one, 'written-by-the-render-that-seeded-L'), 'L is cloned on the way in');
   one.value?.pages.push('written-by-a-render');
   clock.advance(6_000);
   const two = await a.shell();
-  assert.ok(!has(two, 'written-by-a-render'), 'L is cloned in and out');
+  assert.ok(!has(two, 'written-by-a-render'), 'L is cloned on the way out');
 });
 
 test('ALLOW (T24, I5): at most one probe per 5 s per instance under a burst of 50 requests', async () => {
@@ -742,7 +746,7 @@ test('SOURCE: one shell call site, the fence on globalThis, a stale answer marke
   const glue = fs.readFileSync(new URL('./api/siteData/siteVersionFence.ts', import.meta.url), 'utf8');
   assert.match(glue, /const FENCE: SiteVersionFence = \(slot\[FENCE_SLOT\] \?\?= createSiteVersionFence\(\{/, 'I5: one fence per process');
   assert.match(glue, /readerClassFor\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
-  assert.match(glue, /startAwakeTimeout\(ms, onExpire\)/, 'an awake-time timer, never a wall-clock one');
+  assert.match(glue, /startAwakeTimeout\(Math\.max\(0, ms - AWAKE_TICK_MS\), onExpire\)/, 'an awake-time timer, never a wall-clock one, armed one tick early (N3)');
   assert.match(glue, /if \(!SITE_ID \|\| isBuildPhase\(\)\) return 'plain';\s*if \(await isPreviewRender\(\)\) return 'plain';/, 'I9: build and preview are PLAIN');
   assert.match(glue, /const shared = request \? RESOLUTIONS\.get\(request\) : undefined;\s*if \(shared\) return shared/, 'I3: one resolution per request (the 500 pass reuses it)');
   const route = fs.readFileSync(new URL('../app/api/revalidate/route.ts', import.meta.url), 'utf8');

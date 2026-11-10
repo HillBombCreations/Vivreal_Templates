@@ -10,7 +10,7 @@ import { rootSitemapXml } from '@/lib/seo/sitemapXml';
 // address; see src/lib/seo/sitemapXml.ts.
 //
 // Rendered per request, in every render mode (RW-4 follow-up). The page list
-// reads the shell through the site version fence (`isFencedRender`), so a page
+// reads the shell through the site version fence (`readerClassFor`, FULL), so a page
 // the instance already serves is in the list on the first read after a save,
 // and a failed probe never lists an older site. Under ISR (SITE_RENDER_MODE
 // isr) it used to be cached for 300 s, so a new page stayed out of the list

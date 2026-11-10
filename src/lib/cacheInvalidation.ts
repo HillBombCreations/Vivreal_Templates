@@ -155,7 +155,7 @@ export type ReaderClass = 'full' | 'known' | 'plain';
  * Each is rendered per request, so a probe or an uncached read there cannot
  * turn a cached response dynamic.
  */
-const FULL_READERS: ReadonlySet<string> = new Set([
+export const FULL_READERS: ReadonlySet<string> = new Set([
   '/[slug]/page',
   '/[slug]/[itemId]/page',
   '/[...segments]/page',
@@ -166,6 +166,34 @@ const FULL_READERS: ReadonlySet<string> = new Set([
   '/sitemap.xml/route',
   '/sitemaps/[file]/route',
   '/api/indexnow/urls/route',
+]);
+
+/**
+ * The shell readers under `src/app` that are KNOWN by design (section 6): home
+ * and `domains` (cached pages, where a probe or an uncached read would turn
+ * the cached response dynamic), the metadata routes, the brand and item
+ * images, and the IndexNow key file. Each adds no Client call and is never
+ * older than `L`. `readerClassFor` does not consult this list: KNOWN is what
+ * everything that is not FULL gets, by the fail-safe rule below. The list
+ * exists so that every shell reader in `src/app` is DECLARED in one of the two
+ * (review pass 6 N4): a page or route added later that reads the shell and
+ * names itself in neither fails `cacheInvalidation.readers.test.ts`, instead
+ * of silently taking the default. The root layout and `not-found.tsx` read
+ * the shell inside the request of the page they wrap, so they share that
+ * page's one resolution (`siteVersionFence.ts`, `RESOLUTIONS`) and its class;
+ * a direct request for an unknown address renders `/_not-found/page`.
+ */
+export const KNOWN_READERS: ReadonlySet<string> = new Set([
+  '/page',
+  '/domains/page',
+  '/_not-found/page',
+  '/robots.txt/route',
+  '/icon/route',
+  '/apple-icon/route',
+  '/brand/logo/route',
+  '/img/[slug]/[itemId]/route',
+  '/img/[slug]/[itemId]/[file]/route',
+  '/api/indexnow/key/[key]/route',
 ]);
 
 /**

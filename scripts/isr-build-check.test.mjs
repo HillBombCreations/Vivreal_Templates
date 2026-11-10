@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import {
   CHANGED_TEXT,
   COLD_PAGE_TEXT,
+  DRAFT_TEXT,
   HOME_AFTER_TEXT,
   HOME_BEFORE_TEXT,
   NEW_PAGE_TEXT,
@@ -22,6 +23,7 @@ import {
   checkHeldShell,
   checkHomeNotOlder,
   checkManifest,
+  checkPreviewNeverLearned,
   checkRefusedV,
   checkRegenerationKnown,
   checkResponses,
@@ -227,6 +229,16 @@ test('F41 f (RW-4 P1): the home regeneration passes only on the known version; w
   assert.deepEqual(checkHomeNotOlder({ before, page, after }), []);
   assert.equal(checkHomeNotOlder({ before, page, after: before }).length, 1, 'home older than the page just served fails');
   assert.equal(checkHomeNotOlder({ before: after, page, after }).length, 1, 'control: home must show the old words before the save');
+});
+
+test('F41 j (RW-4 I9, N1): passes only when the preview showed the draft and the all-fail public page shows its public words, never the draft', () => {
+  const preview = { status: 200, body: `<h2>${DRAFT_TEXT}</h2>` };
+  const publicPage = { status: 200, body: `<h2>${CHANGED_TEXT}</h2>` };
+  assert.deepEqual(checkPreviewNeverLearned({ preview, publicRead: publicPage }), []);
+  assert.equal(checkPreviewNeverLearned({ preview, publicRead: preview }).length, 2, 'the draft words on the public page fail (and it is not the public page)');
+  assert.equal(checkPreviewNeverLearned({ preview, publicRead: { status: 200, body: `<h2>${CHANGED_TEXT}</h2><p>${DRAFT_TEXT}</p>` } }).length, 1, 'the draft words beside the public ones fail');
+  assert.equal(checkPreviewNeverLearned({ preview, publicRead: { status: 500, body: '' } }).length, 1, 'the floor or a 5xx fails');
+  assert.equal(checkPreviewNeverLearned({ preview: publicPage, publicRead: publicPage }).length, 1, 'control: a preview without the draft words tests nothing');
 });
 
 test('F41 (RW-4): the first read with a slow version route passes only on the page added after the build, and its version kept', () => {

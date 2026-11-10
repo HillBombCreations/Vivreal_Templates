@@ -3,7 +3,7 @@ import { workAsyncStorage } from 'next/dist/server/app-render/work-async-storage
 import { workUnitAsyncStorage } from 'next/dist/server/app-render/work-unit-async-storage.external';
 import { fetchSiteVersion, isPreviewRender } from '@/lib/api/client';
 import { RECORD_DIR_ENV } from '@/lib/api/snapshot/constants';
-import { startAwakeStopwatch, startAwakeTimeout } from '@/lib/awakeTimeout';
+import { AWAKE_TICK_MS, startAwakeStopwatch, startAwakeTimeout } from '@/lib/awakeTimeout';
 import {
   createSiteVersionFence,
   readerClassFor,
@@ -32,7 +32,12 @@ const FENCE: SiteVersionFence = (slot[FENCE_SLOT] ??= createSiteVersionFence({
   siteId: SITE_ID,
   probe: (signal) => fetchSiteVersion(SITE_ID, signal),
   now: Date.now,
-  startTimeout: (ms, onExpire) => startAwakeTimeout(ms, onExpire),
+  // Armed one tick early (review pass 6 N3). An awake timer expires on its
+  // next 100 ms tick at or after its budget, so each deadline ran up to a
+  // tick over, and the probe wait plus the fresh read's deadline put a cold
+  // resolution about 200 ms past I3's 6.5 s (measured 6.70 s). One tick
+  // early keeps every deadline at or under the design's figure.
+  startTimeout: (ms, onExpire) => startAwakeTimeout(Math.max(0, ms - AWAKE_TICK_MS), onExpire),
   startStopwatch: startAwakeStopwatch,
   onProbeFailure: (reason) => console.warn(`[siteVersion] probe failed: ${reason}`),
   onDegraded: (line) => console.warn(JSON.stringify({ event: 'site.shell.degraded', siteId: SITE_ID || 'unknown', ...line })),
