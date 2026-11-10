@@ -5,6 +5,7 @@ import * as invalidation from './cacheInvalidation.ts';
 import { siteDetailsPath } from './api/readPaths.ts';
 import { readCachedWithFloor, type FloorSeamDeps } from './api/snapshot/seam.ts';
 import { createFailureMemo } from './api/failureMemo.ts';
+import { createAwakeStopwatchFactory, startAwakeTimeout } from './awakeTimeout.ts';
 import { floorHarness, snapshotOf } from './api/snapshot/testSupport.ts';
 import { isFloorValue, markFloorValue } from './api/snapshot/floorValue.ts';
 import { DegradedUpstreamError, refuseNegativeClaimFromFloor } from './api/siteData/degraded.ts';
@@ -96,6 +97,40 @@ function fakeClock() {
   return clock;
 }
 type Clock = ReturnType<typeof fakeClock>;
+
+/**
+ * The fake clock with the real awake timer and stopwatch on it
+ * (`awakeTimeout.ts`, as the glue arms them): every deadline counts on its own
+ * 100 ms interval and expires on its first tick at or after the deadline. Each
+ * tick lands `lateMs` after the one before, drift as a busy event loop adds.
+ */
+function awakeClock(lateMs: number): Clock {
+  const clock = fakeClock();
+  type Every = { live: boolean; pending?: { live: boolean } };
+  const options = {
+    now: () => clock.now,
+    setInterval: (fn: () => void, ms: number): Every => {
+      const every: Every = { live: true };
+      const arm = (from: number) => {
+        const timer = { at: from + ms + lateMs, fn: () => { if (!every.live) return; arm(timer.at); fn(); }, live: true };
+        clock.timers.push(timer);
+        every.pending = timer;
+      };
+      arm(clock.now);
+      return every;
+    },
+    clearInterval: (id: unknown) => {
+      const every = id as Every; // the handle setInterval above returned
+      every.live = false;
+      if (every.pending) every.pending.live = false;
+    },
+  };
+  const stopwatch = createAwakeStopwatchFactory(options);
+  return Object.assign(clock, {
+    startTimeout: (ms: number, fn: () => void) => startAwakeTimeout(ms, fn, options),
+    startStopwatch: () => stopwatch(),
+  });
+}
 
 const flush = async () => {
   for (let i = 0; i < 30; i += 1) await new Promise((resolve) => setImmediate(resolve));
@@ -515,7 +550,7 @@ test('ALLOW (T17, T17\', I2, G5): a site webhook marks the probe due, never wait
   await drive(clock, pending);
 });
 
-test('REFUSE (I3): every read hangs: the answer comes within 4.5 s with L and within 6.5 s without', async () => {
+test('REFUSE (I3): every read hangs: the answer comes within 4.7 s with L and within 7.2 s without', async () => {
   // With L, and K above L so F runs too: probe 1.5 s, then V, F and a plain miss share 3.0 s.
   const { clock, client, a } = await servedOnce({ floor: true });
   clock.advance(1_000);
@@ -533,19 +568,59 @@ test('REFUSE (I3): every read hangs: the answer comes within 4.5 s with L and wi
   client.mode.Pl = 'hang';
   clock.advance(6_000);
   const withL = await a.shell();
-  assert.ok(withL.ms <= 4_500, `with L: ${withL.ms} ms`);
+  assert.ok(withL.ms <= 4_700, `with L: ${withL.ms} ms`);
   assert.ok(!isFloorValue(withL.value), 'L answers');
-  // S0: probe 1.5 s, then F 5 s, then the plain read is cache-only.
+  // S0: probe 1.5 s, then F 5.5 s, then the plain read is cache-only.
   const clock2 = fakeClock();
   const client2 = fakeClient(clock2);
   client2.mode.probe = 'slow';
   client2.mode.F = 'hang';
   client2.mode.Pl = 'hang';
   const cold = await instance(client2, clock2, { floor: true }).shell();
-  assert.ok(cold.ms <= 6_500, `without L: ${cold.ms} ms`);
+  assert.ok(cold.ms <= 7_200, `without L: ${cold.ms} ms`);
 });
 
-test('ALLOW (G6, I2, I7): S0 with a cold Client, the fresh read answering at 4.5 s is served, not the plain copy or the floor', async () => {
+test('REFUSE (I3, review pass 7 B1): on the real awake timer, every read hanging answers no sooner than its budget and no later than its ceiling', async () => {
+  const within = (ms: number, figure: number, ceiling: number, what: string) =>
+    assert.ok(ms >= figure && ms <= ceiling, `${what}: ${ms} ms, outside ${figure} to ${ceiling} ms`);
+  for (const lateMs of [0, 3]) {
+    const ticks = `ticks ${lateMs} ms late`;
+    // S0, FULL: the probe waits 1.5 s, the fresh read 5.5 s, then the plain read is cache-only.
+    const clock = awakeClock(lateMs);
+    const cold = fakeClient(clock);
+    cold.mode.probe = 'slow';
+    cold.mode.F = 'hang';
+    cold.mode.Pl = 'hang';
+    within((await instance(cold, clock, { floor: true }).shell()).ms, 7_000, 7_200, `FULL without L, ${ticks}`);
+    // S0, KNOWN: one plain read, 5.5 s.
+    within((await instance(cold, clock, { floor: true }).shell('known')).ms, 5_500, 5_600, `KNOWN without L, ${ticks}`);
+    // L, and K above L so F runs: probe 1.5 s, then V, F and the plain read share 3.0 s.
+    const warm = fakeClient(clock);
+    const a = instance(warm, clock, { floor: true });
+    await a.shell();
+    clock.advance(1_000);
+    warm.save(['about', 'compare', 'new']);
+    a.purge();
+    warm.mode.V = 'fail';
+    warm.mode.F = 'fail';
+    warm.mode.Pl = 'fail';
+    clock.advance(5_000);
+    assert.equal((await a.shell()).stale, true, `control, ${ticks}: the probe taught K above L, and every read failed`);
+    warm.mode.probe = 'slow';
+    warm.mode.V = 'hang';
+    warm.mode.F = 'hang';
+    warm.mode.Pl = 'hang';
+    clock.advance(6_000);
+    const withL = await a.shell();
+    within(withL.ms, 4_500, 4_700, `FULL with L, ${ticks}`);
+    assert.ok(!isFloorValue(withL.value), `${ticks}: L answers`);
+    // KNOWN with L: V and the plain read share 3.0 s, no probe.
+    clock.advance(6_000);
+    within((await a.shell('known')).ms, 3_000, 3_100, `KNOWN with L, ${ticks}`);
+  }
+});
+
+test('ALLOW (G6, I2, I7): S0 with a cold Client, the fresh read answering at 5.4 s is served, not the plain copy or the floor', async () => {
   const clock = fakeClock();
   const client = fakeClient(clock);
   const a = instance(client, clock, { floor: true });
@@ -553,7 +628,7 @@ test('ALLOW (G6, I2, I7): S0 with a cold Client, the fresh read answering at 4.5
   clock.advance(1_000);
   client.save(['about', 'compare', 'new']);
   client.mode.probe = 'slow';
-  client.mode.F = { delayMs: 4_500 };
+  client.mode.F = { delayMs: 5_400 };
   const r = await a.shell();
   assert.ok(has(r, 'new'), `the fresh read, got ${JSON.stringify(pagesOf(r))}`);
   assert.equal(r.stale, false);
@@ -699,10 +774,10 @@ test('the probe wait, the budgets and the deadlines are the design\'s (I3)', () 
   const n = invalidation as unknown as Record<string, number>; // numeric constants, each compared below
   assert.equal(n.SITE_VERSION_TIMEOUT_MS, 1_500);
   assert.equal(n.SHELL_READS_BUDGET_MS, 3_000);
-  assert.equal(n.SHELL_READS_BUDGET_COLD_MS, 5_000);
+  assert.equal(n.SHELL_READS_BUDGET_COLD_MS, 5_500);
   assert.equal(n.SHELL_READ_DEADLINE_MS, 1_500);
-  assert.equal(n.SHELL_READ_DEADLINE_COLD_MS, 5_000);
-  assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_COLD_MS <= 6_500, 'FULL at S0 at most 6.5 s');
+  assert.equal(n.SHELL_READ_DEADLINE_COLD_MS, 5_500);
+  assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_COLD_MS <= 7_000, 'FULL at S0 at most 7.0 s');
   assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_MS <= 4_500, 'FULL with L at most 4.5 s');
 });
 
@@ -746,7 +821,7 @@ test('SOURCE: one shell call site, the fence on globalThis, a stale answer marke
   const glue = fs.readFileSync(new URL('./api/siteData/siteVersionFence.ts', import.meta.url), 'utf8');
   assert.match(glue, /const FENCE: SiteVersionFence = \(slot\[FENCE_SLOT\] \?\?= createSiteVersionFence\(\{/, 'I5: one fence per process');
   assert.match(glue, /readerClassFor\(workUnitAsyncStorage\.getStore\(\), workAsyncStorage\.getStore\(\)\)/);
-  assert.match(glue, /startAwakeTimeout\(Math\.max\(0, ms - AWAKE_TICK_MS\), onExpire\)/, 'an awake-time timer, never a wall-clock one, armed one tick early (N3)');
+  assert.match(glue, /startAwakeTimeout\(ms, onExpire\)/, 'an awake-time timer, never a wall-clock one');
   assert.match(glue, /if \(!SITE_ID \|\| isBuildPhase\(\)\) return 'plain';\s*if \(await isPreviewRender\(\)\) return 'plain';/, 'I9: build and preview are PLAIN');
   assert.match(glue, /const shared = request \? RESOLUTIONS\.get\(request\) : undefined;\s*if \(shared\) return shared/, 'I3: one resolution per request (the 500 pass reuses it)');
   const route = fs.readFileSync(new URL('../app/api/revalidate/route.ts', import.meta.url), 'utf8');

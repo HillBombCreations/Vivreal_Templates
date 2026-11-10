@@ -3,7 +3,7 @@ import { workAsyncStorage } from 'next/dist/server/app-render/work-async-storage
 import { workUnitAsyncStorage } from 'next/dist/server/app-render/work-unit-async-storage.external';
 import { fetchSiteVersion, isPreviewRender } from '@/lib/api/client';
 import { RECORD_DIR_ENV } from '@/lib/api/snapshot/constants';
-import { AWAKE_TICK_MS, startAwakeStopwatch, startAwakeTimeout } from '@/lib/awakeTimeout';
+import { startAwakeStopwatch, startAwakeTimeout } from '@/lib/awakeTimeout';
 import {
   createSiteVersionFence,
   readerClassFor,
@@ -32,12 +32,12 @@ const FENCE: SiteVersionFence = (slot[FENCE_SLOT] ??= createSiteVersionFence({
   siteId: SITE_ID,
   probe: (signal) => fetchSiteVersion(SITE_ID, signal),
   now: Date.now,
-  // Armed one tick early (review pass 6 N3). An awake timer expires on its
-  // next 100 ms tick at or after its budget, so each deadline ran up to a
-  // tick over, and the probe wait plus the fresh read's deadline put a cold
-  // resolution about 200 ms past I3's 6.5 s (measured 6.70 s). One tick
-  // early keeps every deadline at or under the design's figure.
-  startTimeout: (ms, onExpire) => startAwakeTimeout(Math.max(0, ms - AWAKE_TICK_MS), onExpire),
+  // Armed at the full deadline, never early (review pass 7 B1): an awake
+  // timer expires on its next 100 ms tick at or after its budget, and design
+  // I3 counts that tick in its ceilings. Cutting a tick off the cold fresh
+  // read's deadline put it below the cold Client's worst case, and a cold
+  // Client answering in 4,950 ms got a 500 (measured in review pass 7).
+  startTimeout: (ms, onExpire) => startAwakeTimeout(ms, onExpire),
   startStopwatch: startAwakeStopwatch,
   onProbeFailure: (reason) => console.warn(`[siteVersion] probe failed: ${reason}`),
   onDegraded: (line) => console.warn(JSON.stringify({ event: 'site.shell.degraded', siteId: SITE_ID || 'unknown', ...line })),
@@ -67,7 +67,7 @@ async function readerClass(): Promise<ReaderClass> {
  * runs inside the same `workAsyncStorage.run`), and a route handler reads the
  * shell two or three times (N3). Without this each pass resolves again, and a
  * request on a cold server waits out the fresh read's deadline twice (I3,
- * measured: 13.5 s for one request against the 6.5 s budget).
+ * measured: 13.5 s for one request, the cold budget twice over).
  */
 const RESOLUTIONS = new WeakMap<object, Promise<ShellResolution<unknown>>>();
 

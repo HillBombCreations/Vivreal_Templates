@@ -9,6 +9,8 @@ import {
   COLD_PAGE_TEXT,
   DRAFT_TEXT,
   HOME_AFTER_TEXT,
+  LATE_COLD_PAGE_SLUG,
+  LATE_COLD_PAGE_TEXT,
   HOME_BEFORE_TEXT,
   NEW_PAGE_TEXT,
   OWNER_BOOK_TEXT,
@@ -180,6 +182,8 @@ test('F41 d (RW-4 follow-up, B4): the share image, the sitemap and IndexNow pass
 test('F41 a (RW-4 I3, I7): the first read with the probe slow and the fresh read held passes only inside the budget and never as a 404', () => {
   assert.deepEqual(checkColdBudget({ read: { status: 500, body: '' }, elapsedMs: 7_100 }), [], 'a refusal inside the budget passes');
   assert.deepEqual(checkColdBudget({ read: { status: 200, body: '' }, elapsedMs: 3_000 }), []);
+  assert.deepEqual(checkColdBudget({ read: { status: 500, body: '' }, elapsedMs: 8_200 }), [], 'the 7.2 s ceiling plus the render passes');
+  assert.equal(checkColdBudget({ read: { status: 500, body: '' }, elapsedMs: 8_201 }).length, 1, 'past the 7.2 s ceiling plus the render fails');
   assert.equal(checkColdBudget({ read: { status: 200, body: '' }, elapsedMs: 21_600 }).length, 1, 'an unbounded fresh read (B2) fails');
   assert.equal(checkColdBudget({ read: { status: 404, body: '' }, elapsedMs: 600 }).length, 1, 'a 404 from a plain copy older than the stored site fails');
   assert.equal(checkColdBudget({ read: { status: 0, body: '' }, elapsedMs: 600 }).length, 1, 'no answer fails');
@@ -202,6 +206,8 @@ test('F41 e (RW-4 I2, G5): the read after a signed site.updated inside the inter
 test('F41 g and h (RW-4 I1, I3, I4): with every shell read held or failing, only the page from the newest shell served, in time, passes', () => {
   const page = { status: 200, body: `<h2>${CHANGED_TEXT}</h2>` };
   assert.deepEqual(checkHeldShell({ read: page, elapsedMs: 3_400 }), []);
+  assert.deepEqual(checkHeldShell({ read: page, elapsedMs: 5_700 }), [], 'the 4.7 s ceiling plus the render passes');
+  assert.equal(checkHeldShell({ read: page, elapsedMs: 5_701 }).length, 1, 'past the 4.7 s ceiling plus the render fails');
   assert.equal(checkHeldShell({ read: page, elapsedMs: 20_300 }).length, 1, 'a read that waits out the hold fails');
   assert.equal(checkHeldShell({ read: { status: 500, body: '' }, elapsedMs: 3_400 }).length, 1, 'the floor or a 5xx fails');
   assert.deepEqual(checkShellDown({ read: page }), []);
@@ -254,4 +260,8 @@ test('F41 (RW-4): the first read with a slow version route passes only on the pa
   assert.equal(checkColdFirstRead({ ...good, reads: [page, { status: 404, body: '' }] }).length, 1, 'a 404 on the second read fails');
   assert.equal(checkColdFirstRead({ ...good, shellReads: [SHELL] }).length, 1, 'no read by the fresh read\'s version fails');
   assert.equal(checkColdFirstRead({ ...good, reads: [page] }).length, 1, 'one read is not a pass');
+  const late = { status: 200, body: `<h2>${LATE_COLD_PAGE_TEXT}</h2>` };
+  const restarted = { ...good, reads: [late, late], slug: LATE_COLD_PAGE_SLUG, text: LATE_COLD_PAGE_TEXT };
+  assert.deepEqual(checkColdFirstRead(restarted), [], 'the restarted server passes on its own page');
+  assert.equal(checkColdFirstRead({ ...restarted, reads: [page, late] }).length, 1, 'the restarted server passes only on the page it was asked for');
 });

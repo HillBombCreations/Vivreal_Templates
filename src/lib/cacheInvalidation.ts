@@ -81,14 +81,18 @@ export const SITE_VERSION_TIMEOUT_MS = 1_500;
 /** The reads budget after the probe step, awake time, while this instance has served a shell (`L`). */
 export const SHELL_READS_BUDGET_MS = 3_000;
 
-/** The reads budget before any shell was served: room for one cold Client (Init max 4.13 s plus 0.88 s). */
-export const SHELL_READS_BUDGET_COLD_MS = 5_000;
+/** The reads budget before any shell was served: one cold Client (Init max 4.13 s plus 0.88 s, 5.01 s) and 0.5 s over it. */
+export const SHELL_READS_BUDGET_COLD_MS = 5_500;
 
 /** One read's deadline while `L` exists: clears the slowest warm handler (881 ms). */
 export const SHELL_READ_DEADLINE_MS = 1_500;
 
-/** One read's deadline before any shell was served: a cold Client still answers. */
-export const SHELL_READ_DEADLINE_COLD_MS = 5_000;
+/**
+ * One read's deadline before any shell was served: a cold Client still answers.
+ * 0.5 s over its measured 5.01 s worst case; a deadline is never cut below the
+ * callee's worst case to make a budget figure true (design step 3, review pass 7 B1).
+ */
+export const SHELL_READ_DEADLINE_COLD_MS = 5_500;
 
 /** CL7's own path, built in one place. */
 export function siteVersionPath(siteId: string): string {

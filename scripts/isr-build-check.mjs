@@ -22,18 +22,21 @@
  *  3. F41, the site version fence (RW-4, vivreal-hq design-t2-fence-state.md)
  *     through the real routes. Gate on:
  *     a. the server's first ordinary read, the version route slow and every
- *        fresh read held: it answers within the 6.5 s budget, and a page the
+ *        fresh read held: it answers within the 7.2 s ceiling, and a page the
  *        stale plain copy lacks is never a 404 (I3, I7, T3b);
  *     b. still nothing learned: home first (it teaches nothing), then with the
- *        probe slow and a cold fresh read (4 s), a page added after the build
- *        answers 200 and its `updatedAt` keys the next read (R3, G6);
+ *        probe slow and a cold fresh read (4,950 ms), a page added after the
+ *        build answers 200 and its `updatedAt` keys the next read (R3, G6);
+ *        then the same on a restarted server, nothing learned again, with the
+ *        cold fresh read at 5,400 ms, inside its 5.5 s deadline (review pass
+ *        7 B1);
  *     c. a page the owner adds with NO webhook answers 200 within one probe
  *        interval; then the version route fails, then is slow: the page holds
  *        and every shell read carries the known version (I1, N1);
  *     e. a signed site.updated inside the interval makes the probe due: the
  *        next read carries the new `v` (I2, G5);
  *     g. after a purge the Client holds every shell read: the page answers
- *        from the newest shell served within 4.5 s (I3, T11);
+ *        from the newest shell served within the 4.7 s ceiling (I3, T11);
  *     h. after a purge every shell read fails: the same (I1, I4);
  *     i. the Client refuses every `v` (a rollback past #137): a page saved
  *        meanwhile and a page already served answer (B1, G2);
@@ -79,6 +82,10 @@ export const NEW_PAGE_TEXT = 'Fresh this week at the fixture bakery';
 export const COLD_PAGE_SLUG = 'just-opened';
 export const COLD_PAGE_TEXT = 'Just opened at the fixture bakery';
 
+/** RW-4 (review pass 7 B1): the page added just before the restarted server's first ordinary read. */
+export const LATE_COLD_PAGE_SLUG = 'open-late';
+export const LATE_COLD_PAGE_TEXT = 'Open late at the fixture bakery';
+
 /** RW-4: how long the slow version route takes, past the probe timeout (1500 awake ms). */
 const VERSION_SLOW_MS = 3_000;
 
@@ -99,10 +106,16 @@ const INDEXNOW_KEY = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
 /** RW-4 (I3): how long the fixture holds a read it is told to hold, past every deadline. */
 const HOLD_MS = 20_000;
 
-/** RW-4 (G6): a cold Client's answer to the first fresh read, inside its 5 s deadline. */
-const COLD_FRESH_MS = 4_000;
+/**
+ * RW-4 (G6, review pass 7 B1): a cold Client's answer to the first fresh read,
+ * inside its 5.5 s deadline: 4,950 ms (a race, sometimes a 500, when the
+ * deadline was armed a tick early), and 5,400 ms on the restarted server (the
+ * 5.5 s deadline itself, a 500 at any 5.0 s deadline).
+ */
+const COLD_FRESH_MS = 4_950;
+const LATE_COLD_FRESH_MS = 5_400;
 
-/** RW-4 (I3): what a real render adds to the fence's budget (Next's own work, the awake timer's tick). */
+/** RW-4 (I3): what a real render adds to the fence's ceiling (Next's own work). */
 const RENDER_ALLOWANCE_MS = 1_000;
 
 /** RW-4 follow-up: a page added with its own share image, read through /og and /sitemap.xml. */
@@ -174,6 +187,7 @@ export function fixtureSiteDetails(state = {}, { preview = false } = {}) {
       ...(state.newPage ? [{ slug: NEW_PAGE_SLUG, name: 'New', format: 'about', blocks: [block('n1', 'section-header', { labels: { title: newPageText } })] }] : []),
       ...(state.rolledPage ? [{ slug: ROLLED_PAGE_SLUG, name: 'Rolled out', format: 'about', blocks: [block('r1', 'section-header', { labels: { title: ROLLED_PAGE_TEXT } })] }] : []),
       ...(state.coldPage ? [{ slug: COLD_PAGE_SLUG, name: 'Just opened', format: 'about', blocks: [block('j1', 'section-header', { labels: { title: COLD_PAGE_TEXT } })] }] : []),
+      ...(state.lateColdPage ? [{ slug: LATE_COLD_PAGE_SLUG, name: 'Open late', format: 'about', blocks: [block('k1', 'section-header', { labels: { title: LATE_COLD_PAGE_TEXT } })] }] : []),
       ...(state.sharePage
         ? [{
             slug: SHARE_PAGE_SLUG,
@@ -368,14 +382,15 @@ export function checkAfterFlip(flip, after) {
  * RW-4, the server's first ordinary read with the version route slow. `reads`
  * are the reads of the page added after the build (status, body), the first
  * of them the server's first ordinary read; `shellReads` the shell reads
- * logged meanwhile; `updatedAt` the stored site's version.
+ * logged meanwhile; `updatedAt` the stored site's version; `slug` and `text`
+ * the page asked for.
  */
-export function checkColdFirstRead({ reads, shellReads, updatedAt }) {
+export function checkColdFirstRead({ reads, shellReads, updatedAt, slug = COLD_PAGE_SLUG, text = COLD_PAGE_TEXT }) {
   const failures = [];
   if (reads.length < 2) failures.push('the cold phase read the new page fewer than twice');
   reads.forEach((r, i) => {
-    if (r.status !== 200 || !(r.body ?? '').includes(COLD_PAGE_TEXT)) {
-      failures.push(`/${COLD_PAGE_SLUG} read ${i + 1} answered ${r.status}${r.status === 200 ? ' without its page' : ''}: a first read with a slow probe took a copy from before the stored site`);
+    if (r.status !== 200 || !(r.body ?? '').includes(text)) {
+      failures.push(`/${slug} read ${i + 1} answered ${r.status}${r.status === 200 ? ' without its page' : ''}: a first read with a slow probe took a copy from before the stored site`);
     }
   });
   const learned = `v=${encodeURIComponent(updatedAt)}`;
@@ -420,12 +435,12 @@ const shows = (r, text) => r?.status === 200 && (r.body ?? '').includes(text);
 
 /**
  * RW-4 (I3, I7, T3b): the server's first ordinary read, the version route
- * slow and every fresh read held. It answers within the 6.5 s budget (plus the
+ * slow and every fresh read held. It answers within the 7.2 s ceiling (plus the
  * render's own time), and a page the stale plain copy lacks is never a 404.
  */
 export function checkColdBudget({ read, elapsedMs }) {
   const failures = [];
-  if (elapsedMs > 6_500 + RENDER_ALLOWANCE_MS) failures.push(`/${COLD_PAGE_SLUG} took ${elapsedMs} ms with the probe slow and the fresh read held (budget 6500 ms)`);
+  if (elapsedMs > 7_200 + RENDER_ALLOWANCE_MS) failures.push(`/${COLD_PAGE_SLUG} took ${elapsedMs} ms with the probe slow and the fresh read held (ceiling 7200 ms)`);
   if (read?.status === 404) failures.push(`/${COLD_PAGE_SLUG} answered 404 from a plain copy older than the stored site (it must refuse, 5xx)`);
   if (!read || read.status === 0) failures.push(`/${COLD_PAGE_SLUG} never answered`);
   return failures;
@@ -447,11 +462,11 @@ export function checkWebhookProbe({ hook, read, shellReads, updatedAt }) {
 
 /**
  * RW-4 (I3 with L, T11): after a purge, the Client holds every shell read.
- * The page answers from the newest shell this server served, within 4.5 s.
+ * The page answers from the newest shell this server served, within 4.7 s.
  */
 export function checkHeldShell({ read, elapsedMs }) {
   const failures = [];
-  if (elapsedMs > 4_500 + RENDER_ALLOWANCE_MS) failures.push(`/${NEW_PAGE_SLUG} took ${elapsedMs} ms with every shell read held (budget 4500 ms)`);
+  if (elapsedMs > 4_700 + RENDER_ALLOWANCE_MS) failures.push(`/${NEW_PAGE_SLUG} took ${elapsedMs} ms with every shell read held (ceiling 4700 ms)`);
   if (!shows(read, CHANGED_TEXT)) failures.push(`/${NEW_PAGE_SLUG} answered ${read?.status} without its page while every shell read was held`);
   return failures;
 }
@@ -646,6 +661,13 @@ async function timedRead(p) {
   return { read: r, elapsedMs: Date.now() - startedAt };
 }
 
+/** Stop `next start` and wait for the port to close, so the next server or run cannot read this one. */
+async function stopServer(server) {
+  if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
+  else server.kill('SIGTERM');
+  for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+}
+
 async function waitUp() {
   for (let i = 0; i < 120; i += 1) {
     if ((await get('/robots.txt')).status > 0) return true;
@@ -664,6 +686,7 @@ async function main() {
     newPage: false,
     newPageText: NEW_PAGE_TEXT,
     coldPage: false,
+    lateColdPage: false,
     rolledPage: false,
     sharePage: false,
     homeTitle: HOME_BEFORE_TEXT,
@@ -724,7 +747,8 @@ async function main() {
     }
     // ISR_CHECK_SERVER_LOG=<absolute path> keeps the server's own output for diagnosis.
     const serverLog = process.env.ISR_CHECK_SERVER_LOG ? fs.openSync(process.env.ISR_CHECK_SERVER_LOG, 'w') : 'ignore';
-    const server = spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32' });
+    const startServer = () => spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32' });
+    let server = startServer();
     try {
       if (!(await waitUp())) failures.push('next start did not come up');
       else {
@@ -745,7 +769,7 @@ async function main() {
 
           // F41 b (RW-4 row 2, R3, G6): still a server with nothing learned.
           // Home first (it reads plain and teaches nothing), then with the
-          // probe slow the fresh read answers like a cold Client, in 4 s.
+          // probe slow the fresh read answers like a cold Client, in 4,950 ms.
           await wait(5500);
           state.foreignVDelayMs = COLD_FRESH_MS;
           await read('/');
@@ -759,6 +783,32 @@ async function main() {
           state.versionSlowMs = 0;
           state.foreignVDelayMs = 0;
           failures.push(...checkColdFirstRead({ reads: coldReads, shellReads: shellReads.slice(coldFrom), updatedAt: state.updatedAt }));
+
+          // F41 b, restarted (RW-4 G6, review pass 7 B1): a new process has
+          // learned nothing again. A page added only now, so no plain copy
+          // holds it, and the cold fresh read answers in 5,400 ms, inside its
+          // 5.5 s deadline.
+          await stopServer(server);
+          server = startServer();
+          if (!(await waitUp())) failures.push('next start did not come up after the restart');
+          else {
+            await wait(1500);
+            state.versionSlowMs = VERSION_SLOW_MS;
+            state.foreignVDelayMs = LATE_COLD_FRESH_MS;
+            state.lateColdPage = true;
+            state.updatedAt = new Date().toISOString();
+            await read('/');
+            const lateFrom = shellReads.length;
+            const lateReads = [];
+            for (let i = 0; i < 2; i += 1) {
+              const r = await read(`/${LATE_COLD_PAGE_SLUG}`);
+              lateReads.push(r);
+              console.log(`  F41 b restarted, probe slow, cold fresh read at ${LATE_COLD_FRESH_MS} ms, read ${i + 1}: ${r.status} ${r.body.includes(LATE_COLD_PAGE_TEXT) ? 'new page' : 'old copy'} /${LATE_COLD_PAGE_SLUG}`);
+            }
+            state.versionSlowMs = 0;
+            state.foreignVDelayMs = 0;
+            failures.push(...checkColdFirstRead({ reads: lateReads, shellReads: shellReads.slice(lateFrom), updatedAt: state.updatedAt, slug: LATE_COLD_PAGE_SLUG, text: LATE_COLD_PAGE_TEXT }));
+          }
         }
         const reads = [];
         for (const p of READ_PATHS) {
@@ -958,10 +1008,7 @@ async function main() {
         }
       }
     } finally {
-      if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
-      else server.kill('SIGTERM');
-      // Wait for the port to close, so the next run cannot read this server.
-      for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+      await stopServer(server);
     }
   }
   upstream.close();
