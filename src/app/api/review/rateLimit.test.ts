@@ -58,7 +58,9 @@ test("REFUSE (F103): a rate-limited review answers 429 with the words the form s
     globalThis.fetch = realFetch;
   }
   const form = fs.readFileSync(new URL("../../../../node_modules/@hillbombcreations/site-renderer/dist/components/ConfigurableForm.js", import.meta.url), "utf8");
-  assert.match(form, /resolveErrorMessage\(body\?\.error, authoredErrorMessage, BUILT_IN_ERROR_MESSAGE\)/, "the form shows the route's `error` first");
+  // Renderer 1.98.3 (W2-2) made the built-in fallback per form (a review form has its own), so the third
+  // argument is the local `builtInErrorMessage`; the route's `error` is still the first, and it still wins.
+  assert.match(form, /resolveErrorMessage\(body\?\.error, authoredErrorMessage, builtInErrorMessage\)/, "the form shows the route's `error` first");
 });
 
 test("ALLOW (F103): any other failure stays a 500, reported as before", async () => {
