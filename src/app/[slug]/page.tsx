@@ -34,7 +34,8 @@ import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFrom } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, resolvePagePalette, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
+import { pageTreatmentStyle } from "@/lib/pageTreatment";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
 import { JsonLd } from "@/components/JsonLd";
@@ -708,44 +709,73 @@ export default async function DynamicPage({
       : undefined;
     const renderedHero = heroContext ? darkRenderedHero(siteData.chrome, heroContext.input, renderedHeroFor) : null;
 
+    // Renderer #140 review N1, kept in lockstep with renderComposedPage.tsx:
+    // on a treated page the band and the body share one element carrying
+    // composePage's wrapper style, so the band sits inside the treated area.
+    // Unreachable today for the same reason as the band (see above).
+    const bandTreatment = showTransitionalTitleBand
+      ? pageTreatmentStyle(composedPage as unknown as RendererPageConfig, siteData, resolvePagePalette)
+      : undefined;
+
+    const navbar = (
+      <Navbar
+        page={composedPage as unknown as RendererPageConfig}
+        {...(renderedHero ? { renderedHero } : {})}
+      />
+    );
+    const titleBand = showTransitionalTitleBand && (
+      <TitleBand
+        page={composedPage as unknown as RendererPageConfig}
+        chrome={siteData.chrome}
+      />
+    );
+    // Streaming split (2026-07-13): buildPageContext's collection fetches
+    // are the slow half — they stream in behind this boundary while the
+    // shell (Navbar/band/Footer) + a structure-derived skeleton flush
+    // immediately. Same model as renderComposedPage; the fallback is
+    // derived from the SAME composedPage config as the real render.
+    //
+    // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
+    // this is a page-authored Suspense boundary, not the deleted
+    // implicit loading.tsx wrap — but it has the same failure mode.
+    // Streaming begins the instant this boundary suspends, which
+    // flushes a 200 shell before ComposedFormatBody runs. The
+    // `notFound()` inside ComposedFormatBody (the isEmpty guard below)
+    // therefore CANNOT set a 404 status — it only swaps the body. Any
+    // future guard on this route must run in the un-suspended parent
+    // (DynamicPage, above this boundary), not inside ComposedFormatBody.
+    const body = (
+      <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
+        <ComposedFormatBody
+          siteData={siteData}
+          composedPage={composedPage}
+          format={format}
+          productQuery={productQuery}
+          components={components}
+          scheduleView={scheduleView}
+          suppressSrTitle={showTransitionalTitleBand}
+          {...(heroContext ? { context: heroContext } : {})}
+        />
+      </Suspense>
+    );
+
+    if (bandTreatment) {
+      return (
+        <>
+          {navbar}
+          <div style={bandTreatment}>
+            {titleBand}
+            {body}
+          </div>
+          <Footer />
+        </>
+      );
+    }
     return (
       <>
-        <Navbar
-          page={composedPage as unknown as RendererPageConfig}
-          {...(renderedHero ? { renderedHero } : {})}
-        />
-        {showTransitionalTitleBand && (
-          <TitleBand
-            page={composedPage as unknown as RendererPageConfig}
-            chrome={siteData.chrome}
-          />
-        )}
-        {/* Streaming split (2026-07-13): buildPageContext's collection fetches
-            are the slow half — they stream in behind this boundary while the
-            shell (Navbar/band/Footer) + a structure-derived skeleton flush
-            immediately. Same model as renderComposedPage; the fallback is
-            derived from the SAME composedPage config as the real render. */}
-        {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-            this is a page-authored Suspense boundary, not the deleted
-            implicit loading.tsx wrap — but it has the same failure mode.
-            Streaming begins the instant this boundary suspends, which
-            flushes a 200 shell before ComposedFormatBody runs. The
-            `notFound()` inside ComposedFormatBody (the isEmpty guard below)
-            therefore CANNOT set a 404 status — it only swaps the body. Any
-            future guard on this route must run in the un-suspended parent
-            (DynamicPage, above this boundary), not inside ComposedFormatBody. */}
-        <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
-          <ComposedFormatBody
-            siteData={siteData}
-            composedPage={composedPage}
-            format={format}
-            productQuery={productQuery}
-            components={components}
-            scheduleView={scheduleView}
-            suppressSrTitle={showTransitionalTitleBand}
-            {...(heroContext ? { context: heroContext } : {})}
-          />
-        </Suspense>
+        {navbar}
+        {titleBand}
+        {body}
         <Footer />
       </>
     );
