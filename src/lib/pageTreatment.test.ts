@@ -26,11 +26,27 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { pageTreatmentStyle, pageBackground, pageBackgroundTextRescope, type SiteColourTokens } from './pageTreatment.ts';
+import type { SiteColourTokens } from './pageTreatment.ts';
 import * as composition from '../../node_modules/@hillbombcreations/site-renderer/dist/composition/composePage.js';
 import { TitleBand } from '../../node_modules/@hillbombcreations/site-renderer/dist/composition/titleBand.js';
 import { resolvePagePalette } from '../../node_modules/@hillbombcreations/site-renderer/dist/lib/resolvePagePalette.js';
 import { SiteRendererProvider } from '../../node_modules/@hillbombcreations/site-renderer/dist/context/SiteRendererContext.js';
+
+/*
+ * The module under test is imported so that this file still loads on a tree
+ * without it, and the shell then behaves as it did before the fix: the band
+ * gets no treatment (`() => undefined`). That is what lets the REFUSE below
+ * fail on its own assertion against the unfixed shell (the red proof), rather
+ * than on a missing import. The first test fails loudly if the module does not
+ * load, so a broken import can never pass as "the unfixed shell".
+ */
+const mod = await import('./pageTreatment.ts').catch(() => null);
+type Treatment = typeof import('./pageTreatment.ts').pageTreatmentStyle;
+const pageTreatmentStyle: Treatment = mod?.pageTreatmentStyle ?? (() => undefined);
+
+test('pageTreatment loads', () => {
+  assert.ok(mod, 'src/lib/pageTreatment.ts did not load; every row below would be testing the unfixed shell');
+});
 
 type RendererPage = Parameters<typeof composition.composePage>[0]['page'];
 type Palette = NonNullable<RendererPage['palette']>;
@@ -150,6 +166,8 @@ test('[N1 PARITY] the shell style is exactly the wrapper style composePage rende
 });
 
 test('[N1 PARITY] the restated background resolvers equal the renderer\'s own', () => {
+  assert.ok(mod, 'src/lib/pageTreatment.ts did not load');
+  const { pageBackground, pageBackgroundTextRescope } = mod;
   const tokens = [undefined, '', 'surface', 'surface-alt', 'primary', 'secondary', 'Primary', ' primary', 'dark'];
   let rescoped = 0;
   for (const token of tokens) {
