@@ -19,7 +19,7 @@ import { getShowsRead } from '@/lib/api/shows';
 import { getTeamMembersRead } from '@/lib/api/team';
 import { readableSegments } from '@/lib/detail/readableSegment';
 import { applyReadableLinks, readableLinkCollections, type ReadablePage } from '@/lib/detail/readableListLinks';
-import { PAGE_LIST_LIMIT, usesProductBridge } from '@/lib/api/snapshot/fill';
+import { PAGE_LIST_LIMIT, readCollectionPageList, usesProductBridge } from '@/lib/api/snapshot/fill';
 import { toRendererSiteData } from './rendererSiteData';
 
 export interface PageContextResult {
@@ -126,8 +126,13 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
   // differ only on a social read, which is the read nobody is looking at.
   const [collectionEntries, integrationEntries, readableEntries] = await Promise.all([
     Promise.all(
+      // SW-13 (hotfix 2026-11-13, F257): every page of a bound collection, up
+      // to PAGE_LIST_MAX_ITEMS, not one window of 100 (the help site's 101st
+      // article was on no page). A list of 100 or fewer is still exactly one
+      // read under the same key; the build's fill pass floors every page with
+      // the same reader (../snapshot/fill.ts).
       collectionIds.map(async (id) => {
-        const read = await getCollectionItems(id, { limit: PAGE_LIST_LIMIT });
+        const read = await readCollectionPageList(id, getCollectionItems, (line) => console.warn(line));
         return { key: id, ...read };
       }),
     ),

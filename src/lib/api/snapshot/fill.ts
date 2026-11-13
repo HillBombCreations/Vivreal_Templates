@@ -55,13 +55,22 @@ import { isPageTurnedOff } from '../../pages/pageEnabled.ts';
 import { slugsForStaticParams } from '../../pages/staticParams.ts';
 import { NON_NESTABLE_FORMATS } from '../../pages/nestedItemRoute.ts';
 import { readsProviderProduct } from '../../detail/storefrontSources.ts';
-import { collectionObjectsPath, integrationObjectsPath, siteDetailsPath } from '../readPaths.ts';
+import { readAllPages } from '../readAllPages.ts';
+import { collectionObjectsPath, integrationObjectsPath, siteDetailsPath, type ListReadOpts } from '../readPaths.ts';
 import { FORCE_FLOOR_SITE_IDS } from './constants.ts';
 import { collectionIdOf } from './eligibility.ts';
 import { storefrontCollectionIds } from './storefrontExclusion.ts';
 
 /** The page-list read size every composed page uses (`buildPageContext`). */
 export const PAGE_LIST_LIMIT = 100;
+/**
+ * SW-13 (hotfix 2026-11-13, F257): the most rows one bound collection on a
+ * page reads, `PAGE_LIST_LIMIT` at a time, so at most 10 reads. A page used to
+ * read one window of 100, and the help site's 101st article was on no page.
+ * Past this the read answers `truncated: true` and logs `list.truncated`
+ * (`readCollectionPageList`); it never stops silently.
+ */
+export const PAGE_LIST_MAX_ITEMS = 1_000;
 /** The product detail page's supplemental feed size (`[slug]/[itemId]/page.tsx`). */
 export const SUPPLEMENTAL_FEED_LIMIT = 10;
 
@@ -157,9 +166,14 @@ function listReadsOf(page: PageConfig, targets: BindingTargetsLike): ListRead[] 
   ];
 }
 
+/**
+ * A list read's EXPECTED key: a collection's first page (the one-read key,
+ * `pageListReadOpts`), an integration's one window (integrations stay one
+ * window, `../collections/index.ts` `getIntegrationItems`).
+ */
 function keyOf(read: ListRead): string {
   return read.kind === 'collection'
-    ? collectionObjectsPath(read.id, { limit: PAGE_LIST_LIMIT })
+    ? collectionObjectsPath(read.id, pageListReadOpts(0, PAGE_LIST_LIMIT))
     : integrationObjectsPath(read.type, { limit: PAGE_LIST_LIMIT });
 }
 
@@ -243,7 +257,7 @@ export interface FillDeps {
   readonly siteId: string;
   readonly recorder: { readonly active: boolean; writeManifest(manifest: object): void };
   readonly targetsOf: (page: PageConfig) => BindingTargetsLike;
-  readonly getCollectionItems: (collectionId: string, opts: { limit: number }) => Promise<unknown>;
+  readonly getCollectionItems: (collectionId: string, opts: ListReadOpts) => Promise<BoundListPage<unknown>>;
   readonly getIntegrationItems: (type: string, opts: { limit: number }) => Promise<unknown>;
   readonly buildNestedPageContext: (page: PageConfig) => Promise<unknown>;
   readonly log: (line: string) => void;
@@ -272,6 +286,91 @@ function readFailed(result: PromiseSettledResult<unknown>): boolean {
 
 const keyHash = (key: string) => createHash('sha256').update(key).digest('hex').slice(0, 12);
 const stripQuery = (key: string) => key.split('?')[0];
+
+/**
+ * The read options of the bound-list page that starts at `skip`. The first
+ * page carries no `skip`, so its key is byte-identical to the one-read key
+ * every data cache entry and floor held before F257: a list of 100 or fewer
+ * costs exactly the one read it always did.
+ */
+export function pageListReadOpts(skip: number, limit: number): ListReadOpts {
+  return skip === 0 ? { limit } : { limit, skip };
+}
+
+/** Every page key a bound list of `totalCount` rows is read under, up to `PAGE_LIST_MAX_ITEMS`. */
+export function pageListKeys(collectionId: string, totalCount: number): string[] {
+  const rows = Math.min(Number.isFinite(totalCount) ? totalCount : 0, PAGE_LIST_MAX_ITEMS);
+  const keys = [collectionObjectsPath(collectionId, pageListReadOpts(0, PAGE_LIST_LIMIT))];
+  for (let skip = PAGE_LIST_LIMIT; skip < rows; skip += PAGE_LIST_LIMIT) {
+    keys.push(collectionObjectsPath(collectionId, pageListReadOpts(skip, PAGE_LIST_LIMIT)));
+  }
+  return keys;
+}
+
+/** One page of a bound collection, as `getCollectionItems` answers it. */
+export interface BoundListPage<T> {
+  readonly items: T[];
+  readonly totalCount: number;
+  readonly sourceCount: number;
+  readonly degraded: boolean;
+  readonly fromFloor: boolean;
+  readonly richTextImageUrls: Record<string, string>;
+}
+
+/**
+ * A bound collection, every page of it (SW-13, F257): `readAllPages` at
+ * `PAGE_LIST_LIMIT` a read up to `PAGE_LIST_MAX_ITEMS`. `buildPageContext`
+ * renders with it and the fill pass floors with it, so the page and its floor
+ * read the same keys (`pageListReadOpts`).
+ *
+ * The per-page fields combine the way one read's did: `sourceCount` sums the
+ * rows every page returned, a degraded page makes the list degraded (a list
+ * missing a page is not one a verdict may be drawn from, `../readAllPages.ts`),
+ * any page from the floor marks it `fromFloor`, and the rich-text maps merge.
+ * A list past the ceiling logs `list.truncated` by query-free path and key
+ * hash (no collection id in a log line, as `fillSnapshotAtBuild` logs).
+ */
+export async function readCollectionPageList<T>(
+  collectionId: string,
+  readPage: (collectionId: string, opts: ListReadOpts) => Promise<BoundListPage<T>>,
+  log: (line: string) => void,
+): Promise<BoundListPage<T> & { readonly truncated: boolean }> {
+  const richTextImageUrls: Record<string, string> = {};
+  let sourceCount = 0;
+  let fromFloor = false;
+  const all = await readAllPages<T>(
+    async (skip, limit) => {
+      const page = await readPage(collectionId, pageListReadOpts(skip, limit));
+      Object.assign(richTextImageUrls, page.richTextImageUrls);
+      sourceCount += page.sourceCount;
+      fromFloor ||= page.fromFloor;
+      return { items: page.items, totalCount: page.totalCount, degraded: page.degraded };
+    },
+    { pageSize: PAGE_LIST_LIMIT, maxItems: PAGE_LIST_MAX_ITEMS },
+  );
+  if (all.truncated) {
+    const firstKey = collectionObjectsPath(collectionId, pageListReadOpts(0, PAGE_LIST_LIMIT));
+    log(
+      JSON.stringify({
+        event: 'list.truncated',
+        path: stripQuery(firstKey),
+        key: keyHash(firstKey),
+        totalCount: all.totalCount,
+        items: all.items.length,
+        maxItems: PAGE_LIST_MAX_ITEMS,
+      }),
+    );
+  }
+  return {
+    items: all.items,
+    totalCount: all.totalCount,
+    sourceCount,
+    degraded: all.degraded,
+    fromFloor,
+    richTextImageUrls,
+    truncated: all.truncated,
+  };
+}
 
 /** The manifest written when planning itself threw: the site shell and nothing else. */
 function shellOnlyManifest(siteId: string): FillManifest & { readonly fillError: true } {
@@ -314,26 +413,54 @@ export async function fillSnapshotAtBuild(
   // still knows what was expected.
   deps.recorder.writeManifest(plan.manifest);
 
-  const listKey = (read: ListRead) =>
+  // SW-13 (F257): a bound collection is floored the way the page reads it,
+  // every page (`readCollectionPageList`). Its task answers for every page key
+  // the first page's count implies, learned as it runs, so a page that still
+  // fails after the retry is listed in `failedKeys` and counted uncovered
+  // unless another read recorded it. Pages past the first are NOT expected
+  // keys: the wrapper's size trim drops `skip` keys first
+  // (`scripts/build-with-snapshot.mjs` `trimToBudget`), and a page trimmed for
+  // size is not a failed read.
+  const collectionListTask = (collectionId: string): FillTask => {
+    const keys = [collectionObjectsPath(collectionId, pageListReadOpts(0, PAGE_LIST_LIMIT))];
+    return {
+      run: async () => {
+        const list = await readCollectionPageList(collectionId, deps.getCollectionItems, deps.log);
+        for (const key of pageListKeys(collectionId, list.totalCount)) if (!keys.includes(key)) keys.push(key);
+        return list;
+      },
+      keys,
+    };
+  };
+  const listTask = (read: ListRead): FillTask =>
     read.kind === 'collection'
-      ? collectionObjectsPath(read.id, { limit: PAGE_LIST_LIMIT })
-      : integrationObjectsPath(read.type, { limit: PAGE_LIST_LIMIT });
+      ? collectionListTask(read.id)
+      : { run: () => deps.getIntegrationItems(read.type, { limit: PAGE_LIST_LIMIT }), keys: [keyOf(read)] };
+  // Row 4's collections are read directly too, once per list not already read
+  // for row 2. The nested page context below reads every page as well, but it
+  // answers only `listReadFailed`, so a page past the first that it could not
+  // read would otherwise be a hole no count names.
+  const rowTwoKeys = new Set(plan.pageListReads.map(keyOf));
+  const nestedCollectionIds = new Set<string>();
+  for (const page of plan.nestedPages) {
+    for (const read of listReadsOf(page, deps.targetsOf(page))) {
+      if (read.kind === 'collection' && !rowTwoKeys.has(keyOf(read))) nestedCollectionIds.add(read.id);
+    }
+  }
   const tasks: FillTask[] = [
-    ...plan.pageListReads.map((read) => ({
-      run: () =>
-        read.kind === 'collection'
-          ? deps.getCollectionItems(read.id, { limit: PAGE_LIST_LIMIT })
-          : deps.getIntegrationItems(read.type, { limit: PAGE_LIST_LIMIT }),
-      keys: [listKey(read)],
-    })),
+    ...plan.pageListReads.map(listTask),
+    ...[...nestedCollectionIds].map(collectionListTask),
     ...plan.nestedPages.map((page) => ({
       run: () => deps.buildNestedPageContext(page),
-      keys: listReadsOf(page, deps.targetsOf(page)).map(listKey),
+      keys: listReadsOf(page, deps.targetsOf(page)).map(keyOf),
     })),
     ...plan.supplementalTypes.map((type) => ({
       run: () => deps.getIntegrationItems(type, { limit: SUPPLEMENTAL_FEED_LIMIT }),
       keys: [integrationObjectsPath(type, { limit: SUPPLEMENTAL_FEED_LIMIT })],
     })),
+    // Row 6 stays one window: `resolveDetailContext` reads it that way
+    // (`src/lib/detail/resolveContext.ts`), and the floor holds what the
+    // runtime asks for.
     ...plan.contextCollectionIds.map((id) => ({
       run: () => deps.getCollectionItems(id, { limit: PAGE_LIST_LIMIT }),
       keys: [collectionObjectsPath(id, { limit: PAGE_LIST_LIMIT })],

@@ -13,8 +13,8 @@
  * `src/scripts/validators.js` also caps the query param at 100). The Studio
  * preview fetches the same products through `/integrations/get` at
  * `limit: 100` (`Vivreal_Portal_Mobile` `usePreviewData.ts`), and the live
- * COLLECTION read already asks for 100
- * (`../composition/buildPageContext.ts` `getCollectionItems(id, {limit: 100})`).
+ * COLLECTION read already asks for 100 a read, every page of the list
+ * (`../snapshot/fill.ts` `readCollectionPageList`, SW-13).
  * Products were the one read still riding the server default, so a storefront
  * with more than 20 products was complete in the Studio and truncated at the
  * URL.

@@ -1,5 +1,6 @@
 import { isSentryReportingEnabled, resolveSentryEnvironment } from "@/lib/sentry/reportingGate";
 import { scrubBreadcrumbCredentials, scrubCredentials } from "@/lib/sentry/scrubCredentials";
+import { allowOnlyHeartbeat, HEARTBEAT_FLUSH_MS, HEARTBEAT_MESSAGE, HEARTBEAT_SERVICE } from "@/lib/sentry/heartbeat";
 
 // V7.319: the same environment gate as the browser (src/instrumentation-client.ts).
 // Without it any server with a DSN sent, labelled `production`.
@@ -15,12 +16,16 @@ const sentryEnabled = isSentryReportingEnabled({
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const Sentry = await import("@sentry/nextjs");
-    Sentry.init({
+    const client = Sentry.init({
       dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
       environment: sentryEnvironment,
       enabled: sentryEnabled,
       tracesSampleRate: 0,
-      enableLogs: false,
+      // SW-9 (hotfix 2026-11-13): logs on for ONE line, the heartbeat below;
+      // `allowOnlyHeartbeat` drops every other Sentry Logs line
+      // (src/lib/sentry/heartbeat.ts).
+      enableLogs: true,
+      beforeSendLog: allowOnlyHeartbeat,
       // Owner Q14 (next release 2026-11, plan 3.PII, T8): explicit. It stops
       // only the SDK's own IP; cookies and headers still arrive, so the hooks
       // delete them (src/lib/sentry/scrubCredentials.ts).
@@ -44,6 +49,13 @@ export async function register() {
         Sentry.httpIntegration({ disableIncomingRequestSpans: true, maxIncomingRequestBodySize: "none" }),
       ],
     });
+    // SW-9: one `service.started` line per server process start, naming the
+    // release this build reports (SW-10, next.config.ts). A `next build`
+    // worker runs this hook too but sends nothing: the SDK's init does nothing
+    // during the build phase (`@sentry/nextjs` `isBuild`), so there is no
+    // client to send it.
+    Sentry.logger.info(HEARTBEAT_MESSAGE, { service: HEARTBEAT_SERVICE, release: client?.getOptions().release });
+    void Sentry.flush(HEARTBEAT_FLUSH_MS);
   }
 
   if (process.env.NEXT_RUNTIME === "edge") {
