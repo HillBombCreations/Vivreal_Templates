@@ -62,6 +62,15 @@ import {
  * If it goes red on AUTH rather than on drift, the fix is a repository secret
  * (see the workflow), never deleting the schedule.
  *
+ * ── WITH NO TOKEN AT ALL, IT SAYS WHERE TO RUN IT (F85) ──────────────────
+ *
+ * A developer's machine usually has no NODE_AUTH_TOKEN, and the old failure
+ * there was an npm 401 that named nothing to do. Now the first thing the check
+ * does, before any npm call, is fail with `RUN_IN_CI`: the one command that
+ * runs it where the token is. It still FAILS, never skips, for the reason
+ * above. `checks/freeYearPackage.guard.test.ts` (run by name) pins both: the
+ * message, and that no npm process starts.
+ *
  * ── WHAT IT MUST NOT DO ──────────────────────────────────────────────────
  *
  * It must never change this repo's install. The package is fetched into an OS
@@ -73,6 +82,9 @@ import {
  */
 
 const PACKAGE = '@hillbombcreations/tier-quotas';
+
+/** F85: what the check says, before any npm call, on a machine with no token. */
+const RUN_IN_CI = 'Run it in CI: gh workflow run free-year-package-check.yml -R HillBombCreations/Vivreal_Templates';
 const REPO_ROOT = path.resolve(import.meta.dirname, '..');
 const PROBE_DIR = path.join(os.tmpdir(), 'vivreal-templates-tier-quotas-probe');
 
@@ -142,6 +154,10 @@ function installedProbe(version: string): string {
 }
 
 test('the free-year sentence still matches the package it was copied from', async () => {
+  // F85: no token, no npm call. Red, never a skip, and it says where to run it.
+  if (!process.env.NODE_AUTH_TOKEN?.trim()) {
+    assert.fail(`NODE_AUTH_TOKEN is not set, so ${PACKAGE} cannot be read here. ${RUN_IN_CI}`);
+  }
   const before = {
     manifest: sha(path.join(REPO_ROOT, 'package.json')),
     lock: sha(path.join(REPO_ROOT, 'package-lock.json')),

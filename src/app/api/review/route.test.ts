@@ -165,8 +165,10 @@ test("/api/review reports a lost review to Sentry, never the visitor's details",
     else process.env.SITE_ID = realSiteId;
   });
 
-  await t.test("REFUSE: an upstream 429 answers the same 500 and sends one status-only capture", async () => {
-    mockUpstream(rejectQuotingTheReview(429));
+  // F103: an upstream 429 is now the by-design rate-limit answer, a 429 with its own words and no
+  // capture (rateLimit.test.ts). A refused write (400) is the lost review these pin, unchanged.
+  await t.test("REFUSE: an upstream 400 answers the same 500 and sends one status-only capture", async () => {
+    mockUpstream(rejectQuotingTheReview(400));
 
     const res = await postAndWaitForFlush(REVIEW_BODY);
 
@@ -176,14 +178,14 @@ test("/api/review reports a lost review to Sentry, never the visitor's details",
     assert.deepEqual(sentry.captureCalls[0].context, {
       level: "error",
       fingerprint: ["templates.review.rejected"],
-      tags: { siteId: SITE_ID, stage: "upstream-rejected", status: "429" },
+      tags: { siteId: SITE_ID, stage: "upstream-rejected", status: "400" },
     });
     assertSentinelsWentUpstream();
     assertNoSentinelInCaptures();
   });
 
   await t.test("REFUSE: a repeat of the same failure inside the window is not captured again", async () => {
-    mockUpstream(rejectQuotingTheReview(429));
+    mockUpstream(rejectQuotingTheReview(400));
 
     const res = await POST(fakeRequest(REVIEW_BODY));
 

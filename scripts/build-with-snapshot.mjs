@@ -17,7 +17,9 @@
  *     the last good deployment live.
  *  2. `next build`, with the record directory set (the recorder is inert in
  *     every process this variable does not reach). Its exit code is forwarded
- *     unchanged when it fails.
+ *     unchanged when it fails. When it succeeds, every `.map` under `.next`
+ *     outside `.next/cache` is removed (`scripts/build-source-maps.mjs`,
+ *     Amplify's output cap); a map that cannot be removed exits 1.
  *  3. MERGE the recorder's shards and the fill pass's manifest, drop every key
  *     naming a storefront collection (owner decision 2), trim past the size
  *     budget, and compute `snapshot_uncovered` (expected keys never recorded).
@@ -52,6 +54,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { judgePrerenderOutput, measurePrerenderOutput } from './build-size-guard.mjs';
+import { removeSourceMaps } from './build-source-maps.mjs';
 
 /** Twin of `SNAPSHOT_FILE_NAME` in src/lib/api/snapshot/constants.ts. */
 export const SNAPSHOT_FILE_NAME = 'site-snapshot.json';
@@ -374,6 +377,15 @@ export async function main(deps = {}) {
       logError(`site snapshot: next build exited ${code}; no snapshot written`);
       return code;
     }
+    // After `next build` has exited, never during it (scripts/build-source-maps.mjs).
+    let maps;
+    try {
+      maps = (deps.removeSourceMaps ?? removeSourceMaps)(root);
+    } catch (err) {
+      logError(`source maps: FAILED to remove them (${err?.code ?? err?.name ?? 'error'}); the previous deployment stays live`);
+      return 1;
+    }
+    log(`source maps: removed ${maps.files} files, ${maps.bytes} bytes from the build output`);
     const mergeStarted = Date.now();
     const { entries, manifests } = readRecords(recordDir);
     const manifest = mergeManifests(manifests, siteId);

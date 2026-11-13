@@ -19,13 +19,19 @@ npm test             # `tsc --noEmit` FIRST, then the node test runner over THRE
                      # globs, not one:
                      #   src/**/*.test.ts, src/app/.well-known/**/*.test.ts, eslint-rules/*.test.mjs
                      # Hermetic and offline capable. Nothing in it touches the network.
+                     # Every test process preloads scripts/aws-test-guard.mjs (`--import`):
+                     # fake AWS credentials, and starting the AWS CLI throws. Keep the --import.
 npm run check:free-year             # NOT in `npm test`: reads the npm registry.
                                     # Runs weekly in CI. See "The free-year sentence".
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
 node scripts/isr-build-check.mjs     # NOT in npm test (a full build, minutes). Builds against a
                                      # fixture Client API on 127.0.0.1 and checks the route table
                                      # and real cache headers. --gate-off checks SITE_RENDER_MODE unset.
-                                     # Run it on ANY change to [slug], [slug]/[itemId] or the layout.
+                                     # Run it on ANY change to [slug], [slug]/[itemId] or the layout,
+                                     # and on EVERY next bump: its F41 phase is the only real-route
+                                     # proof of the site version fence, which reads Next internals
+                                     # (lib/api/siteData/siteVersionFence.ts) and silently reads as
+                                     # before if they move.
 ```
 
 ### `npm test` runs `tsc --noEmit` first, and that is load-bearing
@@ -75,7 +81,7 @@ error it reports is one the fleet build would reject. `npm test` and
 | Icons | Lucide React |
 | UI Components | Radix UI primitives |
 | Animations | Framer Motion |
-| Monitoring | `@sentry/nextjs` (sourcemap upload disabled for templates) |
+| Monitoring | `@sentry/nextjs` (sourcemap upload disabled for templates). After `next build` exits, `npm run build` deletes every `.map` under `.next` outside `.next/cache` (`scripts/build-source-maps.mjs`): about 92 MB Amplify counted against its output cap. The standalone server Amplify runs carried none of the chunk maps even before this (W-TPL-SIZE, 2026-11) |
 | Data | Server-side fetch via `clientFetch`/`clientFetchCached` (all API calls are server-only) |
 | State | React Context (SiteDataContext) — site branding/config only |
 
@@ -105,7 +111,7 @@ src/
 │   ├── PageTemplates/              # Format-specific composed pages (products, schedule, subscribe, …)
 │   ├── HomeSections/               # Home composition sections + EmailPopup
 │   ├── SiteAnalytics/, SiteBeacon/ # Two distinct analytics paths — see Key Patterns
-│   ├── JsonLd/                     # Structured data (site + detail; strips signed-URL params)
+│   ├── JsonLd/                     # Structured data (site, detail, and listing Events from the renderer's `eventRows`; strips signed-URL params)
 │   └── Providers/                  # QueryClient, CSS var injection, renderer context (onSubscribe, cart)
 ├── lib/
 │   ├── api/                        # client.ts, siteData/, composition/buildPageContext, per-domain fetchers
@@ -137,9 +143,10 @@ All data fetching goes through `src/lib/api/client.ts`:
 `isQuotaError()` detects 402 quota responses — the root layout renders `<QuotaExceeded />` instead of crashing.
 
 **Render reads are not billed (next release 2026-11, F0).** A `clientFetchCached` read that goes upstream (a build,
-an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted inside its `unstable_cache` closure by
+an ISR regeneration, a revalidation) carries `x-vivreal-internal`, minted per upstream call in `clientFetchCached` (its
+`unstable_cache` closure, and the fenced fresh shell read, RW-4) by
 `lib/api/internalToken.ts` (`server-only`) from `INTERNAL_METER_KEY` and `INTERNAL_METER_GROUP_ID`, and VR_Client_API
-counts it to `internalCalls` instead of the billable `totalCalls`. Minted ONLY there and only for Client's render-read
+counts it to `internalCalls` instead of the billable `totalCalls`. Minted nowhere else, and only for Client's render-read
 rule (GET of `siteDetails`, `collectionObjects` or `integrationObjects`, no non-empty `search`;
 `lib/api/internalTokenCore.ts`). A cached read mints whichever route triggers the fill (pages, and also the
 sitemap, OG, icon and `/api/indexnow/urls` routes, which read the same cached site data); the uncached `clientFetch`
@@ -155,6 +162,21 @@ All three inits (`instrumentation.ts` nodejs and edge, `instrumentation-client.t
 false` alone removes only the SDK's own IP; the hooks delete `request.cookies`, every header on the 33-name FLEET list
 (`FLEET_SECRET_HEADERS`, the same array in every repo; never add the release check's `x-vr-check-control` to it), the
 IP, and the same names as span keys in both spellings, cookies by prefix. Tracing is off (`tracesSampleRate: 0`).
+
+**The request body never leaves (open-backlog release 2026-11).** The Node SDK reads every JSON and form body
+(`req.on("data")`, which Next 16 uses) and puts it on every event of that request as `request.data`, whatever
+`sendDefaultPii` says. On this site that was a form-encoded POST to a Node-rendered page (Next reads it as a possible
+server action), on every capture the render makes; contact, booking and checkout run on the edge runtime, which
+records no body. Two layers stop it: the Node init's `httpIntegration({ maxIncomingRequestBodySize: "none" })` means
+the SDK never reads it, and the hooks delete `request.data` in all three runtimes. Never set the size back, and never
+add `sendDefaultPii: true` or a hook that copies a body into `extra` or `contexts`.
+
+**No URL query leaves either (same release, review P1).** A renderer form submitted before the page's script loads
+sends a GET, so the visitor's name, email, phone and message ride the page URL. The hooks delete
+`request.query_string` and cut at `?` or `#`: `request.url`, a `Referer` header, the transaction name, a breadcrumb's
+`url`, `from` and `to`, and a span's URL keys. The path stays. The renderer's own fix (no form ever GETs) is backlog
+F179. `lib/sentry/requestBody.sdk.test.ts` proves the body and the query through the real SDK on a real node server
+(the contact route's own captures, a form POST to a page, a page URL with a query).
 
 ### API Response Format
 

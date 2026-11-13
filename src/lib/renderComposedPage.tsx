@@ -8,16 +8,20 @@ import {
   composePage,
   ComposedPageSkeleton,
   renderedHeroFor,
+  resolvePagePalette,
   TitleBand,
   shouldRenderTitleBand,
 } from '@hillbombcreations/site-renderer';
 import type { PageConfig as RendererPageConfig } from '@hillbombcreations/site-renderer';
 import type { PageWithBlocks } from '@hillbombcreations/site-renderer/bindings';
+import { pageTreatmentStyle } from '@/lib/pageTreatment';
 import { reportDisplayMismatches } from '@/lib/reportDisplayMismatch';
 import { buildPageContext } from '@/lib/api/composition/buildPageContext';
 import type { PageContextResult } from '@/lib/api/composition/buildPageContext';
 import { emptinessIsDecidable } from '@/lib/api/composition/pageEmptiness';
 import RichTextImages from '@/components/RichTextImages';
+import { JsonLd } from '@/components/JsonLd';
+import { pageListingEventsJsonLd } from '@/lib/seo/listingEvents';
 import ListLoadFailedNotice from '@/components/ListLoadFailedNotice';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
@@ -255,40 +259,71 @@ export async function renderComposedPage({
   const skeletonProps = skeletonPropsFor(composedPage);
   if (showTransitionalTitleBand) skeletonProps.labels = undefined;
 
+  // Renderer #140 review N1 (1.98.5): the band sits inside the page's treated
+  // area. composePage paints a colour treatment or a chosen page background on
+  // its own wrapper, and the Studio draws the band inside that wrapper; this
+  // shell mounts the band outside it, so a treated page showed its title on
+  // the plain site colour. When the page has a treatment, the band and the
+  // body share one element carrying the same style (see pageTreatment.ts).
+  // No treatment: undefined, no element, the same bytes as before.
+  const bandTreatment = showTransitionalTitleBand
+    ? pageTreatmentStyle(composedPage as unknown as RendererPageConfig, siteData, resolvePagePalette)
+    : undefined;
+
+  const navbar = (
+    <Navbar
+      page={composedPage as unknown as RendererPageConfig}
+      {...(renderedHero ? { renderedHero } : {})}
+    />
+  );
+  const titleBand = showTransitionalTitleBand && (
+    // The band's markup, both the light-chrome layout and the dark
+    // full-width gradient, is the renderer's `TitleBand`. It was carried
+    // over from this file verbatim, so a site that renders it today keeps
+    // rendering exactly the same bytes.
+    <TitleBand
+      page={composedPage as unknown as RendererPageConfig}
+      chrome={siteData.chrome}
+    />
+  );
+  // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
+  // streaming begins the instant this boundary suspends, which flushes a
+  // 200 shell before ComposedPageBody runs. Anything that must set a
+  // STATUS therefore runs above this boundary, and since QA-G1-2 the
+  // emptiness guard does (top of renderComposedPage), so an empty page
+  // answers a real 404 and a failed read a real 5xx. Nothing inside
+  // ComposedPageBody may call notFound().
+  const body = (
+    <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
+      <ComposedPageBody
+        siteData={siteData}
+        composedPage={composedPage}
+        components={components}
+        productQuery={productQuery}
+        lookupQuery={lookupQuery}
+        suppressSrTitle={showTransitionalTitleBand}
+        context={context}
+      />
+    </Suspense>
+  );
+
+  if (bandTreatment) {
+    return (
+      <>
+        {navbar}
+        <div style={bandTreatment}>
+          {titleBand}
+          {body}
+        </div>
+        <Footer />
+      </>
+    );
+  }
   return (
     <>
-      <Navbar
-        page={composedPage as unknown as RendererPageConfig}
-        {...(renderedHero ? { renderedHero } : {})}
-      />
-      {showTransitionalTitleBand && (
-        // The band's markup, both the light-chrome layout and the dark
-        // full-width gradient, is the renderer's `TitleBand`. It was carried
-        // over from this file verbatim, so a site that renders it today keeps
-        // rendering exactly the same bytes.
-        <TitleBand
-          page={composedPage as unknown as RendererPageConfig}
-          chrome={siteData.chrome}
-        />
-      )}
-      {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-          streaming begins the instant this boundary suspends, which flushes a
-          200 shell before ComposedPageBody runs. Anything that must set a
-          STATUS therefore runs above this boundary, and since QA-G1-2 the
-          emptiness guard does (top of renderComposedPage), so an empty page
-          answers a real 404 and a failed read a real 5xx. Nothing inside
-          ComposedPageBody may call notFound(). */}
-      <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
-        <ComposedPageBody
-          siteData={siteData}
-          composedPage={composedPage}
-          components={components}
-          productQuery={productQuery}
-          lookupQuery={lookupQuery}
-          suppressSrTitle={showTransitionalTitleBand}
-          context={context}
-        />
-      </Suspense>
+      {navbar}
+      {titleBand}
+      {body}
       <Footer />
     </>
   );
@@ -370,16 +405,17 @@ async function ComposedPageBody({
   // Nothing in the synchronous shell needs it: Navbar, TitleBand and Footer are
   // Templates chrome, not CMS rich text.
   // RW4-6: a failed list read on a page with other content. See the component.
+  const composeInput = Object.keys(extraOptions).length
+    ? { ...input, options: { ...input.options!, ...extraOptions } }
+    : input;
   return (
     <>
       {listReadFailed && <ListLoadFailedNotice />}
       <RichTextImages map={richTextImageUrls}>
-        {composePage(
-          Object.keys(extraOptions).length
-            ? { ...input, options: { ...input.options!, ...extraOptions } }
-            : input,
-        )}
+        {composePage(composeInput)}
       </RichTextImages>
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ''}`)} />
     </>
   );
 }

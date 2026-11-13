@@ -7,8 +7,9 @@
  *
  * Rule (design section 5.3, review-t-pr224 note 1): a cached read mints
  * whichever route triggers the fill; the uncached readers never do.
- *  - `clientFetchCached` mints inside its `unstable_cache` closure, with no
- *    condition on the caller. A page render, the sitemap, an OG image, the
+ *  - `clientFetchCached` mints per upstream call (its `unstable_cache` closure,
+ *    and the fresh shell read of RW-4), with no condition on the caller. A
+ *    page render, the sitemap, an OG image, the
  *    icons and `/api/indexnow/urls` all reach it through `getSiteData` and the
  *    collection readers, and each fill is shared, by path, with page renders.
  *  - `clientFetch` / `clientFetchSafe` never mint, so a route that reads
@@ -52,10 +53,15 @@ function walk(dir: string): string[] {
 
 test('ALLOW: clientFetchCached mints inside its data-cache closure, once', () => {
   const cached = functionBody(client, 'clientFetchCached');
+  // Re-pointed for RW-4: the mint moved into `renderRead`, which the data-cache
+  // closure and the fresh shell read (also a render read) both call, so there
+  // is still one minter and it is still inside clientFetchCached.
   assert.match(
     cached,
-    /unstable_cache\(\s*async \(\) => doClientFetch<T>\(CLIENT_API, path, null, init, await internalTokenFor\(path, init\)\),/,
+    /const renderRead = async \(readPath: string\) =>\s*doClientFetch<T>\(CLIENT_API, readPath, null, init, await internalTokenFor\(readPath, init\)\);/,
   );
+  assert.match(cached, /unstable_cache\(\s*async \(\) => renderRead\(path\),/);
+  assert.match(cached, /const fresh = \(\) => renderRead\(versionedPath\(path, new Date\(\)\.toISOString\(\)\)\);/);
   assert.equal((client.match(/internalTokenFor\(/g) ?? []).length, 1, 'one call site in client.ts');
   assert.match(client, /import \{ internalTokenFor \} from '\.\/internalToken';/);
 });
@@ -99,8 +105,8 @@ test('REFUSE: the minter is server-only and reads no NEXT_PUBLIC_ name', () => {
 
 test('ALLOW (review note 1): the cached read mints with no condition on its caller, so a route that fills the cache mints', () => {
   const cached = functionBody(client, 'clientFetchCached');
-  // The only inputs to the mint are the path and the init: nothing about which route is rendering.
-  assert.match(cached, /await internalTokenFor\(path, init\)/);
+  // The only inputs to the mint are the path read and the init: nothing about which route is rendering.
+  assert.match(cached, /await internalTokenFor\(readPath, init\)/);
   assert.doesNotMatch(cached, /internalTokenFor\([^)]*(route|caller|segment|pathname)/i);
   // Positive control that route handlers DO reach it: these routes read site data through
   // getSiteData, which reads through clientFetchCached.

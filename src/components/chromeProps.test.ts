@@ -20,6 +20,12 @@ test('Footer threads palette, hours and timezone into the renderer footer', () =
   assert.match(code, /timezone=\{siteData\?\.timezone\}/);
 });
 
+test('W3-5 (renderer 1.98.5, #140 review N2): the footer badge reads the one switch the portal writes', () => {
+  // The renderer's Policy text line follows `footer.hidePoweredBy`, and its
+  // parity test restates this wiring; this pins the wiring itself.
+  assert.match(source('./Footer/index.tsx'), /hidePoweredBy=\{siteData\?\.footer\?\.hidePoweredBy \?\? false\}/);
+});
+
 test('REFUSE (OD-9): the footer never inherits an email the owner hid', () => {
   assert.match(source('./Footer/index.tsx'), /showEmail === false \? undefined : siteData\?\.businessInfo\?\.contactInfo\?\.email/);
 });

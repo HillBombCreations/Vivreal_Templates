@@ -34,9 +34,12 @@ import RecordPurchaseGoal from "@/components/Checkout/RecordPurchaseGoal";
 import ConfirmedOrderGate from "@/components/Checkout/ConfirmedOrderGate";
 import { shopHrefFrom } from "@/lib/orderConfirmationGate";
 import { renderComposedPage, composedPageIsEmpty } from "@/lib/renderComposedPage";
-import { composePage, renderedHeroFor, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
+import { composePage, renderedHeroFor, resolvePagePalette, TitleBand, shouldRenderTitleBand, isReservedPageSlug, findShopPage } from "@hillbombcreations/site-renderer";
+import { pageTreatmentStyle } from "@/lib/pageTreatment";
 import RichTextImages from "@/components/RichTextImages";
 import ListLoadFailedNotice from "@/components/ListLoadFailedNotice";
+import { JsonLd } from "@/components/JsonLd";
+import { pageListingEventsJsonLd } from "@/lib/seo/listingEvents";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
 import type { PageContextResult } from "@/lib/api/composition/buildPageContext";
 import { collectBindingTargets } from "@/lib/api/composition/bindings";
@@ -706,44 +709,73 @@ export default async function DynamicPage({
       : undefined;
     const renderedHero = heroContext ? darkRenderedHero(siteData.chrome, heroContext.input, renderedHeroFor) : null;
 
+    // Renderer #140 review N1, kept in lockstep with renderComposedPage.tsx:
+    // on a treated page the band and the body share one element carrying
+    // composePage's wrapper style, so the band sits inside the treated area.
+    // Unreachable today for the same reason as the band (see above).
+    const bandTreatment = showTransitionalTitleBand
+      ? pageTreatmentStyle(composedPage as unknown as RendererPageConfig, siteData, resolvePagePalette)
+      : undefined;
+
+    const navbar = (
+      <Navbar
+        page={composedPage as unknown as RendererPageConfig}
+        {...(renderedHero ? { renderedHero } : {})}
+      />
+    );
+    const titleBand = showTransitionalTitleBand && (
+      <TitleBand
+        page={composedPage as unknown as RendererPageConfig}
+        chrome={siteData.chrome}
+      />
+    );
+    // Streaming split (2026-07-13): buildPageContext's collection fetches
+    // are the slow half — they stream in behind this boundary while the
+    // shell (Navbar/band/Footer) + a structure-derived skeleton flush
+    // immediately. Same model as renderComposedPage; the fallback is
+    // derived from the SAME composedPage config as the real render.
+    //
+    // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
+    // this is a page-authored Suspense boundary, not the deleted
+    // implicit loading.tsx wrap — but it has the same failure mode.
+    // Streaming begins the instant this boundary suspends, which
+    // flushes a 200 shell before ComposedFormatBody runs. The
+    // `notFound()` inside ComposedFormatBody (the isEmpty guard below)
+    // therefore CANNOT set a 404 status — it only swaps the body. Any
+    // future guard on this route must run in the un-suspended parent
+    // (DynamicPage, above this boundary), not inside ComposedFormatBody.
+    const body = (
+      <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
+        <ComposedFormatBody
+          siteData={siteData}
+          composedPage={composedPage}
+          format={format}
+          productQuery={productQuery}
+          components={components}
+          scheduleView={scheduleView}
+          suppressSrTitle={showTransitionalTitleBand}
+          {...(heroContext ? { context: heroContext } : {})}
+        />
+      </Suspense>
+    );
+
+    if (bandTreatment) {
+      return (
+        <>
+          {navbar}
+          <div style={bandTreatment}>
+            {titleBand}
+            {body}
+          </div>
+          <Footer />
+        </>
+      );
+    }
     return (
       <>
-        <Navbar
-          page={composedPage as unknown as RendererPageConfig}
-          {...(renderedHero ? { renderedHero } : {})}
-        />
-        {showTransitionalTitleBand && (
-          <TitleBand
-            page={composedPage as unknown as RendererPageConfig}
-            chrome={siteData.chrome}
-          />
-        )}
-        {/* Streaming split (2026-07-13): buildPageContext's collection fetches
-            are the slow half — they stream in behind this boundary while the
-            shell (Navbar/band/Footer) + a structure-derived skeleton flush
-            immediately. Same model as renderComposedPage; the fallback is
-            derived from the SAME composedPage config as the real render. */}
-        {/* GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-            this is a page-authored Suspense boundary, not the deleted
-            implicit loading.tsx wrap — but it has the same failure mode.
-            Streaming begins the instant this boundary suspends, which
-            flushes a 200 shell before ComposedFormatBody runs. The
-            `notFound()` inside ComposedFormatBody (the isEmpty guard below)
-            therefore CANNOT set a 404 status — it only swaps the body. Any
-            future guard on this route must run in the un-suspended parent
-            (DynamicPage, above this boundary), not inside ComposedFormatBody. */}
-        <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
-          <ComposedFormatBody
-            siteData={siteData}
-            composedPage={composedPage}
-            format={format}
-            productQuery={productQuery}
-            components={components}
-            scheduleView={scheduleView}
-            suppressSrTitle={showTransitionalTitleBand}
-            {...(heroContext ? { context: heroContext } : {})}
-          />
-        </Suspense>
+        {navbar}
+        {titleBand}
+        {body}
         <Footer />
       </>
     );
@@ -833,28 +865,26 @@ async function ComposedFormatBody({
   }
 
   // H177: resolver around the composed body. See src/components/RichTextImages.
+  const composeInput =
+    components || scheduleView || suppressSrTitle
+      ? {
+          ...input,
+          options: {
+            ...input.options!,
+            ...(components ? { components } : {}),
+            // S2/OD#3: thread the validated ?view= param so the coordinated
+            // schedule arm can pass it as `initialView` to the override.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(scheduleView ? ({ scheduleView } as any) : {}),
+            // §11.8: the transitional title band owns the page h1 — the
+            // renderer's sr-only fallback must not stack a second one.
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
+          },
+        }
+      : input;
   const composedBody = (
-      <RichTextImages map={richTextImageUrls}>
-      {composePage(
-        components || scheduleView || suppressSrTitle
-          ? {
-              ...input,
-              options: {
-                ...input.options!,
-                ...(components ? { components } : {}),
-                // S2/OD#3: thread the validated ?view= param so the coordinated
-                // schedule arm can pass it as `initialView` to the override.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ...(scheduleView ? ({ scheduleView } as any) : {}),
-                // §11.8: the transitional title band owns the page h1 — the
-                // renderer's sr-only fallback must not stack a second one.
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                ...(suppressSrTitle ? ({ suppressSrTitle } as any) : {}),
-              },
-            }
-          : input,
-      )}
-      </RichTextImages>
+    <RichTextImages map={richTextImageUrls}>{composePage(composeInput)}</RichTextImages>
   );
 
   return (
@@ -885,6 +915,8 @@ async function ComposedFormatBody({
       ) : (
         composedBody
       )}
+      {/* F33: Event markup for the dated rows this body draws, from the same input. LAST, so no sibling above moves and every useId the page draws stays the same. */}
+      <JsonLd schema={pageListingEventsJsonLd(siteData, composeInput, `/${composedPage.slug ?? ""}`)} />
     </>
   );
 }

@@ -160,6 +160,36 @@ test('renderComposedPage still owns the mount point, so it still passes suppress
   );
 });
 
+test('[N1 REFUSE] on a treated page both wrappers mount the band inside the treated area', () => {
+  // Renderer #140 review N1 (1.98.5). composePage paints a page's colour
+  // treatment or chosen background on its own wrapper, and the Studio draws
+  // the band inside it. These wrappers mount the band outside it, so on a
+  // Tinted page the title sat on the plain site colour. The band and the body
+  // now share one element carrying composePage's wrapper style
+  // (`pageTreatmentStyle`, held to the renderer in pageTreatment.test.ts).
+  for (const [name, relative] of Object.entries(SOURCES)) {
+    const source = code(relative);
+    assert.match(
+      source,
+      /import\s*\{[^}]*\bresolvePagePalette\b[^}]*\}\s*from\s*["']@hillbombcreations\/site-renderer["']/,
+      `${name} must resolve the treatment with the renderer's own palette resolver`,
+    );
+    assert.match(
+      source,
+      /const bandTreatment = showTransitionalTitleBand\s*\?\s*pageTreatmentStyle\(composedPage as unknown as RendererPageConfig, siteData, resolvePagePalette\)\s*:\s*undefined;/,
+      `${name} does not compute the band's treatment from the page`,
+    );
+    assert.match(
+      source,
+      /<div style=\{bandTreatment\}>\s*\{titleBand\}\s*\{body\}\s*<\/div>/,
+      `${name} does not mount the band and the body inside one treated element`,
+    );
+    // The untreated arm keeps the children it always had, so an untreated
+    // page renders the same bytes.
+    assert.match(source, /\{navbar\}\s*\{titleBand\}\s*\{body\}\s*<Footer \/>/, `${name}: the untreated arm changed shape`);
+  }
+});
+
 /* ── what we import still decides what our band decided ────────────────────── */
 
 type BandPage = Parameters<typeof shouldRenderTitleBand>[0];

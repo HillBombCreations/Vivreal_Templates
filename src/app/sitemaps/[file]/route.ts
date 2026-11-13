@@ -1,4 +1,3 @@
-import { enforceDynamicUnlessIsr } from '@/lib/renderGate';
 import { getSiteData } from '@/lib/api/siteData';
 import { isDemoSite } from '@/lib/seo/demoSafety';
 import { withDemoRobotsHeader } from '@/lib/seo/demoRobotsHeader';
@@ -9,14 +8,14 @@ import { partNumber, partSitemapXml } from '@/lib/seo/sitemapXml';
 // /sitemap.xml's index as /sitemaps/<n>.xml. A part that does not exist is a
 // 404. See src/lib/seo/sitemapXml.ts.
 //
-// Keep 300 in step with ISR_REVALIDATE_SECONDS (`src/lib/renderMode.ts`).
-export const revalidate = 300;
+// Rendered per request through the site version fence, like /sitemap.xml
+// (RW-4 follow-up; see that route).
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ file: string }> },
 ): Promise<Response> {
-  await enforceDynamicUnlessIsr();
   const { file } = await params;
   // A name no part can have is a 404 without reading anything upstream.
   if (partNumber(file) === null) return new Response('Not found', { status: 404 });

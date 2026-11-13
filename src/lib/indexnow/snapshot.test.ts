@@ -4,6 +4,7 @@ import { createHmac } from 'node:crypto';
 import type { SiteData } from '@/types/SiteData';
 import { buildSiteMapForSite } from '../seo/siteMapPolicy.ts';
 import { DegradedUpstreamError } from '../api/siteData/degraded.ts';
+import { markFloorValue } from '../api/snapshot/floorValue.ts';
 import { SNAPSHOT_MAX_SKEW_MS, snapshotAnswer, verifySnapshotRequest } from './snapshot.ts';
 
 // Discovery batch 2.4 (design section 6, row "Snapshot route"). Every ALLOW has
@@ -110,4 +111,16 @@ test('REFUSE: degraded site data, or a page list refused as degraded, is a 503, 
     throw new DegradedUpstreamError('sitemap.xml', 'test');
   });
   assert.equal(refused.status, 503);
+});
+
+test('REFUSE (RW-4 I7, OQ4): a shell from the build floor, or one the site version fence marked stale, is a 503, never a list', async () => {
+  // getSiteData marks both the same way (`markFloorValue`); the list would read every page added since as removed.
+  let reads = 0;
+  const marked = await snapshotAnswer(markFloorValue({ ...LIVE }), async () => {
+    reads += 1;
+    return [];
+  });
+  assert.deepEqual(marked, { status: 503, body: { error: 'site data may be older than the stored site' } });
+  assert.equal(reads, 0, 'the page list is never read');
+  assert.equal((await snapshotAnswer({ ...LIVE }, async () => [])).status, 200, 'control: the same site, unmarked, answers 200');
 });

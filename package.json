@@ -11,12 +11,12 @@
     "start": "next start",
     "lint": "eslint",
     "pretest": "node checks/assert-no-renderer-overlay.mjs",
-    "test": "tsc --noEmit && node --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\" \"eslint-rules/*.test.mjs\" \"scripts/*.test.mjs\"",
+    "test": "tsc --noEmit && node --import ./scripts/aws-test-guard.mjs --experimental-strip-types --test \"src/**/*.test.ts\" \"src/app/.well-known/**/*.test.ts\" \"eslint-rules/*.test.mjs\" \"scripts/*.test.mjs\"",
     "check:free-year": "node --experimental-strip-types --test checks/freeYearPackage.test.ts"
   },
   "dependencies": {
     "@hillbombcreations/email-brand": "1.1.0",
-    "@hillbombcreations/site-renderer": "1.96.4",
+    "@hillbombcreations/site-renderer": "1.98.6",
     "@lottiefiles/react-lottie-player": "^3.6.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -44,7 +44,6 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@sentry/nextjs": "^10.42.0",
     "@tanstack/react-query": "^5.90.2",
-    "axios": "^1.12.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -77,7 +76,7 @@
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
     "eslint": "^9",
-    "eslint-config-next": "15.5.4",
+    "eslint-config-next": "16.4.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.13",
     "typescript": "^5"

@@ -27,6 +27,7 @@ import {
   statSnapshotFile,
 } from './snapshot/snapshotFile';
 import { parseSiteCacheTtlSeconds } from '../siteCacheTtl';
+import { siteVersionPath, versionedPath } from '../cacheInvalidation';
 
 export { ApiError, isQuotaError };
 
@@ -116,10 +117,12 @@ export const SNAPSHOT_RECORDER = createSnapshotRecorder({ siteId: SITE_ID });
  * The floor answer for `path` with the given reason, logged as
  * `site.snapshot.floor`, or undefined when the snapshot has none. For a caller
  * that decides on a value the seam already returned (a siteDetails read that
- * "succeeded" with no `values`, research 2.3), never for a failed read: the
- * seam answers those itself.
+ * "succeeded" with no `values`, research 2.3), or (`own_read`) for a shell
+ * resolution whose every read hit its deadline, so no seam answered at all
+ * (RW-4, the site version fence). A read the seam answered is never asked
+ * again: the seam answers those itself.
  */
-export function floorAnswerFor<T>(path: string, reason: 'values_missing'): T | undefined {
+export function floorAnswerFor<T>(path: string, reason: 'values_missing' | 'own_read'): T | undefined {
   const found = SNAPSHOT_FLOOR.lookup<T>(path);
   if (!found.hit) return undefined;
   SNAPSHOT_FLOOR.noteAnswer(path, { reason, elapsedMs: null });
@@ -179,6 +182,15 @@ async function readPreviewToken(): Promise<string | null> {
 }
 
 /**
+ * Whether this render is a portal preview, by the same decision every read
+ * here makes. The site version fence reads a preview as before the fence and
+ * learns nothing from it (RW-4, I9).
+ */
+export async function isPreviewRender(): Promise<boolean> {
+  return (await readPreviewToken()) !== null;
+}
+
+/**
  * Read the edge-computed bot verdict middleware.ts set on this request
  * (Task 14 item 3, dashboard-insights-phase-3-capture/plan.md, D7). Callers
  * thread this onto the product read's outbound headers so VR_Client_API can
@@ -229,6 +241,16 @@ export async function clientFetch<T>(
   init?: RequestInit
 ): Promise<T> {
   return doClientFetch<T>(CLIENT_API, path, await readPreviewToken(), init);
+}
+
+/**
+ * F41: VR_Client_API's site version (`GET /tenant/siteVersion`, CL7), the
+ * envelope's `data` or a throw. Never cached and never a preview read: it is
+ * the question "has the site changed", asked by `./siteData/siteVersionFence.ts`
+ * at most once per 5 s per instance, aborted by `signal` on its timeout.
+ */
+export async function fetchSiteVersion(siteId: string, signal: AbortSignal): Promise<unknown> {
+  return doClientFetch<unknown>(CLIENT_API, siteVersionPath(siteId), null, { signal });
 }
 
 /**
@@ -304,6 +326,20 @@ export async function clientFetchSafe<T>(
  *   portal. The time `revalidateSeconds` then acts purely as a backstop for
  *   missed webhooks.
  * - Tags are additive and backward-compatible; omit for time-only caching.
+ *
+ * `opts.fresh` (RW-4, the site shell only, see `createSiteVersionFence` in
+ * `../cacheInvalidation`): the same render read with no cache that can answer
+ * from before it began. It skips the data cache, and it carries its own start
+ * instant as `v`, a key no client.vivreal.io copy can predate (every query
+ * string is in that edge key; the Client takes `v` as a cache key and nothing
+ * else). It still goes through the memo and the floor below, on its own memo
+ * key, so concurrent fresh reads share one call and never join a cached read.
+ * Only ever asked for by a FULL reader, rendered per request. Its deadline
+ * arrives as `init.signal`, like any read's.
+ *
+ * `opts.onUpstreamError` sees the error of a read that went upstream and
+ * failed, before the capture: the fence tells a refusal (a 4xx) from a
+ * timeout, a 5xx or a network error by it (R1).
  */
 export async function clientFetchCached<T>(
   path: string,
@@ -311,20 +347,24 @@ export async function clientFetchCached<T>(
   revalidateSeconds: number,
   init?: RequestInit,
   tags?: string[],
-  opts?: { floor?: boolean }
+  opts?: { floor?: boolean; floorPath?: string; fresh?: boolean; onUpstreamError?: (err: unknown) => void }
 ): Promise<T> {
   const previewToken = await readPreviewToken();
 
   // F0 (next release 2026-11, T4): a cached read that goes upstream is a page
   // render read (a build, an ISR regeneration, a revalidation), so it carries
-  // the internal-meter token, minted here, inside the closure, so each upstream
-  // call gets a fresh one and nothing per-request reaches the cache key. The
-  // preview path below and every uncached `clientFetch` never mint.
+  // the internal-meter token, minted here, per upstream call, so each call gets
+  // a fresh one and nothing per-request reaches the cache key. A fresh shell
+  // read (RW-4) is the same render read and mints here too. The preview path
+  // below and every uncached `clientFetch` never mint.
+  const renderRead = async (readPath: string) =>
+    doClientFetch<T>(CLIENT_API, readPath, null, init, await internalTokenFor(readPath, init));
   const cached = unstable_cache(
-    async () => doClientFetch<T>(CLIENT_API, path, null, init, await internalTokenFor(path, init)),
+    async () => renderRead(path),
     ['vr-client-api', path],
     { revalidate: revalidateSeconds, ...(tags && tags.length ? { tags } : {}) }
   );
+  const fresh = () => renderRead(versionedPath(path, new Date().toISOString()));
 
   // V2: a read whose failures have REPEATED in the last 5 s answers without
   // going upstream again, so an outage costs one call per page request rather
@@ -345,13 +385,17 @@ export async function clientFetchCached<T>(
       now: Date.now,
     },
     {
-      path,
+      // The memo key: a fresh read has its own, so it never joins (or waits
+      // out the pause of) a cached read of the same path.
+      path: opts?.fresh ? `${path}#fresh` : path,
+      ...(opts?.floorPath ? { floorPath: opts.floorPath } : {}),
       fallback,
       floorOptOut: opts?.floor === false,
       // Never cache preview traffic, and never answer it from the floor.
       preview: previewToken ? () => clientFetchSafe<T>(path, fallback, init) : null,
-      read: cached,
+      read: opts?.fresh ? fresh : cached,
       onFailure: (err) => {
+        opts?.onUpstreamError?.(err);
         // Let 402 (quota, NOT freeze) bubble up so pages can show the quota page;
         // never cache it, and never memoise it (a throw here records nothing).
         if (err instanceof ApiError && err.status === 402) {

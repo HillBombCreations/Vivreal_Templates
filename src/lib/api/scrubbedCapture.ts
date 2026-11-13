@@ -10,11 +10,14 @@ const SCRUBBED_CAPTURE_FLUSH_MS = 1500;
 
 /**
  * The capture context is not the only thing an event carries. A route that
- * runs on Node gets, from the SDK's defaults, the incoming request body as
- * `request.data` (read whatever `sendDefaultPii` says) and every
- * `console.error` of the request as a breadcrumb (`clientFetch` and the
- * route's own helpers log the upstream error text, which can quote what the
- * visitor typed). This keeps only the method and the query-free URL.
+ * runs on Node gets, from the SDK's defaults, every `console.error` of the
+ * request as a breadcrumb (`clientFetch` and the route's own helpers log the
+ * upstream error text, which can quote what the visitor typed). This keeps
+ * only the method and the query-free URL. The request body (`request.data`)
+ * and the URL query used to arrive too; since the open-backlog release
+ * neither does on any event (`src/instrumentation.ts` turns the SDK's body
+ * reader off, and `src/lib/sentry/scrubCredentials.ts` deletes the body and
+ * cuts every URL at its query).
  *
  * Added as a scope processor inside `withScope`, it runs after the client's
  * own processors (which set `request.data`) and after the scope's

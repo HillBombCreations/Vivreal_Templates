@@ -86,6 +86,7 @@ async function run(root, overrides = {}) {
     now: () => Date.UTC(2026, 9, 24, 1, 23, 45),
     commit: 'abc1234',
     outputPaths: overrides.outputPaths,
+    removeSourceMaps: overrides.removeSourceMaps,
     log: (l) => logs.push(l),
     logError: (l) => errors.push(l),
   });
@@ -500,6 +501,124 @@ test('size guard ALLOW: a build under the line exits 0 and prints its build size
     const snapshot = files(root).reduce((n, p) => n + fs.statSync(p).size, 0);
     assert.ok(snapshot > 0);
     assert.ok(line.startsWith(`build size: prerendered 1 pages, ${1000 + snapshot} bytes with the snapshot's ${snapshot} `), line);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// W-TPL-SIZE (open-backlog release 2026-11): Turbopack writes a .map beside
+// every server and edge chunk, about 92 MB on 37104dbf that Amplify counts
+// against its output cap and nothing reads after the build
+// (scripts/build-source-maps.mjs). Paths are relative to `.next`.
+const MAP_BODY = '{"version":3}';
+const BUILT_MAPS = [
+  'build/chunks/c._.js.map',
+  'server/app/page.js.map',
+  'server/chunks/ssr/[root-of-the-server]__a._.js.map',
+  'server/edge/chunks/node_modules_b._.js.map',
+  'server/instrumentation.js.map',
+  'standalone/.next/server/app/page.js.map',
+  'static/chunks/d.js.map',
+];
+const KEPT_FILES = [
+  'server/chunks/ssr/[root-of-the-server]__a._.js',
+  'server/app/index.html',
+  'server/app/sitemap.xml.body',
+  // A directory whose name ends in .map is walked, never removed.
+  'server/app/site.map/index.html',
+  // .next/cache is not part of the deploy artifact; it is left alone.
+  'cache/images/e.js.map',
+];
+
+/** Every .map under `.next` except `.next/cache`, relative to `.next`, sorted. */
+function mapsInArtifact(root) {
+  const nextDir = path.join(root, '.next');
+  const found = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(nextDir, full).split(path.sep).join('/');
+      if (entry.isDirectory()) {
+        if (rel !== 'cache') walk(full);
+      } else if (entry.name.endsWith('.map')) {
+        found.push(rel);
+      }
+    }
+  };
+  walk(nextDir);
+  return found.sort();
+}
+
+/** A fake `next build` that also leaves what Turbopack writes, and records the maps present as it exits. */
+function buildWithMaps(seen, code = 0) {
+  const record = fakeBuild({ code });
+  return async (args) => {
+    for (const rel of [...BUILT_MAPS, ...KEPT_FILES]) {
+      const p = path.join(args.root, '.next', rel);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, rel.endsWith('.map') ? MAP_BODY : 'x');
+    }
+    const exitCode = await record(args);
+    seen.atExit = mapsInArtifact(args.root);
+    return exitCode;
+  };
+}
+
+test('source maps REFUSE: a good build leaves no .map in the deploy artifact (.next outside cache)', async () => {
+  const root = tempRoot();
+  try {
+    const seen = {};
+    const { code, logs } = await run(root, { spawnBuild: buildWithMaps(seen) });
+    assert.equal(code, 0);
+    assert.deepEqual(mapsInArtifact(root), [], 'every .map Amplify would count is removed');
+    assert.ok(
+      logs.includes(`source maps: removed ${BUILT_MAPS.length} files, ${BUILT_MAPS.length * MAP_BODY.length} bytes from the build output`),
+      logs.join('\n'),
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source maps ALLOW: every other file and .next/cache stay, and every map was still there when next build exited', async () => {
+  const root = tempRoot();
+  try {
+    const seen = {};
+    const { code } = await run(root, { spawnBuild: buildWithMaps(seen) });
+    assert.equal(code, 0);
+    // Anything that reads the maps inside next build (a source map upload, a
+    // prerender error) runs before the sweep, never after it.
+    assert.deepEqual(seen.atExit, [...BUILT_MAPS].sort());
+    for (const rel of KEPT_FILES) assert.ok(fs.existsSync(path.join(root, '.next', rel)), rel);
+    for (const p of files(root)) assert.ok(fs.existsSync(p), p);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source maps ALLOW: a failed next build is left as it is, so its maps are there to debug it', async () => {
+  const root = tempRoot();
+  try {
+    const { code } = await run(root, { spawnBuild: buildWithMaps({}, 2) });
+    assert.equal(code, 2);
+    assert.deepEqual(mapsInArtifact(root), [...BUILT_MAPS].sort());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('source maps REFUSE: a sweep that cannot remove a map fails the build by name and writes no snapshot', async () => {
+  const root = tempRoot();
+  try {
+    const { code, errors } = await run(root, {
+      spawnBuild: buildWithMaps({}),
+      removeSourceMaps: () => {
+        throw Object.assign(new Error('EPERM: operation not permitted'), { code: 'EPERM' });
+      },
+    });
+    assert.equal(code, 1);
+    assert.ok(errors.includes('source maps: FAILED to remove them (EPERM); the previous deployment stays live'), errors.join('\n'));
+    for (const p of files(root)) assert.equal(fs.existsSync(p), false, p);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

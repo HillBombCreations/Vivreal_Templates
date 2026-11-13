@@ -424,19 +424,30 @@ test('the bail does NOT fail a build that runs during an upstream outage', async
 /*  Layer 3: the literal contract with the route files                 */
 /* ------------------------------------------------------------------ */
 
-/** Every route file the ISR gate touches. */
+/**
+ * Every route file the ISR gate touches. The two sitemap routes left this list
+ * on purpose (RW-4 follow-up): they render per request in every mode, through
+ * the site version fence, so a new page is in the list on the first read after
+ * a save. Pinned below and in `cacheInvalidation.fence.test.ts`.
+ */
 const GATED_ROUTES = [
   '../app/page.tsx',
   '../app/[slug]/page.tsx',
   '../app/[slug]/[itemId]/page.tsx',
   '../app/robots.tsx',
-  '../app/sitemap.xml/route.ts',
-  '../app/sitemaps/[file]/route.ts',
   '../app/icon.tsx',
   '../app/apple-icon.tsx',
 ] as const;
 
 const sourceOf = (rel: string) => fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
+
+test('the sitemap routes render per request through the fence, never from a page cache', () => {
+  for (const rel of ['../app/sitemap.xml/route.ts', '../app/sitemaps/[file]/route.ts']) {
+    const source = sourceOf(rel);
+    assert.match(source, /^export const dynamic = 'force-dynamic';$/m, `${rel} renders per request`);
+    assert.doesNotMatch(source, /^export const revalidate\s*=/m, `${rel} keeps no page cache`);
+  }
+});
 
 test('every gated route exports the revalidate literal this module defines', () => {
   for (const rel of GATED_ROUTES) {

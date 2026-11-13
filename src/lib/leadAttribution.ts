@@ -183,8 +183,14 @@ export function mergeAttributionFields<T extends Record<string, string> | undefi
 
 /**
  * Contact-route variant. Same never-clobber merge, but tolerant of the looser
- * `Record<string, unknown>` shape `customFields` carries (the renderer parks
- * booleans and arrays there too).
+ * `Record<string, unknown>` shape `customFields` carries: the renderer's
+ * `buildSubmitPayload` parks every form field it did not map to the top level
+ * there, as the field's own value, so beside strings it holds a checkbox's
+ * boolean and a rating's number. No field type yields an array (renderer
+ * 1.98.0 `FormFieldType`: text, email, tel, textarea, select, checkbox,
+ * rating, date). VR_Client_API keeps a string, a boolean, a number and a list
+ * of plain strings and drops any other shape (`publicSubmissionValue`, CL-1b),
+ * so a value this merge adds is always a string it keeps.
  *
  * Verified against the receiving validator before shipping:
  * `VR_Client_API/src/scripts/validators.js` declares
