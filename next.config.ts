@@ -1,10 +1,50 @@
 import type { NextConfig } from "next";
+import { execFileSync } from "node:child_process";
 import path from "path";
 import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
+
+const COMMIT_SHA = /^[0-9a-f]{40}$/i;
+
+/**
+ * The Sentry release this build reports, always a 40-hex commit SHA
+ * (hotfix 2026-11-13, vivreal-hq hotfix plan SW-10, F263 item 3; the portal's
+ * P-4 is the same rule).
+ *
+ * Left to itself the SDK names the release after the first CI variable it
+ * finds (`getSentryRelease` in @sentry/node-core), and on Amplify that is
+ * `AWS_COMMIT_ID`. A rebuild started with `start-job` (how Secure and
+ * EventHandler rebuild a site, and how the release checks start one) sets it
+ * to the word `HEAD`, so every event of that build was filed under a release
+ * no proof could find. So `AWS_COMMIT_ID` is used only when it IS a commit
+ * SHA; otherwise the checkout's own `git rev-parse HEAD`. A value that is not
+ * 40 hex characters is never passed as the release: with neither, this
+ * answers `undefined`.
+ */
+export function sentryReleaseName(
+  awsCommitId: string | undefined,
+  gitHead: () => string | undefined,
+): string | undefined {
+  const fromAmplify = awsCommitId?.trim();
+  if (fromAmplify && COMMIT_SHA.test(fromAmplify)) return fromAmplify.toLowerCase();
+  const fromGit = gitHead()?.trim();
+  return fromGit && COMMIT_SHA.test(fromGit) ? fromGit.toLowerCase() : undefined;
+}
+
+function readGitHead(): string | undefined {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    // Not a git checkout, or no git: there is no SHA to name, and
+    // `sentryReleaseName` then names no release, which is the handled outcome.
+    return undefined;
+  }
+}
+
+const sentryRelease = sentryReleaseName(process.env.AWS_COMMIT_ID, readGitHead);
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['10.0.0.90'],
@@ -197,5 +237,11 @@ export default withSentryConfig(nextConfig, {
   sourcemaps: {
     disable: true,
   },
+  // SW-10: the commit SHA, never `HEAD` (`sentryReleaseName` above). The SDK
+  // writes it into the build as `_sentryRelease`, which every runtime's init
+  // reports and the heartbeat names (src/instrumentation.ts). With no SHA at
+  // all (a build outside a git checkout, which Amplify never is), the build
+  // names no release rather than one called `HEAD`.
+  release: sentryRelease ? { name: sentryRelease } : { create: false },
   silent: true,
 });
