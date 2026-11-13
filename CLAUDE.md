@@ -81,7 +81,7 @@ error it reports is one the fleet build would reject. `npm test` and
 | Icons | Lucide React |
 | UI Components | Radix UI primitives |
 | Animations | Framer Motion |
-| Monitoring | `@sentry/nextjs` (sourcemap upload disabled for templates) |
+| Monitoring | `@sentry/nextjs` (sourcemap upload disabled for templates). After `next build` exits, `npm run build` deletes every `.map` under `.next` outside `.next/cache` (`scripts/build-source-maps.mjs`): about 92 MB Amplify counted against its output cap. The standalone server Amplify runs carried none of the chunk maps even before this (W-TPL-SIZE, 2026-11) |
 | Data | Server-side fetch via `clientFetch`/`clientFetchCached` (all API calls are server-only) |
 | State | React Context (SiteDataContext) — site branding/config only |
 
