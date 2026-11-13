@@ -319,7 +319,8 @@ export function shopperQueryNarrows(query?: ShopperQuery): boolean {
 /**
  * True when the page's reads could be narrowed by a shopper query, which is
  * only the products read: `buildPageContext` sends the query to a payments
- * provider binding and to nothing else (collections read with `{limit:100}`).
+ * provider binding and to nothing else (collections read every page with no
+ * query, `readCollectionPageList` in `../snapshot/fill.ts`).
  *
  * A legacy page (no `blocks`) binds through `getPageBindingsByRole`, which is
  * server-only and cannot be called here, so it is assumed to read products.

@@ -57,6 +57,16 @@ const TARGETS: Record<string, BindingTargetsLike> = {
   subscribers: { collectionIds: ['subs'], integrationTypes: [] },
 };
 const targetsOf = (p: PageConfig) => TARGETS[p.slug as string] ?? { collectionIds: [], integrationTypes: [] };
+
+/** A list read in the shape the real reader answers it (`getCollectionItems`), empty, degraded as given. */
+const listPage = (degraded = false) => ({
+  items: [],
+  totalCount: 0,
+  sourceCount: 0,
+  degraded,
+  fromFloor: false,
+  richTextImageUrls: {},
+});
 const SITE_DATA = { pageConfigs: PAGES, homePageConfig: HOME } as Pick<SiteData, 'pageConfigs' | 'homePageConfig'>;
 
 test('T16: the manifest lists exactly the row 1 to 6 keys, in the runtime key shape', () => {
@@ -103,7 +113,10 @@ test('T16 executor: makes the row 2, 4, 5 and 6 reads through the injected reade
     siteId: SITE,
     recorder: { active: true, writeManifest: (m) => manifests.push(m) },
     targetsOf,
-    getCollectionItems: async (id, opts) => calls.push(`c:${id}:${opts.limit}`),
+    getCollectionItems: async (id, opts) => {
+      calls.push(`c:${id}:${opts.limit}`);
+      return listPage();
+    },
     getIntegrationItems: async (type, opts) => calls.push(`i:${type}:${opts.limit}`),
     buildNestedPageContext: async (p) => calls.push(`nested:${p.slug}`),
     log: () => {},
@@ -122,7 +135,7 @@ test('T16 executor: inert when the recorder is not recording (every build but th
     siteId: SITE,
     recorder: { active: false, writeManifest: () => { throw new Error('must not write'); } },
     targetsOf,
-    getCollectionItems: async () => { reads += 1; },
+    getCollectionItems: async () => { reads += 1; return listPage(); },
     getIntegrationItems: async () => { reads += 1; },
     buildNestedPageContext: async () => { reads += 1; },
     log: () => {},
@@ -134,9 +147,12 @@ test('T16 executor: inert when the recorder is not recording (every build but th
 
 // The real readers RESOLVE on an upstream 5xx: list readers hand back their
 // degraded placeholder, a page context reports `listReadFailed`. These fakes
-// resolve the same shapes, never reject. SITE_DATA plans 10 fill reads over
-// 10 distinct snapshot keys.
-const FILL_TASKS = 10;
+// resolve the same shapes, never reject. SITE_DATA plans 11 fill reads over
+// 10 distinct snapshot keys: the nested page's collection (`specials`) is read
+// directly (SW-13, every page counted) and again by its page context, both
+// answering for the same key.
+const FILL_TASKS = 11;
+const FILL_KEYS = 10;
 
 function fillWith(behaviour: (call: number) => boolean, extra: { targetsOf?: typeof targetsOf } = {}) {
   const lines: string[] = [];
@@ -145,7 +161,7 @@ function fillWith(behaviour: (call: number) => boolean, extra: { targetsOf?: typ
   let calls = 0;
   const reader = async () => {
     calls += 1;
-    return { items: [], degraded: behaviour(calls) };
+    return listPage(behaviour(calls));
   };
   return {
     lines,
@@ -177,12 +193,12 @@ test('B1 REFUSE: reads that RESOLVE degraded (a 5xx) are counted failed, retried
   assert.equal(summary.failed, FILL_TASKS, 'still failing after the one retry');
   assert.equal(summary.failedFirstPass, FILL_TASKS);
   assert.deepEqual(f.sleeps, [2_000], 'one pause (2 s) before the retry');
-  assert.equal(summary.failedKeys.length, FILL_TASKS);
+  assert.equal(summary.failedKeys.length, FILL_KEYS);
   for (const k of summary.failedKeys) assert.match(k, /^\/tenant\/(collectionObjects|integrationObjects) [0-9a-f]{12}$/);
   assert.ok(!JSON.stringify(summary).includes('collectionId='), 'no query values in the log');
   const withFailed = f.manifests.find((m) => Array.isArray(m.failedKeys));
   assert.ok(withFailed, 'the failed keys reach the wrapper');
-  assert.equal((withFailed.failedKeys as string[]).length, FILL_TASKS);
+  assert.equal((withFailed.failedKeys as string[]).length, FILL_KEYS);
   assert.ok((withFailed.failedKeys as string[]).includes('/tenant/collectionObjects?limit=100&collectionId=specials'), 'a failed nested page names its keys');
 });
 
@@ -273,6 +289,7 @@ test('the fill pass never has more than FILL_CONCURRENCY reads in flight (Phase 
     peak = Math.max(peak, inFlight);
     await new Promise((r) => setTimeout(r, 5));
     inFlight -= 1;
+    return listPage();
   };
   const many = { ...SITE_DATA, homePageConfig: HOME };
   await fillSnapshotAtBuild(many, {

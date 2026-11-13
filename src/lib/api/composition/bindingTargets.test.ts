@@ -400,8 +400,12 @@ test('SOURCE PIN: buildPageContext fetches the collected ids and keys the map by
   // that exact key.
   const code = source('./buildPageContext.ts');
   assert.ok(code.includes('collectBindingTargets(page)'), 'the page context must ask the collector');
+  // Re-pointed for SW-13 (hotfix 2026-11-13, F257): the id now reaches
+  // `getCollectionItems` through `readCollectionPageList`, which reads every
+  // page of it (`../snapshot/fill.ts`; driven for real in
+  // `./boundListPaging.test.ts`).
   assert.ok(
-    /collectionIds\.map\(async \(id\) => \{[\s\S]*?getCollectionItems\(id,/.test(code),
+    /collectionIds\.map\(async \(id\) => \{[\s\S]*?readCollectionPageList\(id, getCollectionItems,/.test(code),
     'every collected id must be fetched',
   );
   assert.ok(
