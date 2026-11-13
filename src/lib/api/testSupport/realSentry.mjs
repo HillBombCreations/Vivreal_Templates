@@ -48,6 +48,9 @@ export const wrapRouteHandlerWithSentry = Sentry.wrapRouteHandlerWithSentry;
 export const captureException = Sentry.captureException;
 export const captureMessage = Sentry.captureMessage;
 export const flush = Sentry.flush;
+// `src/instrumentation.ts` sends its SW-9 heartbeat through this (hotfix
+// 2026-11-13, `src/lib/sentry/heartbeat.sdk.test.ts`).
+export const logger = Sentry.logger;
 export const close = Sentry.close;
 export const SDK_VERSION = Sentry.SDK_VERSION;
 
