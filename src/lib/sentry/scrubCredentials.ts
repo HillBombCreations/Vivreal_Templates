@@ -196,6 +196,58 @@ export function scrubCredentials<E>(event: E): E {
   return event;
 }
 
+/**
+ * SW-A6 (F220, release A T-3): the ONLY request headers a SERVER event keeps.
+ * The deny list above names the credentials the fleet knew about; a header
+ * nobody listed (a new provider signature, a forwarded host, the release
+ * check's planted canary `x-planted-canary`) still rode on every server event.
+ * So the server inits keep these ten and drop the rest. `x-vr-check-control`
+ * stays on purpose: it is how a release check finds its own control event.
+ * The browser init is not changed (`src/instrumentation-client.ts`).
+ */
+export const SENTRY_KEPT_HEADERS: readonly string[] = Object.freeze([
+  'content-type', 'content-length', 'accept', 'accept-encoding', 'accept-language', 'user-agent',
+  'x-vr-check-control', 'x-amzn-trace-id', 'sentry-trace', 'baggage',
+]);
+
+const KEPT_HEADERS: ReadonlySet<string> = new Set(SENTRY_KEPT_HEADERS);
+
+/** `http.request.header.<name>[.<cookie>]`: the header name, in the SDK's underscore spelling. */
+const REQUEST_HEADER_ATTRIBUTE = /^http\.request\.header\.([^.]+)/;
+
+function keepOnlyKeptHeaders(headers: unknown): void {
+  if (!isBag(headers)) return;
+  for (const name of Object.keys(headers)) {
+    if (!KEPT_HEADERS.has(name.toLowerCase())) delete headers[name];
+  }
+}
+
+function keepOnlyKeptHeaderAttributes(data: unknown): void {
+  if (!isBag(data)) return;
+  for (const key of Object.keys(data)) {
+    const match = REQUEST_HEADER_ATTRIBUTE.exec(key.toLowerCase());
+    if (match && !KEPT_HEADERS.has(match[1].replace(/_/g, '-'))) delete data[key];
+  }
+}
+
+/**
+ * `beforeSend` and `beforeSendTransaction` for the two SERVER inits (Node and
+ * edge, `src/instrumentation.ts`): everything `scrubCredentials` removes, then
+ * every request header off SW-A6's list, from `request.headers` and from the
+ * `http.request.header.*` attributes of the trace context and every span.
+ */
+export function scrubServerEvent<E>(event: E): E {
+  const scrubbed = scrubCredentials(event);
+  if (!isBag(scrubbed)) return scrubbed;
+  if (isBag(scrubbed.request)) keepOnlyKeptHeaders(scrubbed.request.headers);
+  const contexts = scrubbed.contexts;
+  if (isBag(contexts) && isBag(contexts.trace)) keepOnlyKeptHeaderAttributes(contexts.trace.data);
+  if (Array.isArray(scrubbed.spans)) {
+    for (const span of scrubbed.spans) if (isBag(span)) keepOnlyKeptHeaderAttributes(span.data);
+  }
+  return scrubbed;
+}
+
 /** `beforeBreadcrumb`: the same header and attribute keys, and every URL query, out of `data`. */
 export function scrubBreadcrumbCredentials<B>(breadcrumb: B): B {
   if (!isBag(breadcrumb) || !isBag(breadcrumb.data)) return breadcrumb;
