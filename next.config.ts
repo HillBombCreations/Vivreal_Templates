@@ -5,6 +5,7 @@ import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
+import { scriptPolicyHeaders } from "./src/lib/scriptPolicy.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
@@ -116,11 +117,19 @@ const nextConfig: NextConfig = {
   // vivreal.io itself is served by this app, and either directive there would
   // bind every *.vivreal.io host, which this app does not own. A browser
   // ignores the header over plain HTTP, so local dev is unaffected.
+  //
+  // F173 (release A T-2, SW-A21): the allowed-sites script policy, report-only,
+  // on the same every-route entry. Its report endpoint is built from the DSN
+  // when the build evaluates this, and no DSN means no header
+  // (src/lib/scriptPolicy.ts).
   async headers() {
     return [
       {
         source: '/:path*',
-        headers: [{ key: 'Strict-Transport-Security', value: 'max-age=31536000' }],
+        headers: [
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+          ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN),
+        ],
       },
     ];
   },
