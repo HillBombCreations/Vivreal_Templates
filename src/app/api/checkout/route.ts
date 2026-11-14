@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { redactSecrets, topLevelKeys } from "@/lib/log/redact";
 import { checkoutRefusal, checkoutSiteId } from "@/lib/checkoutRequest";
 import { forwardedCheckoutExtras } from "@/lib/cart/cartSettings";
+import { getEdgeSiteMap } from "@/lib/edgeSiteMap";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { products, requiresShipping, originUrl, code } = body as Record<string, unknown>;
+  const { products, requiresShipping, code } = body as Record<string, unknown>;
 
   if (!Array.isArray(products) || products.length === 0) {
     return NextResponse.json(
@@ -60,11 +61,16 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (typeof originUrl !== "string" || originUrl.length === 0) {
-    return NextResponse.json(
-      { error: "Missing originUrl" },
-      { status: 400 }
-    );
+  // F165-G1-05 (release A T-7): the address a buyer returns to after paying is
+  // this site's own, never one the request names. VR_Client_API builds the
+  // provider's return addresses on `originUrl`, so a body's value used to send
+  // a buyer, session id appended, wherever the caller chose. The body's
+  // `originUrl` is no longer read at all. `durable` refuses an Amplify build
+  // host; no address of the site's own (or no site read) starts no checkout.
+  const originUrl = (await getEdgeSiteMap())?.origin;
+  if (!originUrl) {
+    console.error("[checkout] no address of this site's own resolved; checkout not started");
+    return NextResponse.json(checkoutRefusal(502, undefined), { status: 502 });
   }
 
   // Optional promo code — advisory only. The client charset is constrained here
