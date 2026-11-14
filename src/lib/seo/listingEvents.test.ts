@@ -62,8 +62,11 @@ const items = new Map<string, ContentItem[]>([
     item({ title: 'Old Market', date: '2020-03-14T01:00:00.000Z', time: '6:00 pm', location: 'Past Hall: 1 Main St', venue: 'Past Hall: 1 Main St' }),
   ]],
   // The Comedy Collective's "Hotshots", as stored: the date at 07:00Z, the time typed separately.
+  // F158 (T-1): two more cards whose typed time is not a clock for certain.
   ['shows', [
     item({ title: 'Hotshots', date: '2025-11-15T07:00:00.000Z', time: '9:00 pm', venue: '1331 N. Milwaukee Ave., Chicago IL' }),
+    item({ title: 'Doors Night', date: '2025-11-22T07:00:00.000Z', time: 'Doors 7, show 8', venue: '1447 N Wells St' }),
+    item({ title: 'Seven Show', date: '2025-11-29T07:00:00.000Z', time: '7:00', venue: '1447 N Wells St' }),
   ]],
   ['stops', [
     item({ title: 'Downtown market', location_name: 'Downtown Phoenix Farmers Market', address: '721 N Central Ave', start: `${YEAR}-03-08T15:00:00.000Z` }),
@@ -168,33 +171,37 @@ for (const [name, page] of [
   });
 }
 
-test("REFUSE (review B1): What's On rows get no Event while the renderer gives them a clock the card does not draw", () => {
+test("ALLOW (F158, T-1): a What's On row with a typed time gets an Event at that time with its zone's offset", () => {
   const shows = serve({ format: 'standard', blocks: [whatsOnShows] });
-  assert.match(text(shows.html), /Hotshots/, 'control: the card is drawn');
   assert.match(text(shows.html), /9:00 pm/i, 'control: the card draws the typed time');
-  assert.ok(shows.rows.length > 0, 'control: eventRows returns the row');
-  assert.deepEqual(shows.events, [], 'no Event, never one that says 01:00 for a 9:00 pm show');
-  const markets = serve({ format: 'standard', blocks: [layoutBlock('whats-on')] });
-  assert.ok(markets.rows.length > 0, 'control: rows with streets and typed times');
-  assert.deepEqual(markets.events, [], "no What's On Event at all");
-  // Nested inside a group, and alongside an agenda on the same page: only the What's On block is held.
-  const group = { id: 'grp', order: 0, enabled: true, type: { kind: 'group' }, config: { children: [whatsOnShows] } };
-  const held = (eventSchema as unknown as Record<string, unknown>).heldListingBlockIds; // a named export, checked next
-  assert.equal(typeof held, 'function', 'eventSchema.ts exports heldListingBlockIds');
-  assert.deepEqual([...(held as (page: unknown) => Set<string>)({ blocks: [group, layoutBlock('agenda')] })], ['blk_shows']); // checked above
+  const hotshots = shows.events.find((e) => e.name === 'Hotshots');
+  assert.ok(hotshots, `an Event for the drawn Hotshots card, got ${JSON.stringify(shows.events.map((e) => e.name))}`);
+  // The card's 9:00 pm in the block's Chicago zone, never the stored instant's 01:00.
+  assert.equal(hotshots.startDate, '2025-11-15T21:00:00-06:00');
+  assert.deepEqual(hotshots.location, { '@type': 'Place', name: '1331 N. Milwaukee Ave., Chicago IL', address: { '@type': 'PostalAddress', streetAddress: '1331 N. Milwaukee Ave., Chicago IL' } });
+  assertDrawn(shows.html, hotshots);
+  // Beside an agenda on the same page: both blocks' rows are marked up.
   const mixed = serve({ format: 'standard', blocks: [whatsOnShows, { ...layoutBlock('agenda'), order: 1 }] });
   assert.ok(mixed.events.some((e) => e.name === 'Farmers Market'), 'the agenda beside it keeps its Events');
-  assert.ok(!mixed.events.some((e) => e.name === 'Hotshots'));
+  assert.ok(mixed.events.some((e) => e.name === 'Hotshots' && e.startDate === '2025-11-15T21:00:00-06:00'));
+  // A What's On block with no zone of its own draws in the site's zone, and so does its Event.
+  const markets = serve({ format: 'standard', blocks: [layoutBlock('whats-on')] });
+  const night = markets.events.find((e) => e.name === 'Night Market');
+  assert.ok(night, `an Event for the drawn Night Market card, got ${JSON.stringify(markets.events.map((e) => e.name))}`);
+  assert.equal(night.startDate, `${YEAR}-03-13T18:00:00-07:00`, 'the typed 6:00 pm on the Phoenix day the card draws');
+  assertDrawn(markets.html, night);
 });
 
-test("TRIPWIRE (review B1): renderer eventRows (whatsOnRows, showDateStart) still drops the What's On typed time", () => {
-  // When this goes red the renderer gives What's On rows the time the card draws:
-  // delete the hold in eventSchema.ts `heldListingBlockIds` and let these rows through.
-  const { rows } = serve({ format: 'standard', blocks: [whatsOnShows] });
-  const hotshots = rows.find((r) => r.name === 'Hotshots');
-  assert.ok(hotshots, 'control: the row exists');
-  assert.deepEqual(hotshots.start, { instant: '2025-11-15T07:00:00.000Z', timeZone: 'America/Chicago' }, 'the stored instant, whose clock (01:00) is not the card\'s 9:00 pm');
-  assert.doesNotMatch(JSON.stringify(hotshots), /9:00|21:00/, 'the typed time is not in the row');
+test("REFUSE (F158, T-1): a What's On row whose typed time is free text or an ambiguous clock gets the date only", () => {
+  const shows = serve({ format: 'standard', blocks: [whatsOnShows] });
+  assert.match(text(shows.html), /Doors 7, show 8/, 'control: the card draws the free text as typed');
+  const doors = shows.events.find((e) => e.name === 'Doors Night');
+  assert.ok(doors, 'control: the free-text card has a street, so it has an Event');
+  assert.equal(doors.startDate, '2025-11-22', 'the day the card draws, and no time it does not');
+  const seven = shows.events.find((e) => e.name === 'Seven Show');
+  assert.ok(seven, 'control: the ambiguous-clock card has an Event');
+  assert.equal(seven.startDate, '2025-11-29', '"7:00" may be morning or evening, so the day alone');
+  for (const event of [doors, seven]) assertDrawn(shows.html, event);
 });
 
 test('ALLOW (schedule): the row\'s own street and its drawn time are used', () => {
