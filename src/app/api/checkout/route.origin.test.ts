@@ -35,19 +35,28 @@ type EdgeMapModule = { __resetEdgeSiteMapCacheForTests(): void };
 
 /**
  * One checkout through the real route. `site` is what VR_Client_API's
- * siteDetails answers (`null`: it fails); every createCheckoutSession body the
- * route sends is returned, parsed.
+ * siteDetails answers (`null`: it fails with a 503); every createCheckoutSession
+ * body the route sends is returned, parsed, with the number of siteDetails
+ * reads. `fresh: false` keeps the edge map's state from the call before (a
+ * retry on the same instance); `siteId: false` runs with no SITE_ID.
  */
-async function checkout(body: Record<string, unknown>, site: SiteFields | null): Promise<{ reply: Reply; forwarded: Array<Record<string, unknown>> }> {
+async function checkout(
+  body: Record<string, unknown>,
+  site: SiteFields | null,
+  { fresh = true, siteId = true }: { fresh?: boolean; siteId?: boolean } = {},
+): Promise<{ reply: Reply; forwarded: Array<Record<string, unknown>>; siteReads: number }> {
   const edgeMap = (await import("@/lib/edgeSiteMap")) as unknown as EdgeMapModule; // the same module instance the route reads
-  edgeMap.__resetEdgeSiteMapCacheForTests();
+  if (fresh) edgeMap.__resetEdgeSiteMapCacheForTests();
   const { POST } = (await import("./route.ts")) as unknown as RouteModule; // the real handler; its NextResponse is the loader's plain stand-in
   const forwarded: Array<Record<string, unknown>> = [];
+  let siteReads = 0;
   const realFetch = globalThis.fetch;
+  if (!siteId) delete process.env.SITE_ID;
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input);
     if (url.startsWith(`${CLIENT_API}/tenant/siteDetails`)) {
-      if (!site) return new Response(JSON.stringify({ success: false, data: null, error: "down" }), { status: 500 });
+      siteReads += 1;
+      if (!site) return new Response(JSON.stringify({ success: false, data: null, error: "down" }), { status: 503 });
       const values = { lifecycleState: "live", ...(site.canonicalUrl ? { canonicalUrl: site.canonicalUrl } : {}) };
       return Response.json({
         success: true,
@@ -63,9 +72,10 @@ async function checkout(body: Record<string, unknown>, site: SiteFields | null):
   };
   try {
     const reply = await POST({ json: async () => body });
-    return { reply, forwarded };
+    return { reply, forwarded, siteReads };
   } finally {
     globalThis.fetch = realFetch;
+    process.env.SITE_ID = SITE_ID;
   }
 }
 
@@ -87,13 +97,38 @@ test("REFUSE (T-7): a body with no originUrl no longer answers \"Missing originU
   assert.equal(forwarded[0].originUrl, "https://shop.example.com");
 });
 
-test("REFUSE (T-7): a site whose only address is an Amplify build host, or no site read at all, starts no checkout", async () => {
-  for (const site of [{ live_url: "https://main.d1abcdefghijk.amplifyapp.com" }, null]) {
-    const { reply, forwarded } = await checkout({ products: PRODUCTS, requiresShipping: false, originUrl: "https://main.d1abcdefghijk.amplifyapp.com" }, site);
+test("REFUSE (T-7): a site read that finds only an Amplify build host, or no site read and no site id, starts no checkout", async () => {
+  // Review B1 moved the no-read case: it now starts a checkout by site id
+  // (the two B1 tests below). With no site id there is nothing for
+  // VR_Client_API to find the site by, so that case stays refused.
+  for (const [site, options] of [
+    [{ live_url: "https://main.d1abcdefghijk.amplifyapp.com" }, {}],
+    [null, { siteId: false }],
+  ] as const) {
+    const { reply, forwarded } = await checkout({ products: PRODUCTS, requiresShipping: false, originUrl: "https://main.d1abcdefghijk.amplifyapp.com" }, site, options);
     assert.equal(reply.status, 502, `site ${JSON.stringify(site)}`);
     assert.equal(reply.body.error, "We could not start checkout just now. Please try again in a moment.");
     assert.deepEqual(forwarded, [], "nothing was sent to the payment provider's side");
   }
+});
+
+test("REFUSE (B1): a failed site read forwards no originUrl at all, only the site id; nothing from the body's address", async () => {
+  const { reply, forwarded, siteReads } = await checkout({ products: PRODUCTS, requiresShipping: false, originUrl: "https://elsewhere.example" }, null);
+  assert.equal(siteReads > 0, true, "control: the route did try to read the site");
+  assert.equal(reply.status, 200, "the checkout started");
+  assert.deepEqual(reply.body, { url: STRIPE_URL });
+  // The whole forwarded body: no originUrl key, so VR_Client_API builds the return address from the site.
+  assert.deepEqual(forwarded, [{ products: PRODUCTS, requiresShipping: false, siteId: SITE_ID }]);
+});
+
+test("ALLOW (B1): a retry right after a failed site read starts a checkout, inside the read's 30 s back-off", async () => {
+  const first = await checkout({ products: PRODUCTS, requiresShipping: true }, null);
+  assert.equal(first.siteReads > 0, true, "control: the first checkout's site read was made, and failed");
+  // The same instance seconds later, the site healthy again: the edge map does not read inside its back-off.
+  const retry = await checkout({ products: PRODUCTS, requiresShipping: true }, OWN_SITE, { fresh: false });
+  assert.equal(retry.siteReads, 0, "control: the retry falls inside the back-off and makes no site read");
+  assert.equal(retry.reply.status, 200);
+  assert.deepEqual(retry.forwarded, [{ products: PRODUCTS, requiresShipping: true, siteId: SITE_ID }]);
 });
 
 test("ALLOW (T-7): a checkout on the site's own origin forwards that origin, and the rest of the body as before", async () => {

@@ -65,12 +65,31 @@ export async function POST(request: NextRequest) {
   // this site's own, never one the request names. VR_Client_API builds the
   // provider's return addresses on `originUrl`, so a body's value used to send
   // a buyer, session id appended, wherever the caller chose. The body's
-  // `originUrl` is no longer read at all. `durable` refuses an Amplify build
-  // host; no address of the site's own (or no site read) starts no checkout.
-  const originUrl = (await getEdgeSiteMap())?.origin;
-  if (!originUrl) {
-    console.error("[checkout] no address of this site's own resolved; checkout not started");
+  // `originUrl` is no longer read at all. Three outcomes:
+  //  - the site was read and has an address of its own (`durable`, never an
+  //    Amplify build host): that address is forwarded;
+  //  - the site was read and has none: no checkout starts, there is no
+  //    address of the business's own to send a buyer to;
+  //  - the site was NOT read (review B1): the edge map is this function's own
+  //    copy, so the first checkout on an instance makes its own read, and a
+  //    read that failed is not retried for 30 s. A checkout must not wait on
+  //    that, so it is forwarded with NO `originUrl` and with `siteId`, and
+  //    VR_Client_API (CL-S2, release A v2.22.0) builds the return address from
+  //    that site itself. Without a `siteId` it could not find the site either,
+  //    so then no checkout starts.
+  const siteId = checkoutSiteId(process.env.SITE_ID);
+  const siteMap = await getEdgeSiteMap();
+  const originUrl = siteMap?.origin;
+  if (siteMap ? !originUrl : !siteId) {
+    console.error(
+      siteMap
+        ? "[checkout] this site has no address of its own; checkout not started"
+        : "[checkout] site details unavailable and no site id; checkout not started"
+    );
     return NextResponse.json(checkoutRefusal(502, undefined), { status: 502 });
+  }
+  if (!siteMap) {
+    console.warn("[checkout] site details unavailable; the return address is left to VR_Client_API by site id");
   }
 
   // Optional promo code — advisory only. The client charset is constrained here
@@ -84,7 +103,6 @@ export async function POST(request: NextRequest) {
 
   // Forward to VR_Client_API — Stripe key is resolved server-side from group integrations
   const apiKey = process.env.API_KEY;
-  const siteId = checkoutSiteId(process.env.SITE_ID);
   // Owner ideas T13/T15 (3.9, 3.10): the shopper's note and how the order is
   // fulfilled, re-checked here and forwarded only with a site id (VR_Client_API
   // reads the shop's rules off the site). Never a fee: the server decides it
@@ -106,7 +124,8 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         products,
         requiresShipping: Boolean(requiresShipping),
-        originUrl,
+        // The site's own address, or no key at all when the site was not read (above).
+        ...(originUrl ? { originUrl } : {}),
         // Only forward when present so no-code checkouts are byte-identical.
         ...(normalizedCode ? { code: normalizedCode } : {}),
         // QA-W2-4: names the checkout's business, logo and colour. Sent only
