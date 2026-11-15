@@ -14,7 +14,8 @@
  * APIs, and all four are provided by the Next middleware sandbox:
  * next/dist/server/web/sandbox/context.js wires `setTimeout`/`clearTimeout` to
  * its TimeoutsManager). Plus the pure `@/lib/redirects` helper and the pure
- * `./pages/builtInPages.ts` slug list.
+ * `./pages/builtInPages.ts` slug list, and the pure origin resolver
+ * (`./og/siteOrigin.ts` through `./api/siteData/originSource.ts`).
  * No `server-only`,
  * no `next/headers`, no `next/cache`, no `@/lib/api/client` — those either
  * don't exist at the edge or assume a per-request scope this module's
@@ -22,8 +23,11 @@
  * request that triggered it).
  */
 import type { SiteRedirect } from '@/lib/redirects';
+import type { SiteData } from '@/types/SiteData';
 import { fetchWithReconnect } from './api/fetchWithReconnect.ts';
+import { toOriginSource } from './api/siteData/originSource.ts';
 import { startAwakeTimeout } from './awakeTimeout.ts';
+import { resolveSiteOrigin } from './og/siteOrigin.ts';
 import { CHECKOUT_RESULT_SLUGS } from './pages/builtInPages.ts';
 import { isDemoSite } from './seo/demoSafety.ts';
 
@@ -178,6 +182,13 @@ export interface EdgeSiteMap {
    * batch 3.4, `seo/demoRobotsHeader.ts`). Costs no extra request.
    */
   isDemo: boolean;
+  /**
+   * The site's own public origin (`resolveSiteOrigin`, surface `durable`, so
+   * never an Amplify build host), read off the SAME siteDetails response, or
+   * `''` when none resolves. The address a buyer returns to after paying
+   * (`/api/checkout`, release A T-7, F165-G1-05). Costs no extra request.
+   */
+  origin: string;
 }
 
 interface CacheEntry {
@@ -224,6 +235,8 @@ interface RawSiteDetailsResponse {
   pages?: RawPageConfig[];
   redirects?: SiteRedirect[];
   siteDetails?: { values?: { redirects?: SiteRedirect[]; lifecycleState?: unknown } };
+  domainName?: string;
+  domainInformation?: { live_url?: string };
 }
 
 interface ApiEnvelope {
@@ -495,12 +508,24 @@ async function fetchSiteMap(controller: AbortController): Promise<EdgeSiteMap | 
     // The value is untyped JSON; `isDemoSite` compares it to the literal 'live'
     // and nothing else, so any other shape (null, '', 'Demo') reads as a demo.
     const isDemo = isDemoSite({ lifecycleState: lifecycleState as 'live' | 'demo' | undefined });
+    // The one origin construction every origin decision uses (`toOriginSource`),
+    // so checkout returns a buyer to the address the canonical and the sitemap
+    // name. The values are untyped JSON: the resolver reads only its four
+    // candidates and checks each against its HTTPS-origin allowlist.
+    const origin = resolveSiteOrigin(
+      toOriginSource({
+        siteDetails: { values: (values ?? {}) as SiteData },
+        domainName: raw.domainName,
+        domainInformation: raw.domainInformation,
+      }),
+      { surface: 'durable' },
+    );
     // A 2xx is a definitive NOT-frozen verdict, and recording it here is what
     // makes unfreezing fast: the first successful read after the owner fixes
     // their billing clears the gate on this instance immediately, with no
     // separate signal and no webhook required.
     frozenState = { frozen: false, observedAt: Date.now() };
-    return { slugs, redirects, isDemo };
+    return { slugs, redirects, isDemo, origin };
   } catch (err) {
     // Deliberate fail-open: a network error that survived the reconnect
     // retries, the awake-time abort (800ms warm / 1500ms cold), or a

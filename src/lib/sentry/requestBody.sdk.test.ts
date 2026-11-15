@@ -402,7 +402,12 @@ test("a visitor's request body and URL query never reach Sentry; the error they 
       assert.equal(event.tags?.path, "/tenant/siteDetails");
     }
     const [{ event }] = eventsFor("/contact");
-    assert.equal(event.request?.headers?.referer, `${origin}/contact`, "control: the SDK recorded the Referer, cut to its path");
+    // Release A T-3 (F220, SW-A6): a server event keeps only the listed
+    // request headers, and the Referer is not one, so no part of it leaves
+    // (it used to leave cut to its path). The user agent is listed: it shows
+    // the SDK still recorded the request's headers.
+    assert.equal(event.request?.headers?.referer, undefined, "SW-A6: the Referer does not leave a server event");
+    assert.ok(event.request?.headers?.["user-agent"], "control: the SDK recorded the request's headers");
   });
 
   await t.test("PIN: a later request on the same server carries none of the earlier visitors' details", async () => {

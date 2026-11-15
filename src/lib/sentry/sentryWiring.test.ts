@@ -58,21 +58,26 @@ test('[V7.319 ALLOW] the errors-only settings are unchanged', () => {
 });
 
 test('[next release 2026-11, 3.PII, T8] every init sets sendDefaultPii false and runs the credential scrub', () => {
-  for (const [name, src] of [
-    ['instrumentation-client.ts', instrumentationClient],
-    ['instrumentation.ts', instrumentationServer],
+  // Release A T-3 (F220, SW-A6): the two SERVER inits run `scrubServerEvent`,
+  // which is `scrubCredentials` plus the kept-header list
+  // (scrubCredentials.ts; headerAllowlist.sdk.test.ts drives it through the
+  // real SDK). The browser init keeps `scrubCredentials` unchanged.
+  for (const [name, src, hook, importLine] of [
+    ['instrumentation-client.ts', instrumentationClient, 'scrubCredentials', /import \{ scrubBreadcrumbCredentials, scrubCredentials \} from "@\/lib\/sentry\/scrubCredentials";/],
+    ['instrumentation.ts', instrumentationServer, 'scrubServerEvent', /import \{ scrubBreadcrumbCredentials, scrubServerEvent \} from "@\/lib\/sentry\/scrubCredentials";/],
   ] as const) {
     const inits = (src.match(/Sentry\.init\(/g) ?? []).length;
     assert.ok(inits >= 1, `positive control: ${name} initialises Sentry`);
     for (const line of [
       'sendDefaultPii: false,',
-      'beforeSend: scrubCredentials,',
-      'beforeSendTransaction: scrubCredentials,',
+      `beforeSend: ${hook},`,
+      `beforeSendTransaction: ${hook},`,
       'beforeBreadcrumb: scrubBreadcrumbCredentials,',
     ]) {
       assert.equal(src.split(line).length - 1, inits, `${name}: every init has ${line}`);
     }
-    assert.match(src, /import \{ scrubBreadcrumbCredentials, scrubCredentials \} from "@\/lib\/sentry\/scrubCredentials";/);
+    assert.match(src, importLine);
     assert.doesNotMatch(src, /sendDefaultPii: true/);
   }
+  assert.equal((instrumentationServer.match(/Sentry\.init\(/g) ?? []).length, 2, 'positive control: both server runtimes (Node and edge)');
 });

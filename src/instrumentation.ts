@@ -1,5 +1,5 @@
 import { isSentryReportingEnabled, resolveSentryEnvironment } from "@/lib/sentry/reportingGate";
-import { scrubBreadcrumbCredentials, scrubCredentials } from "@/lib/sentry/scrubCredentials";
+import { scrubBreadcrumbCredentials, scrubServerEvent } from "@/lib/sentry/scrubCredentials";
 import { allowOnlyHeartbeat, HEARTBEAT_FLUSH_MS, HEARTBEAT_MESSAGE, HEARTBEAT_SERVICE } from "@/lib/sentry/heartbeat";
 
 // V7.319: the same environment gate as the browser (src/instrumentation-client.ts).
@@ -28,10 +28,11 @@ export async function register() {
       beforeSendLog: allowOnlyHeartbeat,
       // Owner Q14 (next release 2026-11, plan 3.PII, T8): explicit. It stops
       // only the SDK's own IP; cookies and headers still arrive, so the hooks
-      // delete them (src/lib/sentry/scrubCredentials.ts).
+      // delete them (src/lib/sentry/scrubCredentials.ts). Release A T-3
+      // (F220, SW-A6): a server event keeps only the listed request headers.
       sendDefaultPii: false,
-      beforeSend: scrubCredentials,
-      beforeSendTransaction: scrubCredentials,
+      beforeSend: scrubServerEvent,
+      beforeSendTransaction: scrubServerEvent,
       beforeBreadcrumb: scrubBreadcrumbCredentials,
       // Open-backlog release 2026-11 (Sentry body leak): the SDK never reads
       // a request body. By default it wraps `req.on("data")`, which Next 16
@@ -68,10 +69,11 @@ export async function register() {
       enableLogs: false,
       // Owner Q14 (next release 2026-11, plan 3.PII, T8): explicit. It stops
       // only the SDK's own IP; cookies and headers still arrive, so the hooks
-      // delete them (src/lib/sentry/scrubCredentials.ts).
+      // delete them (src/lib/sentry/scrubCredentials.ts). Release A T-3
+      // (F220, SW-A6): a server event keeps only the listed request headers.
       sendDefaultPii: false,
-      beforeSend: scrubCredentials,
-      beforeSendTransaction: scrubCredentials,
+      beforeSend: scrubServerEvent,
+      beforeSendTransaction: scrubServerEvent,
       beforeBreadcrumb: scrubBreadcrumbCredentials,
     });
   }
