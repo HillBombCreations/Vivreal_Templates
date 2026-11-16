@@ -27,3 +27,13 @@ export const SITE_BASE_PATH: string = process.env.VIVREAL_SITE_BASE_PATH ?? '';
 export function sitePath(url: string): string {
   return withSitePath(SITE_BASE_PATH, url);
 }
+
+/**
+ * The page path a view is reported under (TP-9): the router's path with the
+ * base, so a help view on host vivreal.io reads `/help/...` and never collides
+ * with a marketing page of the same name. Without a router path, the browser's
+ * own, which already carries the base. Unchanged on every other site.
+ */
+export function beaconPagePath(routerPath: string | null, browserPath: string): string {
+  return routerPath ? sitePath(routerPath) : browserPath;
+}

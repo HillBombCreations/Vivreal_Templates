@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { shouldSendBeacon } from '@/lib/beaconPolicy';
 import { browserBeaconTransport, buildPageViewPayload, configureSiteEvents } from '@/lib/siteEvents';
+import { beaconPagePath } from '@/lib/sitePath';
 
 /**
  * Vivreal first-party analytics beacon — cookieless page-view collection for
@@ -68,7 +69,7 @@ export default function SiteBeacon({
 
     // One beacon per distinct path per mount lifecycle (guards duplicate fires
     // from effect re-runs that don't change the path).
-    const path = pathname || window.location.pathname;
+    const path = beaconPagePath(pathname, window.location.pathname);
     if (lastSent.current === path) return;
     lastSent.current = path;
 
