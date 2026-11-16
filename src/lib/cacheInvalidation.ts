@@ -94,6 +94,31 @@ export const SHELL_READ_DEADLINE_MS = 1_500;
  */
 export const SHELL_READ_DEADLINE_COLD_MS = 5_500;
 
+/**
+ * T-268 (F268): after this much WALL-CLOCK time with no live shell answer,
+ * the instance's next resolution reads with the cold deadline and budget even
+ * though it holds `L`.
+ *
+ * Why: the warm limits assume a warm path, and a quiet instance does not have
+ * one. Amplify freezes the process between requests, so after a quiet spell
+ * the first read opens a new connection (its pooled one is dead) through
+ * CloudFront and API Gateway, and the Client's Lambda may be cold too. On
+ * 2026-11-13 vivreal.io's first `siteDetails` read after hours of quiet was
+ * cut at its 1,515 ms limit while VR_Client_API answered it in 386 ms with no
+ * cold start, so the time went before the Lambda; at 10:45 that day the
+ * neighbouring Client calls showed 2.7 s cold starts. The page was served
+ * from the snapshot and Sentry took an error (TEMPLATES-6) and a warning
+ * (TEMPLATES-G) for a read that was merely slow to start.
+ *
+ * `deps.now()` is wall clock, which counts frozen time, so it measures the
+ * quiet spell itself. Every resolution until a live answer arrives gets the
+ * cold limits, so concurrent first requests share them. Five minutes is the
+ * shell's data-cache window at the provisioned TTL (300 s), the gap past which
+ * a read goes upstream rather than to the data cache; a busier instance keeps
+ * the warm limits, and with them the fast answer from `L` when a read is slow.
+ */
+export const QUIET_SPELL_MS = 300_000;
+
 /** CL7's own path, built in one place. */
 export function siteVersionPath(siteId: string): string {
   return `/tenant/siteVersion?siteId=${encodeURIComponent(siteId)}`;
@@ -288,6 +313,8 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
   let newest: { u: string; value: unknown } | null = null;
   let probedAt = Number.NEGATIVE_INFINITY;
   let inFlight: Promise<ProbeOutcome> | null = null;
+  /** Wall-clock instant of this instance's last live shell answer (T-268). */
+  let lastLiveAt = Number.NEGATIVE_INFINITY;
 
   const moveKnown = (u: string): void => {
     if (known === null || isLater(u, known)) known = u;
@@ -382,9 +409,11 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
         const probe = reader === 'full' ? await probeStep() : 'skipped';
         const planKnown = known;
         const planNoVersion = noVersion;
-        const hasNewest = newest !== null;
-        const budget = hasNewest ? SHELL_READS_BUDGET_MS : SHELL_READS_BUDGET_COLD_MS;
-        const deadline = hasNewest ? SHELL_READ_DEADLINE_MS : SHELL_READ_DEADLINE_COLD_MS;
+        // Warm limits only while `L` exists AND a live answer came within the
+        // quiet spell; after one, the first reads get the cold limits (T-268).
+        const warm = newest !== null && deps.now() - lastLiveAt < QUIET_SPELL_MS;
+        const budget = warm ? SHELL_READS_BUDGET_MS : SHELL_READS_BUDGET_COLD_MS;
+        const deadline = warm ? SHELL_READ_DEADLINE_MS : SHELL_READ_DEADLINE_COLD_MS;
         const readsFrom = clock.awakeMs();
 
         /** One read, aborted at min(deadline, budget left); with nothing left it is cache-only. */
@@ -438,6 +467,7 @@ export function createSiteVersionFence(deps: SiteVersionFenceDeps): SiteVersionF
           const { u } = shellVersion(value);
           learn(step, value, refused);
           lives.push({ step, value, u });
+          lastLiveAt = deps.now();
           if (before === null || (u !== null && !isLater(before, u))) break;
         }
 
