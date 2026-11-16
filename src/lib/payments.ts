@@ -95,3 +95,15 @@ export function pagesNeedCart(pages: CartGatePage[]): boolean {
     pages.some((p) => (p.blocks ?? []).some(blockHasPaymentsBinding))
   );
 }
+
+/**
+ * Whether this site mounts the cart at all (F270, TP-11): never under a base
+ * path. Checkout sends a shopper back to the site ORIGIN (the checkout route
+ * builds its return addresses from the origin alone), so a cart on a
+ * base-path site would return every buyer to the wrong app. The help site has
+ * no shop; this stops a silent money-path misroute on any later one. With no
+ * base path it is exactly `pagesNeedCart`.
+ */
+export function siteMountsCart(basePath: string, pages: CartGatePage[]): boolean {
+  return basePath === "" && pagesNeedCart(pages);
+}

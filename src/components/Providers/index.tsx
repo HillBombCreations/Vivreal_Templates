@@ -17,8 +17,9 @@ import { subscribeUser } from '@/lib/api/subscribe/client';
 import { resolveSubscribersCollectionId } from '@/lib/subscribe/subscribersList';
 import { requestDeliveryQuote } from '@/lib/delivery/quoteClient';
 import { trackLeadConversion } from '@/lib/analytics';
-import { pagesNeedCart, type CartGatePage } from '@/lib/payments';
+import { siteMountsCart, type CartGatePage } from '@/lib/payments';
 import { rendererCommerce } from '@/lib/rendererCommerce';
+import { SITE_BASE_PATH } from '@/lib/sitePath';
 
 const queryClient = new QueryClient();
 
@@ -90,7 +91,8 @@ const Providers = ({
     // (config.children[].config.bindings), which the old inline scan missed —
     // the cart never mounted on storefront-unit pages and every add-to-cart
     // silently no-opped (first live Square E2E).
-    const hasProducts = pagesNeedCart(pages as CartGatePage[]);
+    // F270 (TP-11): never on a site served under a base path (siteMountsCart).
+    const hasProducts = siteMountsCart(SITE_BASE_PATH, pages as CartGatePage[]);
 
     // S2/OD#3: pass the Maps API key so keyed Google Maps Embed API URLs
     // are used in the schedule page's map view. Falls back to the keyless embed
