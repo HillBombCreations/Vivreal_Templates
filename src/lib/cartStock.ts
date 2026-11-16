@@ -74,6 +74,13 @@ function holdsLine(provider: StockProvider, objectValue: Record<string, unknown>
  * Then, for both: with a key, stock is `stock[key]` when it is a number; with no
  * key, stock is `stock` itself when it is a number; anything else is untracked.
  *
+ * F385 (release B, SW-B25 option A): a STRIPE product priced per option (the
+ * `default_price` map) whose `stock` is ONE number counts that number for every
+ * option. The line is tracked against it, and the bag compares the SUM of the
+ * product's lines with it (`isSharedStock`, `lineCap`, `clampCartToStock`). A
+ * per-option map, a missing or non-numeric stock, and every Square case keep
+ * the rule above.
+ *
  * The SAME cases run on both sides from `test/fixtures/tracked-stock-cases.json`
  * (Templates `cartStock.parity.test.ts`; Client keeps an identical copy), so a
  * change to either rule fails one side's tests.
@@ -94,6 +101,8 @@ export function trackedStock(
         ? stockField && typeof stockField === "object"
         : isPlainObject(stockField);
     stock = holder ? (stockField as Record<string, unknown>)[variantKey] : undefined; // `holder` proved it is an object
+    // F385: a Stripe plain count on a per-option product is the one shared count.
+    if (provider === "stripe" && typeof stockField === "number") stock = stockField;
   } else {
     stock = stockField;
   }
@@ -150,6 +159,58 @@ export function capQuantity(quantity: number, stock: number | undefined): number
   return stock === undefined ? quantity : Math.min(quantity, stock);
 }
 
+/**
+ * F385 (SW-B25 option A): does every line of this product draw on ONE count? A
+ * Stripe product priced per option (`default_price` a map) whose `stock` is a
+ * single number. A Square product carries no `default_price`, so it never is.
+ */
+export function isSharedStock(product: { default_price?: unknown; stock?: unknown }): boolean {
+  return isPlainObject(product.default_price) && typeof product.stock === "number";
+}
+
+/**
+ * The shared count of `productId` in the bag and how much of it the lines
+ * other than `exceptKey` already hold. A shared pool is the product's lines
+ * that carry `sharedStock`; its count is the lowest one they stored, so a
+ * stale higher reading never lets the sum past a newer lower one.
+ */
+function sharedPool(cart: Cart, productId: string, exceptKey: string): { count: number | undefined; held: number } {
+  let count: number | undefined;
+  let held = 0;
+  for (const [key, line] of Object.entries(cart)) {
+    if (line._id !== productId || !line.sharedStock || typeof line.stock !== "number") continue;
+    count = count === undefined ? line.stock : Math.min(count, line.stock);
+    if (key !== exceptKey) held += line.quantity;
+  }
+  return { count, held };
+}
+
+/**
+ * What the shared count of `productId` leaves for the line at `key`, given a
+ * count read now (`stock`) and the product's other lines in the bag.
+ */
+export function sharedAllowance(cart: Cart, productId: string, key: string, stock: number): number {
+  const { count, held } = sharedPool(cart, productId, key);
+  return Math.max(0, Math.min(stock, count ?? stock) - held);
+}
+
+/**
+ * The most the line at `key` may hold: its own stock, or on a shared line what
+ * the shared count leaves after the product's other lines. `undefined` when
+ * the line is untracked (no cap).
+ */
+export function lineCap(cart: Cart, key: string): number | undefined {
+  const line = cart[key];
+  if (!line || typeof line.stock !== "number") return undefined;
+  return line.sharedStock ? sharedAllowance(cart, line._id, key, line.stock) : line.stock;
+}
+
+/** Is the line at `key` at its cap (so its "+" is off)? Never for an untracked line. */
+export function atLineCap(cart: Cart, key: string): boolean {
+  const cap = lineCap(cart, key);
+  return cap !== undefined && (cart[key]?.quantity || 0) >= cap;
+}
+
 export interface StockAdjustment {
   name: string;
   available: number;
@@ -157,19 +218,30 @@ export interface StockAdjustment {
 
 /**
  * The bag with every line brought down to its stock (a line with none left is
- * removed), plus what changed so the shopper can be told.
+ * removed), plus what changed so the shopper can be told. Lines that share one
+ * count (F385) are brought within it together, earlier lines first: each keeps
+ * what the count leaves after the lines before it.
  */
 export function clampCartToStock(cart: Cart): { cart: Cart; changed: StockAdjustment[] } {
   const next: Cart = {};
   const changed: StockAdjustment[] = [];
+  const used = new Map<string, number>();
   for (const [key, line] of Object.entries(cart)) {
-    const stock = typeof line.stock === "number" ? line.stock : undefined;
+    const own = typeof line.stock === "number" ? line.stock : undefined;
+    const shared = own !== undefined && line.sharedStock === true;
+    let stock = own;
+    if (shared) {
+      const { count } = sharedPool(cart, line._id, key);
+      stock = Math.max(0, (count ?? own) - (used.get(line._id) ?? 0));
+    }
     if (stock === undefined || line.quantity <= stock) {
       next[key] = line;
+      if (shared) used.set(line._id, (used.get(line._id) ?? 0) + line.quantity);
       continue;
     }
     changed.push({ name: line.name, available: stock });
     if (stock > 0) next[key] = { ...line, quantity: stock };
+    if (shared) used.set(line._id, (used.get(line._id) ?? 0) + stock);
   }
   return { cart: next, changed };
 }

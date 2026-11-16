@@ -80,15 +80,12 @@ test("ALLOW (bag, review concern A): a sized Square product is never capped, so 
 
 test("ALLOW (bag): untracked and non-finite counts give no cap", () => {
   assert.equal(bagLineStock({ default_price: SIZE_IDS, stock: COOKIE_BOX_STOCK }, "price_large"), undefined);
-  assert.equal(bagLineStock({ default_price: SIZE_IDS, stock: 12 }, "price_small"), undefined);
   assert.equal(bagLineStock({ default_price: "price_one", stock: Number.POSITIVE_INFINITY }, "price_one"), undefined);
 });
 
-test("ALLOW: a sized product with a plain numeric stock is not capped in the bag (checkout does not cap it)", () => {
-  const { cart } = addToCart(cookieBox(3), "Small", 6);
-  assert.equal(cart["cookie_Small"]?.quantity, 6);
-  assert.equal("stock" in (cart["cookie_Small"] ?? {}), false);
-});
+// F385 (T-385): a sized product with a plain numeric stock is now ONE shared
+// count (SW-B25 option A), so the two rows that pinned it as uncapped moved to
+// cartStock.shared.test.ts, where the bag caps the sum of its sizes.
 
 test("REFUSE: adding a sold-out size says it is sold out, never 'can't be bought online'", () => {
   const soldOut = cookieBox({ Small: 0, Large: 2 });

@@ -143,8 +143,11 @@ test("TB-6: the stored code is written only on a successful apply and cleared on
 });
 
 test("QA-W2-1: the bag caps quantity at stock, disables + at the cap, and handles a stock refusal", () => {
-  assert.match(code, /quantity: capQuantity\(nextQty, next\[productId\]\.stock\)/);
-  assert.match(code, /\(typeof item\.stock === "number" && \(item\.quantity \|\| 0\) >= item\.stock\)/);
+  // F385 (T-385): the cap and the "+" go through lineCap and atLineCap, which
+  // are the line's own stock for a per-line count (pinned in cartStock.test.ts)
+  // and what a shared count leaves (cartStock.shared.test.ts).
+  assert.match(code, /quantity: capQuantity\(nextQty, lineCap\(next, productId\)\)/);
+  assert.match(code, /atLineCap\(cart \|\| \{\}, item\.id\)/);
   assert.match(
     code,
     /if \(err instanceof CheckoutStockError\) \{\s*const \{ cart: adjusted, changed \} = err\.items\s*\? applyShortStock\(cart \|\| \{\}, err\.items\)\s*: clampCartToStock\(cart \|\| \{\}\);\s*if \(changed\.length > 0\) setCart\(adjusted\);\s*setStockNotice\(stockAdjustedMessage\(changed\)\);\s*return;/,

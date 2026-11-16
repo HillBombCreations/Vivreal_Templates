@@ -54,7 +54,8 @@ export function useCartAdapter(): CartAdapter | null {
         if (!added) {
           toast({
             variant: "destructive",
-            ...addRefusal(templatesProduct, variant),
+            // F385: the bag is passed so a shared count already in it reads as sold out.
+            ...addRefusal(templatesProduct, variant, cart),
             duration: FAILURE_TOAST_MS,
           });
         }
@@ -71,7 +72,7 @@ export function useCartAdapter(): CartAdapter | null {
         if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
           const added = handleAddToCart({ product: templatesProduct, selectedVariant: variant, quantity, cart, setCart });
           if (added) cartCtx.setOpenCartMenu(true);
-          else toast({ variant: "destructive", ...addRefusal(templatesProduct, variant), duration: FAILURE_TOAST_MS });
+          else toast({ variant: "destructive", ...addRefusal(templatesProduct, variant, cart), duration: FAILURE_TOAST_MS });
           return;
         }
         const resolvedVariant = resolveVariant(variant, templatesProduct) ?? "default";

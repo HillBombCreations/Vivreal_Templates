@@ -6,7 +6,7 @@ import type { Product } from "@/types/Products";
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
-import { bagLineStock, capQuantity } from "../../cartStock.ts";
+import { bagLineStock, capQuantity, isSharedStock, sharedAllowance } from "../../cartStock.ts";
 import { CHECKOUT_NO_LONGER_AVAILABLE, CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
 import { readDeliveryQuote, type CheckoutExtras, type DeliveryQuote } from "../../cart/cartSettings.ts";
 import { sitePath } from "../../sitePath.ts";
@@ -50,7 +50,14 @@ export function handleAddToCart({
   if (stock === 0 || stock === null) return false;
 
   const existing = cart[cartKey];
-  const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, stock);
+  // F385 (SW-B25 option A): one count shared by every option caps the SUM of
+  // the product's lines, so this line gets what the others leave. With all of
+  // it already in the bag on other options, a new option is sold out to this
+  // shopper (`addRefusal` says so); an existing line simply stays as it is.
+  const shared = stock !== undefined && isSharedStock(product);
+  const cap = shared ? sharedAllowance(cart, product._id, cartKey, stock) : stock;
+  if (cap === 0 && !existing) return false;
+  const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, cap);
 
   const item: CartItem = {
     _id: product._id,
@@ -62,6 +69,7 @@ export function handleAddToCart({
     variant,
     ...(unit && { unit }),
     ...(stock !== undefined ? { stock } : {}),
+    ...(shared ? { sharedStock: true as const } : {}),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));
@@ -155,9 +163,16 @@ export const SOLD_OUT_ITEM_MESSAGE = "Sorry, that one has sold out. Check back s
 export function addRefusal(
   product: Product,
   selectedVariant: string | null,
+  cart: Cart = {},
 ): { title: string; description: string } {
   const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
-  if (priceID.trim() && lineStock(product, priceID) === 0) {
+  const stock = priceID.trim() ? lineStock(product, priceID) : null;
+  // F385: every unit of a shared count already sits in the bag on the
+  // product's other options, so this one is sold out too.
+  const cartKey = `${product._id}_${resolveVariant(selectedVariant, product) ?? "default"}`;
+  const sharedGone =
+    typeof stock === "number" && isSharedStock(product) && sharedAllowance(cart, product._id, cartKey, stock) === 0;
+  if (stock === 0 || sharedGone) {
     return { title: "Sold out", description: SOLD_OUT_ITEM_MESSAGE };
   }
   return { title: "Not available online", description: UNBUYABLE_ITEM_MESSAGE };
