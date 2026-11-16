@@ -146,7 +146,9 @@ test("QA-W2-1: the bag caps quantity at stock, disables + at the cap, and handle
   // F385 (T-385): the cap and the "+" go through lineCap and atLineCap, which
   // are the line's own stock for a per-line count (pinned in cartStock.test.ts)
   // and what a shared count leaves (cartStock.shared.test.ts).
-  assert.match(code, /quantity: capQuantity\(nextQty, lineCap\(next, productId\)\)/);
+  // T-385 review B1: the number comes from nextLineQuantity (cap on an increase,
+  // a decrease as asked) and 0 removes the line, never a line of 0.
+  assert.match(code, /const qty = next\[productId\] \? nextLineQuantity\(next, productId, nextQty\) : nextQty;\s*if \(qty <= 0\) \{\s*delete next\[productId\];/);
   assert.match(code, /atLineCap\(cart \|\| \{\}, item\.id\)/);
   assert.match(
     code,

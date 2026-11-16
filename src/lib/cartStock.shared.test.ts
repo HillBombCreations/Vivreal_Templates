@@ -17,6 +17,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import * as cartStock from "./cartStock.ts";
 import { SOLD_OUT_ITEM_MESSAGE, addRefusal, handleAddToCart } from "./utils/cartUtils/index.ts";
 import type { Cart, CartItem } from "../types/Cart";
@@ -171,4 +172,107 @@ test("[T-385 ALLOW] a single-price product and a Square product keep their own r
   const square = { checkoutIdentifier: "sq_s", price: { Small: "$4.50" }, stock: 6 };
   assert.equal(isSharedStock(square), false, "Square: no default_price");
   assert.equal(cartStock.bagLineStock({ default_price: "price_one", stock: 6 }, "price_one"), 6);
+});
+
+/*
+ * T-385 review pass 1, B1: a cap that reaches 0 is never written as a line's
+ * quantity. A line of 0 fails our own checkout route (400 "Invalid product
+ * format", src/app/api/checkout/route.ts) and the quote counts it as 1.
+ */
+
+/** The bag's quantity control, read through the namespace (absent before the B1 fix). */
+function nextQty(cart: Cart, key: string, asked: number): number {
+  const ns = cartStock as unknown as Record<string, unknown>; // named export, checked here
+  assert.equal(typeof ns.nextLineQuantity, "function", "cartStock exports nextLineQuantity");
+  return (ns.nextLineQuantity as (c: Cart, k: string, n: number) => number)(cart, key, asked); // checked just above
+}
+
+const dialogSource = () => fs.readFileSync(new URL("../components/Navigation/CartDialog.tsx", import.meta.url), "utf8");
+
+/** A per-line (not shared) line of the cookie box. */
+const perLineCookie = (size: string, quantity: number, stock: number | undefined): CartItem => ({
+  _id: "cookie",
+  quantity,
+  name: `Cookie box (${size})`,
+  price: "$4.50",
+  priceID: "price_" + size.toLowerCase(),
+  imageUrl: "",
+  variant: size,
+  ...(stock !== undefined ? { stock } : {}),
+});
+
+test("[T-385 B1 REFUSE] the count falls to 3 with 3 + 3 in the bag: adding a flavor already there is refused and changes nothing, never a line of 0", () => {
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 3), bread_Rye: sharedLine("Rye", 3) };
+  const { added, cart: after } = add(bread(3), "Sourdough", 1, cart);
+  assert.equal(added, false, "refused, so the shopper is told rather than shown an open bag");
+  assert.equal(after["bread_Sourdough"]?.quantity, 3, "Sourdough still 3");
+  assert.ok(Object.values(after).every((l) => l.quantity > 0), "no line of 0");
+  assert.deepEqual(addRefusal(bread(3), "Sourdough", cart), { title: "Sold out", description: SOLD_OUT_ITEM_MESSAGE });
+});
+
+test("[T-385 B1 REFUSE] the bag's - takes one off even when the shared count now leaves the line less; it never writes 0", () => {
+  // Sourdough 3 + Rye 1, a count read lower since (2): Sourdough's cap is 1.
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 3, 6), bread_Rye: sharedLine("Rye", 1, 2) };
+  assert.match(dialogSource(), /nextLineQuantity\(next, productId, nextQty\)/);
+  assert.equal(nextQty(cart, "bread_Sourdough", 2), 2, "- from 3 is 2");
+  assert.equal(nextQty(cart, "bread_Sourdough", 4), 3, "+ never takes the line below where it is");
+});
+
+test("[T-385 B1 ALLOW] with the count still 6 an existing flavor grows to what the others leave; + stops at the cap; - to 0 removes", () => {
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 3), bread_Rye: sharedLine("Rye", 2) };
+  const { added, cart: after } = add(bread(6), "Sourdough", 1, cart);
+  assert.equal(added, true);
+  assert.equal(after["bread_Sourdough"]?.quantity, 4);
+  assert.equal(nextQty(cart, "bread_Sourdough", 4), 4, "+ within the count");
+  assert.equal(nextQty(cart, "bread_Sourdough", 9), 4, "+ stops at what Rye leaves");
+  assert.equal(nextQty(cart, "bread_Rye", 0), 0, "- to 0: the caller removes the line");
+  // A per-line count and an untracked line behave as before.
+  assert.equal(nextQty({ cookie_Small: perLineCookie("Small", 2, 4) }, "cookie_Small", 9), 4);
+  assert.equal(nextQty({ cookie_Large: perLineCookie("Large", 2, undefined) }, "cookie_Large", 50), 50);
+});
+
+/*
+ * T-385 review pass 1, B2: after checkout refuses (SW-B25 (5)), a shared line's
+ * `available` is what the count leaves AFTER the lines before it. The bag must
+ * store the whole count, not that net number, or it counts the other lines
+ * twice: a false "Sold out" with stock left, and a - that drops a line to 0.
+ */
+
+/** Bag Sourdough 3 + Rye 3 (stored 6); checkout refuses at a count of 4. */
+function refusedAtFour(named: Array<{ priceId: string; available: number }>) {
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 3), bread_Rye: sharedLine("Rye", 3) };
+  return cartStock.applyShortStock(cart, named);
+}
+
+test("[T-385 B2 REFUSE] after checkout's shared refusal the bag keeps the whole count: - on the other line is 2, and the loaves left can still be added", () => {
+  const { cart, changed } = refusedAtFour([{ priceId: "price_rye", available: 1 }]);
+  assert.deepEqual(changed, [{ name: "Bread (Rye)", available: 1 }]);
+  assert.equal(cart["bread_Rye"]?.quantity, 1);
+  assert.equal(cart["bread_Rye"]?.stock, 4, "the count, not the 1 left after Sourdough's 3");
+  assert.equal(cartStock.lineCap(cart, "bread_Sourdough"), 3, "Sourdough may keep its 3");
+  // Sourdough taken out: 3 of the 4 are free again, so another flavor can join.
+  const withoutSourdough: Cart = { bread_Rye: cart["bread_Rye"] as CartItem }; // read and asserted just above
+  const wheat = add(bread(4), "Wheat", 1, withoutSourdough);
+  assert.equal(wheat.added, true, "not a false Sold out");
+  assert.equal(wheat.cart["bread_Wheat"]?.quantity, 1);
+  assert.notEqual(addRefusal(bread(4), "Wheat", withoutSourdough).title, "Sold out");
+});
+
+test("[T-385 B2 REFUSE] the same when checkout names every line of the product, in bag order", () => {
+  const { cart } = refusedAtFour([
+    { priceId: "price_sourdough", available: 4 },
+    { priceId: "price_rye", available: 1 },
+  ]);
+  assert.equal(cart["bread_Sourdough"]?.quantity, 3);
+  assert.equal(cart["bread_Rye"]?.quantity, 1);
+  assert.equal(cart["bread_Rye"]?.stock, 4);
+});
+
+test("[T-385 B2 ALLOW] a per-line count is stored exactly as checkout named it, as before", () => {
+  const cart: Cart = { cookie_Small: perLineCookie("Small", 4, 4), cookie_Large: perLineCookie("Large", 3, 3) };
+  const { cart: next, changed } = cartStock.applyShortStock(cart, [{ priceId: "price_large", available: 2 }]);
+  assert.deepEqual(changed, [{ name: "Cookie box (Large)", available: 2 }]);
+  assert.equal(next["cookie_Large"]?.quantity, 2);
+  assert.equal(next["cookie_Large"]?.stock, 2, "a per-line stock is the line's own count");
+  assert.equal(next["cookie_Small"]?.stock, 4);
 });

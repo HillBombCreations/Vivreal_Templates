@@ -205,6 +205,19 @@ export function lineCap(cart: Cart, key: string): number | undefined {
   return line.sharedStock ? sharedAllowance(cart, line._id, key, line.stock) : line.stock;
 }
 
+/**
+ * The bag's quantity control (T-385 review B1): what the line at `key` moves to
+ * when the shopper picks `nextQty`. A decrease is taken as asked, even when a
+ * shared count now leaves the line less than it holds; an increase stops at
+ * the line's cap and never takes the line below where it is. 0 or less means
+ * the caller removes the line: a line of 0 is never written.
+ */
+export function nextLineQuantity(cart: Cart, key: string, nextQty: number): number {
+  const line = cart[key];
+  if (!line || nextQty <= line.quantity) return nextQty;
+  return Math.max(line.quantity, capQuantity(nextQty, lineCap(cart, key)));
+}
+
 /** Is the line at `key` at its cap (so its "+" is off)? Never for an untracked line. */
 export function atLineCap(cart: Cart, key: string): boolean {
   const cap = lineCap(cart, key);
@@ -252,19 +265,34 @@ export function clampCartToStock(cart: Cart): { cart: Cart; changed: StockAdjust
  * response, never from the stock stored when the item was added, which can be
  * stale. A line is matched on its checkout price id, the same id checkout was
  * sent (the Stripe price, or the Square variation id).
+ *
+ * A SHARED line (F385, SW-B25 (5)): checkout reports its `available` as what
+ * the shared count leaves AFTER the product's lines before it, in bag order,
+ * which is the order checkout was sent. That is a net number, not the count,
+ * so the line stores `available` plus what the product's earlier lines keep:
+ * the whole count, which `lineCap` and the next add subtract the other lines
+ * from (T-385 review B2). Every other line stores `available` as before.
  */
 export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): { cart: Cart; changed: StockAdjustment[] } {
   const availableByPrice = new Map(short.map((s) => [s.priceId, s.available]));
   const next: Cart = {};
   const changed: StockAdjustment[] = [];
+  /** What each product's lines so far keep, as checkout counted them. */
+  const keptBefore = new Map<string, number>();
   for (const [key, line] of Object.entries(cart)) {
+    const before = keptBefore.get(line._id) ?? 0;
     const available = availableByPrice.get(line.priceID);
     if (available === undefined || line.quantity <= available) {
       next[key] = line;
+      keptBefore.set(line._id, before + line.quantity);
       continue;
     }
     changed.push({ name: line.name, available });
-    if (available > 0) next[key] = { ...line, quantity: available, stock: available };
+    if (available > 0) {
+      const stock = line.sharedStock ? available + before : available;
+      next[key] = { ...line, quantity: available, stock };
+      keptBefore.set(line._id, before + available);
+    }
   }
   return { cart: next, changed };
 }

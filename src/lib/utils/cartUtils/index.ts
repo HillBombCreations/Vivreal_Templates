@@ -52,11 +52,12 @@ export function handleAddToCart({
   const existing = cart[cartKey];
   // F385 (SW-B25 option A): one count shared by every option caps the SUM of
   // the product's lines, so this line gets what the others leave. With all of
-  // it already in the bag on other options, a new option is sold out to this
-  // shopper (`addRefusal` says so); an existing line simply stays as it is.
+  // it already in the bag on other options, this option is sold out to this
+  // shopper (`addRefusal` says so) and the bag is left as it is: never a line
+  // of 0, which checkout refuses (T-385 review B1).
   const shared = stock !== undefined && isSharedStock(product);
   const cap = shared ? sharedAllowance(cart, product._id, cartKey, stock) : stock;
-  if (cap === 0 && !existing) return false;
+  if (cap === 0) return false;
   const newQty = capQuantity(existing ? existing.quantity + quantity : quantity, cap);
 
   const item: CartItem = {
