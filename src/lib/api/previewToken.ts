@@ -26,6 +26,7 @@
  * the eligibility property rather than assert it. Same tradeoff, for the same
  * reason, as `src/lib/cacheInvalidation.ts`.
  */
+import { sitePath } from '../sitePath.ts';
 
 /**
  * Query param the portal appends to a preview URL
@@ -192,5 +193,7 @@ export function buildPreviewEnableUrl(token: string, redirectTo: string): string
   const params = new URLSearchParams();
   params.set(PREVIEW_ENABLE_TOKEN_PARAM, token);
   params.set(PREVIEW_ENABLE_REDIRECT_PARAM, resolvePreviewRedirectTarget(redirectTo));
-  return `${PREVIEW_ENABLE_PATH}?${params.toString()}`;
+  // Under the site's base path (F270, TP-7): middleware resolves this against
+  // the request and Next does not prefix a middleware redirect itself.
+  return `${sitePath(PREVIEW_ENABLE_PATH)}?${params.toString()}`;
 }

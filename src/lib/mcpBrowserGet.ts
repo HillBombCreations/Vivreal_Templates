@@ -19,6 +19,7 @@
  * route stays a thin call site and the decision runs under `node --test`.
  */
 import { servesPublicDomainSearch } from './domains/publicSearch.ts';
+import { sitePath } from './sitePath.ts';
 
 export const CONNECT_YOUR_AI_PATH = '/connect-your-ai';
 
@@ -46,7 +47,7 @@ export function acceptsHtml(accept: string | null | undefined): boolean {
 
 export function mcpGetAnswer(accept: string | null | undefined, siteId: string | null | undefined): McpGetAnswer {
   if (servesPublicDomainSearch(siteId) && acceptsHtml(accept)) {
-    return { status: 307, headers: { Location: CONNECT_YOUR_AI_PATH } };
+    return { status: 307, headers: { Location: sitePath(CONNECT_YOUR_AI_PATH) } };
   }
   return { status: 405, headers: { Allow: MCP_ALLOWED_METHODS } };
 }

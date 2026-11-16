@@ -11,7 +11,12 @@
  * that URL is localhost, so an absolute redirect built from it would send
  * every browser to http://localhost. No request is read at all, so the route
  * is static and costs one prerendered response, not a render per hit.
+ *
+ * Under a base path the icon lives at `<base>/icon` (F270, TP-7): Next does not
+ * prefix a hand-built `Location`, so `sitePath` does.
  */
+import { sitePath } from '../../lib/sitePath.ts';
+
 export function GET(): Response {
-  return new Response(null, { status: 307, headers: { Location: '/icon' } });
+  return new Response(null, { status: 307, headers: { Location: sitePath('/icon') } });
 }

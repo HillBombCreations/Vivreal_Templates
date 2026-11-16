@@ -84,7 +84,8 @@ test('the routes and the layout reach the guard', () => {
   const wellFormed = enable.indexOf('if (isWellFormedPreviewToken(rawToken)) {');
   assert.ok(enable.indexOf('location = withPreviewNonce(target, newPreviewNonce());') > wellFormed, 'only a real preview gets a nonce');
   assert.ok(enable.indexOf('name: PREVIEW_MARKER_COOKIE,') > wellFormed);
-  assert.match(enable, /Location: location,/);
+  // F270 (TP-7): the same variable, now under the site's base path.
+  assert.match(enable, /Location: sitePath\(location\),/);
   const disable = fs.readFileSync(new URL('../app/api/preview/disable/route.ts', import.meta.url), 'utf8');
   assert.match(disable, /\(await draftMode\(\)\)\.disable\(\);/);
   assert.match(disable, /jar\.delete\(PREVIEW_TOKEN_COOKIE\);\s*jar\.delete\(PREVIEW_MARKER_COOKIE\);/);

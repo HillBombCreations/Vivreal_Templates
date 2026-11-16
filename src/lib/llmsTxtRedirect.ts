@@ -21,6 +21,7 @@
  * no origin resolution at all. Nothing here reads `request.url`, and the
  * route test pins that it never will again.
  */
+import { sitePath } from './sitePath.ts';
 
 /** 301 (permanent), not 302/307/308 — the old path is retired, not a temporary detour. */
 export const LLMS_TXT_REDIRECT_STATUS = 301;
@@ -47,7 +48,8 @@ export function llmsTxtRedirectResponseInit(): {
   return {
     status: LLMS_TXT_REDIRECT_STATUS,
     headers: {
-      Location: LLMS_TXT_REDIRECT_LOCATION,
+      // Under the site's base path (F270, TP-7); unchanged on every other site.
+      Location: sitePath(LLMS_TXT_REDIRECT_LOCATION),
       'Cache-Control': LLMS_TXT_REDIRECT_CACHE_CONTROL,
     },
   };

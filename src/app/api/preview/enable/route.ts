@@ -9,6 +9,7 @@ import {
   resolvePreviewRedirectTarget,
 } from '@/lib/api/previewToken';
 import { PREVIEW_MARKER_COOKIE, newPreviewNonce, withPreviewNonce } from '@/lib/previewGuard';
+import { sitePath } from '@/lib/sitePath';
 
 // MUST be the Node.js runtime: `draftMode().enable()` writes the
 // `__prerender_bypass` cookie through Next's request store, and this route is
@@ -94,7 +95,10 @@ export async function GET(request: NextRequest) {
   return new NextResponse(null, {
     status: 307,
     headers: {
-      Location: location,
+      // The target is a site path without the base (middleware reads
+      // `nextUrl.pathname`, which Next strips of it); the base goes on here
+      // (F270, TP-7).
+      Location: sitePath(location),
       // A preview redirect is per-visitor and carries a Set-Cookie; it must
       // never be stored by a shared cache. `no-store` also stops a browser
       // heuristically caching the 307 and skipping the cookie write on a

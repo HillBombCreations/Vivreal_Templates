@@ -354,7 +354,8 @@ test('the enable route redirects to a site-RELATIVE Location, never one built fr
   assert.match(enableRouteSource, /let location = target;/);
   assert.match(enableRouteSource, /location = withPreviewNonce\(target, newPreviewNonce\(\)\);/);
   assert.equal((enableRouteSource.match(/location = /g) ?? []).length, 2, 'no other assignment');
-  assert.match(enableRouteSource, /Location: location,/);
+  // F270 (TP-7): the same variable, now under the site's base path.
+  assert.match(enableRouteSource, /Location: sitePath\(location\),/);
   assert.doesNotMatch(
     enableRouteSource,
     /new URL\([^)]*request\.url/,
