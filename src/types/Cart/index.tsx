@@ -19,9 +19,9 @@ export interface CartItem {
     stock?: number;
     /**
      * F385 (SW-B25 option A): `stock` is ONE count shared by every line of
-     * this product (`_id`), a Stripe product priced per option with a single
-     * number. The bag caps the SUM of those lines at it. Absent: `stock` is
-     * this line's own.
+     * this product (`_id`), a product priced per option (Stripe) or per size
+     * (Square, F393) with a single number. The bag caps the SUM of those lines
+     * at it. Absent: `stock` is this line's own.
      */
     sharedStock?: true;
 }

@@ -77,9 +77,11 @@ function holdsLine(provider: StockProvider, objectValue: Record<string, unknown>
  * F385 (release B, SW-B25 option A): a STRIPE product priced per option (the
  * `default_price` map) whose `stock` is ONE number counts that number for every
  * option. The line is tracked against it, and the bag compares the SUM of the
- * product's lines with it (`isSharedStock`, `lineCap`, `clampCartToStock`). A
- * per-option map, a missing or non-numeric stock, and every Square case keep
- * the rule above.
+ * product's lines with it (`isSharedStock`, `lineCap`, `clampCartToStock`).
+ * F393 (SW-B25 amended, T-385S): the same for a SQUARE product priced per size
+ * (the `price` map, with `squareVariations`), as Client's
+ * `resolveSquareVariant.js` (CL-STK4). A per-option map, a missing or
+ * non-numeric stock, and a line with no option key keep the rule above.
  *
  * The SAME cases run on both sides from `test/fixtures/tracked-stock-cases.json`
  * (Templates `cartStock.parity.test.ts`; Client keeps an identical copy), so a
@@ -101,8 +103,8 @@ export function trackedStock(
         ? stockField && typeof stockField === "object"
         : isPlainObject(stockField);
     stock = holder ? (stockField as Record<string, unknown>)[variantKey] : undefined; // `holder` proved it is an object
-    // F385: a Stripe plain count on a per-option product is the one shared count.
-    if (provider === "stripe" && typeof stockField === "number") stock = stockField;
+    // F385 (Stripe), F393 (Square): a plain count on a per-option product is the one shared count.
+    if (typeof stockField === "number") stock = stockField;
   } else {
     stock = stockField;
   }
@@ -162,10 +164,20 @@ export function capQuantity(quantity: number, stock: number | undefined): number
 /**
  * F385 (SW-B25 option A): does every line of this product draw on ONE count? A
  * Stripe product priced per option (`default_price` a map) whose `stock` is a
- * single number. A Square product carries no `default_price`, so it never is.
+ * single number. F393 (SW-B25 amended, T-385S): or a Square product priced per
+ * size, which the bag knows by `bagLineStock`'s own test (no `default_price`,
+ * a size-to-variation `checkoutIdentifier` map) plus a `price` map. A Square
+ * product with only a scalar id stays uncapped (`bagLineStock`), so never shared.
  */
-export function isSharedStock(product: { default_price?: unknown; stock?: unknown }): boolean {
-  return isPlainObject(product.default_price) && typeof product.stock === "number";
+export function isSharedStock(product: {
+  default_price?: unknown;
+  checkoutIdentifier?: unknown;
+  price?: unknown;
+  stock?: unknown;
+}): boolean {
+  if (typeof product.stock !== "number") return false;
+  if (product.default_price != null) return isPlainObject(product.default_price);
+  return isPlainObject(product.checkoutIdentifier) && isPlainObject(product.price);
 }
 
 /**

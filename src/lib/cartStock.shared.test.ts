@@ -170,7 +170,7 @@ test("[T-385 ALLOW] a single-price product and a Square product keep their own r
   const { isSharedStock } = helpers();
   assert.equal(isSharedStock({ default_price: "price_one", stock: 6 }), false, "one price, one count: per line as before");
   const square = { checkoutIdentifier: "sq_s", price: { Small: "$4.50" }, stock: 6 };
-  assert.equal(isSharedStock(square), false, "Square: no default_price");
+  assert.equal(isSharedStock(square), false, "Square with a scalar id: the size is unknown here, so never shared (T-385S covers the size map)");
   assert.equal(cartStock.bagLineStock({ default_price: "price_one", stock: 6 }, "price_one"), 6);
 });
 

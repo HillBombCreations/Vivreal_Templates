@@ -28,7 +28,10 @@ const table = JSON.parse(raw) as { cases: StockCase[] }; // shape asserted just 
  */
 // F385 (SW-B25 (2), release B): the sized plain-count case became "one shared
 // count", a case for the other size was added, and `about` gained one sentence.
-const SHARED_TABLE_SHA256 = "c6a4498dcdad03b3d633258ee06f4aa2ef733bf305db361a63d33e39e557ce5e";
+// F393 (SW-B25 amended, T-385S): the Square sized plain-count case became "one
+// shared count" (tracked, available 0), and nothing else changed; Client pins
+// the same hash at CL-STK4.
+const SHARED_TABLE_SHA256 = "7b12b5f67b052fe88ef528809e6dac9aebeb595019ab4656adb4196a7bef7d7d";
 
 test("the table is byte identical to Client's copy (sha256, LF line endings)", () => {
   const digest = createHash("sha256").update(raw.replace(/\r\n/g, "\n")).digest("hex");
@@ -61,5 +64,12 @@ test("control: a planted wrong expectation fails, so the loop is not inert", () 
   const c = table.cases.find((x) => x.name === "stripe sized, a plain count is one shared count");
   assert.ok(c, "the shared-count case is found by its new name");
   assert.equal(table.cases.some((x) => x.name === "stripe sized, a plain count is untracked"), false, "the old case name is gone");
+  assert.notDeepEqual(trackedStock(c.provider, c.objectValue, c.lineId), { tracked: false, available: null });
+});
+
+test("control (T-385S): the Square shared-count case is found by its new name, the old one is gone", () => {
+  const c = table.cases.find((x) => x.name === "square sized, a plain count is one shared count");
+  assert.ok(c, "the Square shared-count case is found by its new name");
+  assert.equal(table.cases.some((x) => x.name === "square sized, a plain count is untracked"), false, "the old case name is gone");
   assert.notDeepEqual(trackedStock(c.provider, c.objectValue, c.lineId), { tracked: false, available: null });
 });
