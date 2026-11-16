@@ -80,10 +80,12 @@ test("a network failure is unverified and is retried on the next call; any other
 
 test("the default request posts the id to the confirm route, keepalive, and nowhere else", () => {
   const code = stripComments(fs.readFileSync(new URL("./confirmOrder.ts", import.meta.url), "utf8"));
-  assert.match(code, /fetch\("\/api\/checkout\/confirm"/);
+  // F270 (TP-6): the path goes through sitePath, so the help site's base path
+  // is on it; the pin is the same path, now wrapped.
+  assert.match(code, /fetch\(sitePath\("\/api\/checkout\/confirm"\)/);
   assert.match(code, /keepalive: true/);
   assert.match(code, /body: JSON\.stringify\(\{ sessionId \}\)/);
-  const fetches = [...code.matchAll(/fetch\(\s*["'`]([^"'`]+)/g)].map((m) => m[1]);
+  const fetches = [...code.matchAll(/fetch\(\s*(?:sitePath\(\s*)?["'`]([^"'`]+)/g)].map((m) => m[1]);
   assert.deepEqual(fetches, ["/api/checkout/confirm"]);
   assert.doesNotMatch(code, /sessionStorage|localStorage/, "not persisted, so a reload retries");
 });

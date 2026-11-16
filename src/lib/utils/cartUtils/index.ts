@@ -9,6 +9,7 @@ import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
 import { bagLineStock, capQuantity } from "../../cartStock.ts";
 import { CHECKOUT_NO_LONGER_AVAILABLE, CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
 import { readDeliveryQuote, type CheckoutExtras, type DeliveryQuote } from "../../cart/cartSettings.ts";
+import { sitePath } from "../../sitePath.ts";
 
 interface AddToCartProps {
   product: Product;
@@ -215,7 +216,7 @@ export async function handleCheckout({
 
   const trimmedCode = typeof code === "string" ? code.trim().toUpperCase() : "";
 
-  const res = await fetch("/api/checkout", {
+  const res = await fetch(sitePath("/api/checkout"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -286,7 +287,7 @@ export async function validateCoupon(
     return { valid: false, reason: "not_found" };
   }
 
-  const res = await fetch("/api/validate-coupon", {
+  const res = await fetch(sitePath("/api/validate-coupon"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ code: trimmed, cartLineItems }),
@@ -335,7 +336,7 @@ export async function fetchCartQuote(
   });
   const request = (async (): Promise<CartQuote | null> => {
     try {
-      const res = await fetch("/api/cart-quote", {
+      const res = await fetch(sitePath("/api/cart-quote"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cartLineItems }),
@@ -371,7 +372,7 @@ export async function fetchDeliveryQuote(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch("/api/cart-quote", {
+    const res = await fetch(sitePath("/api/cart-quote"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cartLineItems, fulfilment: { kind: "delivery", zip } }),

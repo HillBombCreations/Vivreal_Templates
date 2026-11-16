@@ -15,6 +15,7 @@ import {
 } from "@hillbombcreations/site-renderer";
 import { recordSiteGoal } from "@/lib/siteGoals";
 import { slotsForDay } from "@/lib/booking/bookingClient";
+import { sitePath } from "@/lib/sitePath";
 
 /**
  * The `/book` forms (owner ideas 2026-10-29, plan 3.4, T2). The renderer draws
@@ -51,7 +52,7 @@ export default function BookingClient({
 
   const onRequest = useCallback(async (values: BookingRequestValues): Promise<BookingSubmitResult> => {
     try {
-      const res = await fetch("/api/booking/request", {
+      const res = await fetch(sitePath("/api/booking/request"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(values),
@@ -71,7 +72,7 @@ export default function BookingClient({
     const params = new URLSearchParams({ serviceItemId: query.serviceId, from: query.day });
     if (query.staffId) params.set("staffId", query.staffId);
     try {
-      const res = await fetch(`/api/booking/slots?${params}`, { cache: "no-store" });
+      const res = await fetch(sitePath(`/api/booking/slots?${params}`), { cache: "no-store" });
       const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
       if (ticket !== latest.current) return; // a newer choice is already loading
       if (res.status === 409 && body?.reason === "request") {
@@ -86,7 +87,7 @@ export default function BookingClient({
 
   const onBook = useCallback(async (values: BookingCreateValues): Promise<BookingCreateResult> => {
     try {
-      const res = await fetch("/api/booking/create", {
+      const res = await fetch(sitePath("/api/booking/create"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

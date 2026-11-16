@@ -1,3 +1,5 @@
+import { sitePath } from "../../sitePath.ts";
+
 export async function subscribeUser(
   email: string,
   collectionId: string,
@@ -11,7 +13,7 @@ export async function subscribeUser(
   // owns its copy (see src/lib/subscribe/subscribersList.ts).
   if (!collectionId) return false;
   try {
-    const res = await fetch("/api/subscribe", {
+    const res = await fetch(sitePath("/api/subscribe"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, collectionId, ...(fields ? { fields } : {}) }),
