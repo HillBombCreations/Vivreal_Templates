@@ -2,7 +2,7 @@ import 'server-only';
 import { eventRows, type ComposePageInput } from '@hillbombcreations/site-renderer';
 import { buildListingEventsJsonLd } from '@/components/JsonLd/eventSchema';
 import { siteOrganizationId } from '@/components/JsonLd/schema';
-import { resolveSiteOrigin } from '@/lib/og/ogImage';
+import { resolveSitePublicBase } from '@/lib/og/ogImage';
 import type { SiteData } from '@/types/SiteData';
 
 /**
@@ -27,7 +27,7 @@ export function pageListingEventsJsonLd(
   });
   if (rows.length === 0) return null;
   const events = buildListingEventsJsonLd(rows, {
-    origin: resolveSiteOrigin(siteData, { surface: 'durable' }) || null,
+    origin: resolveSitePublicBase(siteData, { surface: 'durable' }) || null,
     pagePath,
     timezone: siteData.timezone,
     organizationId: siteOrganizationId(siteData),

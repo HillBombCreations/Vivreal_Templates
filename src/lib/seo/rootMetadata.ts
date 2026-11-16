@@ -6,7 +6,7 @@ import type { SiteData } from '@/types/SiteData';
 // siteOrigin.ts already follow.
 import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData } from '../api/siteData/degraded.ts';
-import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveSitePublicBase } from '../og/siteOrigin.ts';
 import { resolveServableFavicon } from './faviconGuard.ts';
 
 /**
@@ -59,7 +59,9 @@ export function googleVerificationMetadata(code: unknown): Pick<Metadata, 'verif
  * key, byte-identical to before.
  */
 export function buildRootMetadata(siteData: SiteData): Metadata {
-  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
+  // F270 (TP-5): with a base path, `metadataBase` carries it, and Next joins
+  // its pathname onto every relative metadata URL (resolve-url.js).
+  const origin = resolveSitePublicBase(siteData, { surface: 'deployed' });
   // DEGRADED READ ⇒ ASSERT NOTHING ABOUT INDEXING.
   //
   // Unlike robots.txt and the sitemap this does NOT throw, and the difference

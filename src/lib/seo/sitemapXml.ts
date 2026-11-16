@@ -15,6 +15,7 @@
  * Pure, so it runs under `node --test`.
  */
 import type { MetadataRoute } from 'next';
+import { SITE_BASE_PATH } from '../sitePath.ts';
 
 export const SITEMAP_PAGE_SIZE = 1_000;
 export const SITEMAP_PART_PATH = '/sitemaps';
@@ -80,7 +81,9 @@ export function sitemapPartCount(total: number): number {
 export function rootSitemapXml(entries: readonly Entry[]): string {
   const parts = sitemapPartCount(entries.length);
   if (parts === 0) return renderUrlset(entries);
-  return renderSitemapIndex(new URL(entries[0].url).origin, parts);
+  // The part files live under the base path (`/help/sitemaps/1.xml`; F270,
+  // TP-5): the entries' origin plus SITE_BASE_PATH, never the origin alone.
+  return renderSitemapIndex(new URL(entries[0].url).origin + SITE_BASE_PATH, parts);
 }
 
 const PART_FILE = /^([1-9][0-9]{0,5})\.xml$/;

@@ -3,7 +3,7 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 // by originConsistency.test.ts under `node --experimental-strip-types --test`,
 // which has no tsconfig `paths` resolution. Same convention originSource.ts /
 // robotsPolicy.ts / siteMapPolicy.ts already follow.
-import { resolveSiteOrigin } from '../../og/siteOrigin.ts';
+import { resolveSitePublicBase } from '../../og/siteOrigin.ts';
 
 type ScheduleFeedSiteData = Pick<
   SiteData,
@@ -35,7 +35,7 @@ const SCHEDULE_FEED_PATH = '/feeds/schedule.ics';
  * origin (`buildRobotsPolicy` ⇒ no `Sitemap:` directive).
  */
 export function buildScheduleFeedUrl(siteData: ScheduleFeedSiteData): string | undefined {
-  const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
+  const origin = resolveSitePublicBase(siteData, { surface: 'durable' });
   return origin ? `${origin}${SCHEDULE_FEED_PATH}` : undefined;
 }
 

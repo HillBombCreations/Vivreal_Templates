@@ -443,6 +443,6 @@ export function buildDetailUrl(
   slug: string,
   itemId: string,
 ): string | undefined {
-  const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
+  const origin = resolveSitePublicBase(siteData, { surface: 'durable' });
   return origin ? `${origin}/${slug.replace(/^\/+/, '')}/${itemId}` : undefined;
 }

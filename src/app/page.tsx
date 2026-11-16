@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
-import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { resolveSitePublicBase, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata } from "@/lib/seo/pageIndexing";
 import { buildPageContext } from "@/lib/api/composition/buildPageContext";
@@ -148,7 +148,7 @@ export const generateMetadata = async () => {
   // Home's page config is keyed as slug/format "home" (getSiteData); its `seo`
   // block (if any) drives the Studio-editable overrides.
   const seo = siteData?.homePageConfig?.seo;
-  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
+  const origin = resolveSitePublicBase(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, "home");
 
   // The owner's own title and summary win; below them, the business facts

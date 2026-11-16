@@ -28,7 +28,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { MetadataRoute } from 'next';
 import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from '../seo/demoSafety.ts';
-import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveSiteOrigin, resolveSitePublicBase } from '../og/siteOrigin.ts';
 import { readIndexNowKey } from './keyFile.ts';
 import { DegradedUpstreamError } from '../api/siteData/degraded.ts';
 import { isFloorValue } from '../api/snapshot/floorValue.ts';
@@ -101,7 +101,9 @@ export function snapshotPayload(
     eligible: true,
     host: new URL(origin).host,
     key,
-    keyLocation: `${origin}/${key}.txt`,
+    // The key file is served under the base path (`/help/<key>.txt`, the
+    // rewrite is auto-prefixed); the host stays the origin's (F270, TP-5).
+    keyLocation: `${resolveSitePublicBase(siteData, { surface: 'durable' })}/${key}.txt`,
     urls: entries.map((entry) => {
       const lastmod = entry.lastModified === undefined ? undefined : new Date(entry.lastModified).toISOString();
       return lastmod ? { loc: entry.url, lastmod } : { loc: entry.url };

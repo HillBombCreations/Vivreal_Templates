@@ -9,7 +9,7 @@ import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
 import type { SiteData } from "@/types/SiteData";
 import {
-  resolveSiteOrigin,
+  resolveSitePublicBase,
   buildOgImageUrl,
   buildOgItemImageUrl,
   buildDetailUrl,
@@ -867,7 +867,7 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // `durable`, not `deployed`: a Recipe's image sits in Google's index for
     // weeks, so an Amplify build host must be refused here exactly as it is for
     // the `url` two lines below.
-    const durableOrigin = recipe ? resolveSiteOrigin(siteData, { surface: "durable" }) : "";
+    const durableOrigin = recipe ? resolveSitePublicBase(siteData, { surface: "durable" }) : "";
     const recipeCardUrl = durableOrigin
       ? buildOgItemImageUrl(durableOrigin, slug, itemId)
       : undefined;
@@ -1293,7 +1293,7 @@ export async function generateMetadata({ params }: Props) {
   // pattern rootMetadata.ts set for the same state.
   if (isDegradedSiteData(siteData)) return {};
   const siteName = siteData?.businessInfo?.name || siteData?.name || "";
-  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
+  const origin = resolveSitePublicBase(siteData, { surface: 'deployed' });
   const routeCanonicalMetadata = buildRouteCanonicalMetadata(siteData, `/${slug}/${itemId}`);
 
   // CP-11: metadata for nested sub-pages resolved via the joined slug.

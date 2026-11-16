@@ -22,7 +22,7 @@ import '@hillbombcreations/site-renderer/styles/animations.css';
  */
 import '@hillbombcreations/site-renderer/styles/image-treatments.css';
 import { getSiteData } from '@/lib/api/siteData';
-import { resolveSiteOrigin } from '@/lib/og/ogImage';
+import { resolveSitePublicBase } from '@/lib/og/ogImage';
 import { buildRootMetadata } from '@/lib/seo/rootMetadata';
 import { isQuotaError } from '@/lib/api/client';
 import { resolveSiteFont } from '@/lib/fonts/siteFont';
@@ -84,7 +84,7 @@ export async function generateMetadata(): Promise<Metadata> {
     const siteData = await getSiteData();
     return buildRootMetadata(siteData);
   } catch {
-    const envOrigin = resolveSiteOrigin(null, { surface: 'deployed' });
+    const envOrigin = resolveSitePublicBase(null, { surface: 'deployed' });
     return envOrigin ? { metadataBase: new URL(envOrigin) } : {};
   }
 }

@@ -6,7 +6,7 @@ import type { SiteData } from '@/types/SiteData';
 // resolution. Same convention routeMetadata.ts / rootMetadata.ts follow.
 import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData, refuseDegradedClaim } from '../api/siteData/degraded.ts';
-import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveSitePublicBase } from '../og/siteOrigin.ts';
 
 type RobotsSiteData = Pick<
   SiteData,
@@ -80,7 +80,7 @@ export function buildRobotsPolicy(siteData: RobotsSiteData): MetadataRoute.Robot
 
   // `durable`, not `deployed`: a robots.txt `Sitemap:` directive sits in
   // crawler caches for days, so it must never advertise an Amplify build host.
-  const siteOrigin = resolveSiteOrigin(siteData, { surface: 'durable' });
+  const siteOrigin = resolveSitePublicBase(siteData, { surface: 'durable' });
 
   return {
     rules: [
