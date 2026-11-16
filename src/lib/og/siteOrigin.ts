@@ -4,6 +4,7 @@ import type { SiteData } from '@/types/SiteData';
 // `node --experimental-strip-types --test`, which has no tsconfig `paths`
 // resolution — same convention routeMetadata.ts already follows.
 import { isDemoSite } from '../seo/demoSafety.ts';
+import { SITE_BASE_PATH } from '../sitePath.ts';
 
 /**
  * Which SURFACE CLASS is asking for the origin, and therefore HOW STRICT the
@@ -387,6 +388,24 @@ export function resolveSiteOrigin(
   { surface }: { surface: OriginSurface },
 ): string {
   return resolveSiteOriginResult(siteData, { surface }).origin;
+}
+
+/**
+ * The public address of the HOME of what this app serves: the origin, plus the
+ * site's base path when it has one (release B, F270, design-help-path.md TP-4).
+ * `https://vivreal.io/help` for the help site, the bare origin for every other
+ * site; `''` when no origin resolves. Use it for an absolute address of
+ * something this app serves (a canonical, a sitemap `<loc>`, a share image);
+ * keep {@link resolveSiteOrigin} for the origin itself (a host, the business
+ * entity of the whole domain, a checkout return). Its contract stays origin
+ * only.
+ */
+export function resolveSitePublicBase(
+  siteData: OriginSiteData | null | undefined,
+  { surface }: { surface: OriginSurface },
+): string {
+  const origin = resolveSiteOrigin(siteData, { surface });
+  return origin ? origin + SITE_BASE_PATH : '';
 }
 
 /**
