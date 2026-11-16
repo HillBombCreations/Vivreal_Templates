@@ -155,6 +155,10 @@ const Providers = ({
             // Next release 2026-11 (N2): a contact form message the server
             // accepted sends one `gl` result beacon, through the same gate.
             onGoal={recordGoal}
+            // F270 (TP-10): the site's base path for every client component
+            // the renderer draws (raw links, form actions, fetches); '' on
+            // every site but the help site.
+            basePath={SITE_BASE_PATH}
         >
         <QueryClientProvider client={queryClient}>
         <TooltipProvider>

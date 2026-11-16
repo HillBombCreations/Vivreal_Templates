@@ -298,5 +298,10 @@ test('SOURCE PIN (D-10): buildPageContext asks the renderer over the same input 
     'the verdict must hear the renderer, lazily, over the exact composePage input',
   );
   assert.ok(code.includes("import { pageDrawsContent } from '@hillbombcreations/site-renderer';"), 'from the published package entry');
-  assert.ok(code.includes("options: { mode: 'live', emitSectionAnchors: false },"), 'the input these fixtures copy');
+  // F270 (TP-10): the base path joins only when set, so with no base (every
+  // site but help, and these fixtures) the input is exactly the one copied.
+  assert.ok(
+    code.includes("options: { mode: 'live', emitSectionAnchors: false, ...(SITE_BASE_PATH ? { basePath: SITE_BASE_PATH } : {}) },"),
+    'the input these fixtures copy',
+  );
 });

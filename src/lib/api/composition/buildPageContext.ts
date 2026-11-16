@@ -21,6 +21,7 @@ import { readableSegments } from '@/lib/detail/readableSegment';
 import { applyReadableLinks, readableLinkCollections, type ReadablePage } from '@/lib/detail/readableListLinks';
 import { PAGE_LIST_LIMIT, readCollectionPageList, usesProductBridge } from '@/lib/api/snapshot/fill';
 import { toRendererSiteData } from './rendererSiteData';
+import { SITE_BASE_PATH } from '@/lib/sitePath';
 
 export interface PageContextResult {
   /** Ready to hand straight to `composePage(input)`. */
@@ -216,7 +217,9 @@ export async function buildPageContext(args: BuildArgs): Promise<PageContextResu
     pages: (siteData.pageConfigs ?? []) as unknown as RendererPageConfig[],
     data,
     isHome,
-    options: { mode: 'live', emitSectionAnchors: false },
+    // F270 (TP-10): server layouts take the base path as a prop. Only when set,
+    // so every other site composes with exactly the options it had.
+    options: { mode: 'live', emitSectionAnchors: false, ...(SITE_BASE_PATH ? { basePath: SITE_BASE_PATH } : {}) },
   };
 
   // 5. Emptiness verdict for the generic-format `notFound()` parity.
