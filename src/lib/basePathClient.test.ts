@@ -11,8 +11,21 @@ import fs from 'node:fs';
 
 process.env.VIVREAL_SITE_BASE_PATH = '/help';
 
-const { beaconPagePath, SITE_BASE_PATH } = await import('./sitePath.ts');
-const { siteMountsCart } = await import('./payments.ts');
+// Namespaces, read per test: at a base without these rows each test fails on
+// its own assertion (the source pins run first) rather than the file failing
+// to load.
+const sitePathNs = (await import('./sitePath.ts').catch((err: unknown) => ({ loadError: String(err) }))) as Record<string, unknown>; // checked in each test
+const paymentsNs = (await import('./payments.ts')) as unknown as Record<string, unknown>; // checked in each test
+
+function beaconPagePath(routerPath: string | null, browserPath: string): string {
+  assert.equal(typeof sitePathNs.beaconPagePath, 'function', `sitePath.ts exports beaconPagePath ${String(sitePathNs.loadError ?? '')}`);
+  return (sitePathNs.beaconPagePath as (r: string | null, b: string) => string)(routerPath, browserPath);
+}
+
+function siteMountsCart(basePath: string, pages: Array<{ format?: string }>): boolean {
+  assert.equal(typeof paymentsNs.siteMountsCart, 'function', 'payments.ts exports siteMountsCart');
+  return (paymentsNs.siteMountsCart as (b: string, p: Array<{ format?: string }>) => boolean)(basePath, pages);
+}
 
 const source = (path: string) => fs.readFileSync(new URL(path, import.meta.url), 'utf8');
 
@@ -20,13 +33,14 @@ const source = (path: string) => fs.readFileSync(new URL(path, import.meta.url),
 const SHOP_PAGES = [{ format: 'products' }];
 
 test('[TP-9 ALLOW] a help view reports /help/<path>; with no router path, the browser path as it is', () => {
-  assert.equal(SITE_BASE_PATH, '/help');
+  assert.equal(sitePathNs.SITE_BASE_PATH, '/help');
   assert.equal(beaconPagePath('/a', '/help/a'), '/help/a');
   assert.equal(beaconPagePath('/', '/help'), '/help');
   assert.equal(beaconPagePath(null, '/help/a'), '/help/a');
 });
 
 test('[TP-9 REFUSE] under /help the beacon never reports an unbased path', () => {
+  assert.match(source('../components/SiteBeacon/index.tsx'), /const path = beaconPagePath\(pathname, window\.location\.pathname\);/);
   for (const path of ['/a', '/your-website/site-dashboard', '/pricing']) {
     assert.ok(beaconPagePath(path, `/help${path}`).startsWith('/help/'), path);
   }
@@ -38,10 +52,10 @@ test('[TP-11 ALLOW] no base path: exactly today\'s gate', () => {
 });
 
 test('[TP-11 REFUSE] under a base path the cart never mounts, even with product pages', () => {
-  assert.equal(siteMountsCart(SITE_BASE_PATH, SHOP_PAGES), false);
   const providers = source('../components/Providers/index.tsx');
   assert.match(providers, /const hasProducts = siteMountsCart\(SITE_BASE_PATH, pages as CartGatePage\[\]\);/);
   assert.match(providers, /\{hasProducts \? \(\s*<CartProvider>/);
+  assert.equal(siteMountsCart('/help', SHOP_PAGES), false);
 });
 
 test('[TP-10 ALLOW] the renderer gets the base: provider prop, composition option, contact bar prop', () => {

@@ -7,25 +7,43 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeBasePath } from '@hillbombcreations/site-renderer/bindings';
-import { readSiteBasePath } from './siteBasePath.ts';
+import * as bindings from '@hillbombcreations/site-renderer/bindings';
+
+/**
+ * The two validators, read per test: at a base without TP-2 (or with a
+ * renderer before 1.100.0) each row then fails on its own assertion, and the
+ * config rows below still run, rather than the whole file failing to load.
+ */
+async function validators(): Promise<{ readSiteBasePath: (raw: string | undefined) => string; normalizeBasePath: (value: unknown) => string }> {
+  const ns = (await import('./siteBasePath.ts').catch((err: unknown) => ({ loadError: String(err) }))) as Record<string, unknown>; // checked just below
+  const renderer = bindings as unknown as Record<string, unknown>; // checked just below
+  assert.equal(typeof ns.readSiteBasePath, 'function', `siteBasePath.ts exports readSiteBasePath ${String(ns.loadError ?? '')}`);
+  assert.equal(typeof renderer.normalizeBasePath, 'function', 'the renderer exports normalizeBasePath (1.100.0)');
+  return {
+    readSiteBasePath: ns.readSiteBasePath as (raw: string | undefined) => string,
+    normalizeBasePath: renderer.normalizeBasePath as (value: unknown) => string,
+  };
+}
 
 const VALID = ['/help', '/a-b', '/x9', '/help-centre'];
 const INVALID = ['/Help', '/HELP', '/help/', '/a/b', '/app', '/api', '/_next', '/docs', '/mcp', 'help', '/a--b', '//x', '/', '/ help', '/help ', '/-a', '/a-'];
 
-test('[TP-2 ALLOW] unset or empty is no base path', () => {
+test('[TP-2 ALLOW] unset or empty is no base path', async () => {
+  const { readSiteBasePath } = await validators();
   assert.equal(readSiteBasePath(undefined), '');
   assert.equal(readSiteBasePath(''), '');
 });
 
-test('[TP-2 ALLOW] one lowercase segment is the base path, as the renderer reads it', () => {
+test('[TP-2 ALLOW] one lowercase segment is the base path, as the renderer reads it', async () => {
+  const { readSiteBasePath, normalizeBasePath } = await validators();
   for (const value of VALID) {
     assert.equal(readSiteBasePath(value), value);
     assert.equal(normalizeBasePath(value), value, `renderer agrees on ${value}`);
   }
 });
 
-test('[TP-2 REFUSE] anything else throws with the SW-B text, and the renderer refuses it too', () => {
+test('[TP-2 REFUSE] anything else throws with the SW-B text, and the renderer refuses it too', async () => {
+  const { readSiteBasePath, normalizeBasePath } = await validators();
   for (const value of INVALID) {
     assert.throws(
       () => readSiteBasePath(value),
