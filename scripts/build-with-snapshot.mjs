@@ -78,12 +78,24 @@ export const SIZE_TRIM_BYTES = 25 * 1024 * 1024;
  * dashboard, 64 hex from the CLI), so 16 is a conservative floor that no
  * real key falls under. whsec_ also admits base64 `+` and `/`, which
  * non-Stripe signing secrets with the same prefix use.
+ *
+ * T-123 (F123, release B; review-5 note 1): Stripe TEST keys and AWS
+ * temporary key ids too. A test key reaches only test data, but it is still a
+ * credential and has no business in a public site's build. The same 16-body
+ * floor keeps help.vivreal.io's prose ("one that starts with `rk_test_`")
+ * passing; read on 2026-11-16 across its 111 pages and vivreal.io's 58: the
+ * prefixes appear only bare. An AWS temporary id is exactly ASIA plus 16, so
+ * it is matched as a whole word, which keeps an all-caps run that merely
+ * starts with ASIA from failing a build.
  */
 export const SECRET_PATTERNS = Object.freeze([
   ['aws-access-key-id', /AKIA[0-9A-Z]{16}/],
+  ['aws-temporary-key-id', /\bASIA[0-9A-Z]{16}\b/],
   ['pem-block', /-----BEGIN [A-Z0-9 ]+-----/],
   ['stripe-live-secret', /sk_live_[A-Za-z0-9]{16,}/],
   ['stripe-live-restricted', /rk_live_[A-Za-z0-9]{16,}/],
+  ['stripe-test-secret', /sk_test_[A-Za-z0-9]{16,}/],
+  ['stripe-test-restricted', /rk_test_[A-Za-z0-9]{16,}/],
   ['webhook-signing-secret', /whsec_[A-Za-z0-9+/]{16,}/],
 ]);
 
