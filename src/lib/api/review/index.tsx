@@ -1,43 +1,6 @@
 import 'server-only';
-import type { ReviewData, ReviewDisplay } from '@/types/Reviews';
-import { ApiError, clientFetch, clientFetchSafe } from '@/lib/api/client';
-
-interface CMSReviewObject {
-  _id: string;
-  objectValue: {
-    _id: string;
-    name: string;
-    review: string;
-    rating: number;
-    email?: string;
-  };
-  publishDate: string;
-}
-
-interface PaginatedResponse<T> {
-  items: T[];
-  totalCount: number;
-}
-
-export async function getReviews(collectionId?: string): Promise<ReviewDisplay[]> {
-  if (!collectionId) return [];
-
-  const res = await clientFetchSafe<PaginatedResponse<CMSReviewObject>>(
-    `/tenant/collectionObjects?collectionId=${encodeURIComponent(collectionId)}`,
-    { items: [], totalCount: 0 }
-  );
-
-  return res.items
-    .filter((item) => item.objectValue?.review && item.objectValue?.rating)
-    .map((item) => ({
-      id: item.objectValue._id || item._id,
-      name: item.objectValue.name || 'Anonymous',
-      review: item.objectValue.review,
-      rating: item.objectValue.rating,
-      date: item.publishDate,
-    }))
-    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-}
+import type { ReviewData } from '@/types/Reviews';
+import { ApiError, clientFetch } from '@/lib/api/client';
 
 /**
  * `status` is the upstream HTTP status when VR_Client_API answered, absent

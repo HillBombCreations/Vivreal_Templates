@@ -11,7 +11,7 @@ import type {
   SiteData as RendererSiteData,
   ScheduleView,
 } from "@hillbombcreations/site-renderer";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
 import { useSiteData } from "@/contexts/SiteDataContext";
 
@@ -75,6 +75,7 @@ export default function CoordinatedScheduleComposed({
 }: CoordinatedScheduleProps) {
   const siteData = useSiteData();
   const router = useRouter();
+  const pathname = usePathname();
 
   // S2/OD#3 — URL-sync callback. Called by ScheduleProvider's setView wrapper.
   // router.replace is used (not push) so tab switches don't pollute history —
@@ -84,9 +85,12 @@ export default function CoordinatedScheduleComposed({
     (v: "agenda" | "month" | "map") => {
       const url = new URL(window.location.href);
       url.searchParams.set("view", v);
-      router.replace(url.pathname + url.search, { scroll: false });
+      // `usePathname()`, never `url.pathname`: the router adds the site's base
+      // path itself, and the browser's path already carries it, so under
+      // /help that was /help/help/... (F270, TP-8).
+      router.replace(pathname + url.search, { scroll: false });
     },
-    [router],
+    [router, pathname],
   );
 
   return (

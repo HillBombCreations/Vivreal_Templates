@@ -15,6 +15,7 @@
  */
 
 import { isOrderCheck, type OrderCheck } from "./orderConfirmationId.ts";
+import { sitePath } from "./sitePath.ts";
 
 /** The part of a fetch Response this reads. */
 export type ConfirmResponse = { ok: boolean; json: () => Promise<unknown> };
@@ -23,7 +24,7 @@ export type PostConfirm = (sessionId: string) => Promise<ConfirmResponse>;
 const postConfirm: PostConfirm = (sessionId) =>
   // `keepalive` so the request survives the shopper navigating away from the
   // confirmation page before it completes, which is what people do after buying.
-  fetch("/api/checkout/confirm", {
+  fetch(sitePath("/api/checkout/confirm"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId }),

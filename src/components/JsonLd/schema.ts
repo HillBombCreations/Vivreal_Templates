@@ -20,7 +20,7 @@ import type { SiteData } from '@/types/SiteData';
 import type { HoursOverride, HoursRow, ReadSiteHours } from '@hillbombcreations/site-renderer';
 import { unsignMediaUrl } from './unsignMediaUrl.ts';
 import { isDemoSite } from '../../lib/seo/demoSafety.ts';
-import { resolveSiteOrigin } from '../../lib/og/siteOrigin.ts';
+import { resolveSiteOrigin, resolveSitePublicBase } from '../../lib/og/siteOrigin.ts';
 import { footerHours } from '../../lib/footerHours.ts';
 import { seedFreeMeta } from '../../lib/seo/seedFreeText.ts';
 import { resolveSiteBusinessType } from '../../lib/seo/businessTypeSchema.ts';
@@ -100,6 +100,8 @@ function httpsLink(value: unknown): string | undefined {
  */
 export function siteOrganizationId(siteData: SiteData): string | undefined {
   if (isDemoSite(siteData)) return undefined;
+  // The ORIGIN, never the base path (F270, TP-5): one business entity across
+  // the whole domain, so a help page and a marketing page name the same node.
   const origin = resolveSiteOrigin(siteData, { surface: 'durable' });
   return origin ? `${origin}/#organization` : undefined;
 }
@@ -123,7 +125,7 @@ export function buildSiteJsonLd(
     siteData.businessInfo?.name || siteData.name || 'Website';
   const url = isDemoSite(siteData)
     ? undefined
-    : resolveSiteOrigin(siteData, { surface: 'durable' }) || undefined;
+    : resolveSitePublicBase(siteData, { surface: 'durable' }) || undefined;
   // W25f-1: a kit seed instruction never reaches search as the business description.
   const description = seedFreeMeta(siteData.businessInfo?.description);
   // Discovery batch 3.10 item 15: the logo's stable address on this site

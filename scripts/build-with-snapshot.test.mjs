@@ -233,6 +233,57 @@ for (const [name, secret, check] of [
   });
 }
 
+/*
+ * T-123 item 7 (F123, release B; review-5 note 1): Stripe test keys and AWS
+ * temporary key ids. Named the usual way round here: REFUSE is a refused
+ * build, ALLOW a build that passes.
+ */
+for (const [name, secret, check] of [
+  ['a real-shaped Stripe test secret key', fakeKey('sk_test', KEY_BODY), 'stripe-test-secret'],
+  ['a real-shaped Stripe test restricted key', fakeKey('rk_test', KEY_BODY), 'stripe-test-restricted'],
+  ['an AWS temporary key id', ['AS', 'IA', 'QWERTYUIOP123456'].join(''), 'aws-temporary-key-id'],
+]) {
+  test(`[T-123 item 7 REFUSE] ${name} in a collection item fails the build, unprinted`, async () => {
+    const root = tempRoot();
+    try {
+      const entries = {
+        [siteDetailsPath(SITE)]: SHELL,
+        [MENU]: { items: [{ title: 'Oops', body: `Use ${secret} here.` }] },
+      };
+      const { code, errors } = await run(root, { spawnBuild: fakeBuild({ entries }) });
+      assert.equal(code, 1);
+      assert.match(errors.join('\n'), new RegExp(`REFUSED \\(secret-pattern\\): ${check}$`, 'm'));
+      assert.ok(!errors.join('\n').includes(secret), 'the key is never printed');
+      assert.equal(fs.existsSync(files(root)[0]), false, 'nothing is written');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const [name, note] of [
+  ['the help article sentence naming the rk_test_ prefix', 'Use a test key (one that starts with `rk_test_`) while you try it out.'],
+  ['both test prefixes in code spans', 'It starts with `sk_` or `rk_test_`, never `sk_test_...` in a live shop.'],
+  ['an all-caps run that only starts with ASIA', 'ASIAPACIFICFOODFESTIVAL2026 tickets on sale now.'],
+  ['a short id after ASIA', 'Shipping zone ASIA12 opens in May.'],
+]) {
+  test(`[T-123 item 7 ALLOW] ${name} does not fail the build`, async () => {
+    const root = tempRoot();
+    try {
+      const entries = {
+        [siteDetailsPath(SITE)]: SHELL,
+        [MENU]: { items: [{ title: 'Connect Stripe', body: note }] },
+      };
+      const { code, errors } = await run(root, { spawnBuild: fakeBuild({ entries }) });
+      assert.deepEqual(errors, []);
+      assert.equal(code, 0);
+      assert.equal(fs.existsSync(files(root)[0]), true, 'the snapshot is written');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
 test('T11 REFUSE: an output path under .next/static (or public) fails the build', async () => {
   for (const bad of [['.next', 'static', 'site-snapshot.json'], ['public', 'site-snapshot.json']]) {
     const root = tempRoot();

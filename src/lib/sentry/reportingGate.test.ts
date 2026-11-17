@@ -57,6 +57,19 @@ test('[VIVREAL-TEMPLATES-H ALLOW] an unrelated InvalidStateError, or our own wor
   assert.equal(ignored('Error: Checkout failed'), false);
 });
 
+test('[F370 REFUSE] Safari\'s message for an extension whose tab is gone is dropped, bare and as an Error', () => {
+  // VIVREAL-TEMPLATES-M: Safari's own sentence when a browser extension's
+  // content script messages a tab that no longer exists. Not our code.
+  assert.ok(ignored('Invalid call to runtime.sendMessage(). Tab not found.'));
+  assert.ok(ignored('Error: Invalid call to runtime.sendMessage(). Tab not found.'));
+});
+
+test('[F370 ALLOW] an unrelated error that mentions sendMessage is still reported', () => {
+  assert.equal(ignored('TypeError: Cannot read properties of undefined (reading \'sendMessage\')'), false);
+  assert.equal(ignored('Error: sendMessage failed for the booking form'), false);
+  assert.equal(ignored('Invalid call to runtimeXsendMessage()'), false, 'the dot is literal, not any character');
+});
+
 test('[V7.319 ALLOW] real errors, including other TimeoutError and InvalidStateError, are still reported', () => {
   assert.equal(ignored('TimeoutError: signal timed out'), false);
   assert.equal(ignored("InvalidStateError: Failed to execute 'put' on 'IDBObjectStore'"), false);

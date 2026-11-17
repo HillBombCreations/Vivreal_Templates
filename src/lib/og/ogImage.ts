@@ -2,6 +2,7 @@ import 'server-only';
 export {
   resolveSiteOrigin,
   resolveSiteOriginResult,
+  resolveSitePublicBase,
   resolveCanonicalUrl,
   buildDetailUrl,
   isRefusedOrigin,

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { isDemoSite } from './demoSafety.ts';
 import { resolveCanonicalUrl, resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { SITE_BASE_PATH } from '../sitePath.ts';
 // One shared shape, exported by the resolver that consumes it, so this file
 // cannot drift from what resolveCanonicalUrl actually reads.
 import type { OriginSiteData } from '../og/siteOrigin.ts';
@@ -22,7 +23,9 @@ export function resolveRouteCanonical(
   const origin = resolveCanonicalUrl(siteData) || resolveSiteOrigin(siteData, { surface: 'durable' });
   if (!origin) return undefined;
   const normalizedPath = routePath === '/' ? '' : `/${routePath.replace(/^\/+|\/+$/g, '')}`;
-  return `${origin}${normalizedPath}`;
+  // F270 (TP-5): the site's base path sits between the origin and the route
+  // (`https://vivreal.io/help/x`); `''` on every other site.
+  return `${origin}${SITE_BASE_PATH}${normalizedPath}`;
 }
 
 export function buildRouteCanonicalMetadata(

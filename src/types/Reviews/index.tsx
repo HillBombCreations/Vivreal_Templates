@@ -8,11 +8,3 @@ export type ReviewData = {
   // an empty hidden field; bots that fill it are silently rejected server-side.
   company_website?: string;
 };
-
-export type ReviewDisplay = {
-  id: string;
-  name: string;
-  review: string;
-  rating: number;
-  date: string;
-};

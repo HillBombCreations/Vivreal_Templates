@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BookingManage, type BookingCancelResult, type ManagedBooking } from "@hillbombcreations/site-renderer";
 import { MANAGE_TOKEN, readCancel, readLookup } from "@/lib/booking/bookingClient";
+import { sitePath } from "@/lib/sitePath";
 
 type View = { kind: "loading" } | { kind: "ready"; booking: ManagedBooking | null } | { kind: "error" };
 
@@ -47,7 +48,7 @@ export default function BookingManageClient({
     let live = true;
     void (async () => {
       try {
-        const res = await fetch("/api/booking/lookup", {
+        const res = await fetch(sitePath("/api/booking/lookup"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ token: t }),
@@ -69,7 +70,7 @@ export default function BookingManageClient({
 
   const onCancel = useCallback(async (): Promise<BookingCancelResult> => {
     try {
-      const res = await fetch("/api/booking/cancel", {
+      const res = await fetch(sitePath("/api/booking/cancel"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: token.current }),

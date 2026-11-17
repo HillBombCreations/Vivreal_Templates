@@ -41,7 +41,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { applyShortStock, capQuantity, clampCartToStock, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
+import { applyShortStock, atLineCap, clampCartToStock, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -285,11 +285,14 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
 
   const setQty = (productId: string, nextQty: number) => {
     const next = { ...(cart || {}) };
-    if (nextQty <= 0) {
+    // QA-W2-1 and F385: an increase stops at the line's cap (its own stock, or
+    // what a shared count leaves); a decrease is taken as asked; 0 removes the
+    // line, never a line of 0 (T-385 review B1). See `nextLineQuantity`.
+    const qty = next[productId] ? nextLineQuantity(next, productId, nextQty) : nextQty;
+    if (qty <= 0) {
       delete next[productId];
     } else if (next[productId]) {
-      // QA-W2-1: never above the line's tracked stock (no cap when untracked).
-      next[productId] = { ...next[productId], quantity: capQuantity(nextQty, next[productId].stock) };
+      next[productId] = { ...next[productId], quantity: qty };
     }
     setCart(next);
   };
@@ -564,7 +567,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                               className="h-7 w-7 cursor-pointer rounded-full hover:bg-black/5 disabled:opacity-40"
                               disabled={
                                 loadingCheckout ||
-                                (typeof item.stock === "number" && (item.quantity || 0) >= item.stock)
+                                atLineCap(cart || {}, item.id)
                               }
                               onClick={() =>
                                 setQty(item.id, (item.quantity || 0) + 1)

@@ -67,7 +67,9 @@ test("a recipe's structured image is the stable card URL on a durable origin", (
   // The unsigned media URL this route hands every other schema shape is
   // documented to 403 on this CloudFront distribution. Google requires a
   // fetchable image for a Recipe, so recipes get the card route instead.
-  assert.match(source, /resolveSiteOrigin\(siteData, \{ surface: "durable" \}\)/);
+  // F270 (TP-5): the same durable surface, plus the site's base path, so a
+  // help recipe's card is /help/og/... (the bare origin on every other site).
+  assert.match(source, /resolveSitePublicBase\(siteData, \{ surface: "durable" \}\)/);
   assert.match(source, /buildOgItemImageUrl\(durableOrigin, slug, itemId\)/);
   assert.match(source, /durableImageUrl: recipeCardUrl/);
 });

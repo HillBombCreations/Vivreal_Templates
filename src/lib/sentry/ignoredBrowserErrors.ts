@@ -22,6 +22,13 @@
  * error name prefix allowed), so a sentence of ours that merely starts the
  * same way is still reported.
  *
+ * VIVREAL-TEMPLATES-M (F370, 2026-11-15): "Invalid call to runtime.sendMessage()"
+ * is Safari's own sentence when a browser EXTENSION's script messages a tab
+ * that is gone. It comes from the visitor's extension, not from the site, and
+ * the page is unaffected. Matched on that call as written (the dot and the
+ * brackets literal), so any other error that merely mentions `sendMessage` is
+ * still reported.
+ *
  * No imports, so it runs under `node --test`.
  */
 export const IGNORED_BROWSER_ERRORS: RegExp[] = [
@@ -30,4 +37,5 @@ export const IGNORED_BROWSER_ERRORS: RegExp[] = [
   /Skipping view transition because viewport size changed/,
   /Skipping view transition because document visibility state has become hidden/,
   /^(?:[A-Za-z]+Error: )?Transition was skipped\.?$/,
+  /Invalid call to runtime\.sendMessage\(\)/,
 ];

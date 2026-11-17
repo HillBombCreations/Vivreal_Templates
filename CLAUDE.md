@@ -361,6 +361,46 @@ cannot tell those two audiences apart, so that case is on you (see `H36`).
 - **Preview** (`lib/previewGuard.ts`): enable lands on a `vr_pv` nonce, draft-mode links keep it, and an inline backstop reloads a non-draft page once when the `vr_pv_on` marker is set. `/api/preview/disable` ends it.
 - **Cart settings** (`lib/cart/cartSettings.ts`): `siteDetails.values.cart`, read defensively. OPT-IN (owner, 2026-10-29): with no saved `values.cart` the cart is exactly today's, even with Local delivery on: no Ship, Pickup or Delivery choice, and Buy now goes straight to checkout. Once saved, a shop that ships offers "Ship it to me" first and by default (`{kind:'ship'}`). The cart asks; Client decides at checkout. The checkout body never carries a fee.
 
+## Base path sites (release B, F270: help at `https://vivreal.io/help`)
+
+One site can be served under one path segment of another site's host. Today
+that is only the help centre, built by its own Amplify app (`vivreal-help-path`)
+from this same `stable` branch. vivreal-hq
+`docs/projects/next-release-B/design-help-path.md` is the design.
+
+- **The one setting.** `SITE_BASE_PATH` (Amplify env, that app only). Unset on
+  every other site: no `basePath` key, empty value, builds unchanged.
+  `src/lib/siteBasePath.ts` validates it (one lowercase segment, not `/app`,
+  `/api`, `/_next`, `/docs`, `/mcp`) and a wrong value FAILS the build.
+  `next.config.ts` sets Next's `basePath` and inlines
+  `env.VIVREAL_SITE_BASE_PATH`, which Next writes into every bundle at build,
+  so the stored buildSpec never matters for it. Read it as `SITE_BASE_PATH`
+  from `src/lib/sitePath.ts`, never from `process.env` at run time.
+- **What Next prefixes itself:** `Link`, `router.push`/`replace`,
+  `redirect()`/`permanentRedirect()`, `headers()`, `rewrites()` sources and
+  destinations, `/_next` assets, file-convention icons. Do not wrap these
+  (`withSitePath` is not idempotent: `/help/x` becomes `/help/help/x`).
+- **What `sitePath(url)` must wrap:** every `fetch` to this app's own routes,
+  every hand-built `Location`, middleware's redirects (`new URL(sitePath(t),
+  request.url)`), the beacon's page path. `usePathname()` and middleware's
+  `nextUrl.pathname` are WITHOUT the base; `window.location.pathname` is WITH it.
+- **Absolute addresses** (canonical, sitemap, robots `Sitemap:`, JSON-LD `url`,
+  OG, feed, IndexNow key location) use `resolveSitePublicBase` (origin plus
+  base). The ORIGIN stays for the `#organization` id, the IndexNow host and
+  checkout. Breadcrumbs keep the origin and put the base on each crumb path,
+  because the renderer resolves crumbs against the origin.
+- **The renderer** gets the base three ways: `NextSiteRendererProvider
+  basePath`, composePage `options.basePath` (only when set), and
+  `ContactButtons basePath` (it reads no context).
+- **Cart off.** `siteMountsCart` never mounts the cart under a base path:
+  checkout return addresses are origin only.
+- **The guards:** `src/lib/sitePathCoverage.test.ts` scans `src` for a bare
+  root-relative `fetch(` or `Location:` (positive control planted in the same
+  run, counts pinned); `src/basePathWiring.test.ts`,
+  `src/lib/basePathClient.test.ts` and
+  `src/lib/seo/originConsistency.basePath.test.ts` run the real modules as the
+  help build.
+
 ## Adding New Pages
 
 Pages are Studio-authored, not hardcoded: create the page config in the portal and `[slug]/page.tsx` renders it — nav, metadata, and OG image come for free. Only touch code for a genuinely new page **format**: add it to the renderer's `composePage()` and to `COMPOSE_FORMATS` in `src/app/[slug]/page.tsx` (and to the plain delegation chain beside `standard` when it composes like one, as `links` does). If the format can use the address query, `pageReadsQuery` must say so, or its pages will be cached unfiltered.

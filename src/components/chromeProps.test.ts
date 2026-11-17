@@ -47,7 +47,8 @@ test('FP2-55: the contact bar bridge hands the renderer the current path', () =>
   const code = source('./ContactButtonsChrome.tsx');
   assert.match(code, /^'use client';/);
   assert.match(code, /const pathname = usePathname\(\);/);
-  assert.match(code, /<ContactButtons siteData=\{siteData as RendererSiteData\} currentPath=\{pathname\} \/>/);
+  // F270 (TP-10): plus the site's base path, '' on every site but help.
+  assert.match(code, /<ContactButtons siteData=\{siteData as RendererSiteData\} currentPath=\{pathname\} basePath=\{SITE_BASE_PATH\} \/>/);
 });
 
 test('FP2-27: every item-detail mount tells the header there is no masthead, and the shell threads it', () => {

@@ -43,6 +43,7 @@
  * the keys this file happens to know about would silently drop every field
  * added after it was written.
  */
+import { sitePath } from '../sitePath.ts';
 
 /** The same-origin proxy. Relative on purpose: an absolute URL built on a site's own host is how a request ends up somewhere else. */
 export const DELIVERY_QUOTE_PATH = '/api/delivery-quote';
@@ -88,7 +89,7 @@ export async function requestDeliveryQuote(
     input: DeliveryQuoteRequest,
 ): Promise<DeliveryQuoteAnswer | null> {
     try {
-        const res = await fetch(DELIVERY_QUOTE_PATH, {
+        const res = await fetch(sitePath(DELIVERY_QUOTE_PATH), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             // Forwarded whole. See the header comment.

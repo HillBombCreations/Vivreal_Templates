@@ -7,7 +7,7 @@ import type { PageConfig, SiteData } from '@/types/SiteData';
 import { isDemoSite } from './demoSafety.ts';
 import { isDegradedSiteData, refuseDegradedClaim } from '../api/siteData/degraded.ts';
 import { buildSitemapEntries, type SitemapItem } from './sitemap.ts';
-import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveSitePublicBase } from '../og/siteOrigin.ts';
 
 type SiteMapSiteData = Pick<
   SiteData,
@@ -56,7 +56,7 @@ export function buildSiteMapForSite(
   // Amplify build host is refused rather than published.
   return buildSitemapEntries(
     pages,
-    resolveSiteOrigin(siteData, { surface: 'durable' }),
+    resolveSitePublicBase(siteData, { surface: 'durable' }),
     detailItemsByPage,
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useSiteData } from "@/contexts/SiteDataContext";
+import { sitePath } from "@/lib/sitePath";
 import { Mail, CheckCircle, AlertCircle, Loader2 } from "lucide-react";
 
 interface SubscribeClientProps {
@@ -45,7 +46,7 @@ export default function SubscribeClient({
     setErrorMessage("");
 
     try {
-      const res = await fetch("/api/subscribe", {
+      const res = await fetch(sitePath("/api/subscribe"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collectionId, email: email.trim() }),

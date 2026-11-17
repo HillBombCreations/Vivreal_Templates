@@ -6,6 +6,7 @@ import {
   resolvePreviewRedirectTarget,
 } from '@/lib/api/previewToken';
 import { PREVIEW_MARKER_COOKIE } from '@/lib/previewGuard';
+import { sitePath } from '@/lib/sitePath';
 
 // Same runtime as /api/preview/enable: `draftMode()` writes the bypass cookie.
 export const runtime = 'nodejs';
@@ -25,6 +26,6 @@ export async function GET(request: NextRequest) {
   jar.delete(PREVIEW_MARKER_COOKIE);
   return new NextResponse(null, {
     status: 307,
-    headers: { Location: target, 'Cache-Control': 'no-store' },
+    headers: { Location: sitePath(target), 'Cache-Control': 'no-store' },
   });
 }

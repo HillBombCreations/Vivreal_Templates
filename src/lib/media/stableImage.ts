@@ -22,7 +22,7 @@
  */
 import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from '../seo/demoSafety.ts';
-import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { resolveSiteOrigin, resolveSitePublicBase } from '../og/siteOrigin.ts';
 import { unsignMediaUrl } from '../../components/JsonLd/unsignMediaUrl.ts';
 
 export const STABLE_IMAGE_CACHE_CONTROL = 'public, max-age=86400, s-maxage=604800';
@@ -45,7 +45,7 @@ export function itemImageUrl(origin: string, slug: string, itemId: string): stri
  */
 export function stableImageOrigin(siteData: Parameters<typeof resolveSiteOrigin>[0] & Pick<SiteData, 'degraded'>): string {
   if (isDemoSite(siteData)) return '';
-  return resolveSiteOrigin(siteData, { surface: 'durable' });
+  return resolveSitePublicBase(siteData, { surface: 'durable' });
 }
 
 /**

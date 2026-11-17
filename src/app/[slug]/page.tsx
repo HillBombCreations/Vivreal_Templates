@@ -10,7 +10,7 @@ import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
 import { refuseUnknownEmptiness } from "@/lib/degradedPageRefusal";
-import { resolveSiteOrigin, buildOgImageUrl } from "@/lib/og/ogImage";
+import { resolveSitePublicBase, buildOgImageUrl } from "@/lib/og/ogImage";
 import { buildRouteCanonicalMetadata } from "@/lib/seo/routeMetadata";
 import { buildPageRobotsMetadata, buildEmptyPageMetadata } from "@/lib/seo/pageIndexing";
 import { CHECKOUT_RESULT_SLUGS, resolvePageForSlug } from "@/lib/pages/builtInPages";
@@ -992,7 +992,7 @@ export async function generateMetadata({
     facts: readBusinessFacts(siteData?.businessInfo, siteData?.name, siteData?.siteInfo),
   });
 
-  const origin = resolveSiteOrigin(siteData, { surface: 'deployed' });
+  const origin = resolveSitePublicBase(siteData, { surface: 'deployed' });
   const ogImageUrl = buildOgImageUrl(origin, slug);
 
   return {

@@ -10,6 +10,7 @@ import type { Crumb } from '@hillbombcreations/site-renderer';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import { isDemoSite } from './demoSafety.ts';
 import { resolveSiteOrigin } from '../og/siteOrigin.ts';
+import { sitePath } from '../sitePath.ts';
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
 
@@ -26,10 +27,13 @@ export function detailCrumbs({
   itemName: string | undefined;
 }): Crumb[] {
   const listPath = `/${slug.replace(/^\/+/, '')}`;
+  // Each path carries the site's base path (F270, TP-5): the renderer resolves
+  // a crumb against the ORIGIN (`new URL(path, origin)`, same-origin checked),
+  // so the base goes on the path, never on the origin, where it would be lost.
   return [
-    { name: 'Home', path: '/' },
-    { name: text(page.labels?.title) || text(page.name), path: listPath },
-    { name: text(itemName), path: `${listPath}/${itemSegment}` },
+    { name: 'Home', path: sitePath('/') },
+    { name: text(page.labels?.title) || text(page.name), path: sitePath(listPath) },
+    { name: text(itemName), path: sitePath(`${listPath}/${itemSegment}`) },
   ];
 }
 

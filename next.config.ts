@@ -7,6 +7,7 @@ import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
 import { scriptPolicyHeaders } from "./src/lib/scriptPolicy.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
+import { readSiteBasePath } from "./src/lib/siteBasePath.ts";
 
 const COMMIT_SHA = /^[0-9a-f]{40}$/i;
 
@@ -47,7 +48,19 @@ function readGitHead(): string | undefined {
 
 const sentryRelease = sentryReleaseName(process.env.AWS_COMMIT_ID, readGitHead);
 
+// F270 (release B, help at https://vivreal.io/help): the one base path
+// setting, carried only by the help app. A wrong value throws here and fails
+// the build (src/lib/siteBasePath.ts). It reaches the code through `env`,
+// which Next inlines into every bundle at BUILD time, not through the run-time
+// environment, so the app's stored buildSpec (which Amplify keeps whatever
+// the repo says) can never leave the server and the browser disagreeing.
+// Unset on every other site: no `basePath` key and an empty value, so their
+// builds are unchanged.
+const siteBasePath = readSiteBasePath(process.env.SITE_BASE_PATH);
+
 const nextConfig: NextConfig = {
+  ...(siteBasePath ? { basePath: siteBasePath } : {}),
+  env: { VIVREAL_SITE_BASE_PATH: siteBasePath },
   allowedDevOrigins: ['10.0.0.90'],
   transpilePackages: ['@hillbombcreations/site-renderer'],
   // `expireTime` decides whether an ISR page regenerates in the BACKGROUND or

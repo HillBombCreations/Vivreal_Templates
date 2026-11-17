@@ -17,6 +17,13 @@ export interface CartItem {
      * lib/cartStock.ts.
      */
     stock?: number;
+    /**
+     * F385 (SW-B25 option A): `stock` is ONE count shared by every line of
+     * this product (`_id`), a product priced per option (Stripe) or per size
+     * (Square, F393) with a single number. The bag caps the SUM of those lines
+     * at it. Absent: `stock` is this line's own.
+     */
+    sharedStock?: true;
 }
 
 export type Cart = Record<string, CartItem>;

@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { ContactButtons, type SiteData as RendererSiteData } from '@hillbombcreations/site-renderer';
 import type { ContactButtonsSiteData } from '@/lib/contactButtons';
+import { SITE_BASE_PATH } from '@/lib/sitePath';
 
 /**
  * Client bridge for the renderer's contact bar (search R3). The root layout
@@ -15,5 +16,7 @@ import type { ContactButtonsSiteData } from '@/lib/contactButtons';
 export default function ContactButtonsChrome({ siteData }: { siteData: ContactButtonsSiteData }) {
   const pathname = usePathname();
   // Cast: the slice carries every field `resolveContactButtons` reads.
-  return <ContactButtons siteData={siteData as RendererSiteData} currentPath={pathname} />;
+  // `basePath` (F270, TP-10): the bar renders on the server side of the
+  // renderer and reads no context, so the base goes in as a prop.
+  return <ContactButtons siteData={siteData as RendererSiteData} currentPath={pathname} basePath={SITE_BASE_PATH} />;
 }

@@ -24,6 +24,7 @@ import {
   buildPreviewEnableUrl,
   isWellFormedPreviewToken,
 } from '@/lib/api/previewToken'
+import { sitePath } from '@/lib/sitePath'
 
 function neverAPageResponse() {
   return new NextResponse(NEVER_A_PAGE_BODY, {
@@ -57,7 +58,10 @@ async function legacyExtensionResponse(request: NextRequest) {
     return neverAPageResponse()
   }
 
-  const redirectUrl = new URL(target, request.url)
+  // An authored target is a site path without the base; Next does not prefix
+  // a middleware redirect, so `sitePath` does (F270, TP-7). The same-origin
+  // check below runs on the resolved URL either way.
+  const redirectUrl = new URL(sitePath(target), request.url)
   if (redirectUrl.origin !== request.nextUrl.origin) {
     return neverAPageResponse()
   }
@@ -278,7 +282,8 @@ export async function middleware(request: NextRequest) {
     return demoAware(fallthrough())
   }
 
-  const redirectUrl = new URL(target, request.url)
+  // Under the site's base path (F270, TP-7), as in `legacyExtensionResponse`.
+  const redirectUrl = new URL(sitePath(target), request.url)
 
   // AUTHORITATIVE same-origin check (docs/bugs/templates-soft-404-and-301-status,
   // review pass 2, FAIL 1): validate the RESOLVED URL the parser actually
