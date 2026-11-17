@@ -208,6 +208,8 @@ VR_Client_API generates signed URLs for any media field listed in `objectValue.m
 NEXT_PUBLIC_CLIENT_API         # VR_Client_API base URL (default https://client.vivreal.io)
 API_KEY                        # API key for VR_Client_API authorization
 SITE_ID                        # MongoDB site document ID; 'preview' in local/preview (disables SiteBeacon)
+                               #   Also picks the report-only script policy at build (src/lib/scriptPolicy.ts): Vivreal's
+                               #   own two ids get the stronger SEC-W2 (SEC-1 F455); every other id keeps SW-A21 byte for byte.
 NEXT_PUBLIC_SITE_URL           # Optional per-site origin override (CloudFront rewrites Host — never derive from request).
                                #   NOT set by the deploy pipeline: measured unset across the fleet's Amplify apps at the time
                                #   that was written, so this level was inert in production. That is an INFRASTRUCTURE snapshot,
@@ -215,7 +217,9 @@ NEXT_PUBLIC_SITE_URL           # Optional per-site origin override (CloudFront r
                                #   before relying on it. The persisted `siteDetails.values.canonicalUrl` outranks it either way.
 SITE_CACHE_TTL_SECONDS         # Data Cache TTL (default 60; 86400 only after raising signed-URL TTL)
 REVALIDATE_WEBHOOK_SECRET      # HMAC secret for /api/revalidate webhook verification
-NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e)
+NEXT_PUBLIC_ANALYTICS_ENDPOINT # SiteBeacon collector override (default https://collect.vivreal.io/e, src/lib/beaconEndpoint.ts)
+                               #   On vivreal.io and help, its origin (and NEXT_PUBLIC_DOMAINS_API's) is written into the
+                               #   policy's connect-src, so an override that is not an absolute https address fails their build.
 NEXT_PUBLIC_SENTRY_DSN         # Sentry DSN
 SHOWS_ID / TEAMMEMBERS_ID / PARTNERS_ID  # Legacy collection-ID fallbacks (block bindings win — see getPageCollectionId)
 INTERNAL_METER_KEY             # Internal-meter key for THIS group (64 lowercase hex), server-only (next release 2026-11, F0)
