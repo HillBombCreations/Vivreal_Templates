@@ -134,14 +134,17 @@ const nextConfig: NextConfig = {
   // F173 (release A T-2, SW-A21): the allowed-sites script policy, report-only,
   // on the same every-route entry. Its report endpoint is built from the DSN
   // when the build evaluates this, and no DSN means no header
-  // (src/lib/scriptPolicy.ts).
+  // (src/lib/scriptPolicy.ts). SEC-1 F455: the build's SITE_ID picks the value.
+  // Vivreal's own two sites (vivreal.io, help.vivreal.io) get the stronger
+  // SEC-W2, with a narrowed Google tag source and a connect-src; every other
+  // site keeps SW-A21 byte for byte. Both stay report-only.
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
           { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
-          ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN),
+          ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN, process.env.SITE_ID),
         ],
       },
     ];

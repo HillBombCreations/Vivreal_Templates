@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
+import { beaconEndpoint } from '@/lib/beaconEndpoint';
 import { shouldSendBeacon } from '@/lib/beaconPolicy';
 import { browserBeaconTransport, buildPageViewPayload, configureSiteEvents } from '@/lib/siteEvents';
 import { beaconPagePath } from '@/lib/sitePath';
@@ -27,9 +28,10 @@ import { beaconPagePath } from '@/lib/sitePath';
  * On Vivreal's OWN sites it is also not sent for staff (`vr_internal`), off the
  * vivreal.io and help.vivreal.io hosts, or from a next.vivreal.io referrer
  * (`lib/beaconPolicy.ts`). Customer sites keep exactly the rule above.
+ *
+ * The address comes from `lib/beaconEndpoint.ts`, the same resolver Vivreal's
+ * own sites' script policy reads (SEC-1 F455), so the two cannot drift.
  */
-
-const DEFAULT_ENDPOINT = 'https://collect.vivreal.io/e';
 
 export default function SiteBeacon({
   siteId,
@@ -61,7 +63,7 @@ export default function SiteBeacon({
     ) {
       return;
     }
-    const endpoint = process.env.NEXT_PUBLIC_ANALYTICS_ENDPOINT || DEFAULT_ENDPOINT;
+    const endpoint = beaconEndpoint();
     if (!endpoint) return;
     // Link taps and results (lib/siteEvents.ts) follow this page view's gate:
     // they are configured only once `shouldSendBeacon` said yes.
