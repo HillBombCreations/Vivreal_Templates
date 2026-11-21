@@ -159,3 +159,25 @@ test("QA-W2-1: the bag caps quantity at stock, disables + at the cap, and handle
   const clearCodeAt = code.search(/setCodeError\(\s*err instanceof Error/);
   assert.ok(stockAt > -1 && clearCodeAt > -1 && stockAt < clearCodeAt, "stock refusal handled first");
 });
+
+// Release C (the renderer builder's find; walk D-31): a long product name in
+// the bag wraps to at most two lines; it used to be cut to one (`truncate`).
+// The element whose only child is the line's name, whatever else it carries.
+const lineName = (text: string) =>
+  /<div[^>]*\bclassName="([^"]*)"[^>]*>\s*\{item\?\.name\}\s*<\/div>/.exec(text)?.[1];
+
+test("ALLOW (cart long names): a bag line's name wraps to at most two lines, the whole name in its text", () => {
+  const classes = lineName(code);
+  assert.ok(classes, "the bag line name element is found");
+  assert.match(classes, /(^| )line-clamp-2( |$)/, "at most two lines");
+  assert.match(classes, /(^| )break-words( |$)/, "a long word breaks rather than overflows");
+});
+
+test("REFUSE (cart long names): the bag line's name is never cut to one line", () => {
+  const classes = lineName(code);
+  assert.ok(classes, "the bag line name element is found");
+  assert.doesNotMatch(classes, /(^| )(truncate|line-clamp-1|whitespace-nowrap)( |$)/);
+  // Control: the old element is caught by the same pattern.
+  const old = ['<div data-cart-line-name="" className="truncate text-sm font-semibold">', "{item?.name}", "</div>"].join(" ");
+  assert.match(lineName(old) ?? "", /(^| )truncate( |$)/);
+});

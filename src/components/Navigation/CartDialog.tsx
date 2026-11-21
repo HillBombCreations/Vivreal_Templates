@@ -508,7 +508,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">
+                            {/* Release C (the renderer builder's find): a long name wraps to
+                                two lines, never cut to one, and the full name stays in the
+                                text, so a screen reader reads it whole. Walk D-31. */}
+                            <div data-cart-line-name="" className="line-clamp-2 break-words text-sm font-semibold">
                               {item?.name}
                             </div>
                             <div className="mt-1 text-xs text-black/60">
