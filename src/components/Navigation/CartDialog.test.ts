@@ -37,7 +37,9 @@ test("H34: the bag reads prices through the shared tolerant parser", () => {
   // tolerant parser for every line the quote does not carry (tested by being
   // CALLED in src/lib/cartQuote.test.ts). This pins both halves of that path.
   assert.match(source, /from "@\/lib\/cartQuote"/);
-  assert.match(code, /bagTotals\(itemsArray, quote, appliedCode \? codeNewSubtotal : null\)/);
+  // F526 (release C): the total reads the counted lines, so a line checkout
+  // refused is left out (src/lib/cartRefusedTotal.test.ts); the quote is the same.
+  assert.match(code, /bagTotals\(linesCounted\(itemsArray, unavailable\?\.priceIds \?\? \[\]\), quote, appliedCode \? codeNewSubtotal : null\)/);
   assert.match(code, /const price = linePrice\(item, quote\);/);
   const quoteModule = fs.readFileSync(new URL("../../lib/cartQuote.ts", import.meta.url), "utf8");
   assert.match(quoteModule, /return \{ unit: cartUnitPrice\(item\), was: null, saleName: null \};/);

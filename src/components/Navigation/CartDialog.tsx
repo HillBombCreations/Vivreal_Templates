@@ -42,7 +42,7 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { applyShortStock, atLineCap, clampCartToStock, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
+import { applyShortStock, atLineCap, clampCartToStock, linesCounted, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutRefusedLine, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -178,9 +178,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // shows its list price (H34: read through the tolerant `cartUnitPrice`, never
   // a bare Number()), which is never below what checkout charges.
   const { quote, requote } = useCartQuote(cartLineItems, linesKey, open);
+  // F526 (release C): a line checkout refused as no longer sold stays in the
+  // bag, marked, but the total leaves it out at once (`linesCounted`).
   const { subtotal, discount, total } = useMemo(
-    () => bagTotals(itemsArray, quote, appliedCode ? codeNewSubtotal : null),
-    [itemsArray, quote, appliedCode, codeNewSubtotal]
+    () => bagTotals(linesCounted(itemsArray, unavailable?.priceIds ?? []), quote, appliedCode ? codeNewSubtotal : null),
+    [itemsArray, unavailable, quote, appliedCode, codeNewSubtotal]
   );
   const hasDiscount = appliedCode != null && discount > 0;
   // The minimum is checked on the total after the code, as the server checks it.
@@ -201,6 +203,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const choiceMissing = blocked !== null;
   // Client F30: the bag's own names for the lines checkout no longer sells (none from an older Client).
   const unavailableNames = unavailable ? withoutUnavailableLines(cart || {}, unavailable.priceIds).removed : [];
+  const totalLeavesOut = withoutRefusedLine(unavailableNames);
 
   const onCheckZip = async () => {
     const clean = cleanZip(zip);
@@ -741,6 +744,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             <div className="text-black/60">Subtotal</div>
             <div className="font-semibold">{currency(subtotal)}</div>
           </div>
+          {totalLeavesOut ? <div className="mt-0.5 text-xs text-black/60">{totalLeavesOut}</div> : null}
 
           {hasDiscount ? (
             <>

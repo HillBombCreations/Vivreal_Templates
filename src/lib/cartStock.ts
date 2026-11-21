@@ -345,6 +345,27 @@ export function withoutUnavailableLines(cart: Cart, priceIds: readonly string[])
   return { cart: next, removed };
 }
 
+/**
+ * F526 seasonal (release C; `design-seasonal-products.md` 6.4, T12): the bag's
+ * lines the total counts. A line checkout refused as no longer sold (out of
+ * season, or taken off the site) stays in the bag, marked, until the shopper
+ * removes it, but the total leaves it out at once, so the bag never shows a
+ * total, or meets a minimum, with an item nobody can buy.
+ */
+export function linesCounted<T extends { priceID?: string }>(items: readonly T[], refusedPriceIds: readonly string[]): T[] {
+  if (refusedPriceIds.length === 0) return [...items];
+  const refused = new Set(refusedPriceIds);
+  return items.filter((item) => !(item.priceID && refused.has(item.priceID)));
+}
+
+/** The line under the subtotal naming what it leaves out, or null when it leaves out nothing. */
+export function withoutRefusedLine(names: readonly string[]): string | null {
+  if (names.length === 0) return null;
+  if (names.length === 1) return "Without " + names[0] + ", which is no longer available.";
+  const listed = names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  return "Without " + listed + ", which are no longer available.";
+}
+
 /** The bag's one-tap button for lines checkout no longer sells. */
 export const REMOVE_UNAVAILABLE_LABEL = "Remove from bag";
 
