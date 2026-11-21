@@ -9,7 +9,10 @@ import {
   handleCheckout,
   BUY_NOW_FAILED_MESSAGE,
   addRefusal,
+  fetchCartQuote,
+  CheckoutShopRuleError,
 } from "@/lib/utils/cartUtils";
+import { quoteAsksQuestion } from "@/lib/cart/cartAsks";
 import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import { toast } from "@/hooks/use-toast";
@@ -66,17 +69,30 @@ export function useCartAdapter(): CartAdapter | null {
         // hand it straight to handleCheckout (VR_Client_API resolves the
         // payments provider server-side and returns the hosted checkout URL).
         const templatesProduct = rendererProductToTemplates(product);
-        // Owner ideas T13/T15: with a note, a pickup time, a minimum or a
-        // choice of pickup and delivery, the shopper decides in the cart, so
-        // Buy now adds the item and opens it rather than skipping past them.
-        if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
+        const priceID = resolveVariantableString(templatesProduct.checkoutIdentifier ?? templatesProduct.default_price, variant) ?? "";
+        // Adds the item and opens the cart, where the shopper decides.
+        const addAndOpenCart = () => {
           const added = handleAddToCart({ product: templatesProduct, selectedVariant: variant, quantity, cart, setCart });
           if (added) cartCtx.setOpenCartMenu(true);
           else toast({ variant: "destructive", ...addRefusal(templatesProduct, variant, cart), duration: FAILURE_TOAST_MS });
+        };
+        // Owner ideas T13/T15: with a note, a pickup time, a minimum or a
+        // choice of pickup and delivery, the shopper decides in the cart, so
+        // Buy now adds the item and opens it rather than skipping past them.
+        // Release C (SQP-T3, FP1.4): the same for the newsletter box (either
+        // provider) and, on a Square shop, a product question, which only the
+        // cart can ask; the quote says whether this product has one.
+        const settings = readCartSettings(siteData?.cart);
+        const ways = { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) };
+        const square = siteData?.paymentsProvider === "square";
+        const needsCart =
+          cartNeedsChoices(settings, ways) ||
+          (square && cartNeedsChoices(settings, ways, { square, lineAsks: quoteAsksQuestion(await fetchCartQuote([{ price: priceID, quantity }])) }));
+        if (needsCart) {
+          addAndOpenCart();
           return;
         }
         const resolvedVariant = resolveVariant(variant, templatesProduct) ?? "default";
-        const priceID = resolveVariantableString(templatesProduct.checkoutIdentifier ?? templatesProduct.default_price, variant) ?? "";
         const name = getSafeFieldValue(templatesProduct, "name", variant) ?? "";
         const price = getSafeFieldValue(templatesProduct, "price", variant) ?? "";
         const imageUrl = getSafeFieldValue(templatesProduct, "imageUrl", variant) ?? "";
@@ -98,6 +114,13 @@ export function useCartAdapter(): CartAdapter | null {
             originUrl: typeof window !== "undefined" ? window.location.origin : "",
           });
         } catch (err) {
+          // Release C (SQP-T3, FP1.4): the quote did not know of the question
+          // (the owner turned it on just now). Never a dead end: the item goes
+          // in the cart, which opens with the box.
+          if (err instanceof CheckoutShopRuleError && err.code === "QUESTION_REQUIRED") {
+            addAndOpenCart();
+            return;
+          }
           // H45/H33: this hop had NO catch. Every refusal checkout can give
           // (an unbuyable line, a group with no provider active, an upstream
           // wobble) became an unhandled rejection: the spinner stopped, the

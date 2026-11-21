@@ -199,7 +199,13 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {
   for (const rel of ['../../components/PageTemplates/ProductDetailClient/FloatingCartDialog.tsx', '../cartAdapter.ts']) {
     const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
-    const ask = src.indexOf('if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {');
+    // Release C (SQP-T3): both doors read the settings and ways once, then ask
+    // `cartNeedsChoices` (with the Square question, cartAsks.doors.test.ts).
+    assert.ok(
+      src.includes('const ways = { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) };'),
+      `${rel} reads the shop's ways`,
+    );
+    const ask = src.indexOf('cartNeedsChoices(settings, ways)');
     assert.ok(ask > 0, `${rel} asks first`);
     assert.ok(ask < src.indexOf('await handleCheckout('), `${rel} asks before checking out`);
   }

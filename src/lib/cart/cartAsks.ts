@@ -117,3 +117,15 @@ export function joinBoxLabel(businessName: string): string {
   const name = businessName.trim();
   return /[.!?]$/.test(name) ? `Email me news and offers from ${name}` : `Email me news and offers from ${name}.`;
 }
+
+/**
+ * SQP-T3 (FP1.4): whether a quick door (Buy now, the "Added to bag" card) on a
+ * Square shop must open the cart because a product in it asks a question: any
+ * quoted line carries one. A quote that failed cannot tell, so it counts as
+ * asking: the cart opens and asks the quote again, never a refused checkout.
+ */
+export function quoteAsksQuestion(quote: CartQuote | null): boolean {
+  if (!quote) return true;
+  for (const line of quote.values()) if (line.question) return true;
+  return false;
+}

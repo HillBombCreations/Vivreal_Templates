@@ -246,7 +246,17 @@ export function pickupOnlyLine(choices: readonly FulfilmentKind[]): string | nul
 }
 
 /** Whether checkout from the quick "Added to bag" card or Buy now must open the cart first. */
-export function cartNeedsChoices(settings: CartSettings, ways: ShopWays): boolean {
+export function cartNeedsChoices(
+  settings: CartSettings,
+  ways: ShopWays,
+  asks?: { square: boolean; lineAsks: boolean },
+): boolean {
+  // Release C (design-square-parity.md FP1.4, widened by its fix pass of
+  // 2026-11-21): the cart asks the shopper something the payment page will
+  // not. The newsletter box, on either provider; a product question, on a
+  // Square shop only (Stripe asks those on its own page).
+  if (settings.askToJoinList) return true;
+  if (asks?.square && asks.lineAsks) return true;
   if (!settings.saved) return false;
   const choices = fulfilmentChoices(settings, ways);
   // Delivery as the only way (Pickup off, no shipping, F54 L-10 D5) still needs its ZIP checked in the cart,
