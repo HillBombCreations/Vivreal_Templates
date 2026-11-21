@@ -5,8 +5,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
-import { scriptPolicyHeaders } from "./src/lib/scriptPolicy.ts";
-import { baseSecurityHeaders, frameRuleHeader } from "./src/lib/securityHeaders.ts";
+import { scriptPolicyHeaders, scriptPolicyMode } from "./src/lib/scriptPolicy.ts";
+import { baseSecurityHeaders, FRAME_ANCESTORS_DIRECTIVE } from "./src/lib/securityHeaders.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 import { readSiteBasePath } from "./src/lib/siteBasePath.ts";
 
@@ -144,14 +144,25 @@ const nextConfig: NextConfig = {
   // enforced policy header, alone while the script policy watches), plus
   // `X-Content-Type-Options: nosniff` and a `Referrer-Policy`, on every route,
   // with or without a DSN (src/lib/securityHeaders.ts).
+  //
+  // PRL-RA11 (release C, SW-C8 SP-1 to SP-3): the app's VIVREAL_SCRIPT_POLICY
+  // build setting switches the script policy from watching to blocking with no
+  // second deployment. Unset or `report-only`: the headers above, byte for
+  // byte. `enforce`: one Content-Security-Policy holding the script policy and
+  // the frame rule, reports tagged csp-site or csp-own. Any other value throws
+  // here and fails the build (src/lib/scriptPolicy.ts).
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
           ...baseSecurityHeaders(),
-          frameRuleHeader(),
-          ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN, process.env.SITE_ID),
+          ...scriptPolicyHeaders(
+            process.env.NEXT_PUBLIC_SENTRY_DSN,
+            process.env.SITE_ID,
+            scriptPolicyMode(process.env.VIVREAL_SCRIPT_POLICY),
+            FRAME_ANCESTORS_DIRECTIVE,
+          ),
         ],
       },
     ];

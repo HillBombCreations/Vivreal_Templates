@@ -208,8 +208,15 @@ VR_Client_API generates signed URLs for any media field listed in `objectValue.m
 NEXT_PUBLIC_CLIENT_API         # VR_Client_API base URL (default https://client.vivreal.io)
 API_KEY                        # API key for VR_Client_API authorization
 SITE_ID                        # MongoDB site document ID; 'preview' in local/preview (disables SiteBeacon)
-                               #   Also picks the report-only script policy at build (src/lib/scriptPolicy.ts): Vivreal's
+                               #   Also picks the script policy at build (src/lib/scriptPolicy.ts): Vivreal's
                                #   own two ids get the stronger SEC-W2 (SEC-1 F455); every other id keeps SW-A21 byte for byte.
+VIVREAL_SCRIPT_POLICY          # Release C PRL-RA11, per app on its `stable` branch: unset or `report-only` = the script policy
+                               #   WATCHES (Content-Security-Policy-Report-Only); `enforce` (any case) = it BLOCKS, in the one
+                               #   Content-Security-Policy beside the frame rule, reports tagged csp-site / csp-own. Any other
+                               #   value FAILS THE BUILD. Flipped by a branch setting write plus a same-commit rebuild (the hq
+                               #   flip tool), never a deployment. Every route also sends F608's set whatever this says:
+                               #   `frame-ancestors 'self'` (enforced), `X-Content-Type-Options: nosniff`,
+                               #   `Referrer-Policy: strict-origin-when-cross-origin` (src/lib/securityHeaders.ts).
 NEXT_PUBLIC_SITE_URL           # Optional per-site origin override (CloudFront rewrites Host — never derive from request).
                                #   NOT set by the deploy pipeline: measured unset across the fleet's Amplify apps at the time
                                #   that was written, so this level was inert in production. That is an INFRASTRUCTURE snapshot,

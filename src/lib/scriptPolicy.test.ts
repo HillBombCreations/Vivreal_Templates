@@ -30,9 +30,9 @@ const HELP_SITE_ID = '6aa1b1a896bf3f53d9beeaea';
 const OWN_ORIGIN = 'https://vivreal.io';
 
 type HeaderRule = { source: string; headers: Array<{ key: string; value: string }> };
-type BuildEnvKey = 'NEXT_PUBLIC_SENTRY_DSN' | 'SITE_ID' | 'NEXT_PUBLIC_ANALYTICS_ENDPOINT' | 'NEXT_PUBLIC_DOMAINS_API';
+type BuildEnvKey = 'NEXT_PUBLIC_SENTRY_DSN' | 'SITE_ID' | 'NEXT_PUBLIC_ANALYTICS_ENDPOINT' | 'NEXT_PUBLIC_DOMAINS_API' | 'VIVREAL_SCRIPT_POLICY';
 type BuildEnv = Partial<Record<Exclude<BuildEnvKey, 'NEXT_PUBLIC_SENTRY_DSN'>, string>>;
-const BUILD_ENV_KEYS: readonly BuildEnvKey[] = ['NEXT_PUBLIC_SENTRY_DSN', 'SITE_ID', 'NEXT_PUBLIC_ANALYTICS_ENDPOINT', 'NEXT_PUBLIC_DOMAINS_API'];
+const BUILD_ENV_KEYS: readonly BuildEnvKey[] = ['NEXT_PUBLIC_SENTRY_DSN', 'SITE_ID', 'NEXT_PUBLIC_ANALYTICS_ENDPOINT', 'NEXT_PUBLIC_DOMAINS_API', 'VIVREAL_SCRIPT_POLICY'];
 
 function setEnv(key: BuildEnvKey, value: string | undefined): void {
   if (value === undefined) delete process.env[key];
@@ -252,7 +252,7 @@ test('ALLOW (SEC-T-5): the own connect-src names the beacon and domain search or
 test('REFUSE (SEC-T-5): an override that is not an https address fails an own site while a customer site keeps SW-A21, and a good one replaces its default', async () => {
   const overrideKeys: ReadonlyArray<keyof BuildEnv> = ['NEXT_PUBLIC_ANALYTICS_ENDPOINT', 'NEXT_PUBLIC_DOMAINS_API'];
   for (const key of overrideKeys) {
-    for (const bad of ['not a url', 'http://collect2.example.test/e']) {
+    for (const bad of ['not a url', 'http://collect2.example.test/e', 'https://collect2;x.example.test/e']) {
       await assert.rejects(shippedHeadersWith(PLANTED_DSN, { SITE_ID: MARKETING_SITE_ID, [key]: bad }), /is not an absolute https address/, `${key}=${bad} fails an own site`);
       assert.deepEqual(policyValues(await shippedHeadersWith(PLANTED_DSN, { [key]: bad })), [SW_A21_VALUE], `${key}=${bad} leaves a customer site alone`);
     }
@@ -275,4 +275,124 @@ test('REFUSE (SEC-T-6): an own site with no DSN, or a DSN that is not one, sends
     assert.deepEqual(policyValues(rules), [], `DSN ${JSON.stringify(dsn)} sends no policy`);
     assert.ok(rules.some((rule) => rule.headers.some((h) => h.key === 'Strict-Transport-Security')), 'control: the other headers stay');
   }
+});
+
+/*
+ * PRL-RA11 (release C; vivreal-hq docs/projects/next-release-C/
+ * design-script-policy-switch.md SP-1 to SP-3, T-SP-1 to T-SP-4) and F478
+ * (Templates #231 review notes): the build setting VIVREAL_SCRIPT_POLICY
+ * switches the policy from watching to blocking, per app, with no second
+ * deployment. Read off the shipped config like every test above.
+ */
+
+const ENDPOINT = 'https://o4500000000000001.ingest.us.sentry.io/api/4500000000000002/security/?sentry_key=0123456789abcdef0123456789abcdef';
+const FRAME = "frame-ancestors 'self'";
+const SW_A21_DIRECTIVES = SW_A21_VALUE.slice(0, SW_A21_VALUE.indexOf('; report-uri '));
+const SEC_W2_DIRECTIVES = SEC_W2_VALUE.slice(0, SEC_W2_VALUE.indexOf('; report-uri '));
+const BASE = [
+  { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+];
+
+async function everyRouteHeaders(dsn: string | undefined, env: BuildEnv = {}): Promise<Array<{ key: string; value: string }>> {
+  const rules = await shippedHeadersWith(dsn, env);
+  const rule = rules.find((r) => r.source === '/:path*');
+  assert.ok(rule, 'the every-route rule exists');
+  return rule.headers;
+}
+
+const enforcedValues = (headers: Array<{ key: string; value: string }>) =>
+  headers.filter((h) => h.key.toLowerCase() === 'content-security-policy').map((h) => h.value);
+
+const WATCHING = [undefined, 'report-only', ' REPORT-ONLY '];
+const SITES = [
+  { name: 'a customer site', siteId: '6a0000000000000000000001', directives: SW_A21_DIRECTIVES, environment: 'csp-site' },
+  { name: 'an own site', siteId: MARKETING_SITE_ID, directives: SEC_W2_DIRECTIVES, environment: 'csp-own' },
+  { name: 'the help site', siteId: HELP_SITE_ID, directives: SEC_W2_DIRECTIVES, environment: 'csp-own' },
+];
+
+for (const site of SITES) {
+  test(`ALLOW (T-SP-1, F478 2): watching, ${site.name}'s header list is exactly HSTS, F608's headers and today's report-only policy`, async () => {
+    for (const setting of WATCHING) {
+      const headers = await everyRouteHeaders(PLANTED_DSN, { SITE_ID: site.siteId, VIVREAL_SCRIPT_POLICY: setting });
+      assert.deepEqual(headers, [
+        ...BASE,
+        { key: 'Content-Security-Policy', value: FRAME },
+        { key: HEADER, value: `${site.directives}; report-uri ${ENDPOINT}` },
+      ], `setting ${JSON.stringify(setting)}`);
+    }
+  });
+
+  test(`ALLOW (T-SP-2, F478 2): enforcing, ${site.name} sends one blocking policy with the frame rule and the ${site.environment} tag`, async () => {
+    for (const setting of ['enforce', ' ENFORCE ', 'Enforce']) {
+      const headers = await everyRouteHeaders(PLANTED_DSN, { SITE_ID: site.siteId, VIVREAL_SCRIPT_POLICY: setting });
+      assert.deepEqual(headers, [
+        ...BASE,
+        { key: 'Content-Security-Policy', value: `${site.directives}; ${FRAME}; report-uri ${ENDPOINT}&sentry_environment=${site.environment}` },
+      ], `setting ${JSON.stringify(setting)}`);
+    }
+  });
+}
+
+test('REFUSE (T-SP-1): while watching, no enforced policy holds a script rule, and no report carries an environment tag', async () => {
+  for (const site of SITES) {
+    for (const setting of WATCHING) {
+      const headers = await everyRouteHeaders(PLANTED_DSN, { SITE_ID: site.siteId, VIVREAL_SCRIPT_POLICY: setting });
+      const enforced = enforcedValues(headers);
+      assert.equal(enforced.length, 1, 'control: the frame rule is the one enforced entry');
+      for (const value of enforced) assert.doesNotMatch(value, /script-src/, 'watching blocks no script');
+      for (const h of headers) assert.doesNotMatch(h.value, /sentry_environment/, 'a watched report is filed under no environment');
+    }
+  }
+});
+
+test('REFUSE (T-SP-2): while enforcing, no report-only entry is left and there are never two enforced entries', async () => {
+  for (const site of SITES) {
+    const headers = await everyRouteHeaders(PLANTED_DSN, { SITE_ID: site.siteId, VIVREAL_SCRIPT_POLICY: 'enforce' });
+    assert.deepEqual(headers.filter((h) => h.key === HEADER), [], 'one report per block: the watch-only header goes');
+    assert.equal(enforcedValues(headers).length, 1, 'Next keeps only the last rule per name, so there is exactly one');
+    assert.match(enforcedValues(headers)[0], /script-src/, 'control: the one entry is the script policy');
+  }
+});
+
+test('REFUSE (T-SP-3): a misspelt or blank setting fails the build, naming the setting', async () => {
+  for (const bad of ['enforced', 'on', 'true', '1', '', '   ', 'block', 'report_only']) {
+    await assert.rejects(
+      everyRouteHeaders(PLANTED_DSN, { SITE_ID: '6a0000000000000000000001', VIVREAL_SCRIPT_POLICY: bad }),
+      /VIVREAL_SCRIPT_POLICY/,
+      `${JSON.stringify(bad)} fails the build`,
+    );
+  }
+});
+
+test('ALLOW (T-SP-4): no DSN sends no script policy in either mode, and the frame rule stays', async () => {
+  for (const setting of [undefined, 'report-only', 'enforce']) {
+    for (const siteId of ['6a0000000000000000000001', MARKETING_SITE_ID]) {
+      const headers = await everyRouteHeaders(undefined, { SITE_ID: siteId, VIVREAL_SCRIPT_POLICY: setting });
+      assert.deepEqual(headers, [...BASE, { key: 'Content-Security-Policy', value: FRAME }], `setting ${JSON.stringify(setting)}, site ${siteId}`);
+    }
+  }
+});
+
+test('REFUSE (T-SP-4, F478 5): a DSN whose host holds a `;`, or with a path prefix, sends no script policy in either mode', async () => {
+  for (const dsn of ['https://key@o1;x.ingest.sentry.io/42', 'https://key@o1.ingest.sentry.io;x/42', 'https://key@o1.ingest.sentry.io/prefix/42']) {
+    for (const setting of [undefined, 'enforce']) {
+      const headers = await everyRouteHeaders(dsn, { SITE_ID: '6a0000000000000000000001', VIVREAL_SCRIPT_POLICY: setting });
+      assert.deepEqual(headers, [...BASE, { key: 'Content-Security-Policy', value: FRAME }], `DSN ${dsn}, setting ${JSON.stringify(setting)}`);
+    }
+  }
+  // Control: the same DSN shape with a clean host does send the policy.
+  const clean = await everyRouteHeaders('https://key@o1.ingest.sentry.io/42', { SITE_ID: '6a0000000000000000000001' });
+  assert.equal(clean.filter((h) => h.key === HEADER).length, 1);
+});
+
+test('F478 4: the customer script list and the own script list are the same list but for the narrowed Google tag', async () => {
+  const customer = parsePolicy((await everyRouteHeaders(PLANTED_DSN, { SITE_ID: '6a0000000000000000000001' })).find((h) => h.key === HEADER)?.value ?? '').get('script-src') ?? [];
+  const own = parsePolicy(await ownSiteValue()).get('script-src') ?? [];
+  assert.ok(customer.length > 5, 'control: the customer list was read');
+  assert.deepEqual(
+    own,
+    customer.map((source) => (source === 'https://www.googletagmanager.com' ? 'https://www.googletagmanager.com/gtag/js' : source)),
+  );
 });

@@ -1,6 +1,7 @@
 /**
  * F173 (release A T-2; owner decision ND-29 a; plan SW-A21): the allowed-sites
- * script policy, sent REPORT-ONLY on every route.
+ * script policy, sent on every route: watching (report-only) unless the app's
+ * `VIVREAL_SCRIPT_POLICY` build setting says `enforce` (below).
  *
  * WHY A HOST LIST AND NOT A NONCE. Content pages are ISR: they are rendered
  * with no request, and Next reads a nonce only from the request's own policy
@@ -20,14 +21,24 @@
  * script cannot upload to its own server. Every other site keeps SW-A21 byte
  * for byte: `headers()` runs before any site data is read, so a customer's
  * own vendors cannot be known here, and a list that guessed would break them.
- * Still report-only; release A R-A11 enforces it on our own sites once it has
- * seven report-only days with every report explained.
+ * It watches or blocks by the same per-app switch as every other site (below),
+ * flipped only after its own clean watch days.
  *
  * WHERE THE REPORTS GO. Sentry's security endpoint for this site's project,
- * built at build time from `NEXT_PUBLIC_SENTRY_DSN`. No DSN means no header:
- * a policy with nowhere to report teaches nobody anything. The enforce step
- * (release A R-A11, on an owner GO) renames the header to
- * `Content-Security-Policy`; hosts are added only by the owners at that GO.
+ * built at build time from `NEXT_PUBLIC_SENTRY_DSN`. No DSN means no script
+ * policy header: a policy with nowhere to report teaches nobody anything.
+ *
+ * WATCHING OR BLOCKING (release C PRL-RA11, vivreal-hq
+ * docs/projects/next-release-C/design-script-policy-switch.md, SP-1 to SP-3).
+ * The build setting `VIVREAL_SCRIPT_POLICY` on each app's `stable` branch
+ * decides, per app, with no second deployment: unset or `report-only` watches
+ * (today's bytes, the policy in `Content-Security-Policy-Report-Only`);
+ * `enforce` (trimmed, any case) blocks, with the same directives in the one
+ * `Content-Security-Policy` entry beside F608's frame rule and the report
+ * address tagged `sentry_environment=csp-site` or `csp-own`, so the Sentry
+ * notice rules can tell an enforced block from a watched one. Anything else
+ * fails the build, and Amplify keeps serving the last good build. The flip is
+ * a branch setting write and a same-commit rebuild (the hq flip tool).
  *
  * Pure (no `next/*`), so `next.config.ts` and the plain-Node runner both load
  * it, and so is everything it imports.
@@ -38,6 +49,31 @@ import { domainSearchApiBase } from './domains/publicSearch.ts';
 import { isVivrealOwnSite } from './vivrealApex.ts';
 
 export const SCRIPT_POLICY_REPORT_ONLY_HEADER = 'Content-Security-Policy-Report-Only';
+export const SCRIPT_POLICY_ENFORCED_HEADER = 'Content-Security-Policy';
+
+/** SP-1: the build setting that switches an app from watching to blocking. */
+export const SCRIPT_POLICY_SETTING = 'VIVREAL_SCRIPT_POLICY';
+
+export type ScriptPolicyMode = 'watch' | 'enforce';
+
+/**
+ * SP-1. `enforce` (trimmed, any case) blocks; unset or `report-only` (trimmed,
+ * any case) watches. Anything else, an empty or blank value included, throws
+ * with the setting's name, which fails the build: a misspelt switch must never
+ * ship a policy nobody chose.
+ */
+export function scriptPolicyMode(raw: string | undefined): ScriptPolicyMode {
+  if (raw === undefined) return 'watch';
+  const value = raw.trim().toLowerCase();
+  if (value === 'enforce') return 'enforce';
+  if (value === 'report-only') return 'watch';
+  throw new Error(
+    `${SCRIPT_POLICY_SETTING} is ${JSON.stringify(raw)}: it must be "enforce" or "report-only", or unset (watching)`,
+  );
+}
+
+/** SP-2: the Sentry environment an enforced report is filed under. */
+const ENFORCED_SENTRY_ENVIRONMENT = { customer: 'csp-site', own: 'csp-own' } as const;
 
 /** SW-A21's directives, byte for byte, up to the report endpoint. Every customer site sends exactly this. */
 const SCRIPT_POLICY_DIRECTIVES =
@@ -92,6 +128,8 @@ const SHARED_TAIL_DIRECTIVES = "object-src 'none'; base-uri 'none'; form-action 
 const PUBLIC_KEY = /^[A-Za-z0-9]+$/;
 /** The DSN's path is exactly `/<project id>`; a path prefix would point the endpoint somewhere else. */
 const PROJECT_PATH = /^\/(\d+)$/;
+/** A DSN host safe to write into the header: a plain host name, an optional port (F478: never a `;`). */
+const HEADER_SAFE_HOST = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*(?::\d+)?$/;
 /** An origin safe to write into the header: https, a plain host name, an optional port. */
 const HEADER_SAFE_HTTPS_ORIGIN = /^https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*(?::\d+)?$/;
 
@@ -109,25 +147,20 @@ function parseSentryDsn(dsn: string | undefined): SentryDsn | null {
     return null;
   }
   if (url.protocol !== 'https:' || !PUBLIC_KEY.test(url.username) || url.search || url.hash) return null;
+  if (!HEADER_SAFE_HOST.test(url.host)) return null;
   const project = PROJECT_PATH.exec(url.pathname);
   if (!project) return null;
   return { host: url.host, project: project[1], publicKey: url.username };
 }
 
-/** The report endpoint for a parsed DSN. */
+/**
+ * The report endpoint for a parsed DSN:
+ * `https://<dsn host>/api/<project id>/security/?sentry_key=<public key>`.
+ * Only the PUBLIC key is ever read: a legacy DSN's secret part
+ * (`https://public:secret@host/1`) never reaches a header every visitor can read.
+ */
 function securityEndpoint(sentry: SentryDsn): string {
   return `https://${sentry.host}/api/${sentry.project}/security/?sentry_key=${sentry.publicKey}`;
-}
-
-/**
- * `https://<dsn host>/api/<project id>/security/?sentry_key=<public key>`, or
- * null for a missing or malformed DSN. Only the PUBLIC key is ever read: a
- * legacy DSN's secret part (`https://public:secret@host/1`) never reaches a
- * header every visitor can read.
- */
-export function sentrySecurityEndpoint(dsn: string | undefined): string | null {
-  const sentry = parseSentryDsn(dsn);
-  return sentry ? securityEndpoint(sentry) : null;
 }
 
 /**
@@ -162,17 +195,42 @@ function ownSiteDirectives(sentryHost: string): string {
 }
 
 /**
- * The header list `next.config.ts` adds on every route: the policy, or nothing
- * without a DSN. `siteId` is the build's `SITE_ID`: Vivreal's own two sites get
- * SEC-W2, anything else (unset, `preview`, any customer id) gets SW-A21.
- * Required, so a caller that forgets it does not compile.
+ * SP-3, the policy headers `next.config.ts` adds on every route. `siteId` is
+ * the build's `SITE_ID`: Vivreal's own two sites get SEC-W2, anything else
+ * (unset, `preview`, any customer id) gets SW-A21. `frameAncestors` is F608's
+ * frame directive (`securityHeaders.ts`). Exactly one `Content-Security-Policy`
+ * entry in every case, because Next keeps only the last rule per header name.
+ *
+ * - No DSN, either mode: the frame rule alone (no script policy, today's rule).
+ * - Watching: the frame rule alone in the enforced header, plus the script
+ *   policy in the report-only header, byte for byte today's.
+ * - Enforcing: one enforced header holding the script policy, the frame rule
+ *   and the report address tagged with SP-2's environment; no report-only header.
+ *
+ * Every argument is required, so a caller that forgets one does not compile.
  */
 export function scriptPolicyHeaders(
   dsn: string | undefined,
   siteId: string | undefined,
+  mode: ScriptPolicyMode,
+  frameAncestors: string,
 ): Array<{ key: string; value: string }> {
   const sentry = parseSentryDsn(dsn);
-  if (!sentry) return [];
-  const directives = isVivrealOwnSite(siteId) ? ownSiteDirectives(sentry.host) : SCRIPT_POLICY_DIRECTIVES;
-  return [{ key: SCRIPT_POLICY_REPORT_ONLY_HEADER, value: `${directives}; report-uri ${securityEndpoint(sentry)}` }];
+  if (!sentry) return [{ key: SCRIPT_POLICY_ENFORCED_HEADER, value: frameAncestors }];
+  const own = isVivrealOwnSite(siteId);
+  const directives = own ? ownSiteDirectives(sentry.host) : SCRIPT_POLICY_DIRECTIVES;
+  const endpoint = securityEndpoint(sentry);
+  if (mode === 'enforce') {
+    const environment = own ? ENFORCED_SENTRY_ENVIRONMENT.own : ENFORCED_SENTRY_ENVIRONMENT.customer;
+    return [
+      {
+        key: SCRIPT_POLICY_ENFORCED_HEADER,
+        value: `${directives}; ${frameAncestors}; report-uri ${endpoint}&sentry_environment=${environment}`,
+      },
+    ];
+  }
+  return [
+    { key: SCRIPT_POLICY_ENFORCED_HEADER, value: frameAncestors },
+    { key: SCRIPT_POLICY_REPORT_ONLY_HEADER, value: `${directives}; report-uri ${endpoint}` },
+  ];
 }
