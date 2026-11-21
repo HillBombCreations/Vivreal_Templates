@@ -5,11 +5,13 @@
  * The measured case (vivreal-hq admin-triage-2026-11-13.md B1): vivreal.io's
  * home, hours after its last request, read `siteDetails`; the read was cut at
  * its 1,515 ms limit while VR_Client_API answered it in 386 ms, so the time
- * went before the Lambda. Here the read answers at 2,000 ms of awake time,
- * which the warm 1,500 ms deadline cuts and the cold 5,500 ms one does not.
+ * went before the Lambda. Here the read answers at 3,000 ms of awake time,
+ * which the warm 2,500 ms deadline cuts and the cold 5,500 ms one does not.
+ * (SW-C28, release C: the warm deadline moved from 1,500 to 2,500, so the
+ * slow read moved from 2,000 to 3,000 to stay between the two.)
  *
  * The ALLOW pair: a busy instance (last live answer 10 s ago) keeps the warm
- * limits, so a slow read there is still cut at 1,500 ms and answered from
+ * limits, so a slow read there is still cut at 2,500 ms and answered from
  * `L`, as before. Without it, "every read gets 5.5 s" would pass the REFUSE.
  *
  * Time: `now` is wall clock (it jumps across a quiet spell, as a frozen
@@ -24,7 +26,7 @@ import * as invalidation from './cacheInvalidation.ts';
 const SITE = '6a8d1146a4e1b46a9083e668';
 const PATH = `/tenant/siteDetails?siteId=${SITE}`;
 const T0 = Date.UTC(2026, 10, 13, 10, 0, 0);
-const SLOW_READ_MS = 2_000;
+const SLOW_READ_MS = 3_000;
 
 type Body = { pages: string[]; updatedAt: string };
 type Fence = {
@@ -131,7 +133,7 @@ test('[T-268 REFUSE] after five hours of quiet, a 2 s first read is NOT cut: the
   assert.equal(second.value, FRESH_BODY);
 });
 
-test('[T-268 ALLOW] a busy instance (10 s since its last answer) keeps the warm 1.5 s cut and answers from L', async () => {
+test('[T-268 ALLOW] a busy instance (10 s since its last answer) keeps the warm 2.5 s cut and answers from L', async () => {
   const { second, aborted } = await secondReadAfter(10_000);
   assert.ok(aborted.length >= 1, 'the warm deadline still cuts a slow read on a busy instance');
   assert.deepEqual(second.value, L_BODY);
@@ -140,6 +142,26 @@ test('[T-268 ALLOW] a busy instance (10 s since its last answer) keeps the warm 
 test('[T-268 ALLOW] the quiet spell is five minutes, the shell data-cache window at the provisioned TTL', () => {
   const ns = invalidation as unknown as Record<string, unknown>; // named exports, checked here
   assert.equal(ns.QUIET_SPELL_MS, 300_000);
-  assert.equal(ns.SHELL_READ_DEADLINE_MS, 1_500);
+  assert.equal(ns.SHELL_READ_DEADLINE_MS, 2_500); // SW-C28 (release C): was 1,500
   assert.equal(ns.SHELL_READ_DEADLINE_COLD_MS, 5_500);
+});
+
+// SW-C28 (release C, decisions.md:1163; research-overnight-2026-11-21.md 2):
+// the warm read deadline sits above the cold key checker a busy instance can
+// still meet (Init 1,518 ms plus about 380 ms of work, 1,898 ms) with the
+// file's 0.5 s margin, and below the cold deadline and the warm reads budget.
+const COLD_KEY_CHECKER_MS = 1_898;
+const MARGIN_MS = 500;
+
+test('[SW-C28 ALLOW] the warm read deadline clears the cold key checker with the 0.5 s margin', () => {
+  const ns = invalidation as unknown as Record<string, number>; // numeric constants, each compared below
+  assert.ok(ns.SHELL_READ_DEADLINE_MS >= COLD_KEY_CHECKER_MS + MARGIN_MS, `${ns.SHELL_READ_DEADLINE_MS} ms clears ${COLD_KEY_CHECKER_MS + MARGIN_MS} ms`);
+  assert.ok(ns.SHELL_READ_DEADLINE_MS <= ns.SHELL_READ_DEADLINE_COLD_MS, 'never above the cold deadline');
+  assert.ok(ns.SHELL_READ_DEADLINE_MS <= ns.SHELL_READS_BUDGET_MS, 'one read never outlasts the warm reads budget');
+});
+
+test('[SW-C28 REFUSE] the old 1,500 ms deadline would cut the cold key checker', () => {
+  assert.ok(1_500 < COLD_KEY_CHECKER_MS + MARGIN_MS, 'control: the value it replaces fails the rule above');
+  const ns = invalidation as unknown as Record<string, number>; // numeric constants, compared below
+  assert.notEqual(ns.SHELL_READ_DEADLINE_MS, 1_500);
 });
