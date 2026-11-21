@@ -16,6 +16,11 @@
  * `null` when no sale takes money off; `saleUnitCents: 0` is a real sale priced
  * at zero.
  *
+ * F642 (release C, SV-SQ10, additive): a SQUARE line may carry `question:
+ * { question, required }`, the product's checkout question, which the cart asks
+ * (`lib/cart/cartAsks.ts`); a Stripe line carries `null`. Read defensively: a
+ * missing, malformed or blank question is no question, and the line keeps no key.
+ *
  * THE PROMO CODE (review-3 BLOCK 5). Checkout gives each line the larger of its
  * sale and the code, never both. `validateCoupon`'s `newSubtotal` is the LIST
  * subtotal less the code on the lines the code wins. So the bag's code discount
@@ -35,6 +40,20 @@ export interface CartQuoteLine {
   unitCents: number;
   saleUnitCents: number | null;
   saleName: string | null;
+  /** F642: the product's checkout question on a Square line; absent otherwise. */
+  question?: { question: string; required: boolean };
+}
+
+/** VR_Client_API cleans a question to 50 characters; anything longer than this is not one it sent. */
+const QUESTION_READ_MAX = 100;
+
+function parseQuestion(raw: unknown): { question: string; required: boolean } | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+  const { question, required } = raw as Record<string, unknown>;
+  if (typeof question !== 'string') return null;
+  const text = question.trim();
+  if (!text || text.length > QUESTION_READ_MAX) return null;
+  return { question: text, required: required === true };
 }
 
 /** Quoted lines by price id. A price id absent here shows its list price. */
@@ -46,17 +65,19 @@ const isCents = (v: unknown): v is number => typeof v === 'number' && Number.isI
 
 function parseLine(raw: unknown): CartQuoteLine | null {
   if (typeof raw !== 'object' || raw === null) return null;
-  const { priceId, unitCents, saleUnitCents, saleName } = raw as Record<string, unknown>;
+  const { priceId, unitCents, saleUnitCents, saleName, question } = raw as Record<string, unknown>;
   if (typeof priceId !== 'string' || priceId.length === 0 || !isCents(unitCents)) return null;
   // A sale price above the price is not a sale; showing it would raise the bag.
   if (saleUnitCents !== null && !(isCents(saleUnitCents) && saleUnitCents <= unitCents)) return null;
   if (saleName !== null && typeof saleName !== 'string') return null;
+  const asked = parseQuestion(question);
   return {
     priceId,
     unitCents,
     saleUnitCents,
     // A name is only shown beside a sale; an empty one is no name.
     saleName: saleUnitCents !== null && typeof saleName === 'string' && saleName.trim() ? saleName.trim() : null,
+    ...(asked ? { question: asked } : {}),
   };
 }
 

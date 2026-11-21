@@ -357,6 +357,8 @@ export interface CheckoutChoice {
 export interface CheckoutExtras {
   note?: string;
   fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string; deliveryOn?: string; shipRateId?: string };
+  /** F642 (SV-SQ11): the answers to a Square cart's product questions (`lib/cart/cartAsks.ts`). */
+  answers?: Array<{ line: string; answer: string }>;
 }
 
 /**

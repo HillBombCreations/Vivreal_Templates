@@ -39,8 +39,9 @@ const cartFields = FILES.flatMap((file) =>
   fields(stripComments(fs.readFileSync(new URL(`./${file}`, import.meta.url), "utf8"))).map((f) => ({ file, ...f })),
 );
 
-test("CONTROL: the scan finds the cart's four fields (promo code, ZIP, pickup time, note)", () => {
+test("CONTROL: the scan finds the cart's fields (a question's answer, promo code, ZIP, pickup time, note)", () => {
   assert.deepEqual(cartFields.map((f) => `${f.file}:${f.tag}`), [
+    "CartDialog.tsx:input",
     "CartDialog.tsx:input",
     "CartChoices.tsx:input",
     "CartChoices.tsx:select",

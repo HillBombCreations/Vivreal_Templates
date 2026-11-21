@@ -49,7 +49,9 @@ test("F4: the bag asks for the quote, re-asks at Checkout and waits for a second
   assert.match(code, /useCartQuote\(cartLineItems, linesKey, open\)/);
   assert.match(
     code,
-    /const shown = quote;\s*const fresh = await requote\(\);\s*if \(!fresh\.current\) return;\s*if \(quoteRaisedAPrice\(shown, fresh\.quote\)\) \{\s*setSaleEnded\(true\);\s*return;\s*\}/,
+    // Release C (F642): the Square question hold sits between the re-ask and
+    // the rise check (cartAsks.questions.test.ts); the order is unchanged.
+    /const shown = quote;\s*const fresh = await requote\(\);\s*if \(!fresh\.current\) return;[\s\S]*?if \(quoteRaisedAPrice\(shown, fresh\.quote\)\) \{\s*setSaleEnded\(true\);\s*return;\s*\}/,
   );
   // handleCheckout is reached only after that check.
   assert.ok(code.indexOf("quoteRaisedAPrice(shown, fresh.quote)") < code.indexOf("await handleCheckout("));

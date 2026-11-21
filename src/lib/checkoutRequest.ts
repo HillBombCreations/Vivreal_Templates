@@ -65,6 +65,9 @@ export const SHOP_RULE_SENTENCES: Readonly<Record<string, string>> = Object.free
   SHIPPING_RATE_UNAVAILABLE: "That shipping choice is no longer offered. Pick another.",
   // Review note 1 on #226: the shop offers no way to get the order; one sentence, the one the cart shows.
   NO_WAY_TO_GET_ORDER,
+  // F642 (release C, SV-SQ11, WSQ-14): a Square product's required question has no answer. The cart
+  // asks it in its own box; this reaches a cart that did not know of the question yet, which re-quotes.
+  QUESTION_REQUIRED: "Please answer the question in your cart, then check out again.",
 });
 
 /**

@@ -143,7 +143,10 @@ test('REFUSE (B3): no values.cart, delivery on, ships: the checkout body is toda
   assert.equal(choiceBlock({ settings, kind, pickupOffered: false, pickupAt: null, deliveryInArea: false }), null, 'nothing blocks checkout');
   // F58 and F59 add the picked delivery day and shipping rate to the same call; checkoutChoice drops each
   // for another way or with no setting (deliveryDay.test.ts, shipping.test.ts).
-  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\)/, 'the dialog sends exactly this');
+  // Release C (F642): the extras gain the Square answers beside these, sent
+  // only when a question was answered (cartAsks.questions.test.ts), so this
+  // cart's body is still exactly these.
+  assert.match(dialog, /extras: \{\s*\.\.\.checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\),/, 'the dialog sends exactly this');
   assert.match(dialog, /const kind = currentKind\(choices, pickedKind\);/);
 });
 

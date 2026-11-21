@@ -42,6 +42,15 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
+import {
+  ANSWER_MAX,
+  ANSWER_NEEDED,
+  ANSWER_PLACEHOLDER,
+  QUESTION_OPTIONAL,
+  cartQuestions,
+  checkoutAnswers,
+  unansweredRequired,
+} from "@/lib/cart/cartAsks";
 import { applyShortStock, atLineCap, clampCartToStock, linesCounted, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutRefusedLine, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
@@ -104,6 +113,15 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [stockNotice, setStockNotice] = useState<string | null>(null);
   // Client F30: lines checkout no longer sells, by checkout price id, with the words to show.
   const [unavailable, setUnavailable] = useState<{ message: string; priceIds: string[] } | null>(null);
+  // F642 (release C, SQP-T1): a Square shop's product questions, answered in
+  // the cart (lib/cart/cartAsks.ts). Answers by product; the box a required
+  // question was left empty in, once Checkout was pressed; and the box to
+  // put the cursor in after a re-quote.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answerNeeded, setAnswerNeeded] = useState<string | null>(null);
+  const answerBoxes = useRef<Record<string, HTMLInputElement | null>>({});
+  // The box to put the cursor in once a re-quote has drawn it.
+  const pendingAnswerFocus = useRef<string | null>(null);
 
   // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
   // defensively (absent settings are today's cart, word for word), and the
@@ -178,6 +196,25 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // shows its list price (H34: read through the tolerant `cartUnitPrice`, never
   // a bare Number()), which is never below what checkout charges.
   const { quote, requote } = useCartQuote(cartLineItems, linesKey, open);
+  const questions = useMemo(
+    () => cartQuestions(itemsArray, quote, siteData?.paymentsProvider),
+    [itemsArray, quote, siteData?.paymentsProvider],
+  );
+  // Puts the cursor in a question's box, scrolled into view. False when the
+  // box is not drawn (yet).
+  const focusAnswerBox = (productId: string): boolean => {
+    const box = answerBoxes.current[productId];
+    if (!box) return false;
+    box.focus();
+    box.scrollIntoView({ block: "center" });
+    return true;
+  };
+  // A box a re-quote has just added is in the page only after the render that
+  // drew it, so its cursor is placed here.
+  useEffect(() => {
+    const productId = pendingAnswerFocus.current;
+    if (productId && focusAnswerBox(productId)) pendingAnswerFocus.current = null;
+  }, [questions]);
   // F526 (release C): a line checkout refused as no longer sold stays in the
   // bag, marked, but the total leaves it out at once (`linesCounted`).
   const { subtotal, discount, total } = useMemo(
@@ -361,6 +398,17 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       const shown = quote;
       const fresh = await requote();
       if (!fresh.current) return;
+      // F642 (SQP-T1, WSQ-13): a required question left empty holds Checkout.
+      // Nothing is sent; the cursor goes to the box and the words say why.
+      const asked = cartQuestions(itemsArray, fresh.quote, siteData?.paymentsProvider);
+      const missing = unansweredRequired(asked, answers);
+      if (missing) {
+        setAnswerNeeded(missing.productId);
+        if (!focusAnswerBox(missing.productId)) pendingAnswerFocus.current = missing.productId;
+        return;
+      }
+      setAnswerNeeded(null);
+      const sentAnswers = checkoutAnswers(asked, answers);
       if (quoteRaisedAPrice(shown, fresh.quote)) {
         setSaleEnded(true);
         return;
@@ -373,7 +421,11 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
+        extras: {
+          ...checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
+          // F642 (SV-SQ11): only answered questions, and nothing at all on a Stripe shop.
+          ...(sentAnswers.length > 0 ? { answers: sentAnswers } : {}),
+        },
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -382,6 +434,17 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // stock refusal says nothing about it.
       // One of the shop's own rules refused (a minimum, the delivery area, a
       // pickup time): say so and keep every choice, the code included.
+      // F642 (SQP-T1, WSQ-14): the cart did not know of the question yet (the
+      // owner turned it on, or made it required, after the cart opened). Say
+      // so above Checkout, ask the quote again so its box shows, and put the
+      // cursor there.
+      if (err instanceof CheckoutShopRuleError && err.code === "QUESTION_REQUIRED") {
+        setRuleNotice(err.message);
+        const again = await requote();
+        const first = unansweredRequired(cartQuestions(itemsArray, again.quote, siteData?.paymentsProvider), answers);
+        if (first && !focusAnswerBox(first.productId)) pendingAnswerFocus.current = first.productId;
+        return;
+      }
       if (err instanceof CheckoutShopRuleError) {
         setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
         // F58: the day moved off the list; ask the shop's days again so another can be picked.
@@ -589,6 +652,46 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                         </div>
                       </div>
                     </div>
+                  </div>
+                );
+              })}
+              {/* F642 (release C, SQP-T1; mockup M-SQ-1): a Square shop's product
+                  questions, one box each under the items. The label is the owner's
+                  question as written; an optional one says so; a required one has no
+                  mark and holds Checkout until it is answered. */}
+              {questions.map((q) => {
+                const boxId = `vr-cart-answer-${q.productId}`;
+                const needed = answerNeeded === q.productId;
+                return (
+                  <div key={q.productId} data-cart-question="">
+                    <label htmlFor={boxId} className="mb-1.5 flex items-baseline justify-between gap-2 text-xs font-semibold text-black/70">
+                      <span className="min-w-0 break-words">{q.question}</span>
+                      {q.required ? null : <span className="shrink-0 font-normal text-black/50">{QUESTION_OPTIONAL}</span>}
+                    </label>
+                    <input
+                      id={boxId}
+                      ref={(el) => {
+                        answerBoxes.current[q.productId] = el;
+                      }}
+                      type="text"
+                      value={answers[q.productId] ?? ""}
+                      maxLength={ANSWER_MAX}
+                      placeholder={ANSWER_PLACEHOLDER}
+                      disabled={loadingCheckout}
+                      aria-invalid={needed}
+                      aria-describedby={needed ? `${boxId}-needed` : undefined}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAnswers((prev) => ({ ...prev, [q.productId]: value }));
+                        if (needed && value.trim()) setAnswerNeeded(null);
+                      }}
+                      className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-base md:text-sm outline-none focus:border-black/25 disabled:opacity-60"
+                    />
+                    {needed ? (
+                      <div id={`${boxId}-needed`} role="alert" className="mt-1 text-xs font-medium">
+                        {ANSWER_NEEDED}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
