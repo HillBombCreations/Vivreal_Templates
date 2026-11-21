@@ -146,6 +146,18 @@ export function readCartSettings(raw: unknown): CartSettings {
 }
 
 /**
+ * F429 part 2 (release C; QR-18 2b): the pickup days the cart offers, only
+ * those with a time left. The renderer's `pickupWindows` returns every day in
+ * the range, a day with no time left included (closed, or every time inside
+ * the notice), and the cart drew a button for it that then said "No pickup
+ * times this day". Checkout reads the same rule (`isPickupTimeAvailable`), so
+ * a day dropped here is one it would refuse anyway.
+ */
+export function pickupDaysOffered<T extends { times: readonly unknown[] }>(days: readonly T[]): T[] {
+  return days.filter((d) => d.times.length > 0);
+}
+
+/**
  * F426 D4, the tier half (release C; `design-square-parity.md` 2.3 keeps it):
  * the plans whose shops can make promo codes. Free and Basic have
  * `couponsEnabled: false` in `@hillbombcreations/tier-quotas` (`TIER_QUOTAS`),

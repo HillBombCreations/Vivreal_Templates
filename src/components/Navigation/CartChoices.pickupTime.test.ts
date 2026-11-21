@@ -133,8 +133,10 @@ test("ALLOW (F428): the words, the label and what a pick does are unchanged", ()
   assert.match(block, /<option value=""[^>]*>Pick a time<\/option>/);
   assert.ok(block.includes("{(activeDay?.times ?? []).map((t) => ("));
   assert.match(block, /<option key=\{t\.start\} value=\{t\.start\}[^>]*>\s*\{t\.label\}\s*<\/option>/);
-  const none = code.indexOf("No pickup times this day");
-  assert.ok(none > 0 && none < code.indexOf("<select"), "a day with no times still says so instead");
+  // F429 part 2 (release C) moved this line's check: a day with no times is
+  // no longer offered at all (`pickupDaysOffered`, cartSettings.test.ts), so
+  // the "No pickup times this day" line it pinned is gone with it.
+  assert.equal(code.indexOf("No pickup times this day"), -1, "no empty day is drawn to explain");
   assert.match(code, /setDay\(d\.date\);\s*onPickupAt\(null\);/, "a new day still clears the time");
 });
 

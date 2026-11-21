@@ -24,6 +24,8 @@ import {
 } from './cartSettings.ts';
 import { CHECKOUT_SHOP_RULE, checkoutRefusal } from '../checkoutRequest.ts';
 import * as cartSettingsModule from './cartSettings.ts';
+// The renderer's REAL pickup rule, by relative path: the package entry imports next/link.
+import { pickupWindows } from '../../../node_modules/@hillbombcreations/site-renderer/dist/lib/pickupWindows.js';
 
 const dialog = fs.readFileSync(new URL('../../components/Navigation/CartDialog.tsx', import.meta.url), 'utf8');
 
@@ -232,4 +234,38 @@ test('REFUSE (F426 D4): a Free or Basic shop, or one with no known plan, draws n
   }
   assert.equal(showsPromoBox(readCartSettings({ showPromo: false }), 'pro'), false, 'the owner switch still hides it');
   assert.doesNotMatch(dialog, /&& settings\.showPromo \? \(/, 'the dialog never draws the box on the switch alone');
+});
+
+// F429 part 2 (release C; QR-18 2b; walk D-12): the pickup day row offers only
+// days with a time left, read off the renderer's real `pickupWindows`.
+const choices = fs.readFileSync(new URL('../../components/Navigation/CartChoices.tsx', import.meta.url), 'utf8');
+
+function offeredDays(): <T extends { times: readonly unknown[] }>(days: readonly T[]) => T[] {
+  const ns = cartSettingsModule as unknown as Record<string, unknown>; // named exports, checked below
+  assert.equal(typeof ns.pickupDaysOffered, 'function', 'cartSettings exports pickupDaysOffered');
+  return ns.pickupDaysOffered as <T extends { times: readonly unknown[] }>(days: readonly T[]) => T[]; // checked above
+}
+
+/** Open daily 9am to 5pm in Chicago; 5:30pm there on Friday 20 November 2026, past today's last time. */
+const LATE_TODAY = pickupWindows({
+  hours: { weekly: ['Daily: 9am to 5pm'] },
+  timeZone: 'America/Chicago',
+  now: new Date('2026-11-20T23:30:00.000Z'),
+  noticeMinutes: 120,
+  daysAhead: 2,
+});
+
+test('REFUSE (F429 part 2): today with no times left is not offered', () => {
+  assert.equal(LATE_TODAY[0]?.date, '2026-11-20', 'control: the renderer still returns today');
+  assert.equal(LATE_TODAY[0]?.times.length, 0, 'control: with no times left');
+  const offered = offeredDays()(LATE_TODAY);
+  assert.equal(offered.some((d) => d.date === '2026-11-20'), false, 'a day with no time is not a button');
+  assert.doesNotMatch(choices, /No pickup times this day/, 'the cart never draws an empty day to explain');
+});
+
+test('ALLOW (F429 part 2): a day with times left is offered, in order, with its times', () => {
+  const offered = offeredDays()(LATE_TODAY);
+  assert.deepEqual(offered.map((d) => d.date), ['2026-11-21', '2026-11-22']);
+  assert.ok(offered.every((d) => d.times.length > 0));
+  assert.match(choices, /pickupDaysOffered\(\s*pickupWindows\(/, 'the cart offers the filtered days');
 });

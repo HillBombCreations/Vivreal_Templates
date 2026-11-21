@@ -17,6 +17,7 @@ import {
   FULFILMENT_LABELS,
   NO_PICKUP_TIMES,
   NOTE_MAX,
+  pickupDaysOffered,
   shopTimeZoneNote,
   type CartSettings,
   type DeliveryQuote,
@@ -84,17 +85,20 @@ export default function CartChoices({
   disabled: boolean;
 }) {
   // Pickup times from the renderer's one rule (the server checks the same
-  // one), recomputed when the cart opens. No time at all means no picker.
+  // one), recomputed when the cart opens, and only the days with a time left
+  // (F429 part 2). No time at all means no picker.
   const days: PickupDay[] = useMemo(
     () =>
       settings.pickup.on
-        ? pickupWindows({ hours, timeZone, now: new Date(), noticeMinutes: settings.pickup.noticeMinutes, daysAhead: settings.pickup.daysAhead })
+        ? pickupDaysOffered(
+            pickupWindows({ hours, timeZone, now: new Date(), noticeMinutes: settings.pickup.noticeMinutes, daysAhead: settings.pickup.daysAhead }),
+          )
         : [],
     [settings.pickup.on, settings.pickup.noticeMinutes, settings.pickup.daysAhead, hours, timeZone],
   );
-  const showPickupTimes = kind === "pickup" && days.some((d) => d.times.length > 0);
+  const showPickupTimes = kind === "pickup" && days.length > 0;
   const [day, setDay] = useState<string | null>(null);
-  const activeDay = days.find((d) => d.date === day) ?? days.find((d) => d.times.length > 0) ?? null;
+  const activeDay = days.find((d) => d.date === day) ?? days[0] ?? null;
   // The cart renders only with items, which load from the browser after
   // hydration, so reading the browser's zone here never differs from a server render.
   const zoneNote = useMemo(() => shopTimeZoneNote(timeZone, Intl.DateTimeFormat().resolvedOptions().timeZone), [timeZone]);
@@ -257,34 +261,32 @@ export default function CartChoices({
               </button>
             ))}
           </div>
-          {activeDay && activeDay.times.length === 0 ? (
-            <div className="mt-1.5 text-xs text-black/60">No pickup times this day</div>
-          ) : (
-            // F428: the native list stays (the phone's own picker suits up to
-            // about 48 times); only the closed box is drawn, to match the ZIP
-            // box. The muted colour is set on the select and options inherit it,
-            // so each option sets the cart's text colour back for the open list.
-            <div className="relative mt-1.5">
-              <select
-                aria-label="Pickup time"
-                value={pickupAt ?? ""}
-                disabled={disabled}
-                onChange={(e) => onPickupAt(e.target.value || null)}
-                className={`peer h-10 w-full cursor-pointer appearance-none rounded-xl border border-black/10 bg-white pl-3 pr-9 text-sm outline-none focus:border-black/25 disabled:cursor-not-allowed disabled:opacity-60 ${pickupAt ? "" : "text-black/50"}`}
-              >
-                <option value="" className="text-[var(--text-primary,#0b1220)]">Pick a time</option>
-                {(activeDay?.times ?? []).map((t) => (
-                  <option key={t.start} value={t.start} className="text-[var(--text-primary,#0b1220)]">
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown
-                aria-hidden="true"
-                className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50 peer-disabled:opacity-60"
-              />
-            </div>
-          )}
+          {/* F428: the native list stays (the phone's own picker suits up to
+              about 48 times); only the closed box is drawn, to match the ZIP
+              box. The muted colour is set on the select and options inherit it,
+              so each option sets the cart's text colour back for the open list.
+              F429 part 2: every day offered has a time, so there is no empty
+              day to explain. */}
+          <div className="relative mt-1.5">
+            <select
+              aria-label="Pickup time"
+              value={pickupAt ?? ""}
+              disabled={disabled}
+              onChange={(e) => onPickupAt(e.target.value || null)}
+              className={`peer h-10 w-full cursor-pointer appearance-none rounded-xl border border-black/10 bg-white pl-3 pr-9 text-sm outline-none focus:border-black/25 disabled:cursor-not-allowed disabled:opacity-60 ${pickupAt ? "" : "text-black/50"}`}
+            >
+              <option value="" className="text-[var(--text-primary,#0b1220)]">Pick a time</option>
+              {(activeDay?.times ?? []).map((t) => (
+                <option key={t.start} value={t.start} className="text-[var(--text-primary,#0b1220)]">
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50 peer-disabled:opacity-60"
+            />
+          </div>
           {pickupAt ? <div className="mt-1.5 text-xs font-semibold">Pickup {slotWhenLabel(pickupAt, timeZone)}</div> : null}
           {zoneNote ? <div className="mt-1.5 text-xs text-black/60">{zoneNote}</div> : null}
         </div>
