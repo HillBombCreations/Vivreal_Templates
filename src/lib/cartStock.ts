@@ -223,10 +223,14 @@ export function lineCap(cart: Cart, key: string): number | undefined {
  * shared count now leaves the line less than it holds; an increase stops at
  * the line's cap and never takes the line below where it is. 0 or less means
  * the caller removes the line: a line of 0 is never written.
+ *
+ * F392 N5 (release C): a stored line with no numeric quantity (no writer makes
+ * one, the type forbids it) is never an increase, so trash and "-" still
+ * remove it, as they did before T-385, rather than write a quantity of NaN.
  */
 export function nextLineQuantity(cart: Cart, key: string, nextQty: number): number {
   const line = cart[key];
-  if (!line || nextQty <= line.quantity) return nextQty;
+  if (!line || !(nextQty > line.quantity)) return nextQty;
   return Math.max(line.quantity, capQuantity(nextQty, lineCap(cart, key)));
 }
 
@@ -284,6 +288,13 @@ export function clampCartToStock(cart: Cart): { cart: Cart; changed: StockAdjust
  * so the line stores `available` plus what the product's earlier lines keep:
  * the whole count, which `lineCap` and the next add subtract the other lines
  * from (T-385 review B2). Every other line stores `available` as before.
+ *
+ * F392 N6 (release C): checkout's answer is the whole shared count of every
+ * product it names a shared line of, so EVERY shared line of that product
+ * left in the bag stores it, not only a line that was brought down. Before, a
+ * refusal that only removed lines, or named a line it kept, left the other
+ * lines on their older, higher count: "+" could pass the real count and
+ * checkout refused again (never an oversell; the server holds).
  */
 export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): { cart: Cart; changed: StockAdjustment[] } {
   const availableByPrice = new Map(short.map((s) => [s.priceId, s.available]));
@@ -291,9 +302,14 @@ export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): {
   const changed: StockAdjustment[] = [];
   /** What each product's lines so far keep, as checkout counted them. */
   const keptBefore = new Map<string, number>();
+  /** The whole shared count checkout reported, per product it named a shared line of. */
+  const sharedCount = new Map<string, number>();
   for (const [key, line] of Object.entries(cart)) {
     const before = keptBefore.get(line._id) ?? 0;
     const available = availableByPrice.get(line.priceID);
+    if (available !== undefined && line.sharedStock && !sharedCount.has(line._id)) {
+      sharedCount.set(line._id, available + before);
+    }
     if (available === undefined || line.quantity <= available) {
       next[key] = line;
       keptBefore.set(line._id, before + line.quantity);
@@ -305,6 +321,10 @@ export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): {
       next[key] = { ...line, quantity: available, stock };
       keptBefore.set(line._id, before + available);
     }
+  }
+  for (const [key, line] of Object.entries(next)) {
+    const count = line.sharedStock ? sharedCount.get(line._id) : undefined;
+    if (count !== undefined && line.stock !== count) next[key] = { ...line, stock: count };
   }
   return { cart: next, changed };
 }
