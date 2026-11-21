@@ -58,8 +58,12 @@ export interface Product {
     priceCurrency?: string;
     /** Inventory count — scalar (single-price) or a map keyed by variant value. */
     stock?: Variantable<number>;
-    /** Per-product low-stock trigger; renderer falls back to its global default. */
-    lowStockThreshold?: number;
+    /**
+     * Low-stock trigger: one number for the product, or (renderer 1.102.0,
+     * SW-C15, F417) a map keyed by option value so each size is judged by its
+     * own trigger. The renderer falls back to its global default.
+     */
+    lowStockThreshold?: number | Record<string, number>;
     /**
      * Public-sale DISPLAY fields (plan §5). Scalar or `Variantable<number>`
      * (per-variant sales, OQ3). Absent ⇒ not on sale. The renderer shows the
