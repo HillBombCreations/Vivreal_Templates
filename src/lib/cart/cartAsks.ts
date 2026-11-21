@@ -92,3 +92,28 @@ export function checkoutAnswers(
   }
   return out;
 }
+
+/**
+ * SQP-T2 (T-SQN-1): whether the cart shows the newsletter box: the owner's
+ * switch on, a shop that takes payments through Stripe or Square, and a
+ * business name to put in the words (Studio's preview needs the same, so a
+ * shop with no name is asked in neither place).
+ */
+export function showsJoinBox(settings: { askToJoinList: boolean }, provider: unknown, businessName: unknown): boolean {
+  return (
+    settings.askToJoinList &&
+    (provider === 'stripe' || provider === 'square') &&
+    typeof businessName === 'string' &&
+    businessName.trim().length > 0
+  );
+}
+
+/**
+ * WSQ-18 with its fill rule (T-SQN-2), the same as the portal's
+ * `joinBoxLabel`: "Email me news and offers from {business name}." A name that
+ * already ends in ".", "!" or "?" gets no second mark.
+ */
+export function joinBoxLabel(businessName: string): string {
+  const name = businessName.trim();
+  return /[.!?]$/.test(name) ? `Email me news and offers from ${name}` : `Email me news and offers from ${name}.`;
+}

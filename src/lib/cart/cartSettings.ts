@@ -48,6 +48,12 @@ export interface CartSettings {
   /** Show the promo code box. Default on. */
   showPromo: boolean;
   /**
+   * F557, F643 (release C, SV-N1, SV-SQ13): the owner's "ask customers to join
+   * the mailing list" switch, `cart.askToJoinList`. Only a stored `true` is on.
+   * The cart then shows its newsletter box (`lib/cart/cartAsks.ts`).
+   */
+  askToJoinList: boolean;
+  /**
    * The owner's "Offer pickup" switch (F54 L-10 D5, owner answer 2):
    * `cart.offerPickup`. Only a stored `false` turns Pickup off, so every cart
    * saved before the switch existed keeps Pickup. Separate from `pickup.on`,
@@ -140,6 +146,7 @@ export function readCartSettings(raw: unknown): CartSettings {
     showDelivery: c.showDelivery !== false,
     showPromo: c.showPromo !== false,
     offerPickup: c.offerPickup !== false,
+    askToJoinList: c.askToJoinList === true,
     deliveryDay: { on: deliveryDay.on === true },
     shipping: readShipping(c.shipping),
   };
@@ -359,6 +366,8 @@ export interface CheckoutExtras {
   fulfilment?: { kind: FulfilmentKind; pickupAt?: string; zip?: string; deliveryOn?: string; shipRateId?: string };
   /** F642 (SV-SQ11): the answers to a Square cart's product questions (`lib/cart/cartAsks.ts`). */
   answers?: Array<{ line: string; answer: string }>;
+  /** F557, F643 (SV-SQ13): the shopper ticked the newsletter box. Only ever the boolean `true`. */
+  joinList?: true;
 }
 
 /**

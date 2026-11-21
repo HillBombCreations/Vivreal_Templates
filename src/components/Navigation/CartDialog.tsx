@@ -46,9 +46,12 @@ import {
   ANSWER_MAX,
   ANSWER_NEEDED,
   ANSWER_PLACEHOLDER,
+  JOIN_BOX_LINE,
   QUESTION_OPTIONAL,
   cartQuestions,
   checkoutAnswers,
+  joinBoxLabel,
+  showsJoinBox,
   unansweredRequired,
 } from "@/lib/cart/cartAsks";
 import { applyShortStock, atLineCap, clampCartToStock, linesCounted, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutRefusedLine, withoutUnavailableLines } from "@/lib/cartStock";
@@ -122,11 +125,15 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const answerBoxes = useRef<Record<string, HTMLInputElement | null>>({});
   // The box to put the cursor in once a re-quote has drawn it.
   const pendingAnswerFocus = useRef<string | null>(null);
+  // F557, F643 (release C, SQP-T2): the newsletter box, always unticked until
+  // the shopper ticks it.
+  const [joinTicked, setJoinTicked] = useState(false);
 
   // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
   // defensively (absent settings are today's cart, word for word), and the
   // shopper's choices. Every rule is re-checked by VR_Client_API at checkout.
   const settings = useMemo(() => readCartSettings(siteData?.cart), [siteData?.cart]);
+  const joinBox = showsJoinBox(settings, siteData?.paymentsProvider, businessInfo?.name);
   const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
   const deliveryOn = deliveryConfig?.enabled === true;
   // F54 L-10 D9: no 25 mile default, and no radius line when zones decide the area.
@@ -425,6 +432,8 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
           ...checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
           // F642 (SV-SQ11): only answered questions, and nothing at all on a Stripe shop.
           ...(sentAnswers.length > 0 ? { answers: sentAnswers } : {}),
+          // F557, F643 (SV-SQ13): only when the box shows and the shopper ticked it.
+          ...(joinBox && joinTicked ? { joinList: true as const } : {}),
         },
       });
       setOpenCartMenu(false);
@@ -888,6 +897,24 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </div>
           ) : (
             <>
+              {/* F557, F643 (release C, SQP-T2; mockup M-SQ-1): the newsletter
+                  box above Checkout, on a Stripe or a Square shop with the
+                  owner's switch on. It always starts unticked. */}
+              {joinBox && itemsArray.length > 0 && businessInfo?.name ? (
+                <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm" data-cart-join-list="">
+                  <input
+                    type="checkbox"
+                    checked={joinTicked}
+                    onChange={(e) => setJoinTicked(e.target.checked)}
+                    disabled={loadingCheckout}
+                    className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[var(--primary,#365b99)]"
+                  />
+                  <span>
+                    <span className="block font-medium">{joinBoxLabel(businessInfo.name)}</span>
+                    <span className="block text-xs text-black/60">{JOIN_BOX_LINE}</span>
+                  </span>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={onCheckout}

@@ -24,6 +24,8 @@ function fields(source: string): Array<{ tag: string; tokens: string[] }> {
     // holds a `>`, so the tag's own end cannot be found by the first `>`.
     const next = source.indexOf("<", m.index + 1);
     const attributes = source.slice(m.index, next === -1 ? undefined : next);
+    // A tick box takes no typing, so a phone never zooms into it.
+    if (/type="(checkbox|radio)"/.test(attributes)) continue;
     const cls = /className=(?:"([^"]*)"|\{`([^`]*)`\})/.exec(attributes);
     const raw = cls ? (cls[1] ?? cls[2] ?? "") : "";
     out.push({ tag: m[1], tokens: raw.replace(/\$\{[^}]*\}/g, " ").split(/\s+/).filter(Boolean) });
