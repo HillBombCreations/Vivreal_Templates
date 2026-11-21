@@ -21,6 +21,9 @@ npm test             # `tsc --noEmit` FIRST, then the node test runner over THRE
                      # Hermetic and offline capable. Nothing in it touches the network.
                      # Every test process preloads scripts/aws-test-guard.mjs (`--import`):
                      # fake AWS credentials, and starting the AWS CLI throws. Keep the --import.
+                     # It also loads scripts/network-test-guard.mjs (F160): any connection off
+                     # this machine is refused (UNFAKED_NETWORK_CALL) and fails its file, even
+                     # when the test swallows the error; 127.0.0.1, ::1, localhost go ahead.
 npm run check:free-year             # NOT in `npm test`: reads the npm registry.
                                     # Runs weekly in CI. See "The free-year sentence".
 node _lockcensus.cjs <before.json>   # Lockfile diff, by entry. Run it on any lockfile change.
