@@ -6,6 +6,7 @@ import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
 import { scriptPolicyHeaders } from "./src/lib/scriptPolicy.ts";
+import { baseSecurityHeaders, frameRuleHeader } from "./src/lib/securityHeaders.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 import { readSiteBasePath } from "./src/lib/siteBasePath.ts";
 
@@ -138,12 +139,18 @@ const nextConfig: NextConfig = {
   // Vivreal's own two sites (vivreal.io, help.vivreal.io) get the stronger
   // SEC-W2, with a narrowed Google tag source and a connect-src; every other
   // site keeps SW-A21 byte for byte. Both stay report-only.
+  //
+  // F608 (release C, SW-C8): the frame rule (`frame-ancestors 'self'`, in the
+  // enforced policy header, alone while the script policy watches), plus
+  // `X-Content-Type-Options: nosniff` and a `Referrer-Policy`, on every route,
+  // with or without a DSN (src/lib/securityHeaders.ts).
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+          ...baseSecurityHeaders(),
+          frameRuleHeader(),
           ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN, process.env.SITE_ID),
         ],
       },
