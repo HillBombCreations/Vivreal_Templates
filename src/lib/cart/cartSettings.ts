@@ -401,23 +401,57 @@ export function checkoutExtras(choice: CheckoutChoice): CheckoutExtras {
   return out;
 }
 
+/** SV-SQ11, VR_Client_API's checkout validator: at most 3 answers, a line id of 1 to 192, an answer of at most 300. */
+const ANSWERS_MAX = 3;
+const ANSWER_LINE_MAX = 192;
+const ANSWER_IN_MAX = 300;
+
+/**
+ * Release C (SQP-T4, design-square-parity.md FP1.5): the answers a browser
+ * sent, shape-checked entry by entry, the first three only. An entry that is
+ * not a record with a string `line` of 1 to 192 characters and a string
+ * `answer` of at most 300 is dropped; anything that is not an array is none.
+ */
+function forwardedAnswers(raw: unknown): Array<{ line: string; answer: string }> {
+  if (!Array.isArray(raw)) return [];
+  const out: Array<{ line: string; answer: string }> = [];
+  for (const entry of raw.slice(0, ANSWERS_MAX)) {
+    if (!isRecord(entry)) continue;
+    const { line, answer } = entry;
+    if (typeof line !== 'string' || line.length < 1 || line.length > ANSWER_LINE_MAX) continue;
+    if (typeof answer !== 'string' || answer.length > ANSWER_IN_MAX) continue;
+    out.push({ line, answer });
+  }
+  return out;
+}
+
 /**
  * The server-side half: what `/api/checkout` forwards from a browser body.
  * Only `note` and `fulfilment.{kind,pickupAt,zip,deliveryOn,shipRateId}`, re-checked here; any fee
  * key anywhere is dropped. Nothing without a site id, because VR_Client_API
  * reads the rules off the site and refuses either field without one.
+ *
+ * Release C (SQP-T4, FP1.5; SV-SQ11, SV-SQ13): also the Square answers,
+ * shape-checked (`forwardedAnswers`), and `joinList` only as the boolean `true`,
+ * so the string "true" or a 1 never joins anyone. Both need the site id too:
+ * the Client reads the switch and the list off the site.
  */
 export function forwardedCheckoutExtras(body: unknown, siteIdPresent: boolean): CheckoutExtras {
   if (!siteIdPresent || !isRecord(body)) return {};
   const f = isRecord(body.fulfilment) ? body.fulfilment : {};
-  return checkoutExtras({
-    note: body.note,
-    kind: f.kind === 'pickup' || f.kind === 'delivery' || f.kind === 'ship' ? f.kind : undefined,
-    pickupAt: typeof f.pickupAt === 'string' ? f.pickupAt : undefined,
-    zip: typeof f.zip === 'string' ? f.zip : undefined,
-    deliveryOn: typeof f.deliveryOn === 'string' ? f.deliveryOn : undefined,
-    shipRateId: typeof f.shipRateId === 'string' ? f.shipRateId : undefined,
-  } as CheckoutChoice);
+  const answers = forwardedAnswers(body.answers);
+  return {
+    ...checkoutExtras({
+      note: body.note,
+      kind: f.kind === 'pickup' || f.kind === 'delivery' || f.kind === 'ship' ? f.kind : undefined,
+      pickupAt: typeof f.pickupAt === 'string' ? f.pickupAt : undefined,
+      zip: typeof f.zip === 'string' ? f.zip : undefined,
+      deliveryOn: typeof f.deliveryOn === 'string' ? f.deliveryOn : undefined,
+      shipRateId: typeof f.shipRateId === 'string' ? f.shipRateId : undefined,
+    } as CheckoutChoice),
+    ...(answers.length > 0 ? { answers } : {}),
+    ...(body.joinList === true ? { joinList: true as const } : {}),
+  };
 }
 
 export interface DeliveryQuote {
