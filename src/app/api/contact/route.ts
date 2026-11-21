@@ -19,7 +19,6 @@ import {
   type ContactFormType,
   type RequiredContactField,
 } from "@/lib/contactSubmission";
-import { resolveTenantBrand, wrapInTenantLayout } from "@hillbombcreations/email-brand";
 
 export const runtime = "edge";
 export const dynamic = "force-dynamic";
@@ -38,6 +37,12 @@ interface ContactPayload {
   contactEmail: string;
   customerEmail: string;
   message: string;
+  /**
+   * F607 (release C, SW-C3): accepted from an older form and type-checked
+   * (`resolveContactRecipient` trims it), but NEVER forwarded. VR_Client_API
+   * builds the owner's email from the stored business (its name, logo and
+   * colours), so nothing a visitor sends can shape that mail.
+   */
   siteName: string;
   /**
    * v0.7.0 (`@hillbombcreations/site-renderer`): any form field that
@@ -57,6 +62,7 @@ interface ContactPayload {
    * BEFORE the renderer bump ships (deploy-order note in the plan).
    */
   company_website?: string;
+  /** F607: accepted from an older form and type-checked, never forwarded (see `siteName`). */
   branding?: {
     primary?: string;
     surface?: string;
@@ -101,178 +107,6 @@ function captureRejection(details: {
   return true;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
-function humanizeKey(key: string): string {
-  // Convert camelCase / snake_case / kebab-case to "Title Case"
-  return key
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function renderCustomFieldValue(value: unknown): string {
-  if (value === null || value === undefined || value === "") return "";
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (Array.isArray(value)) return value.map((v) => String(v)).join(", ");
-  return String(value);
-}
-
-function buildCustomFieldsBlock(
-  customFields: Record<string, unknown> | undefined,
-  primary: string,
-): string {
-  if (!customFields) return "";
-  const entries = Object.entries(customFields).filter(([, v]) => {
-    const rendered = renderCustomFieldValue(v);
-    return rendered.length > 0;
-  });
-  if (entries.length === 0) return "";
-
-  const rows = entries
-    .map(([key, value]) => {
-      const label = escapeHtml(humanizeKey(key));
-      const rendered = escapeHtml(renderCustomFieldValue(value)).replace(/\n/g, "<br>");
-      return `
-        <tr>
-          <td style="padding:0 0 12px 0;">
-            <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-bottom:4px;">${label}</span>
-            <span style="font-size:14px;color:#374151;font-family:'Helvetica Neue',Arial,sans-serif;line-height:1.5;">${rendered}</span>
-          </td>
-        </tr>`;
-    })
-    .join("");
-
-  // Subtle ${primary}-tinted card, sits between Message and Reply CTA.
-  return `
-    <tr>
-      <td style="padding:16px 36px 0 36px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${primary}08;border-radius:12px;border:1px solid ${primary}1a;">
-          <tr>
-            <td style="padding:18px 20px 6px 20px;">
-              <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:${primary};font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-bottom:12px;">Additional details</span>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                ${rows}
-              </table>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>`;
-}
-
-function buildBrandedEmail(body: ContactPayload): string {
-  // The chrome (logo header, card, accent bar, footer) comes from
-  // @hillbombcreations/email-brand. It carries the SITE's colours and logo and
-  // nothing of Vivreal's, which is what makes this email look like it came from
-  // the business the visitor actually contacted. The words and the layout of
-  // the message itself stay here, because they are this route's job and
-  // nobody else's.
-  //
-  // resolveTenantBrand also validates: a stored `primary` that is not a hex
-  // colour used to flow straight into a `style=` attribute, and a stored logo
-  // URL straight into an `src=`. Both now fall back rather than render.
-  const brand = resolveTenantBrand({
-    name: body.siteName,
-    primary: body.branding?.primary,
-    surface: body.branding?.surface,
-    textPrimary: body.branding?.textPrimary,
-    logoUrl: body.branding?.logoUrl,
-  });
-  const { primary, textPrimary } = brand;
-  const siteName = escapeHtml(body.siteName);
-  const name = escapeHtml(body.name);
-  const email = escapeHtml(body.customerEmail);
-  const message = escapeHtml(body.message).replace(/\n/g, "<br>");
-  const customFieldsBlock = buildCustomFieldsBlock(body.customFields, primary);
-
-  return wrapInTenantLayout({
-    brand,
-    bodyHtml: `<!-- Badge -->
-                <tr>
-                  <td style="padding:32px 36px 0 36px;">
-                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td style="background-color:${primary}12;border-radius:20px;padding:6px 14px;">
-                          <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.2px;color:${primary};font-family:'Helvetica Neue',Arial,sans-serif;">New Message</span>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- Title -->
-                <tr>
-                  <td style="padding:20px 36px 0 36px;">
-                    <h1 style="margin:0;font-size:24px;font-weight:700;color:${textPrimary};font-family:'Helvetica Neue',Arial,sans-serif;line-height:1.3;">
-                      Contact form submission
-                    </h1>
-                    <p style="margin:8px 0 0 0;font-size:15px;color:#6b7280;font-family:'Helvetica Neue',Arial,sans-serif;line-height:1.5;">
-                      Someone reached out through your ${siteName} website.
-                    </p>
-                  </td>
-                </tr>
-
-                <!-- Divider -->
-                <tr>
-                  <td style="padding:24px 36px 0 36px;">
-                    <hr style="border:none;border-top:1px solid #f0f0f0;margin:0;">
-                  </td>
-                </tr>
-
-                <!-- Sender info -->
-                <tr>
-                  <td style="padding:24px 36px 0 36px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-                      <tr>
-                        <td width="48" valign="top" style="padding-right:16px;">
-                          <div style="width:48px;height:48px;border-radius:24px;background-color:${primary};text-align:center;line-height:48px;">
-                            <span style="font-size:18px;font-weight:600;color:#ffffff;font-family:'Helvetica Neue',Arial,sans-serif;">${name.charAt(0).toUpperCase()}</span>
-                          </div>
-                        </td>
-                        <td valign="center">
-                          <span style="font-size:16px;font-weight:600;color:${textPrimary};font-family:'Helvetica Neue',Arial,sans-serif;display:block;line-height:1.3;">${name}</span>
-                          <a href="mailto:${email}" style="font-size:14px;color:${primary};text-decoration:none;font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-top:2px;">${email}</a>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                <!-- Message body -->
-                <tr>
-                  <td style="padding:20px 36px 0 36px;">
-                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f9fafb;border-radius:12px;border:1px solid #f0f0f0;">
-                      <tr>
-                        <td style="padding:20px 24px;">
-                          <span style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;font-family:'Helvetica Neue',Arial,sans-serif;display:block;margin-bottom:10px;">Message</span>
-                          <p style="margin:0;font-size:15px;color:#374151;line-height:26px;font-family:'Helvetica Neue',Arial,sans-serif;">${message}</p>
-                        </td>
-                      </tr>
-                    </table>
-                  </td>
-                </tr>
-
-                ${customFieldsBlock}
-
-                <!-- Reply CTA -->
-                <tr>
-                  <td style="padding:28px 36px 0 36px;" align="center">
-                    <a href="mailto:${email}?subject=Re: ${siteName} Contact Form" style="display:inline-block;background-color:${primary};color:#ffffff;font-size:14px;font-weight:600;font-family:'Helvetica Neue',Arial,sans-serif;text-decoration:none;padding:12px 32px;border-radius:8px;line-height:1;">Reply to ${name.split(" ")[0]}</a>
-                  </td>
-                </tr>`,
-    footerHtml: `This email was sent from the contact form on your<br>${siteName} website, powered by <a href="https://vivreal.io" style="color:${primary};text-decoration:none;">Vivreal</a>.`,
-  });
-}
-
 export async function POST(request: NextRequest) {
   let body: ContactPayload;
   try {
@@ -311,9 +145,9 @@ export async function POST(request: NextRequest) {
   // Reject it here, before the lookup and before anything can be flushed,
   // so a hostile or malformed body gets an honest 400 instead of surfacing
   // as a 502 "upstream failure" that never happened. `branding` is checked
-  // the same way: it only ever feeds template strings below, so a non-object
-  // value cannot throw, but letting it past validation here is the same kind
-  // of silent acceptance this check exists to close off.
+  // the same way: since F607 it is never forwarded, so a non-object value
+  // cannot throw, but letting it past validation here is the same kind of
+  // silent acceptance this check exists to close off.
   // review-templates-184.md P3-3: `null` reads as absent here, the same way
   // `resolveContactRecipient()` already treats it (`body.siteName?.trim()`,
   // `body.branding ?? site?.branding`, both nullish-safe). `!= null` lets
@@ -338,8 +172,9 @@ export async function POST(request: NextRequest) {
   // this site's own email account mail them, branded as the business.
   // resolveContactRecipient() never reads `body` for `to` — see its header —
   // so that is no longer possible regardless of what the request carries.
-  // siteName/branding are cosmetic (legacy ContactSection compatibility),
-  // not security-relevant, and still prefer the body when present.
+  // F607 (release C, SW-C3): the body's siteName and branding are no longer
+  // sent upstream at all, and neither is an email of this route's making.
+  // VR_Client_API builds the owner's email from the stored business.
   // 2026-10-04 idle-dead-socket fix: `resolveSiteContact` now retries a
   // dead-connection failure on a fresh socket (`fetchWithReconnect`), but a
   // lookup that still fails must not vanish — it means this submission is
@@ -377,7 +212,7 @@ export async function POST(request: NextRequest) {
     // the upstream POST below, so the visitor pays roughly the slower of the
     // two instead of their sum.
     flushPromise = recipientLookupFailed ? Sentry.flush(1500) : Promise.resolve();
-    const { to, siteName, branding } = resolveContactRecipient(body, site);
+    const { to } = resolveContactRecipient(body, site);
 
     // F2: a submission is never dropped for lack of a configured recipient.
     // Forward it regardless — VR_Client_API already stores every contact
@@ -412,8 +247,6 @@ export async function POST(request: NextRequest) {
       formType,
       process.env.SITE_ID,
     );
-    const enriched: ContactPayload = { ...body, message, contactEmail: to, siteName, branding, customFields };
-
     const apiKey = process.env.API_KEY;
     const clientApiUrl =
       process.env.NEXT_PUBLIC_CLIENT_API ?? "https://client.vivreal.io";
@@ -424,17 +257,20 @@ export async function POST(request: NextRequest) {
         "Content-Type": "application/json",
         Authorization: apiKey ?? "",
       },
+      // F607 (release C, SW-C3): no `siteName` and no `customHtml`. The owner's
+      // email takes the business name, logo and colours from the stored
+      // business (VR_Client_API), never from this request; Client accepts and
+      // ignores both old keys for one deploy window, so this order is safe
+      // only with Client deployed first (the runbook's order).
       body: JSON.stringify({
         name,
         message,
-        siteName,
         // F2: omitted (never "") when no recipient is configured, so
         // `JSON.stringify` drops the key entirely rather than sending an
         // empty string VR_Client_API's validator would reject the same way
         // it rejects a missing one.
         ...(to ? { contactEmail: to } : {}),
         customerEmail,
-        customHtml: buildBrandedEmail(enriched),
         // Task 14 item 1 (dashboard-insights-phase-3-capture/plan.md, E-a) —
         // both keys are OPTIONAL on the Joi validator (Task 8 step 1), so an
         // old site build (neither key) and a new API stay compatible in
