@@ -193,7 +193,7 @@ export default function CartChoices({
               disabled={disabled || checkingZip}
               placeholder="Your ZIP"
               aria-label="Your ZIP"
-              className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-sm outline-none focus:border-black/25 disabled:opacity-60"
+              className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-base md:text-sm outline-none focus:border-black/25 disabled:opacity-60"
             />
             <button
               type="button"
@@ -273,7 +273,7 @@ export default function CartChoices({
               value={pickupAt ?? ""}
               disabled={disabled}
               onChange={(e) => onPickupAt(e.target.value || null)}
-              className={`peer h-10 w-full cursor-pointer appearance-none rounded-xl border border-black/10 bg-white pl-3 pr-9 text-sm outline-none focus:border-black/25 disabled:cursor-not-allowed disabled:opacity-60 ${pickupAt ? "" : "text-black/50"}`}
+              className={`peer h-10 w-full cursor-pointer appearance-none rounded-xl border border-black/10 bg-white pl-3 pr-9 text-base md:text-sm outline-none focus:border-black/25 disabled:cursor-not-allowed disabled:opacity-60 ${pickupAt ? "" : "text-black/50"}`}
             >
               <option value="" className="text-[var(--text-primary,#0b1220)]">Pick a time</option>
               {(activeDay?.times ?? []).map((t) => (
@@ -304,7 +304,7 @@ export default function CartChoices({
             rows={2}
             disabled={disabled}
             onChange={(e) => onNote(e.target.value.slice(0, NOTE_MAX))}
-            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-sm outline-none focus:border-black/25 disabled:opacity-60"
+            className="w-full rounded-xl border border-black/10 bg-white px-3 py-2 text-base md:text-sm outline-none focus:border-black/25 disabled:opacity-60"
           />
           <div className="text-right text-[11px] text-black/50">
             {note.length}/{NOTE_MAX}

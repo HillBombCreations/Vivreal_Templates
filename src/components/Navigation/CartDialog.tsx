@@ -673,7 +673,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                       autoCorrect="off"
                       spellCheck={false}
                       aria-invalid={!!codeError}
-                      className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-sm uppercase tracking-wide outline-none focus:border-black/25 disabled:opacity-60"
+                      className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-base md:text-sm uppercase tracking-wide outline-none focus:border-black/25 disabled:opacity-60"
                     />
                     <button
                       type="button"
