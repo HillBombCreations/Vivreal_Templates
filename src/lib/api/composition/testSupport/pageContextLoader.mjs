@@ -1,4 +1,5 @@
-// Node module-customization loader for `../boundListPaging.test.ts` ONLY
+// Node module-customization loader for `../boundListPaging.test.ts` and the two
+// `../customerComposeOptions*.test.ts` files (F570 PB-T1) ONLY
 // (`node --test` runs each test file in its own child process, so it touches
 // nothing else). It loads the REAL `../buildPageContext.ts` and every reader
 // it calls (`@/lib/api/collections` included) under plain node, with exactly
