@@ -15,9 +15,9 @@
  * `app/[slug]/[itemId]/page.tsx` then asks "is the item in this list?", gets
  * `undefined`, and answers `redirectOrNotFound()`.
  *
- * The generic-page version of this could only swap the body under a 200,
- * because its guard runs inside a page-authored Suspense boundary. This route
- * has no such boundary: `DynamicItemPage` awaits every read before it returns
+ * The generic-page version of this could only swap the body under a 200 while
+ * its guard ran inside a page-authored Suspense boundary (removed by F323 in
+ * release C). This route never had such a boundary: `DynamicItemPage` awaits every read before it returns
  * any JSX, which is exactly why `assertUpstreamHealthy()` can already set a
  * status from the top of it. So the 404 here is a REAL 404 on a real,
  * published detail item, and a crawler is told the item is gone rather than

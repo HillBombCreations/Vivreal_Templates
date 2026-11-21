@@ -75,7 +75,7 @@ error it reports is one the fleet build would reject. `npm test` and
 | Area | Choice |
 |---|---|
 | Framework | Next.js 16 (App Router). **Do not add `experimental.viewTransition`**. It was removed in the 16.3.0 bump because the flag GRADUATED, and 16.3.0 rejects the key as unrecognized. `next build` typechecks `next.config.ts`, so re-adding it is a hard build failure, not a warning. The `<ViewTransition>` wrappers in `layout.tsx` are unaffected; they import from `react` |
-| Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates, skeletons) — version in package.json |
+| Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates) — version in package.json |
 | Language | TypeScript 5 (strict) |
 | Styling | Tailwind CSS 4 |
 | Icons | Lucide React |
@@ -122,7 +122,7 @@ src/
 │   ├── og/ogImage.ts               # server-only re-export of the resolver + buildOgImageUrl
 │   ├── fonts/siteFont.ts           # Per-site font resolution from siteData.fontFamily
 │   ├── pages/                      # pageConfig lookup helpers (getPageBySlug, getItemHref)
-│   └── renderComposedPage.tsx      # composePage output → JSX + skeletonPropsFor()
+│   └── renderComposedPage.tsx      # composePage output → JSX, sent complete (no box)
 ├── types/, contexts/, hooks/
 ├── data/mockData.ts                # Fallback mock data (used only if API unavailable)
 └── styles/globals.css              # Tailwind base + CSS variables (fonts load from a layout <link>, not @import)
@@ -264,6 +264,7 @@ Studio-authored chrome threads through the shells:
 Pages are async Server Components that fetch data and pass it to Client Components:
 - `page.tsx` → fetches data → passes to client components
 - `Navbar.tsx` and `Footer` are also Server Components (they fetch nav data)
+- **Pages are sent complete (F323, release C).** No page route holds a page-authored `<Suspense>` box or a `loading.tsx`, so a reader that runs no scripts (a search engine, a link preview) gets every page whole, and a guard anywhere in the render sets a real status. The only boxes left are the layout's progress bar and the shop section's own two (`liveProductsOverrides.tsx`, around the one hook that reads the URL). `src/lib/pageBoundaries.test.ts` and the build check's no-script read (`scripts/isr-build-check.mjs`, measure in `scripts/no-script-read.mjs`, also the live probe) pin it.
 
 ### Metadata is Dynamic
 

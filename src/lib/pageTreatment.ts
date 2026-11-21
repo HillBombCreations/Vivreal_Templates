@@ -9,9 +9,9 @@ import type { PageConfig as RendererPageConfig, resolvePagePalette } from '@hill
  * chosen page background live on `composePage`'s wrapper, and since 1.98.5 a
  * treatment that rebases the page surface also PAINTS it there. The Studio
  * draws the title band inside that wrapper (`options.titleBand`). This app
- * mounts the band in the streaming shell, above the Suspense boundary, so the
- * real heading is on screen before the collection reads land
- * (`renderComposedPage.tsx`). That put the band outside the treated area: on a
+ * mounts the band in its own shell beside the page body
+ * (`renderComposedPage.tsx`; until F323 that shell sat above a Suspense
+ * boundary). That put the band outside the treated area: on a
  * Tinted page the title sat on the plain site colour above a tinted page, and
  * on "Flipped colors" a light strip sat above a dark page, while the Studio
  * showed one treated page. The shell now wraps the band and the body in one

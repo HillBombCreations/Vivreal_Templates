@@ -414,9 +414,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
    * read" are the same value (`@/lib/api/degradedRead`). A transient
    * VR_Client_API wobble therefore made every detail URL on the site answer
    * 404, and unlike the generic-page sibling of this defect (fixed in
-   * `renderComposedPage.tsx`, which sits inside a Suspense boundary and could
-   * only swap the body under an already-flushed 200) this component is
-   * UN-SUSPENDED. The 404 was real, and a real 404 tells a crawler that a live,
+   * `renderComposedPage.tsx`, which until F323 sat inside a Suspense boundary
+   * and could only swap the body under an already-flushed 200) this component
+   * is UN-SUSPENDED. The 404 was real, and a real 404 tells a crawler that a live,
    * published item is gone.
    *
    * Being un-suspended is also what makes the fix strictly better here: the

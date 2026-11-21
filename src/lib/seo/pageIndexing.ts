@@ -203,8 +203,9 @@ export function buildPageRobotsMetadata(
 
 /**
  * QA-G1-2 (fix-plan 2026-10-07): metadata for a composed page that renders as
- * not found. The render now answers a real 404 (the emptiness guard runs above
- * the Suspense boundary, see `renderComposedPage.tsx`); this keeps the head in
+ * not found. The render now answers a real 404 (the emptiness guard runs
+ * before the shell, and since F323 the page has no box, see
+ * `renderComposedPage.tsx`); this keeps the head in
  * step with it, so the page is never titled or indexed as the page it is not.
  */
 export function buildEmptyPageMetadata(siteName: string): Pick<Metadata, 'title' | 'robots'> {

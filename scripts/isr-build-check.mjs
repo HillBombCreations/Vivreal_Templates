@@ -53,6 +53,15 @@
  *     Gate unset: f. home never shows words older than a page the same
  *     server served (P1, I1).
  *
+ *  4. F323 (release C, T-323-3): every 200 read of `NO_SCRIPT_PATHS` passes the
+ *     no-script measure (`scripts/no-script-read.mjs`): its `<h1>` and at least
+ *     90 % of its text visible without scripts, and its own words visible.
+ *     The after-flip reads of `/about` are not measured: the storefront the
+ *     owner adds after the build is drawn by the browser until the next build.
+ *
+ *   --serve keeps the fixture and `next start` up after the assertions, for
+ *   the scripts-on render check (F323 R-323-L); stop it with Ctrl-C.
+ *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
  * and exported; scripts/isr-build-check.test.mjs pins them with planted
@@ -64,6 +73,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { passesWithoutScripts, readWithoutScripts } from './no-script-read.mjs';
 
 export const SITE_ID = '6a0000000000000000000a01';
 export const POSTS = '6a0000000000000000000c01';
@@ -356,6 +367,47 @@ export const READ_PATHS = [
 
 /** Text only the storefront the owner adds to `/about` draws (a fixture item title). */
 export const STOREFRONT_TEXT = 'First loaf';
+
+/**
+ * F323 (T-323-3): the paths a reader without scripts must get complete, each
+ * with the words it must show. `/shop` and `/menu` draw the storefront in a
+ * request render, so their item title must be visible too: the shop section's
+ * own box must not hide it.
+ */
+export const NO_SCRIPT_PATHS = {
+  '/': [HOME_BEFORE_TEXT],
+  '/about': [],
+  '/links': [],
+  '/book': [OWNER_BOOK_TEXT],
+  '/shop': [STOREFRONT_TEXT],
+  '/menu': [STOREFRONT_TEXT],
+  '/events': [],
+  '/faq?q=loaf': [],
+  '/blog/first-loaf': ['First loaf'],
+};
+
+/** One read's no-script verdict, or null when the path is not measured or did not answer 200. */
+export function noScriptVerdict(read) {
+  const mustShow = NO_SCRIPT_PATHS[read.path];
+  if (!mustShow || read.second?.status !== 200) return null;
+  return passesWithoutScripts(readWithoutScripts(read.second.body ?? ''), mustShow);
+}
+
+/** F323: every measured 200 read passes the no-script measure. `reads` as `checkResponses` takes them. Returns failures. */
+export function checkNoScriptReads(reads) {
+  const failures = [];
+  const byPath = new Map(reads.map((r) => [r.path, r]));
+  for (const p of Object.keys(NO_SCRIPT_PATHS)) {
+    const r = byPath.get(p);
+    if (!r) {
+      failures.push(`${p} was not read for the no-script measure`);
+      continue;
+    }
+    const verdict = noScriptVerdict(r);
+    if (verdict && !verdict.ok) failures.push(`${p} without scripts: ${verdict.reasons.join('; ')}`);
+  }
+  return failures;
+}
 
 /**
  * Review B2: after the build, the owner adds a shop section to the cached
@@ -815,9 +867,12 @@ async function main() {
           const first = await get(p);
           const second = await get(p);
           reads.push({ path: p, first, second });
-          console.log(`  ${String(second.status).padEnd(4)} ${(second.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${(second.headers['cache-control'] ?? '').toString().padEnd(60)} ${p}`);
+          const noScript = noScriptVerdict({ path: p, second });
+          const noScriptCell = noScript === null ? '-' : noScript.ok ? 'complete' : 'HIDDEN';
+          console.log(`  ${String(second.status).padEnd(4)} ${(second.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${(second.headers['cache-control'] ?? '').toString().padEnd(60)} ${noScriptCell.padEnd(9)} ${p}`);
         }
         failures.push(...checkResponses(reads, { gateOn }));
+        failures.push(...checkNoScriptReads(reads));
 
         // Review B2: the owner adds a shop section to the cached /about.
         state.aboutStorefront = true;
@@ -1006,6 +1061,10 @@ async function main() {
           console.log(`  F41 j public page, every shell read failing: ${publicRead.status} ${publicRead.body.includes(DRAFT_TEXT) ? 'DRAFT WORDS' : publicRead.body.includes(CHANGED_TEXT) ? 'public page' : 'not its page'} /${NEW_PAGE_SLUG}`);
           failures.push(...checkPreviewNeverLearned({ preview, publicRead }));
         }
+      }
+      if (process.argv.includes('--serve')) {
+        console.log(`\n--serve: next start on http://127.0.0.1:${APP_PORT} with the fixture upstream; Ctrl-C to stop`);
+        await new Promise((resolve) => process.once('SIGINT', resolve));
       }
     } finally {
       await stopServer(server);
