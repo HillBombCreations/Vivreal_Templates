@@ -145,6 +145,29 @@ export function readCartSettings(raw: unknown): CartSettings {
   };
 }
 
+/**
+ * F426 D4, the tier half (release C; `design-square-parity.md` 2.3 keeps it):
+ * the plans whose shops can make promo codes. Free and Basic have
+ * `couponsEnabled: false` in `@hillbombcreations/tier-quotas` (`TIER_QUOTAS`),
+ * and the portal never saves `showPromo` without the switch those plans do not
+ * see, so their carts drew a code box no code could satisfy. A LOCAL set, as
+ * the renderer's `poweredBy.ts` keeps its own: this app cannot install a second
+ * private package. Read on the RAW stored tier, trimmed and in any case; an
+ * absent, unknown or retired tier has no codes, which hides the box.
+ * KEEP IN STEP with tier-quotas `TIER_QUOTAS.*.couponsEnabled`.
+ */
+const TIERS_WITH_PROMO_CODES: ReadonlySet<string> = new Set(['pro', 'enterprise']);
+
+/** Whether a shop on `tier` can make promo codes at all. */
+export function planTakesPromoCodes(tier: unknown): boolean {
+  return typeof tier === 'string' && TIERS_WITH_PROMO_CODES.has(tier.trim().toLowerCase());
+}
+
+/** The cart's promo code box: the owner's switch, and a plan whose codes exist. */
+export function showsPromoBox(settings: CartSettings, tier: unknown): boolean {
+  return settings.showPromo && planTakesPromoCodes(tier);
+}
+
 const usd = (dollars: number) =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: dollars % 1 === 0 ? 0 : 2 }).format(dollars);
 

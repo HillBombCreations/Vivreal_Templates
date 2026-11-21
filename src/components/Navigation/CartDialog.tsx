@@ -22,6 +22,7 @@ import {
   lineShippingNote,
   minimumLine,
   readCartSettings,
+  showsPromoBox,
   shippingFromLine,
   shippingSection,
   type DeliveryQuote,
@@ -631,7 +632,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             />
           ) : null}
 
-          {itemsArray.length > 0 && settings.showPromo ? (
+          {itemsArray.length > 0 && showsPromoBox(settings, siteData?.tier) ? (
             <div className="mb-3">
               {appliedCode ? (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2">

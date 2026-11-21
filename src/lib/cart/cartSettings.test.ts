@@ -23,6 +23,7 @@ import {
   readDeliveryQuote,
 } from './cartSettings.ts';
 import { CHECKOUT_SHOP_RULE, checkoutRefusal } from '../checkoutRequest.ts';
+import * as cartSettingsModule from './cartSettings.ts';
 
 const dialog = fs.readFileSync(new URL('../../components/Navigation/CartDialog.tsx', import.meta.url), 'utf8');
 
@@ -73,7 +74,8 @@ test('REFUSE: under the minimum the button stays disabled; ALLOW: exactly at it'
 
 test('ALLOW: the promo box hides when switched off', () => {
   assert.equal(readCartSettings({ showPromo: false }).showPromo, false);
-  assert.match(dialog, /\{itemsArray\.length > 0 && settings\.showPromo \? \(/);
+  // F426 D4 (release C): the dialog asks one rule, the switch AND the plan.
+  assert.match(dialog, /\{itemsArray\.length > 0 && showsPromoBox\(settings, siteData\?\.tier\) \? \(/);
 });
 
 test('ALLOW: a pickup time and a note ride checkout; the note is cleaned and capped', () => {
@@ -203,4 +205,31 @@ test('REFUSE: the cart quote forwards only a cleaned ZIP and this site\'s id, ne
   assert.match(route, /cleanZip\(rawFulfilment\.zip\)/);
   assert.match(route, /zip && siteId \? \{ siteId, fulfilment: \{ kind: "delivery", zip \} \} : \{\}/);
   assert.ok(!/fee/i.test(route.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')), 'no fee anywhere in the code');
+});
+
+// F426 D4, the tier half (release C): Free and Basic shops cannot make promo
+// codes (tier-quotas couponsEnabled false), so their carts draw no code box.
+// Read through the module namespace, so at a base without the rule each row
+// fails on its own assertion rather than the file failing to load.
+
+function promoRule(): { showsPromoBox: (s: ReturnType<typeof readCartSettings>, tier: unknown) => boolean } {
+  const ns = cartSettingsModule as unknown as Record<string, unknown>; // named exports, checked below
+  assert.equal(typeof ns.showsPromoBox, 'function', 'cartSettings exports showsPromoBox');
+  return ns as unknown as { showsPromoBox: (s: ReturnType<typeof readCartSettings>, tier: unknown) => boolean }; // checked above
+}
+
+test('ALLOW (F426 D4): a Pro or Enterprise shop with the switch on draws the promo code box', () => {
+  const { showsPromoBox } = promoRule();
+  for (const tier of ['pro', 'enterprise', ' Pro ', 'ENTERPRISE']) {
+    assert.equal(showsPromoBox(readCartSettings(undefined), tier), true, `tier ${JSON.stringify(tier)}`);
+  }
+});
+
+test('REFUSE (F426 D4): a Free or Basic shop, or one with no known plan, draws no promo code box', () => {
+  const { showsPromoBox } = promoRule();
+  for (const tier of ['free', 'basic', 'Basic', undefined, null, '', 'starter', 'pro-legacy', 3]) {
+    assert.equal(showsPromoBox(readCartSettings(undefined), tier), false, `tier ${JSON.stringify(tier)}`);
+  }
+  assert.equal(showsPromoBox(readCartSettings({ showPromo: false }), 'pro'), false, 'the owner switch still hides it');
+  assert.doesNotMatch(dialog, /&& settings\.showPromo \? \(/, 'the dialog never draws the box on the switch alone');
 });
