@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 // `server-only` and imports the fetch client, so it cannot load under plain
 // Node).
 import { transformProduct } from "./transformProduct.ts";
+// The site engine's REAL per-option rule, by relative path on purpose: the
+// package entry imports `next/link`, which plain node cannot load.
+import { thresholdForOption } from "../../../../node_modules/@hillbombcreations/site-renderer/dist/lib/stock.js";
 
 // Provider-agnostic checkout identifier resolution (Square checkout wiring):
 // `checkoutIdentifier` must resolve as
@@ -106,4 +109,26 @@ test("REFUSE (C7): an unnamed sale adds no key; a blank or non-string name is no
     });
     assert.equal("saleName" in product, false, JSON.stringify(saleName));
   }
+});
+
+// F417 (release C, SW-C15): the per-size low stock threshold reaches the
+// product page, so each size is judged by its own number, as the shop cards do.
+const thresholdOf = (lowStockThreshold: unknown) =>
+  transformProduct({ _id: "p-low", objectValue: { name: "Loaf", price: "$8", lowStockThreshold } }).lowStockThreshold;
+
+test("ALLOW (F417): a per-size threshold map reaches the product, and each size is judged by its own number", () => {
+  const map = { Small: 2, Large: 10 };
+  const kept = thresholdOf(map);
+  assert.deepEqual(kept, { Small: 2, Large: 10 });
+  assert.equal(thresholdForOption(kept, "Small"), 2);
+  assert.equal(thresholdForOption(kept, "Large"), 10);
+  assert.equal(thresholdOf(3), 3, "control: one number for the product, as before");
+  assert.equal(thresholdOf(0), 0, "zero is a number");
+});
+
+test("REFUSE (F417): a malformed threshold is dropped, as before, and a map keeps only its numbers", () => {
+  for (const bad of [undefined, null, "5", "", [], [2, 3], {}, { Small: "2" }, { Small: Number.NaN }, Number.POSITIVE_INFINITY, true]) {
+    assert.equal(thresholdOf(bad), undefined, `${JSON.stringify(bad)} is unset`);
+  }
+  assert.deepEqual(thresholdOf({ Small: 2, Large: "10", Medium: null }), { Small: 2 }, "a size with no number is left out");
 });

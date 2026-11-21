@@ -15,6 +15,30 @@ import { getSignedUrl, getSrcSet } from "../media.ts";
 import { sitemapDate } from "../../seo/sitemap.ts";
 import type { Product, Variantable } from "@/types/Products";
 
+/**
+ * F417 (release C, SW-C15): the stored low stock threshold as the stock rules
+ * read it: a finite number, or a map of the options that carry a finite number
+ * (the rest are left out). Anything else is unset, as a malformed value always
+ * was here.
+ *
+ * A LOCAL COPY of the site engine's `readLowStockThreshold` (`dist/lib/stock.js`,
+ * 1.102.0), because this module runs under plain node and the package entry
+ * imports `next/link`. A copy whose whole job is to agree is a drift hazard, so
+ * `transformProduct.test.ts` imports the engine's real reader by relative path
+ * and asserts this one agrees with it case by case, as `productOffer.ts` does
+ * for the variant resolution.
+ */
+export function readLowStockThreshold(value: unknown): number | Record<string, number> | undefined {
+  const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  if (isFiniteNumber(value)) return value;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const map: Record<string, number> = {};
+  for (const [key, v] of Object.entries(value)) {
+    if (isFiniteNumber(v)) map[key] = v;
+  }
+  return Object.keys(map).length > 0 ? map : undefined;
+}
+
 interface ResolvedProductImages {
   /** One URL per variant (or a bare string) — backward-compatible `imageUrl`. */
   primary: Variantable<string>;
@@ -226,7 +250,10 @@ export function transformProduct(raw: Record<string, unknown>): Product {
         ? objectValue.priceCurrency.trim()
         : undefined,
     stock: (objectValue.stock as Product["stock"]) ?? undefined,
-    lowStockThreshold: typeof objectValue.lowStockThreshold === "number" ? objectValue.lowStockThreshold : undefined,
+    // F417 (release C, SW-C15): one number for the product, or a map with each
+    // size's own number, so the product page judges each size as the shop cards
+    // do. It used to keep a number only, and a per-size map was dropped here.
+    lowStockThreshold: readLowStockThreshold(objectValue.lowStockThreshold),
     // Public-sale DISPLAY fields (plan §5). Passed through verbatim — the
     // renderer's lib/sale.ts validates window/shape defensively. Display only;
     // Stripe applies the authoritative discount at checkout.
