@@ -57,10 +57,30 @@ an assertion (the namespace check), never a load error.
 - **F392:** N5 and N6 built; N1 (release B's PR body), N2 and N3 (heal on the next add, undersell only) and N7 (the
   per-line rule since `7833991`, never 0) left, each with its reason in the commit.
 
-## Owed in this PR (heavy runs, P-heavy-runs)
+## F323 B-323-1 (the build check, `f75e881`)
 
-- F323's build check (B-323-1): head's `isr-build-check.mjs` against the base app code (red), and at the head
-  (green), gate on and gate off.
-- The fleet diff (P-template-validate, P-fleet-diff): every site rendered and built at the batch head, first with
-  1.102.0 alone, then with the Templates changes, each change named to a row. Written under hq
-  `docs/projects/next-release-C/fleet-diff/` beside D-26 to D-30.
+The check's fixture drew no section (every block typed `page-template`) and its Linux server stop left `next start`
+running; both fixed in `f75e881`. Then, each a full build and serve on WSL:
+
+| Tree | Gate on | Gate off |
+|---|---|---|
+| F323's tip `8cf009c` (Next 16.4.1, engine 1.101.0) | every measured path complete except `/shop`, `/menu`; `checkAfterFlip` and F41 green | the same |
+| Batch head | the same as F323's tip | the same |
+| Head's check against the base app code (F323's app commit reverted) | red on `/`, `/about`, `/links`, `/book`, `/shop`, `/menu`, `/events`, `/faq?q=loaf`, each naming a hidden `<h1>` or the ratio | the same |
+| Probe: F323's tip with the two shop boxes removed (never committed) | `/shop`, `/menu` complete; `/about` 500 after the owner adds a shop (`checkAfterFlip` red, design B1) | PASS |
+
+**Unsettled, for the architect:** `/shop` and `/menu` fail at F323's own tip. The shop section's own box (design
+4.1, pass 2) streams in a request render (its content lands in a hidden segment), against the design's premise that
+in a request render the box never shows its fallback. Removing the box fixes the request render and breaks the stored
+page that gains a shop (B1). Not a regression: before F323 the whole shop page was hidden; now the menu, title and
+footer arrive and only the shop section waits. A fix that keeps both (for example, the shop hook reading the query
+the route already parsed instead of `useSearchParams()`, so no box is needed) is a design change, not built here.
+
+## Fleet diff (P-template-validate, P-fleet-diff)
+
+- Diff 1, the site engine 1.102.0 alone: fleet diff D-26 (hq `fleet-diff/D-26-fleet-diff-1.md`), the same published
+  bytes (its candidate's integrity `sha512-qUesVOl2...K/V0Cw==` equals the registry 1.102.0 this batch pins), the same
+  Templates base `c5b4a6be` and the same type line. Not re-run.
+- Diff 2, the Templates changes: every Templates app (41) built twice, base = `c5b4a6be` plus `d91bfbf` (1.102.0 and
+  the type line, D-26's head tree), head = this batch; served and pair-diffed with release B's harness (sha256
+  `8dd20201...73abfe`). Report: hq `fleet-diff/C-TPL-fleet-diff-2.md`.
