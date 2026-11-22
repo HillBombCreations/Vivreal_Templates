@@ -6,7 +6,12 @@
  * reach readers that run no scripts (search engines, link previews) as a grey
  * box with the whole body hidden, and turned any guard inside it into a soft
  * 200. This scan refuses a box on the page routes, caps the boxes left in the
- * app at the allowlist, and pins the two hook callers that may lean on one.
+ * app at the allowlist, and pins the one hook caller that may lean on one.
+ *
+ * Shop pages (T-SH-1, design-f323-shop-pages.md 4 and 5): the shop section had
+ * its own two boxes, and React sent them in a hidden segment, so `/shop` and
+ * `/menu` still hid their storefront. The shop now takes its query from the
+ * route, so it holds no box and reads no address.
  *
  * Comment-stripped source scans, like `darkRenderedHero.test.ts`'s `code()`.
  */
@@ -69,17 +74,15 @@ const PAGE_ROUTES = [
   'src/lib/renderComposedPage.tsx',
 ];
 
-/** The boxes left in the app: the progress bar, and the two shop section boxes. */
+/** The boxes left in the app: the progress bar alone. */
 const BOX_ALLOWLIST: Record<string, number> = {
   'src/app/layout.tsx': 1,
-  'src/components/PageTemplates/liveProductsOverrides.tsx': 2,
 };
 
 const OVERRIDES = 'src/components/PageTemplates/liveProductsOverrides';
 
 const SEARCH_PARAMS_CALLERS = new Set([
   'src/components/Navigation/RouteProgress.tsx',
-  'src/components/PageTemplates/useProductsLiveAdapters.ts',
 ]);
 
 test('CONTROL: the scanner counts a box in code and not in a comment', () => {
@@ -119,13 +122,18 @@ test('ALLOW: the layout keeps exactly one box, around the progress bar alone', (
   assert.match(layout, /<Suspense fallback=\{null\}>\s*<RouteProgress \/>\s*<\/Suspense>/);
 });
 
-test('ALLOW: the shop overrides file is .tsx and holds exactly the two shop section boxes', () => {
+test('REFUSE: the shop overrides file holds no box and does not import Suspense (React would hide the storefront)', () => {
   const rel = `${OVERRIDES}.tsx`;
-  assert.ok(fs.existsSync(path.join(path.dirname(SRC), rel)), `${rel} must exist (the boxes need JSX)`);
-  const source = code(read(rel));
-  assert.equal(countBoxes(source), 2);
-  assert.match(source, /<Suspense fallback=\{null\}>\s*<ProductsPageComposed \{\.\.\.p\} \/>\s*<\/Suspense>/);
-  assert.match(source, /<Suspense fallback=\{null\}>\s*<CoordinatedProductsComposed \{\.\.\.p\} \/>\s*<\/Suspense>/);
+  assert.ok(fs.existsSync(path.join(path.dirname(SRC), rel)), `${rel} must exist (the overrides are JSX)`);
+  const source = read(rel);
+  assert.equal(countBoxes(source), 0, `${rel} holds a <Suspense> box: React sends it in a hidden segment, so the shop reaches readers without scripts hidden`);
+  assert.equal(importsSuspense(source), false, `${rel} imports Suspense`);
+});
+
+test('ALLOW: both shop elements take the route\'s query', () => {
+  const source = code(read(`${OVERRIDES}.tsx`));
+  assert.match(source, /<ProductsPageComposed \{\.\.\.p\} query=\{query\} \/>/);
+  assert.match(source, /<CoordinatedProductsComposed \{\.\.\.p\} query=\{query\} \/>/);
 });
 
 test('CONTROL: the shop import scan counts a planted import and not one in a comment', () => {
@@ -134,7 +142,7 @@ test('CONTROL: the shop import scan counts a planted import and not one in a com
   assert.equal(importsShopComponent('// import P from "@/components/PageTemplates/ProductsPageComposed";'), false);
 });
 
-test('REFUSE: only the overrides file imports the shop section components (anywhere else draws them with no box above their hook)', () => {
+test('REFUSE: only the overrides file imports the shop section components (they need the route\'s query, which only the overrides pass)', () => {
   const importers = sourceFiles().filter(
     (rel) => rel.replace(/\.tsx?$/, '') !== OVERRIDES && importsShopComponent(read(rel)),
   );
@@ -146,9 +154,9 @@ test('CONTROL: the hook scan counts a planted call and not one in a comment', ()
   assert.equal(callsUseSearchParams('// const sp = useSearchParams();'), false);
 });
 
-test('REFUSE: no new useSearchParams() caller (a new caller needs its own box and its own line here)', () => {
+test('REFUSE: no useSearchParams() caller but the progress bar (a new caller can 500 a stored page)', () => {
   const callers = sourceFiles().filter((rel) => callsUseSearchParams(read(rel)));
   assert.deepEqual(callers.filter((rel) => !SEARCH_PARAMS_CALLERS.has(rel)), [],
-    'a new useSearchParams() caller needs its own <Suspense> box and its own allowlist line in this test');
+    'useSearchParams() throws in a server rebuild of a stored page, so a new caller can 500 it: take the value from the route (as the shop and the schedule do) instead');
   for (const rel of SEARCH_PARAMS_CALLERS) assert.ok(callers.includes(rel), `${rel} still calls useSearchParams()`);
 });

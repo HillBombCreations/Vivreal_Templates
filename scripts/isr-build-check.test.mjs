@@ -20,6 +20,7 @@ import {
   SHARE_PAGE_TEXT,
   STOREFRONT_TEXT,
   checkAfterFlip,
+  checkAfterFlipNoScript,
   checkColdBudget,
   checkColdFirstRead,
   checkHeldShell,
@@ -275,7 +276,7 @@ const hiddenPage = (text) =>
   `<div hidden id="S:0"><h1>${text}</h1><p>${'Fresh bread every morning. '.repeat(20)}</p></div></body></html>`;
 const completePage = (text) =>
   `<html><body><h1>${text}</h1><p>${'Fresh bread every morning. '.repeat(20)}</p></body></html>`;
-const pageWords = { '/': HOME_BEFORE_TEXT, '/book': OWNER_BOOK_TEXT, '/shop': STOREFRONT_TEXT, '/menu': STOREFRONT_TEXT, '/blog/first-loaf': 'First loaf' };
+const pageWords = { '/': HOME_BEFORE_TEXT, '/book': OWNER_BOOK_TEXT, '/shop': STOREFRONT_TEXT, '/menu': STOREFRONT_TEXT, '/menu?sort=price': STOREFRONT_TEXT, '/blog/first-loaf': 'First loaf' };
 const noScriptReads = (hidden = []) =>
   Object.keys(NO_SCRIPT_PATHS).map((p) => {
     const text = pageWords[p] ?? `Page ${p}`;
@@ -301,9 +302,53 @@ test('F323 REFUSE: a measured path that was not read fails; a non-200 read is no
 });
 
 test('F323: the measured paths and the words each must show are the design ones', () => {
-  assert.deepEqual(Object.keys(NO_SCRIPT_PATHS), ['/', '/about', '/links', '/book', '/shop', '/menu', '/events', '/faq?q=loaf', '/blog/first-loaf']);
+  assert.deepEqual(Object.keys(NO_SCRIPT_PATHS), ['/', '/about', '/links', '/book', '/shop', '/menu', '/menu?sort=price', '/events', '/faq?q=loaf', '/blog/first-loaf']);
   assert.deepEqual(NO_SCRIPT_PATHS['/shop'], [STOREFRONT_TEXT]);
   assert.deepEqual(NO_SCRIPT_PATHS['/menu'], [STOREFRONT_TEXT]);
+  assert.deepEqual(NO_SCRIPT_PATHS['/menu?sort=price'], [STOREFRONT_TEXT]);
   assert.deepEqual(NO_SCRIPT_PATHS['/'], [HOME_BEFORE_TEXT]);
   assert.deepEqual(NO_SCRIPT_PATHS['/book'], [OWNER_BOOK_TEXT]);
+});
+
+// Shop pages (T-SH-3; design-f323-shop-pages.md 5): the stored /about after the
+// owner adds a shop. Its storefront must be in place for a reader without
+// scripts, not only in the page's data script or a hidden segment.
+const aboutHead = `<h1>About the fixture bakery</h1><p>${'We bake every morning. '.repeat(20)}</p>`;
+const flightOnly = {
+  path: '/about',
+  status: 200,
+  body: `<html><body>${aboutHead}<!--$!--><template data-dgst="BAILOUT_TO_CLIENT_SIDE_RENDERING"></template><!--/$-->` +
+    `<script>self.__next_f.push([1,"{\\"title\\":\\"${STOREFRONT_TEXT}\\"}"])</script></body></html>`,
+};
+const hiddenSegment = {
+  path: '/about',
+  status: 200,
+  body: `<html><body>${aboutHead}<!--$?--><template id="B:1"></template><!--/$-->` +
+    `<div hidden id="S:1"><ul><li>${STOREFRONT_TEXT}</li></ul></div></body></html>`,
+};
+const inPlace = {
+  path: '/about',
+  status: 200,
+  body: `<html><body>${aboutHead}<ul><li>${STOREFRONT_TEXT}</li></ul></body></html>`,
+};
+
+test('T-SH-3 REFUSE: the storefront the owner added only in the data script, behind a client bailout, fails', () => {
+  const failures = checkAfterFlipNoScript([flightOnly]);
+  assert.equal(failures.length, 1, 'expected a failure');
+  assert.ok(failures[0].includes(`"${STOREFRONT_TEXT}" is not in the visible text`), failures[0]);
+});
+
+test('T-SH-3 REFUSE: the storefront the owner added only in a hidden segment fails', () => {
+  const failures = checkAfterFlipNoScript([hiddenSegment]);
+  assert.equal(failures.length, 1, 'expected a failure');
+  assert.ok(failures[0].startsWith('/about after the owner added a storefront, without scripts: '), failures[0]);
+  const stale = { path: '/about', status: 200, body: `<html><body>${aboutHead}</body></html>` };
+  assert.equal(checkAfterFlipNoScript([stale, hiddenSegment, inPlace]).length, 1, 'a later complete read does not excuse the first');
+});
+
+test('T-SH-3 ALLOW: the storefront the owner added in place passes; the first read holding it is the one measured', () => {
+  assert.deepEqual(checkAfterFlipNoScript([inPlace]), []);
+  const stale = { path: '/about', status: 200, body: `<html><body>${aboutHead}</body></html>` };
+  assert.deepEqual(checkAfterFlipNoScript([stale, inPlace, hiddenSegment]), []);
+  assert.deepEqual(checkAfterFlipNoScript([stale]), [], 'no read with the storefront is checkAfterFlip\'s failure');
 });

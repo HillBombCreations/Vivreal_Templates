@@ -33,7 +33,7 @@ import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
 import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
-import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
+import { liveProductsOverrides } from "@/components/PageTemplates/liveProductsOverrides";
 import { parseProductQuery } from "@/lib/composition/productQuery";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
@@ -325,11 +325,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // without the overrides its grid renders the bare (CartAdapter-less) arm.
     // Owner ideas T10/T11: read only when the nested page can use it.
     const sp = pageReadsQuery(nestedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
+    // F323: the shop takes the same parsed query the items are read by.
+    const productQuery = parseProductQuery(sp);
     return renderComposedPage({
       siteData,
       composedPage: nestedPage,
-      components: LIVE_PRODUCTS_OVERRIDES,
-      productQuery: parseProductQuery(sp),
+      components: liveProductsOverrides(productQuery),
+      productQuery,
     });
   }
 

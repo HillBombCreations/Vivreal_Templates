@@ -106,7 +106,7 @@ export async function renderComposedPage({
   composedPage: PageConfig;
   /**
    * Optional composePage component overrides — the live storefront wrappers
-   * (LIVE_PRODUCTS_OVERRIDES). An override only fires when composePage renders
+   * (liveProductsOverrides). An override only fires when composePage renders
    * that arm, so passing them for pages without a storefront is a no-op.
    * Without them a storefront group on a generic/catalog page renders the bare
    * uncontrolled arm — no CartAdapter, so Add/Buy silently no-op (the first

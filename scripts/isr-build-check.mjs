@@ -56,8 +56,10 @@
  *  4. F323 (release C, T-323-3): every 200 read of `NO_SCRIPT_PATHS` passes the
  *     no-script measure (`scripts/no-script-read.mjs`): its `<h1>` and at least
  *     90 % of its text visible without scripts, and its own words visible.
- *     The after-flip reads of `/about` are not measured: the storefront the
- *     owner adds after the build is drawn by the browser until the next build.
+ *     Shop pages (T-SH-3): the first after-flip 200 read of `/about` that holds
+ *     the storefront the owner added passes the same measure, the storefront's
+ *     words visible (the shop takes its query from the route, so a stored page
+ *     that gains one renders it on the server, with no box).
  *
  *   --serve keeps the fixture and `next start` up after the assertions, for
  *   the scripts-on render check (F323 R-323-L); stop it with Ctrl-C.
@@ -388,8 +390,8 @@ export const STOREFRONT_TEXT = 'First loaf';
 /**
  * F323 (T-323-3): the paths a reader without scripts must get complete, each
  * with the words it must show. `/shop` and `/menu` draw the storefront in a
- * request render, so their item title must be visible too: the shop section's
- * own box must not hide it.
+ * request render, so their item title must be visible too: no box may hide it
+ * (T-SH-3, a sorted shop read too).
  */
 export const NO_SCRIPT_PATHS = {
   '/': [HOME_BEFORE_TEXT],
@@ -398,6 +400,7 @@ export const NO_SCRIPT_PATHS = {
   '/book': [OWNER_BOOK_TEXT],
   '/shop': [STOREFRONT_TEXT],
   '/menu': [STOREFRONT_TEXT],
+  '/menu?sort=price': [STOREFRONT_TEXT],
   '/events': [],
   '/faq?q=loaf': [],
   '/blog/first-loaf': ['First loaf'],
@@ -445,6 +448,20 @@ export function checkAfterFlip(flip, after) {
     failures.push('/about never showed the storefront the owner added (the regeneration failed behind a stale copy)');
   }
   return failures;
+}
+
+/**
+ * Shop pages (T-SH-3): the first after-flip 200 read whose HTML holds the
+ * storefront the owner added must pass the no-script measure with the
+ * storefront's words visible, so a reader without scripts gets it in place,
+ * not in a hidden segment or only in the page's data script. No such read is
+ * `checkAfterFlip`'s failure, not this one's. `after` as `checkAfterFlip` takes it.
+ */
+export function checkAfterFlipNoScript(after) {
+  const first = after.find((r) => r.status === 200 && (r.body ?? '').includes(STOREFRONT_TEXT));
+  if (!first) return [];
+  const verdict = passesWithoutScripts(readWithoutScripts(first.body), [STOREFRONT_TEXT]);
+  return verdict.ok ? [] : [`${first.path} after the owner added a storefront, without scripts: ${verdict.reasons.join('; ')}`];
 }
 
 /**
@@ -914,6 +931,7 @@ async function main() {
           await new Promise((res) => setTimeout(res, 1000));
         }
         failures.push(...checkAfterFlip(flip, after));
+        failures.push(...checkAfterFlipNoScript(after));
 
         if (!gateOn) {
           // F41 f, gate unset (RW-4 P1, I1): home is a KNOWN reader, so it

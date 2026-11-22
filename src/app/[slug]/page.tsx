@@ -44,7 +44,7 @@ import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
 import { SNAPSHOT_RECORDER } from "@/lib/api/client";
 import { fillSnapshotAtBuild } from "@/lib/api/snapshot/fill";
 import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
-import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
+import { liveProductsOverrides } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
 import { readLookupQuery } from "@/lib/composition/lookupQuery";
@@ -617,11 +617,13 @@ export default async function DynamicPage({
         // storefront, lookup or schedule gets the empty query and caches
         // like the home page. See src/lib/pages/pageReadsQuery.ts.
         const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
+        // F323: the shop takes the same parsed query the items are read by.
+        const productQuery = parseProductQuery(sp);
         return renderComposedPage({
           siteData,
           composedPage,
-          components: LIVE_PRODUCTS_OVERRIDES,
-          productQuery: parseProductQuery(sp),
+          components: liveProductsOverrides(productQuery),
+          productQuery,
           lookupQuery: readLookupQuery(sp, composedPage),
         });
       }
@@ -649,7 +651,7 @@ export default async function DynamicPage({
     // `any`: CompositionComponentOverrides in the installed renderer can lag
     // working-tree keys during bumps.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let components: any = { ...LIVE_PRODUCTS_OVERRIDES };
+    let components: any = { ...liveProductsOverrides(productQuery) };
 
     // S2/OD#3 — schedule active view from `?view=` searchParam.
     // Validated against the three legal values (agenda|month|map); any other

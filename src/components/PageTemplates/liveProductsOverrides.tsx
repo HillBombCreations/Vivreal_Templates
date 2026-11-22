@@ -1,7 +1,7 @@
-import { Suspense } from "react";
 import type { CoordinatedProductsProps, ProductsPageProps } from "@hillbombcreations/site-renderer";
 import ProductsPageComposed from "@/components/PageTemplates/ProductsPageComposed";
 import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedProductsComposed";
+import type { ProductQuery } from "@/lib/composition/productQuery";
 
 /**
  * The live products-storefront component overrides for composePage — BOTH
@@ -20,26 +20,27 @@ import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedP
  * Shared by [slug]/page.tsx and [slug]/[itemId]/page.tsx (CP-11 nested
  * sub-pages) so the two routes cannot drift.
  *
- * F323 (release C): each override sits in its OWN empty box, and these are the
- * only boxes a client hook may lean on. The pages around them have none, so
- * they are sent complete. The shop's hook (`useProductsLiveAdapters`) calls
- * `useSearchParams()`. In a request render (the shop page, `/menu`) the hook
- * reads the request and the box never shows its fallback, so the shop is sent
- * complete too. In a server rebuild of a stored page that gained a shop
- * section after the last build, the hook's signal stops at this box: that one
- * section is drawn by the browser until the next build, the rest of the page is
- * sent complete, and the page answers 200. Without the box the whole page would
- * bail to the browser. `pageBoundaries.test.ts` pins both boxes, and refuses an
- * import of either component anywhere else.
+ * F323 (release C): no `<Suspense>` box here, so the shop is sent complete to
+ * readers that run no scripts. Each route passes the `ProductQuery` it already
+ * parsed and filtered the items by, and the shop's controls are seeded from
+ * it, so nothing in the shop reads the address. Two reasons, both measured:
+ *   - React sends a finished box over 500 bytes in a hidden segment once the
+ *     page passes 12,800 bytes, in a request render too, so a box around the
+ *     storefront hid it from those readers on every shop page.
+ *   - `useSearchParams()` throws in a server rebuild of a stored page, and with
+ *     no box above it a stored page that gained a shop answered 500. Taking
+ *     the query from the route removes that reader, and with it the box.
+ * `pageBoundaries.test.ts` refuses a box or a `useSearchParams()` call here,
+ * and refuses an import of either component anywhere else.
  *
- * No "use client" here: the wrappers are server functions, which works because
- * the renderer draws an override as a plain element on the server.
+ * No "use client" here: the wrappers are server functions closing over the
+ * query, which works because the renderer draws an override as a plain element
+ * on the server. The query is a plain object of strings, so it crosses to the
+ * client components as an ordinary prop.
  */
-export const LIVE_PRODUCTS_OVERRIDES = {
-  ProductsPage: (p: ProductsPageProps) => (
-    <Suspense fallback={null}><ProductsPageComposed {...p} /></Suspense>
-  ),
-  CoordinatedProducts: (p: CoordinatedProductsProps) => (
-    <Suspense fallback={null}><CoordinatedProductsComposed {...p} /></Suspense>
-  ),
-} as const;
+export function liveProductsOverrides(query: ProductQuery) {
+  return {
+    ProductsPage: (p: ProductsPageProps) => <ProductsPageComposed {...p} query={query} />,
+    CoordinatedProducts: (p: CoordinatedProductsProps) => <CoordinatedProductsComposed {...p} query={query} />,
+  } as const;
+}
