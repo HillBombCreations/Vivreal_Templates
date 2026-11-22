@@ -37,3 +37,30 @@ export const REFERRER_POLICY = Object.freeze({ key: 'Referrer-Policy', value: 's
 export function baseSecurityHeaders(): Array<{ key: string; value: string }> {
   return [{ ...STRICT_TRANSPORT_SECURITY }, { ...CONTENT_TYPE_OPTIONS }, { ...REFERRER_POLICY }];
 }
+
+/**
+ * The sandboxing policy every proxied picture is sent with (review 2026-10-23,
+ * `src/lib/media/stableImage.ts`): an SVG served from the site's own origin
+ * runs no script, loads nothing and fetches nothing, and still draws with its
+ * own inline styles.
+ */
+export const IMAGE_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
+
+/** The routes that answer with a proxied picture: `/img/...`, `/brand/logo` and the share card proxy `/og/...`. */
+export const IMAGE_ROUTE_SOURCES: readonly string[] = Object.freeze(['/img/:path*', '/brand/logo', '/og/:path*']);
+
+/**
+ * Review C-TPL pass 1, B1: the every-route rule's `Content-Security-Policy`
+ * (the frame rule) REPLACES a route's own header of that name. Next sets the
+ * config's headers first and copies a route handler's header only when the
+ * name is not already set (`next/dist/server/send-response.js`), so the image
+ * routes' sandbox was dropped. These rules come AFTER the every-route rule and
+ * Next applies the last matching rule per name, so the image routes get the
+ * sandbox and the frame rule in one header, whatever the script policy mode.
+ */
+export function imageRouteHeaderRules(frameAncestors: string): Array<{ source: string; headers: Array<{ key: string; value: string }> }> {
+  return IMAGE_ROUTE_SOURCES.map((source) => ({
+    source,
+    headers: [{ key: 'Content-Security-Policy', value: `${IMAGE_CONTENT_SECURITY_POLICY}; ${frameAncestors}` }],
+  }));
+}

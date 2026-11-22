@@ -6,7 +6,7 @@ import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
 import { scriptPolicyHeaders, scriptPolicyMode } from "./src/lib/scriptPolicy.ts";
-import { baseSecurityHeaders, FRAME_ANCESTORS_DIRECTIVE } from "./src/lib/securityHeaders.ts";
+import { baseSecurityHeaders, FRAME_ANCESTORS_DIRECTIVE, imageRouteHeaderRules } from "./src/lib/securityHeaders.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 import { readSiteBasePath } from "./src/lib/siteBasePath.ts";
 
@@ -165,6 +165,10 @@ const nextConfig: NextConfig = {
           ),
         ],
       },
+      // AFTER the every-route rule, so it wins on the picture routes: their
+      // sandbox policy, which the rule above would otherwise replace (Next
+      // drops a route's own header when a config rule set the same name).
+      ...imageRouteHeaderRules(FRAME_ANCESTORS_DIRECTIVE),
     ];
   },
   // A request carrying a Next router header without exactly `RSC: 1` (and

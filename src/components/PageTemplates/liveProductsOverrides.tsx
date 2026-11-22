@@ -4,7 +4,7 @@ import CoordinatedProductsComposed from "@/components/PageTemplates/CoordinatedP
 import type { ProductQuery } from "@/lib/composition/productQuery";
 
 /**
- * The live products-storefront component overrides for composePage — BOTH
+ * The live products-storefront component overrides for composePage, BOTH
  * topologies (monolith `ProductsPage` page-template + atomized
  * `group(coordinated:'products')`), each carrying `SiteRendererBridge` so the
  * renderer's storefront gets the real `CartAdapter` (add-to-cart / buy-now /
@@ -13,7 +13,7 @@ import type { ProductQuery } from "@/lib/composition/productQuery";
  * Registered for EVERY composed format, not just `format:'products'`: an
  * override only fires when composePage actually renders that arm, and under
  * the universal page model a storefront group is composable on ANY page.
- * Format-gating these was the first-live-Square-E2E bug — the catalog-format
+ * Format-gating these was the first-live-Square-E2E bug: the catalog-format
  * Shop page rendered its Square grid through the bare arm, so every Add was
  * a silent no-op (`ProductsProvider.handleAdd` guards on the CartAdapter).
  *

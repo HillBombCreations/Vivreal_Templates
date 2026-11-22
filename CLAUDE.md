@@ -78,7 +78,7 @@ error it reports is one the fleet build would reject. `npm test` and
 | Area | Choice |
 |---|---|
 | Framework | Next.js 16 (App Router). **Do not add `experimental.viewTransition`**. It was removed in the 16.3.0 bump because the flag GRADUATED, and 16.3.0 rejects the key as unrecognized. `next build` typechecks `next.config.ts`, so re-adding it is a hard build failure, not a warning. The `<ViewTransition>` wrappers in `layout.tsx` are unaffected; they import from `react` |
-| Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates) — version in package.json |
+| Rendering engine | `@hillbombcreations/site-renderer` (composePage, page templates); version in package.json |
 | Language | TypeScript 5 (strict) |
 | Styling | Tailwind CSS 4 |
 | Icons | Lucide React |

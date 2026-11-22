@@ -641,7 +641,7 @@ export default async function DynamicPage({
     const productQuery = parseProductQuery(sp);
 
     // Components override: the live storefront wrappers (BOTH products
-    // topologies — see liveProductsOverrides.tsx) for every composed format,
+    // topologies, see liveProductsOverrides.tsx) for every composed format,
     // plus per-format extras (SubscribePage SP-6 Task 3, CoordinatedSchedule
     // S2). An override only fires when composePage renders that arm, so
     // pages without the block are unaffected. The Studio preview (which never
