@@ -42,6 +42,10 @@ an assertion (the namespace check), never a load error.
 - `npm test` (`tsc --noEmit`, then every suite): exit 0, 3,302 of 3,302.
 - `seedCopy.test.ts` W25f-1 (a timing test) failed once under machine load during a targeted run and passed on the
   rerun and in every later run; the file is untouched.
+- **At the F323 shop pages fix `9a36049`** (WSL bundle clone, Node 24.22.3; the later commit changes only this record):
+  `npm test` exit 0, **3,313 of 3,313** (11 new); `npm run lint` exit 0, 0 errors, the same 2 warnings. W25f-1 failed
+  once more under load (during the fleet diff, 1 of 3 reruns of the file alone), untouched by this batch; green in the
+  final run.
 
 ## Deviations from the plan, each with its reason
 
@@ -76,6 +80,55 @@ page that gains a shop (B1). Not a regression: before F323 the whole shop page w
 footer arrive and only the shop section waits. A fix that keeps both (for example, the shop hook reading the query
 the route already parsed instead of `useSearchParams()`, so no box is needed) is a design change, not built here.
 
+**Settled (2026-11-22):** the architect's delta `design-f323-shop-pages.md` (hq, review pass 3 PASS), Option A, is
+built below.
+
+## F323 shop pages (`9a36049`, design-f323-shop-pages.md, Option A)
+
+Second C-TPL builder (the first builder's run was spent). The shop components take the `ProductQuery` the route
+already parses and filters the items by (`liveProductsOverrides(query)`), the hook seeds its controls from it through
+the new pure `seedFromProductQuery` (`src/lib/composition/productQuerySeed.ts`) and no longer calls
+`useSearchParams()`, and both shop boxes go. The layout's progress bar is the one box and `RouteProgress` the one
+`useSearchParams()` caller left. No renderer change; no read, `await` or deadline change (SW-C28 untouched).
+
+Files: the 8 the design lists (section 4), plus two comment words naming the old `LIVE_PRODUCTS_OVERRIDES` constant
+(`src/lib/pages/pageReadsQuery.ts:23`, `src/lib/renderComposedPage.tsx:109`), renamed so no comment names a symbol
+that no longer exists.
+
+| Test | ALLOW and REFUSE | Red at `776fd4b` (read-only tree, only the tests copied in, the design's base stand-ins) |
+|---|---|---|
+| T-SH-1 `src/lib/pageBoundaries.test.ts` | allowlist layout only; the overrides file holds no box and no `Suspense` import (REFUSE); both elements pass `query={query}` (ALLOW); `RouteProgress.tsx` the only `useSearchParams(` caller (REFUSE, message: a new caller can 500 a stored page, take the value from the route); the layout ALLOW, page-route REFUSE, `loading.tsx` REFUSE, shop import REFUSE (message reworded) and three CONTROLs kept | 4 of 4: `liveProductsOverrides.tsx: 2` over the allowlist; 2 boxes in the overrides; the `query={query}` match; `useProductsLiveAdapters.ts` a caller |
+| T-SH-2 `src/lib/composition/productQuerySeed.test.ts` (new) | ALLOW the parsed query seeds exactly its values; ALLOW parity with the old address loop (copied in as the oracle); REFUSE a repeated filter key seeds no filter; REFUSE a repeated search seeds none; unchanged behaviour (`undefined`, `{}`, `?f_=x`) and the seed is a copy | 2 of 2 REFUSE, on their own assertions: the stand-in (the old hook's loop) seeds `size: 'M'` and `'rye'`; the ALLOWs and unchanged rows green, as designed |
+| T-SH-3 `scripts/isr-build-check.test.mjs` | `checkAfterFlipNoScript`: REFUSE the added storefront only in the data script behind a client bailout, REFUSE only in a hidden segment (and a later complete read does not excuse the first), ALLOW in place; `'/menu?sort=price'` in `NO_SCRIPT_PATHS` (9 to 10) | with the stand-in `() => []`: both REFUSE fail on "expected a failure"; the ALLOW passes; the path list test fails on the missing `/menu?sort=price` |
+
+Red log: WSL `~/tplc-sh/red-20261122T014734Z.log` (44 tests, 9 failed, each one listed above).
+
+### B-SH-1, the full build check (each a production build and serve on WSL, Node 24.22.3)
+
+| Tree | Gate on | Gate off |
+|---|---|---|
+| Fix head `9a36049` | PASS: every measured path complete, `/shop`, `/menu`, `/menu?sort=price` included; after the owner adds a shop to `/about`: 200 on all 8 reads (MISS, then HIT: it stays stored), the storefront in the visible HTML; `/about`, `/links`, `/blog/first-loaf` HIT `s-maxage=300`, `/shop` and `/menu` `no-store` as at base; F41 green | PASS, the same paths complete, every page `no-store` as at base |
+| `776fd4b` app code with the fix head's check | red: `/shop`, `/menu`, `/menu?sort=price` (storefront hidden, ratio 0.566 to 0.609) and the after-flip leg (`"First loaf" is not in the visible text`) | red: the same four |
+
+"Wrapped in a suspense boundary" and `BailoutToCSR` in the fix head's logs: 0 and 0. Logs: WSL
+`~/tplc-sh/logs/isr-{work,base}-{on,off}-*.log`.
+
+### Walk rows this adds (design 6, as written)
+
+- **D-3** gains `/shop`, `/menu`, `/menu?sort=price` and `/about` after the owner adds a shop section in Studio and
+  saves: the product names sit in the visible HTML, no `<div hidden id="S:` holds them, every page answers 200
+  (control 2: the `776fd4b` build hides the storefront on `/shop`).
+- **D-3a (new):** at 390 and 1440, scripts on. On `/shop`: choose a sort, then a filter, then type a search; the
+  address gains `sort=`, `f_<key>=` and `search=`, the items change, the controls show the choices, and the search
+  field never loses a character; open a product and press Back: the filter and the sort come back, with their
+  filtered items. On the saved `/about` (a stored page that gained a shop, before the next build): choose a filter;
+  the address gains `f_<key>=` and the control shows the choice over unfiltered items, as at base, until the next
+  build; open a product and press Back: the items are still unfiltered and the controls are back at the default
+  (accepted until the next build). REFUSE: on `/shop`, a control snaps back after the answer lands, or Back loses the
+  filter; on `/about`, anything but 200, or the shop missing from the HTML.
+- **D-1** gains B-SH-1 (above); **D-2** gains R-SH-L's paths (`/shop`, `/menu`, `/menu?sort=price`, the after-flip
+  `/about`, at 390 and 1440, the fix head against `776fd4b`), run by the walk's render check.
+
 ## Fleet diff (P-template-validate, P-fleet-diff)
 
 - Diff 1, the site engine 1.102.0 alone: fleet diff D-26 (hq `fleet-diff/D-26-fleet-diff-1.md`), the same published
@@ -89,3 +142,12 @@ the route already parsed instead of `useSearchParams()`, so no box is needed) is
   (the waiting box gone, the body sent whole; text, links, images unchanged), F417 3 (Waves of Grain: "Only 4 left"
   gone on two cards and two product pages, no size low by its own number). **Unnamed: 0.** Classifier control: a
   planted sentence is reported unnamed. 0 secret values in any written log.
+- **Re-run at the F323 shop pages fix `9a36049`** (design-f323-shop-pages.md 7; hq
+  `fleet-diff/C-TPL-fleet-diff-2-shop-pages.md`, hq `9461ea0d`), the same base: 41 of 41 built both ways (tree proof
+  41 of 41); 1,480 addresses (1,224 pages); 0 status, 0 cache class, 0 head non-2xx differences; 650 pages changed,
+  every one named, the same rows and counts as before: F323 647, F417 3. **Unnamed: 0.** Against the first run's head,
+  12 shop pages on 11 sites now send the storefront in place (its hidden part and box gone, the same words; Waves of
+  Grain's live stock moved between the runs, on both sides). 22 sites were run twice: a renderer fleet diff (D-31)
+  took the same ports, 3991 and 3992, mid-run, so those sites' first pass read its servers and was thrown away; the
+  harness now refuses a held port and a server of ours that exited. Classifier control as before; 0 secret values in
+  361 written files (a planted value is found).
