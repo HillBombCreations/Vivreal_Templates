@@ -83,7 +83,24 @@ const APP_PORT = 4712;
 /** The fixture site's revalidate webhook secret (never a real one). */
 const REVALIDATE_SECRET = 'fixture-revalidate-secret';
 
-const block = (id, dispatchId, config = {}, order = 0) => ({ id, type: { kind: 'page-template', dispatchId }, order, enabled: true, config });
+/**
+ * The registry kind of each section the fixture uses. F323 (T-323-3's
+ * precondition, design-home-pages.md 5): every measured page must hold an
+ * `<h1>`, and it did not: every section was typed `page-template`, which the
+ * site engine draws only for its page templates (`products`, `collection`), so
+ * the section headers, the link profile and the link stack drew nothing and the
+ * fixture's pages were the menu and the footer alone. The other checks only
+ * looked for their words anywhere in the HTML (the page data carries them), so
+ * they passed on empty bodies. Each section now has its own kind.
+ */
+const STATIC_SECTIONS = new Set(['section-header', 'link-profile', 'link-stack']);
+const block = (id, dispatchId, config = {}, order = 0) => ({
+  id,
+  type: { kind: STATIC_SECTIONS.has(dispatchId) ? 'static' : 'page-template', dispatchId },
+  order,
+  enabled: true,
+  config,
+});
 
 /** F41: the page the owner adds after the build, with no webhook. */
 export const NEW_PAGE_SLUG = 'whats-new';
@@ -715,9 +732,21 @@ async function timedRead(p) {
 
 /** Stop `next start` and wait for the port to close, so the next server or run cannot read this one. */
 async function stopServer(server) {
-  if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
-  else server.kill('SIGTERM');
+  if (process.platform === 'win32') {
+    await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
+  } else {
+    // `npx` runs `next start` as its own child, so a SIGTERM to `npx` alone can
+    // leave the real server answering: the F41 "restarted server" phase then
+    // reads the OLD server and reports a false failure, and the next run finds
+    // the port taken. The server is started in its own process group (below),
+    // and the whole group is stopped.
+    try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already gone */ }
+  }
   for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+  if (process.platform !== 'win32' && (await get('/robots.txt')).status > 0) {
+    try { process.kill(-server.pid, 'SIGKILL'); } catch { /* already gone */ }
+    for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 async function waitUp() {
@@ -799,7 +828,7 @@ async function main() {
     }
     // ISR_CHECK_SERVER_LOG=<absolute path> keeps the server's own output for diagnosis.
     const serverLog = process.env.ISR_CHECK_SERVER_LOG ? fs.openSync(process.env.ISR_CHECK_SERVER_LOG, 'w') : 'ignore';
-    const startServer = () => spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32' });
+    const startServer = () => spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32', detached: process.platform !== 'win32' });
     let server = startServer();
     try {
       if (!(await waitUp())) failures.push('next start did not come up');
