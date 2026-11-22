@@ -42,6 +42,17 @@ import { resolveThemeTokens } from '@hillbombcreations/site-renderer/contrast';
  * the exact set of corrected sites below. A key the old loop CLEARED after
  * load is never group (iii): that control still reports.
  *
+ * Renderer 1.102.1 (release C chips, the owner's report of 2026-11-21; plan
+ * D4-7, fleet diff D-33 shown to the owners, GO-C-REN1021) adds group (iv):
+ * four root properties the renderer DERIVES, `--inverse-readable`,
+ * `--accent-on-white`, `--brand-text-readable` and `--brand-text-readable-alt`,
+ * each emitted only where a chip's or the card price's default pair fails
+ * (the renderer's `contrast/pairings/chips`). They are new on the root: a gain
+ * is group (iv) only when the old writers had no value for that property at
+ * all (no server value and no after-load stamp) and the value is a hex colour,
+ * and the fleet run pins the exact set of sites below. A changed value, a
+ * property outside the four, or a non-colour value is still a violation.
+ *
  * Fleet data: `__fixtures__/fleetThemeSettings.json`, built by
  * `scripts/theme-parity-fixture.mjs` from the Client API responses the gate
  * G-R run fetched on 2026-10-27. Set THEME_PARITY_FIXTURE to run a fresh build.
@@ -215,15 +226,20 @@ type SiteResult = {
   groupII: Array<[string, string]>;
   /** Group (iii): [property, before, after], an approved contrast correction. */
   groupIII: Array<[string, string, string]>;
+  /** Group (iv): [property, value], a release C chip or price ink the old writers never set. */
+  groupIV: Array<[string, string]>;
   dropped: string[];
   violations: string[];
 };
+
+/** Renderer 1.102.1's derived chip and price inks (`contrast/pairings/chips`, not a public export). */
+const CHIP_INK_PROPERTIES = ['--inverse-readable', '--accent-on-white', '--brand-text-readable', '--brand-text-readable-alt'] as const;
 
 const NEW_KEYS = THEME_TOKEN_KEYS.filter((key) => !(LEGACY_THEME_TOKEN_KEYS as readonly string[]).includes(key));
 
 /** `build` is injectable only so the controls below can prove a wrong builder is caught. */
 function checkSite(siteData: Site, hasReader: (property: string) => boolean, build: (siteData: Site) => Style = newServerRender): SiteResult {
-  const result: SiteResult = { groupI: [], groupII: [], groupIII: [], dropped: [], violations: [] };
+  const result: SiteResult = { groupI: [], groupII: [], groupIII: [], groupIV: [], dropped: [], violations: [] };
   const oldServer = legacyThemeVarStyle(siteData);
   const newServer = build(siteData);
   const oldStamps = legacyProvidersStamps(siteData);
@@ -236,6 +252,12 @@ function checkSite(siteData: Site, hasReader: (property: string) => boolean, bui
   const resolved = resolveThemeTokens(siteData);
   const corrected: Record<string, string> = { '--text-secondary': resolved.mutedShown, '--accent-readable': resolved.accentReadable };
   const isGroupIII = (property: string, after: string | undefined) => after !== undefined && corrected[property] === after;
+  const isGroupIV = (property: string, before: string | undefined, after: string | undefined) =>
+    before === undefined &&
+    !oldLoopValue.has(property) &&
+    (CHIP_INK_PROPERTIES as readonly string[]).includes(property) &&
+    after !== undefined &&
+    /^#[0-9a-f]{6}$/i.test(after);
 
   for (const property of new Set([...Object.keys(oldServer), ...Object.keys(newServer)])) {
     const before = oldServer[property];
@@ -245,6 +267,8 @@ function checkSite(siteData: Site, hasReader: (property: string) => boolean, bui
       result.groupIII.push([property, before, after]);
     } else if (before !== undefined) {
       result.violations.push(`server render: ${property} ${JSON.stringify(before)} became ${JSON.stringify(after)}`);
+    } else if (isGroupIV(property, before, after)) {
+      result.groupIV.push([property, after]);
     } else if (isGroupI(property)) {
       result.groupI.push(after);
     } else if ((NEW_KEYS as readonly string[]).includes(property.slice(2))) {
@@ -267,6 +291,8 @@ function checkSite(siteData: Site, hasReader: (property: string) => boolean, bui
     } else if (before === undefined && isGroupI(property)) {
       continue;
     } else if (before !== undefined && isGroupIII(property, after)) {
+      continue;
+    } else if (isGroupIV(property, before, after)) {
       continue;
     } else if (hasReader(property)) {
       result.violations.push(`after load: ${property} ${JSON.stringify(before)} became ${JSON.stringify(after)}`);
@@ -328,6 +354,7 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
   const groupI: string[] = [];
   const groupII: string[] = [];
   const groupIII: string[] = [];
+  const groupIV: string[] = [];
   const dropped = new Map<string, number>();
   for (const { id, siteData } of fixture.sites) {
     const r = checkSite(siteData, hasReader);
@@ -335,6 +362,7 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
     for (const mono of r.groupI) groupI.push(`${id}: --font-mono ${mono}`);
     for (const [property, value] of r.groupII) groupII.push(`${id}: ${property} ${value}`);
     for (const [property, before, after] of r.groupIII) groupIII.push(`${id}: ${property} ${before} -> ${after}`);
+    for (const [property, value] of r.groupIV) groupIV.push(`${id}: ${property} ${value}`);
     for (const property of r.dropped) dropped.set(property, (dropped.get(property) ?? 0) + 1);
   }
 
@@ -343,6 +371,7 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
   t.diagnostic(`group (ii), newly whitelisted key gains its old after-load value: ${groupII.length}${groupII.length ? `: ${groupII.join('; ')}` : ''}`);
   t.diagnostic(`dropped after load, no reader: ${[...dropped].sort().map(([p, n]) => `${p} (${n})`).join(', ')}`);
   t.diagnostic(`group (iii), approved contrast correction: ${groupIII.length}`);
+  t.diagnostic(`group (iv), release C chip and price ink: ${groupIV.length}`);
   assert.deepEqual(violations, []);
   // Every row is a root-token row of the approved list (fixture of 2026-10-27,
   // names redacted, matched by stored colours): the warm light gray site,
@@ -358,6 +387,20 @@ test('G-T step 6: old writers against the renderer builder, over every fetched s
     '6ad2755e8cd83f003a3ecc97: --text-secondary rgba(58,48,45,0.62) -> #746b68',
     '6ad905fbadc0e8de121991a2: --text-secondary color-mix(in oklab, #1c1c1c 55%, #ffffff) -> #747474',
     '6ad9d07b27baf29bffdf80d4: --text-secondary color-mix(in oklab, #1c1c1c 55%, #ffffff) -> #747474',
+  ]);
+  // Renderer 1.102.1 (plan D4-7): the chip and price inks the renderer derives
+  // on this fixture, read at the 1.102.1 pin. A new row here is a colour change
+  // the owners have not seen: STOP and show it, as for group (iii).
+  assert.deepEqual(groupIV, [
+    '6abbc9a32f8f56089eebf644: --inverse-readable #111111',
+    '6abbc9a32f8f56089eebf644: --accent-on-white #93683a',
+    '6abbc9a32f8f56089eebf644: --brand-text-readable #3f3a37',
+    '6abbcba13caf19fbc13f5609: --brand-text-readable-alt #ffffff',
+    '6abbccc32f8f56089eebf884: --brand-text-readable-alt #ffffff',
+    '6abbce338e8e28f586e28bac: --brand-text-readable-alt #ffffff',
+    '6abf2e0604c8fdb7032a2105: --brand-text-readable #f4f5f8',
+    '6abf2e1004c8fdb7032a211b: --brand-text-readable-alt #ffffff',
+    '6ad5c08f3d418c99a8b8141b: --brand-text-readable-alt #ffffff',
   ]);
 });
 
@@ -426,5 +469,36 @@ test('REFUSE control (iii): a muted text the contrast module did not choose is r
   assert.deepEqual(r.violations, [
     'server render: --text-secondary "color-mix(in oklab, #1c1c1c 55%, #ffffff)" became "#000000"',
     'after load: --text-secondary "color-mix(in oklab, #1c1c1c 55%, #ffffff)" became "#000000"',
+  ]);
+});
+
+test('ALLOW control (iv): a pale brand colour whose chips and price fail gains the chip inks as group (iv)', () => {
+  const r = checkSite({ primary: '#f5e6a8' }, hasReader);
+  assert.deepEqual(r.groupIV, [
+    ['--inverse-readable', '#111111'],
+    ['--accent-on-white', '#6d664b'],
+    ['--brand-text-readable', '#1c1c1c'],
+  ]);
+  assert.deepEqual(r.violations, []);
+});
+
+test('REFUSE control (iv): a chip ink the old loop stamped from a stored key is reported, not group (iv)', () => {
+  const r = checkSite({ primary: '#f5e6a8', 'brand-text-readable': '#123456' }, hasReader);
+  assert.ok(!r.groupIV.some(([property]) => property === '--brand-text-readable'), JSON.stringify(r.groupIV));
+  assert.deepEqual(r.violations, [
+    'server render: --brand-text-readable gained "#1c1c1c", outside groups (i) and (ii)',
+    'after load: --brand-text-readable "#123456" became "#1c1c1c"',
+  ]);
+});
+
+test('REFUSE control (iv): a chip ink that is not a hex colour, or a property outside the four, is reported', () => {
+  const wrong = (site: Site): Style => ({ ...newServerRender(site), '--brand-text-readable': 'var(--primary)', '--x-chip-probe': '#000000' });
+  const r = checkSite({ primary: '#1f3a5f' }, (property) => property === '--x-chip-probe' || hasReader(property), wrong);
+  assert.deepEqual(r.groupIV, []);
+  assert.deepEqual(r.violations, [
+    'server render: --brand-text-readable gained "var(--primary)", outside groups (i) and (ii)',
+    'server render: --x-chip-probe gained "#000000", outside groups (i) and (ii)',
+    'after load: --brand-text-readable undefined became "var(--primary)"',
+    'after load: --x-chip-probe undefined became "#000000"',
   ]);
 });
