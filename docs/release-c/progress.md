@@ -151,3 +151,39 @@ Red log: WSL `~/tplc-sh/red-20261122T014734Z.log` (44 tests, 9 failed, each one 
   took the same ports, 3991 and 3992, mid-run, so those sites' first pass read its servers and was thrown away; the
   harness now refuses a held port and a server of ours that exited. Classifier control as before; 0 secret values in
   361 written files (a planted value is found).
+
+## Review pass 1, B1: the picture routes' sandbox policy (`a0ff6bc`)
+
+The reviewer (hq `review-c-tpl.md`, pass 1) found that F608's every-route `Content-Security-Policy` replaced the
+picture routes' own sandbox policy: Next sets the config's headers first and copies a route handler's header only
+when the name is absent (`next/dist/server/send-response.js:59-63`), so `/img/*`, `/brand/logo` and `/og/*`, which
+pass `image/svg+xml`, lost `default-src 'none'; ...; sandbox` on every site.
+
+- **Fix:** `imageRouteHeaderRules()` (`src/lib/securityHeaders.ts`), one rule per picture route AFTER the
+  every-route rule (Next applies the last matching rule per name): `default-src 'none'; style-src 'unsafe-inline';
+  sandbox; frame-ancestors 'self'`, in every script policy mode. `IMAGE_SAFETY_HEADERS` reads the same constant.
+- **Neighbours:** no other route sets a header the config also sets (`git grep` of the five names in `src`; control:
+  the grep finds `stableImage.ts`). `/_next/image` sets its own policy with `setHeader` (`image-optimizer.js:858`),
+  which replaces the config's: served `default-src 'self'; script-src 'none'; sandbox;` before and after.
+- **Tests:** `securityHeaders.test.ts` resolves the LAST matching rule per path with Next's own matcher (`strict`,
+  `removeUnnamedParams`, as `buildCustomRoute`), in watch, enforce and no-DSN builds. REFUSE: a picture route's policy
+  without `sandbox` or `default-src 'none'`, or with a script source. ALLOW: the exact image policy plus the frame
+  rule on five picture paths, and pages keep the every-route policy. CONTROL: the resolver takes the last rule.
+  **Red at `7274e86`** (a worktree of the clone with only the test copied in): the 3 REFUSE and 3 ALLOW failed, for
+  example `/img/shop/...: the served policy has no sandbox: frame-ancestors 'self'`; the CONTROL and the old rows passed.
+- **Served build** (Dougs Kitchen, its own Amplify settings, the fleet diff's head tree, `next start`):
+
+  | Path | Before (`7274e86` code) | After (`a0ff6bc`) |
+  |---|---|---|
+  | `/`, `/products` (pages) | `frame-ancestors 'self'` | `frame-ancestors 'self'` |
+  | `/brand/logo` | `frame-ancestors 'self'` (sandbox lost) | `default-src 'none'; style-src 'unsafe-inline'; sandbox; frame-ancestors 'self'` |
+  | `/og/products`, `/og/about` | `frame-ancestors 'self'` (sandbox lost) | the same as `/brand/logo` |
+  | `/img/products/6a38248c80c70647f76fc69e` | not read (the page holds no `/img` link; the item route joined the read after) | the same as `/brand/logo` |
+  | `/_next/image?...` | `default-src 'self'; script-src 'none'; sandbox;` | the same |
+
+  `X-Content-Type-Options: nosniff` and the referrer policy on every row. Logs:
+  `C:/repos/_ops/release-c/tpl-fleet-diff-sh/run/b1/{before-7274e86,after-a0ff6bc}.txt`.
+- **Walk D-4** gains `/img/<slug>/<item>` (and `/brand/logo`, `/og/<slug>`) in its header read: the policy is the
+  sandbox one plus `frame-ancestors 'self'`.
+- Review note 4: the four edited lines that kept an old dash (`CLAUDE.md:81`, the `[slug]/page.tsx` topologies
+  comment, two `liveProductsOverrides.tsx` docblock lines) lose it.
