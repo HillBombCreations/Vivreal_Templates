@@ -83,4 +83,9 @@ the route already parsed instead of `useSearchParams()`, so no box is needed) is
   Templates base `c5b4a6be` and the same type line. Not re-run.
 - Diff 2, the Templates changes: every Templates app (41) built twice, base = `c5b4a6be` plus `d91bfbf` (1.102.0 and
   the type line, D-26's head tree), head = this batch; served and pair-diffed with release B's harness (sha256
-  `8dd20201...73abfe`). Report: hq `fleet-diff/C-TPL-fleet-diff-2.md`.
+  `8dd20201...73abfe`). Report: hq `fleet-diff/C-TPL-fleet-diff-2.md` (hq `08b198b1`).
+- **Result (2026-11-22 00:06Z to 01:06Z):** 41 of 41 built both ways (tree proof 41 of 41); 1,480 addresses
+  (1,224 pages); 0 status, 0 cache class, 0 head non-2xx differences; 650 pages changed, every one named: F323 647
+  (the waiting box gone, the body sent whole; text, links, images unchanged), F417 3 (Waves of Grain: "Only 4 left"
+  gone on two cards and two product pages, no size low by its own number). **Unnamed: 0.** Classifier control: a
+  planted sentence is reported unnamed. 0 secret values in any written log.
