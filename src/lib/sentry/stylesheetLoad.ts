@@ -74,10 +74,39 @@ export function fileOf(href: string, origin: string): string {
 }
 
 /**
+ * Whether a SETTLED stylesheet link failed to load. By the spec a failed link
+ * has no `sheet`. Chromium instead keeps an empty sheet whose `cssRules` read
+ * throws, which a loaded sheet from this site never does (walk D-P6-5,
+ * measured 2026-11-23 on a Templates production build: the aborted
+ * `/_next/static` sheet read `sheet` object, `cssRules` throwing). A sheet
+ * from another host is unreadable whether it loaded or not, so it counts as
+ * failed only with no sheet: guessing would fetch every outside font sheet
+ * twice on every page view.
+ */
+export function stylesheetFailed(link: LinkLike, origin: string): boolean {
+  const { sheet } = link;
+  if (sheet === null) return true;
+  if (typeof sheet !== 'object') return false;
+  try {
+    if (new URL(link.href, origin).origin !== origin) return false;
+  } catch {
+    return false;
+  }
+  try {
+    Reflect.get(sheet, 'cssRules');
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Tries each failed stylesheet or font link once more, and calls `report` once
  * when that second load fails too. Covers links that fail after this runs (a
- * capture listener on the document) and those that failed before it ran (at
- * the window's `load`, a stylesheet link with no sheet failed).
+ * capture listener on the document) and those that failed before it ran: a
+ * page's head stylesheets block rendering, so they have settled, and their
+ * `error` has fired, before any client script can listen. Those are found at
+ * the window's `load` by `stylesheetFailed`.
  */
 export function installStylesheetRetry(
   doc: DocumentLike,
@@ -118,8 +147,8 @@ export function installStylesheetRetry(
     const links = doc.querySelectorAll('link[rel~="stylesheet"]');
     for (let i = 0; i < links.length; i += 1) {
       const link = links[i];
-      // At the window's load every head stylesheet has settled: one with no sheet failed.
-      if (isStylesheetOrFontLink(link) && link.sheet === null) retryOnce(link);
+      // At the window's load every head stylesheet has settled.
+      if (isStylesheetOrFontLink(link) && stylesheetFailed(link, win.location.origin)) retryOnce(link);
     }
   };
   if (doc.readyState === 'complete') sweepFailedAtLoad();

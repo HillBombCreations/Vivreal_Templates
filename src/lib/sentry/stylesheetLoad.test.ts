@@ -146,6 +146,65 @@ test('ALLOW: a stylesheet that failed before the script ran is tried again at th
   assert.deepEqual(reports, []);
 });
 
+// Walk D-P6-5 (D-32): what a real browser does, in its order. A page's head
+// stylesheets block rendering, so one that fails has fired its `error` before
+// any client script runs, and Chromium leaves that link an empty sheet whose
+// `cssRules` read throws (measured on a Templates production build), not the
+// spec's null. The fake models both: the failure settles before install.
+const unreadableSheet = () => ({
+  get cssRules(): never {
+    throw new Error("SecurityError: Failed to read the 'cssRules' property");
+  },
+});
+
+function failedBeforeInstall(copiesFail: boolean) {
+  const page = new FakePage();
+  page.copiesFail = copiesFail;
+  const failed = page.link('stylesheet', CSS);
+  page.settle(failed, true);
+  failed.sheet = unreadableSheet();
+  const loaded = page.link('stylesheet', `${ORIGIN}/_next/static/css/other.css`);
+  loaded.sheet = { cssRules: [] };
+  // An outside font sheet that LOADED reads the same as a failed one.
+  const outsideFont = page.link('stylesheet', 'https://fonts.googleapis.com/css2?family=Inter');
+  outsideFont.sheet = unreadableSheet();
+  page.head = [failed, loaded, outsideFont];
+  const reports: Report[] = [];
+  mod().installStylesheetRetry(page.doc, page.win, (r) => reports.push(r));
+  page.loadListener?.();
+  return { page, reports };
+}
+
+test('ALLOW: a head stylesheet that failed before the client script ran is tried once at load; a good retry reports nothing', () => {
+  const { page, reports } = failedBeforeInstall(false);
+  assert.deepEqual(page.added.map((l) => l.href), [CSS], 'the failed sheet, and only it, is fetched again');
+  assert.ok(page.added[0].sheet, 'the copy loaded, so the page is drawn styled');
+  assert.deepEqual(reports, []);
+});
+
+test('ALLOW: a head stylesheet that failed before the client script ran, and fails again, is one warning naming the file and page', () => {
+  const { page, reports } = failedBeforeInstall(true);
+  assert.equal(page.added.length, 1);
+  assert.deepEqual(reports, [{ file: '/_next/static/css/app-1a2b3c.css', page: '/contact' }]);
+  page.loadListener?.();
+  assert.equal(page.added.length, 1, 'no third attempt');
+  assert.equal(reports.length, 1);
+});
+
+test('REFUSE: a loaded sheet is never fetched again, from this site or (rules unreadable) from another host', () => {
+  const page = new FakePage();
+  const loaded = page.link('stylesheet', CSS);
+  loaded.sheet = { cssRules: [] };
+  const outsideFont = page.link('stylesheet', 'https://fonts.googleapis.com/css2?family=Inter');
+  outsideFont.sheet = unreadableSheet();
+  page.head = [loaded, outsideFont];
+  const reports: Report[] = [];
+  mod().installStylesheetRetry(page.doc, page.win, (r) => reports.push(r));
+  page.loadListener?.();
+  assert.equal(page.added.length, 0);
+  assert.deepEqual(reports, []);
+});
+
 test('REFUSE: no third attempt, and one report however often the copy fails', () => {
   const { page, reports } = setup();
   page.copiesFail = true;
