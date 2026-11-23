@@ -44,6 +44,16 @@ function squareVariantKey(objectValue: Record<string, unknown>, lineId: string):
 }
 
 /**
+ * D-P9-5 S1, Client's `optionStock.js` `isOneCountPerOption`: the price is not a
+ * map (Stripe `default_price`, Square `price`) AND `stock` is a plain object.
+ * A product priced per option, or with one plain count, is never this shape.
+ */
+function isOneCountPerOption(provider: StockProvider, objectValue: Record<string, unknown>): boolean {
+  const price = provider === "square" ? objectValue.price : objectValue.default_price;
+  return !isPlainObject(price) && isPlainObject(objectValue.stock);
+}
+
+/**
  * Does checkout find a product for this line at all? The two resolvers' own
  * queries: Stripe matches `default_price` equal to the line's id, or a
  * `default_price` map holding it; Square matches `variationId`, or a
@@ -83,6 +93,14 @@ function holdsLine(provider: StockProvider, objectValue: Record<string, unknown>
  * `resolveSquareVariant.js` (CL-STK4). A per-option map, a missing or
  * non-numeric stock, and a line with no option key keep the rule above.
  *
+ * D-P9-5 (release C, vivreal-hq design-dp95-per-size-stock.md S1, S4): a
+ * product with ONE checkout id and stock counted PER OPTION (`isOneCountPerOption`)
+ * is judged by the option the cart line names, as Client's `optionStock.js`
+ * `optionEntries`: an option that is an own key of `stock` is tracked at its
+ * count when that is a number and untracked otherwise; no option, or one the
+ * stock does not count, is `null` (checkout refuses it as no longer available).
+ * On every other product `option` is never read.
+ *
  * The SAME cases run on both sides from `test/fixtures/tracked-stock-cases.json`
  * (Templates `cartStock.parity.test.ts`; Client keeps an identical copy), so a
  * change to either rule fails one side's tests.
@@ -91,8 +109,15 @@ export function trackedStock(
   provider: StockProvider,
   objectValue: Record<string, unknown>,
   lineId: string,
+  option?: string,
 ): TrackedStock | null {
   if (!holdsLine(provider, objectValue, lineId)) return null;
+  if (isOneCountPerOption(provider, objectValue)) {
+    const counts = objectValue.stock as Record<string, unknown>; // `isOneCountPerOption` proved it is a plain object
+    if (typeof option !== "string" || !Object.hasOwn(counts, option)) return null;
+    const count = counts[option];
+    return typeof count === "number" ? { tracked: true, available: count } : { tracked: false, available: null };
+  }
   const variantKey =
     provider === "square" ? squareVariantKey(objectValue, lineId) : stripeVariantKey(objectValue, lineId);
   const stockField = objectValue.stock;
@@ -109,6 +134,15 @@ export function trackedStock(
     stock = stockField;
   }
   return typeof stock === "number" ? { tracked: true, available: stock } : { tracked: false, available: null };
+}
+
+/** What the bag knows of a product: the fields checkout's rule reads. */
+type BagProduct = { default_price?: unknown; checkoutIdentifier?: unknown; price?: unknown; stock?: unknown };
+
+/** A Square product carries no `default_price` and its checkout ids in `checkoutIdentifier` (see `bagLineStock`). */
+function isSquareBagProduct(product: BagProduct): boolean {
+  const ids = product.checkoutIdentifier;
+  return product.default_price == null && (typeof ids === "string" || isPlainObject(ids));
 }
 
 /**
@@ -131,29 +165,45 @@ export function trackedStock(
  * A non-finite count never refuses at checkout (`stock < requested` is false),
  * so it is no cap here either.
  *
+ * D-P9-5: `option` is the line's own option (the size the shopper picked). It
+ * is read only for a product with one checkout id and stock counted per option,
+ * whose line is then capped at that option's count (`trackedStock`).
+ *
  * Answers the cap, `undefined` for no cap, or `null` when checkout would find
  * no product for the line (it cannot be sold, so it never joins the bag).
  */
 export function bagLineStock(
-  product: { default_price?: unknown; checkoutIdentifier?: unknown; price?: unknown; stock?: unknown },
+  product: BagProduct,
   lineId: string,
+  option?: string,
 ): number | undefined | null {
   const ids = product.checkoutIdentifier;
-  const square = product.default_price == null && (typeof ids === "string" || isPlainObject(ids));
   let verdict: TrackedStock | null;
-  if (!square) {
-    verdict = trackedStock("stripe", { default_price: product.default_price, stock: product.stock }, lineId);
+  if (!isSquareBagProduct(product)) {
+    verdict = trackedStock("stripe", { default_price: product.default_price, stock: product.stock }, lineId, option);
   } else if (isPlainObject(ids)) {
     const squareVariations = Object.entries(ids).map(([name, variationId]) => ({ name, variationId }));
-    verdict = trackedStock("square", { price: product.price, squareVariations, stock: product.stock }, lineId);
+    verdict = trackedStock("square", { price: product.price, squareVariations, stock: product.stock }, lineId, option);
   } else {
     if (isPlainObject(product.price)) return undefined;
     // A Square line's id IS the product's variation id (`transformProduct`).
-    verdict = trackedStock("square", { variationId: ids, price: product.price, stock: product.stock }, lineId);
+    verdict = trackedStock("square", { variationId: ids, price: product.price, stock: product.stock }, lineId, option);
   }
   if (verdict === null) return null;
   if (verdict.available === null || !Number.isFinite(verdict.available)) return undefined;
   return Math.max(0, Math.floor(verdict.available));
+}
+
+/**
+ * D-P9-5 (S6): does each line of this product draw on its OWN option's count,
+ * the product having one checkout id and `stock` counted per option? Such a
+ * line carries `optionStock` and sends its option to checkout (S2), which
+ * refuses the line without one. Judged as `bagLineStock` judges the provider.
+ */
+export function isOptionStock(product: BagProduct): boolean {
+  return isSquareBagProduct(product)
+    ? isOneCountPerOption("square", { price: product.price, stock: product.stock })
+    : isOneCountPerOption("stripe", { default_price: product.default_price, stock: product.stock });
 }
 
 /** `quantity`, capped at `stock` when stock is tracked. */
@@ -295,9 +345,25 @@ export function clampCartToStock(cart: Cart): { cart: Cart; changed: StockAdjust
  * refusal that only removed lines, or named a line it kept, left the other
  * lines on their older, higher count: "+" could pass the real count and
  * checkout refused again (never an oversell; the server holds).
+ *
+ * D-P9-5 (S5): on a product with one checkout id and stock counted per option,
+ * every line shares the price id, so checkout names the short one by its
+ * `option` too. An entry naming an option matches only the line of that price
+ * and that option (`variant`); the product's other options are left alone. An
+ * entry with no option matches by price, as before.
  */
 export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): { cart: Cart; changed: StockAdjustment[] } {
-  const availableByPrice = new Map(short.map((s) => [s.priceId, s.available]));
+  const availableByPrice = new Map<string, number>();
+  const availableByOption = new Map<string, Map<string, number>>();
+  for (const s of short) {
+    if (s.option === undefined) {
+      availableByPrice.set(s.priceId, s.available);
+      continue;
+    }
+    const options = availableByOption.get(s.priceId) ?? new Map<string, number>();
+    options.set(s.option, s.available);
+    availableByOption.set(s.priceId, options);
+  }
   const next: Cart = {};
   const changed: StockAdjustment[] = [];
   /** What each product's lines so far keep, as checkout counted them. */
@@ -306,7 +372,7 @@ export function applyShortStock(cart: Cart, short: readonly ShortStockLine[]): {
   const sharedCount = new Map<string, number>();
   for (const [key, line] of Object.entries(cart)) {
     const before = keptBefore.get(line._id) ?? 0;
-    const available = availableByPrice.get(line.priceID);
+    const available = availableByOption.get(line.priceID)?.get(line.variant) ?? availableByPrice.get(line.priceID);
     if (available !== undefined && line.sharedStock && !sharedCount.has(line._id)) {
       sharedCount.set(line._id, available + before);
     }

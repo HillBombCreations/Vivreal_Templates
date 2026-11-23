@@ -24,6 +24,12 @@ export interface CartItem {
      * at it. Absent: `stock` is this line's own.
      */
     sharedStock?: true;
+    /**
+     * D-P9-5 (S6): the product has one checkout id and `stock` counted per
+     * option, so `stock` is this line's option's count and checkout is sent
+     * `variant` as the line's `option` (S2), without which it refuses the line.
+     */
+    optionStock?: true;
 }
 
 export type Cart = Record<string, CartItem>;

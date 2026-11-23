@@ -19,6 +19,11 @@ const STOCK_REFUSAL = /\bout of stock\b|\bnot enough stock\b/i;
 /** One line checkout named as short: its checkout price id and how many are left. */
 export interface ShortStockLine {
   priceId: string;
+  /**
+   * D-P9-5 (S5): the option (size) that is short, present only on a product with
+   * one checkout id and stock counted per option, whose lines share the price id.
+   */
+  option?: string;
   available: number;
 }
 
@@ -112,9 +117,11 @@ export interface CheckoutRefusal {
 
 /**
  * Client #117's over-stock 409 names the short lines:
- * `{ errorCode: 'INSUFFICIENT_STOCK', items: [{ priceId, available }] }`.
+ * `{ errorCode: 'INSUFFICIENT_STOCK', items: [{ priceId, option?, available }] }`.
  * Read at the boundary: a malformed entry is dropped, and no valid entry at all
  * means `undefined`, so the bag falls back to the stock it stored.
+ * D-P9-5 (S5): `option` is kept when it is a non-empty string; an entry with
+ * any other `option` is dropped, never read as naming the whole price.
  */
 function readShortStockLines(body: unknown): ShortStockLine[] | undefined {
   if (typeof body !== "object" || body === null) return undefined;
@@ -122,11 +129,12 @@ function readShortStockLines(body: unknown): ShortStockLine[] | undefined {
   if (errorCode !== "INSUFFICIENT_STOCK" || !Array.isArray(items)) return undefined;
   const lines = items.flatMap((entry): ShortStockLine[] => {
     if (typeof entry !== "object" || entry === null) return [];
-    const { priceId, available } = entry as { priceId?: unknown; available?: unknown };
+    const { priceId, option, available } = entry as { priceId?: unknown; option?: unknown; available?: unknown };
     if (typeof priceId !== "string" || !priceId || typeof available !== "number" || !Number.isInteger(available) || available < 0) {
       return [];
     }
-    return [{ priceId, available }];
+    if (option === undefined) return [{ priceId, available }];
+    return typeof option === "string" && option ? [{ priceId, option, available }] : [];
   });
   return lines.length > 0 ? lines : undefined;
 }

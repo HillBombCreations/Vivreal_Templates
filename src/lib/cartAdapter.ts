@@ -9,11 +9,12 @@ import {
   handleCheckout,
   BUY_NOW_FAILED_MESSAGE,
   addRefusal,
+  buyNowCart,
   fetchCartQuote,
   CheckoutShopRuleError,
 } from "@/lib/utils/cartUtils";
 import { quoteAsksQuestion } from "@/lib/cart/cartAsks";
-import { resolveVariant, resolveVariantableString, getSafeFieldValue } from "@/lib/utils/variantUtils";
+import { resolveVariantableString } from "@/lib/utils/variantUtils";
 import { rendererProductToTemplates } from "@/lib/cartProduct";
 import { toast } from "@/hooks/use-toast";
 import { shipsOrders } from "@/lib/shipping";
@@ -92,24 +93,10 @@ export function useCartAdapter(): CartAdapter | null {
           addAndOpenCart();
           return;
         }
-        const resolvedVariant = resolveVariant(variant, templatesProduct) ?? "default";
-        const name = getSafeFieldValue(templatesProduct, "name", variant) ?? "";
-        const price = getSafeFieldValue(templatesProduct, "price", variant) ?? "";
-        const imageUrl = getSafeFieldValue(templatesProduct, "imageUrl", variant) ?? "";
-
         try {
           await handleCheckout({
-            cart: {
-              [`${templatesProduct._id}_${resolvedVariant}`]: {
-                _id: templatesProduct._id,
-                quantity,
-                name,
-                price,
-                priceID,
-                imageUrl,
-                variant: resolvedVariant,
-              },
-            },
+            // D-P9-5: `buyNowCart` marks a product with one price and a count per option, so its option is sent.
+            cart: buyNowCart(templatesProduct, variant, quantity, priceID),
             requiresShipping: shipsOrders(siteData?.businessInfo),
             originUrl: typeof window !== "undefined" ? window.location.origin : "",
           });
