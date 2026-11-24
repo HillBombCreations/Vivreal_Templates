@@ -1,8 +1,10 @@
 "use client";
 
 import { useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import type { ContentItem } from "@hillbombcreations/site-renderer";
+import type { ProductQuery } from "@/lib/composition/productQuery";
+import { seedFromProductQuery } from "@/lib/composition/productQuerySeed";
 
 /**
  * Shared live-interactivity adapters for the products storefront, used by BOTH
@@ -14,10 +16,15 @@ import type { ContentItem } from "@hillbombcreations/site-renderer";
  * Both render the SAME renderer storefront (the monolith composes
  * `<ProductsProvider><ProductsStorefront/></ProductsProvider>`; the coordinated
  * unit renders those parts directly with `slots`), so they need the IDENTICAL
- * controlled-query wiring: parse `f_<key>/search/sort` from the URL to seed the
- * controls (the server already filtered `items` by exactly those params), route
+ * controlled-query wiring: seed the controls from the query the route parsed
+ * (the server already filtered `items` by exactly that query), route
  * filter/sort/search changes back to the URL inside a transition (server
  * refetch), and route a card click to the detail page.
+ *
+ * F323 (release C): the seed comes from the route's `ProductQuery`, never from
+ * `useSearchParams()`. That hook throws in a server rebuild of a stored page,
+ * so it needed a `<Suspense>` box, and the box hid the whole storefront from
+ * readers that run no scripts. See `src/lib/composition/productQuerySeed.ts`.
  *
  * This hook owns ONLY that wiring. Each component supplies its own `slug` +
  * `detailEnabled` (which differ between a monolith page and a coordinated unit
@@ -28,7 +35,7 @@ import type { ContentItem } from "@hillbombcreations/site-renderer";
 export const PRODUCTS_ITEMS_PER_PAGE = 15;
 
 export interface ProductsLiveAdapters {
-  /** Seed values parsed from the URL (the server already applied these to items). */
+  /** Seed values from the route's query (the server already applied these to items). */
   initialFilters: Record<string, string>;
   initialSearch: string | undefined;
   initialSort: string | undefined;
@@ -49,20 +56,16 @@ export interface ProductsLiveAdapters {
 export function useProductsLiveAdapters(args: {
   slug: string;
   detailEnabled: boolean;
+  /** The query the route parsed and filtered `items` by. */
+  query: ProductQuery;
 }): ProductsLiveAdapters {
-  const { slug, detailEnabled } = args;
+  const { slug, detailEnabled, query } = args;
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  // Seed the controls from the URL — the server already filtered `items` by
-  // exactly these params (f_<key> / search / sort).
-  const initialFilters: Record<string, string> = {};
-  for (const [key, val] of searchParams.entries()) {
-    if (key.startsWith("f_") && val) initialFilters[key.slice(2)] = val;
-  }
-  const initialSearch = searchParams.get("search") ?? undefined;
-  const initialSort = searchParams.get("sort") ?? undefined;
+  // Seed the controls from the route's query: the server already filtered
+  // `items` by exactly this (f_<key> / search / sort).
+  const { initialFilters, initialSearch, initialSort } = seedFromProductQuery(query);
 
   // Build f_<key>/search/sort params and router.replace inside a transition so
   // the renderer can disable controls while the server refetch is pending.

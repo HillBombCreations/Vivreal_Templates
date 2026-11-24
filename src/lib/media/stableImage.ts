@@ -24,6 +24,7 @@ import type { SiteData } from '@/types/SiteData';
 import { isDemoSite } from '../seo/demoSafety.ts';
 import { resolveSiteOrigin, resolveSitePublicBase } from '../og/siteOrigin.ts';
 import { unsignMediaUrl } from '../../components/JsonLd/unsignMediaUrl.ts';
+import { IMAGE_CONTENT_SECURITY_POLICY } from '../securityHeaders.ts';
 
 export const STABLE_IMAGE_CACHE_CONTROL = 'public, max-age=86400, s-maxage=604800';
 
@@ -67,10 +68,14 @@ export function jsonLdImage(origin: string, stableUrl: string, signedUrl: string
  * site's own origin could otherwise run script there: `nosniff` stops a
  * browser guessing a type, and the sandboxing policy disables script, plugins
  * and every fetch while letting the SVG's own inline styles draw it.
+ *
+ * On a served site the config's rule for these routes is what the browser gets
+ * (`imageRouteHeaderRules`, `src/lib/securityHeaders.ts`): Next drops a route's
+ * own header when a config rule set the same name. Both read one constant.
  */
 export const IMAGE_SAFETY_HEADERS: Readonly<Record<string, string>> = Object.freeze({
   'X-Content-Type-Options': 'nosniff',
-  'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+  'Content-Security-Policy': IMAGE_CONTENT_SECURITY_POLICY,
 });
 
 /**

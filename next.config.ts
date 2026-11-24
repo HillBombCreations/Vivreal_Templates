@@ -5,7 +5,8 @@ import { withSentryConfig } from "@sentry/nextjs";
 import { routerHeaderRefusalRewrites } from "./src/lib/routerHeaderGuard.ts";
 import { KEY_FILE_REWRITE } from "./src/lib/indexnow/keyFileRewrite.ts";
 import { ISR_REVALIDATE_SECONDS } from "./src/lib/renderMode.ts";
-import { scriptPolicyHeaders } from "./src/lib/scriptPolicy.ts";
+import { scriptPolicyHeaders, scriptPolicyMode } from "./src/lib/scriptPolicy.ts";
+import { baseSecurityHeaders, FRAME_ANCESTORS_DIRECTIVE, imageRouteHeaderRules } from "./src/lib/securityHeaders.ts";
 import { parseSiteCacheTtlSeconds } from "./src/lib/siteCacheTtl.ts";
 import { readSiteBasePath } from "./src/lib/siteBasePath.ts";
 
@@ -138,15 +139,36 @@ const nextConfig: NextConfig = {
   // Vivreal's own two sites (vivreal.io, help.vivreal.io) get the stronger
   // SEC-W2, with a narrowed Google tag source and a connect-src; every other
   // site keeps SW-A21 byte for byte. Both stay report-only.
+  //
+  // F608 (release C, SW-C8): the frame rule (`frame-ancestors 'self'`, in the
+  // enforced policy header, alone while the script policy watches), plus
+  // `X-Content-Type-Options: nosniff` and a `Referrer-Policy`, on every route,
+  // with or without a DSN (src/lib/securityHeaders.ts).
+  //
+  // PRL-RA11 (release C, SW-C8 SP-1 to SP-3): the app's VIVREAL_SCRIPT_POLICY
+  // build setting switches the script policy from watching to blocking with no
+  // second deployment. Unset or `report-only`: the headers above, byte for
+  // byte. `enforce`: one Content-Security-Policy holding the script policy and
+  // the frame rule, reports tagged csp-site or csp-own. Any other value throws
+  // here and fails the build (src/lib/scriptPolicy.ts).
   async headers() {
     return [
       {
         source: '/:path*',
         headers: [
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
-          ...scriptPolicyHeaders(process.env.NEXT_PUBLIC_SENTRY_DSN, process.env.SITE_ID),
+          ...baseSecurityHeaders(),
+          ...scriptPolicyHeaders(
+            process.env.NEXT_PUBLIC_SENTRY_DSN,
+            process.env.SITE_ID,
+            scriptPolicyMode(process.env.VIVREAL_SCRIPT_POLICY),
+            FRAME_ANCESTORS_DIRECTIVE,
+          ),
         ],
       },
+      // AFTER the every-route rule, so it wins on the picture routes: their
+      // sandbox policy, which the rule above would otherwise replace (Next
+      // drops a route's own header when a config rule set the same name).
+      ...imageRouteHeaderRules(FRAME_ANCESTORS_DIRECTIVE),
     ];
   },
   // A request carrying a Next router header without exactly `RSC: 1` (and

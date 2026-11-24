@@ -5,7 +5,8 @@ import { CheckCircle2, X, Loader2 } from "lucide-react";
 import { useCartContext } from "@/contexts/CartContext";
 import { useSiteData } from "@/contexts/SiteDataContext";
 import { getSafeFieldValue, resolveVariantableString } from "@/lib/utils/variantUtils";
-import { handleCheckout } from "@/lib/utils/cartUtils";
+import { CheckoutShopRuleError, fetchCartQuote, handleCheckout } from "@/lib/utils/cartUtils";
+import { quoteAsksQuestion } from "@/lib/cart/cartAsks";
 import type { FloatingCartDialogProps } from "@/types/Cart";
 import { shipsOrders } from "@/lib/shipping";
 import { deliveryConfigOf } from "@hillbombcreations/site-renderer";
@@ -59,12 +60,28 @@ export default function FloatingCartDialog({
     // Owner ideas T13/T15: with a note, a pickup time, a minimum or a choice
     // of pickup and delivery, the shopper decides in the cart, so this quick
     // card opens it instead of skipping straight past those choices.
-    if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {
+    // Release C (SQP-T3, FP1.4): the same for the newsletter box (either
+    // provider) and, on a Square shop, a product question in the bag, which
+    // only the cart can ask; the bag's quote says whether one has a question.
+    const settings = readCartSettings(siteData?.cart);
+    const ways = { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) };
+    if (cartNeedsChoices(settings, ways)) {
       handleOpenCart();
       return;
     }
     setLoadingCheckout(true);
     setDisableButtons(true);
+    if (siteData?.paymentsProvider === "square") {
+      const lines = Object.values(cart || {})
+        .filter((item) => item.priceID)
+        .map((item) => ({ price: item.priceID, quantity: item.quantity || 1 }));
+      if (cartNeedsChoices(settings, ways, { square: true, lineAsks: quoteAsksQuestion(await fetchCartQuote(lines)) })) {
+        setLoadingCheckout(false);
+        setDisableButtons(false);
+        handleOpenCart();
+        return;
+      }
+    }
     try {
       await handleCheckout({
         cart,
@@ -73,9 +90,15 @@ export default function FloatingCartDialog({
       });
       setOpenCartMenu(false);
     } catch (error) {
-      console.error("Checkout error:", error);
       setLoadingCheckout(false);
       setDisableButtons(false);
+      // Release C (SQP-T3): a question the bag's quote did not know of yet.
+      // The cart opens with its box, never a dead end.
+      if (error instanceof CheckoutShopRuleError && error.code === "QUESTION_REQUIRED") {
+        handleOpenCart();
+        return;
+      }
+      console.error("Checkout error:", error);
     }
   };
 

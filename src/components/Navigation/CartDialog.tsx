@@ -22,6 +22,7 @@ import {
   lineShippingNote,
   minimumLine,
   readCartSettings,
+  showsPromoBox,
   shippingFromLine,
   shippingSection,
   type DeliveryQuote,
@@ -41,7 +42,19 @@ import {
 } from "@/lib/utils/cartUtils";
 import { bagTotals, linePrice, quoteRaisedAPrice, SALE_ENDED_COPY, type CartQuote } from "@/lib/cartQuote";
 import { useCartQuote } from "@/hooks/use-cart-quote";
-import { applyShortStock, atLineCap, clampCartToStock, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutUnavailableLines } from "@/lib/cartStock";
+import {
+  ANSWER_MAX,
+  ANSWER_NEEDED,
+  ANSWER_PLACEHOLDER,
+  JOIN_BOX_LINE,
+  QUESTION_OPTIONAL,
+  cartQuestions,
+  checkoutAnswers,
+  joinBoxLabel,
+  showsJoinBox,
+  unansweredRequired,
+} from "@/lib/cart/cartAsks";
+import { applyShortStock, atLineCap, clampCartToStock, linesCounted, nextLineQuantity, REMOVE_UNAVAILABLE_LABEL, stockAdjustedMessage, withoutRefusedLine, withoutUnavailableLines } from "@/lib/cartStock";
 import { shipsOrders } from "@/lib/shipping";
 import { couponPreviewDiscount, COUPON_NO_EFFECT_COPY } from "@/lib/couponPreview";
 import { cartLinesKey, revalidateStoredPromoCode, PROMO_CODE_DROPPED_COPY } from "@/lib/promoCodeRestore";
@@ -103,11 +116,24 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const [stockNotice, setStockNotice] = useState<string | null>(null);
   // Client F30: lines checkout no longer sells, by checkout price id, with the words to show.
   const [unavailable, setUnavailable] = useState<{ message: string; priceIds: string[] } | null>(null);
+  // F642 (release C, SQP-T1): a Square shop's product questions, answered in
+  // the cart (lib/cart/cartAsks.ts). Answers by product; the box a required
+  // question was left empty in, once Checkout was pressed; and the box to
+  // put the cursor in after a re-quote.
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answerNeeded, setAnswerNeeded] = useState<string | null>(null);
+  const answerBoxes = useRef<Record<string, HTMLInputElement | null>>({});
+  // The box to put the cursor in once a re-quote has drawn it.
+  const pendingAnswerFocus = useRef<string | null>(null);
+  // F557, F643 (release C, SQP-T2): the newsletter box, always unticked until
+  // the shopper ticks it.
+  const [joinTicked, setJoinTicked] = useState(false);
 
   // Owner ideas T13/T15 (3.9, 3.10): the owner's cart settings, read
   // defensively (absent settings are today's cart, word for word), and the
   // shopper's choices. Every rule is re-checked by VR_Client_API at checkout.
   const settings = useMemo(() => readCartSettings(siteData?.cart), [siteData?.cart]);
+  const joinBox = showsJoinBox(settings, siteData?.paymentsProvider, businessInfo?.name);
   const deliveryConfig = useMemo(() => deliveryConfigOf(siteData?.pageConfigs), [siteData?.pageConfigs]);
   const deliveryOn = deliveryConfig?.enabled === true;
   // F54 L-10 D9: no 25 mile default, and no radius line when zones decide the area.
@@ -177,9 +203,30 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   // shows its list price (H34: read through the tolerant `cartUnitPrice`, never
   // a bare Number()), which is never below what checkout charges.
   const { quote, requote } = useCartQuote(cartLineItems, linesKey, open);
+  const questions = useMemo(
+    () => cartQuestions(itemsArray, quote, siteData?.paymentsProvider),
+    [itemsArray, quote, siteData?.paymentsProvider],
+  );
+  // Puts the cursor in a question's box, scrolled into view. False when the
+  // box is not drawn (yet).
+  const focusAnswerBox = (productId: string): boolean => {
+    const box = answerBoxes.current[productId];
+    if (!box) return false;
+    box.focus();
+    box.scrollIntoView({ block: "center" });
+    return true;
+  };
+  // A box a re-quote has just added is in the page only after the render that
+  // drew it, so its cursor is placed here.
+  useEffect(() => {
+    const productId = pendingAnswerFocus.current;
+    if (productId && focusAnswerBox(productId)) pendingAnswerFocus.current = null;
+  }, [questions]);
+  // F526 (release C): a line checkout refused as no longer sold stays in the
+  // bag, marked, but the total leaves it out at once (`linesCounted`).
   const { subtotal, discount, total } = useMemo(
-    () => bagTotals(itemsArray, quote, appliedCode ? codeNewSubtotal : null),
-    [itemsArray, quote, appliedCode, codeNewSubtotal]
+    () => bagTotals(linesCounted(itemsArray, unavailable?.priceIds ?? []), quote, appliedCode ? codeNewSubtotal : null),
+    [itemsArray, unavailable, quote, appliedCode, codeNewSubtotal]
   );
   const hasDiscount = appliedCode != null && discount > 0;
   // The minimum is checked on the total after the code, as the server checks it.
@@ -200,6 +247,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
   const choiceMissing = blocked !== null;
   // Client F30: the bag's own names for the lines checkout no longer sells (none from an older Client).
   const unavailableNames = unavailable ? withoutUnavailableLines(cart || {}, unavailable.priceIds).removed : [];
+  const totalLeavesOut = withoutRefusedLine(unavailableNames);
 
   const onCheckZip = async () => {
     const clean = cleanZip(zip);
@@ -357,6 +405,17 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       const shown = quote;
       const fresh = await requote();
       if (!fresh.current) return;
+      // F642 (SQP-T1, WSQ-13): a required question left empty holds Checkout.
+      // Nothing is sent; the cursor goes to the box and the words say why.
+      const asked = cartQuestions(itemsArray, fresh.quote, siteData?.paymentsProvider);
+      const missing = unansweredRequired(asked, answers);
+      if (missing) {
+        setAnswerNeeded(missing.productId);
+        if (!focusAnswerBox(missing.productId)) pendingAnswerFocus.current = missing.productId;
+        return;
+      }
+      setAnswerNeeded(null);
+      const sentAnswers = checkoutAnswers(asked, answers);
       if (quoteRaisedAPrice(shown, fresh.quote)) {
         setSaleEnded(true);
         return;
@@ -369,7 +428,13 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
         ...(appliedCode ? { code: appliedCode } : {}),
         // Only what the shopper chose; nothing for a cart with no settings and
         // one way to get the order, so that body is exactly today's.
-        extras: checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
+        extras: {
+          ...checkoutExtras(checkoutChoice({ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId })),
+          // F642 (SV-SQ11): only answered questions, and nothing at all on a Stripe shop.
+          ...(sentAnswers.length > 0 ? { answers: sentAnswers } : {}),
+          // F557, F643 (SV-SQ13): only when the box shows and the shopper ticked it.
+          ...(joinBox && joinTicked ? { joinList: true as const } : {}),
+        },
       });
       setOpenCartMenu(false);
     } catch (err) {
@@ -378,6 +443,17 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
       // stock refusal says nothing about it.
       // One of the shop's own rules refused (a minimum, the delivery area, a
       // pickup time): say so and keep every choice, the code included.
+      // F642 (SQP-T1, WSQ-14): the cart did not know of the question yet (the
+      // owner turned it on, or made it required, after the cart opened). Say
+      // so above Checkout, ask the quote again so its box shows, and put the
+      // cursor there.
+      if (err instanceof CheckoutShopRuleError && err.code === "QUESTION_REQUIRED") {
+        setRuleNotice(err.message);
+        const again = await requote();
+        const first = unansweredRequired(cartQuestions(itemsArray, again.quote, siteData?.paymentsProvider), answers);
+        if (first && !focusAnswerBox(first.productId)) pendingAnswerFocus.current = first.productId;
+        return;
+      }
       if (err instanceof CheckoutShopRuleError) {
         setRuleNotice(shopRuleWords(err.code, err.message, cartOffersPickup, zip));
         // F58: the day moved off the list; ask the shop's days again so another can be picked.
@@ -508,7 +584,10 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold">
+                            {/* Release C (the renderer builder's find): a long name wraps to
+                                two lines, never cut to one, and the full name stays in the
+                                text, so a screen reader reads it whole. Walk D-31. */}
+                            <div data-cart-line-name="" className="line-clamp-2 break-words text-sm font-semibold">
                               {item?.name}
                             </div>
                             <div className="mt-1 text-xs text-black/60">
@@ -585,6 +664,46 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                   </div>
                 );
               })}
+              {/* F642 (release C, SQP-T1; mockup M-SQ-1): a Square shop's product
+                  questions, one box each under the items. The label is the owner's
+                  question as written; an optional one says so; a required one has no
+                  mark and holds Checkout until it is answered. */}
+              {questions.map((q) => {
+                const boxId = `vr-cart-answer-${q.productId}`;
+                const needed = answerNeeded === q.productId;
+                return (
+                  <div key={q.productId} data-cart-question="">
+                    <label htmlFor={boxId} className="mb-1.5 flex items-baseline justify-between gap-2 text-xs font-semibold text-black/70">
+                      <span className="min-w-0 break-words">{q.question}</span>
+                      {q.required ? null : <span className="shrink-0 font-normal text-black/50">{QUESTION_OPTIONAL}</span>}
+                    </label>
+                    <input
+                      id={boxId}
+                      ref={(el) => {
+                        answerBoxes.current[q.productId] = el;
+                      }}
+                      type="text"
+                      value={answers[q.productId] ?? ""}
+                      maxLength={ANSWER_MAX}
+                      placeholder={ANSWER_PLACEHOLDER}
+                      disabled={loadingCheckout}
+                      aria-invalid={needed}
+                      aria-describedby={needed ? `${boxId}-needed` : undefined}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setAnswers((prev) => ({ ...prev, [q.productId]: value }));
+                        if (needed && value.trim()) setAnswerNeeded(null);
+                      }}
+                      className="h-10 w-full rounded-xl border border-black/10 bg-white px-3 text-base md:text-sm outline-none focus:border-black/25 disabled:opacity-60"
+                    />
+                    {needed ? (
+                      <div id={`${boxId}-needed`} role="alert" className="mt-1 text-xs font-medium">
+                        {ANSWER_NEEDED}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -628,7 +747,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             />
           ) : null}
 
-          {itemsArray.length > 0 && settings.showPromo ? (
+          {itemsArray.length > 0 && showsPromoBox(settings, siteData?.tier) ? (
             <div className="mb-3">
               {appliedCode ? (
                 <div className="flex items-center justify-between gap-2 rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2">
@@ -669,7 +788,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
                       autoCorrect="off"
                       spellCheck={false}
                       aria-invalid={!!codeError}
-                      className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-sm uppercase tracking-wide outline-none focus:border-black/25 disabled:opacity-60"
+                      className="h-10 flex-1 rounded-xl border border-black/10 bg-white px-3 text-base md:text-sm uppercase tracking-wide outline-none focus:border-black/25 disabled:opacity-60"
                     />
                     <button
                       type="button"
@@ -737,6 +856,7 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             <div className="text-black/60">Subtotal</div>
             <div className="font-semibold">{currency(subtotal)}</div>
           </div>
+          {totalLeavesOut ? <div className="mt-0.5 text-xs text-black/60">{totalLeavesOut}</div> : null}
 
           {hasDiscount ? (
             <>
@@ -777,6 +897,24 @@ export default function CartDialog({ open, onClose }: CartDialogProps) {
             </div>
           ) : (
             <>
+              {/* F557, F643 (release C, SQP-T2; mockup M-SQ-1): the newsletter
+                  box above Checkout, on a Stripe or a Square shop with the
+                  owner's switch on. It always starts unticked. */}
+              {joinBox && itemsArray.length > 0 && businessInfo?.name ? (
+                <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm" data-cart-join-list="">
+                  <input
+                    type="checkbox"
+                    checked={joinTicked}
+                    onChange={(e) => setJoinTicked(e.target.checked)}
+                    disabled={loadingCheckout}
+                    className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer accent-[var(--primary,#365b99)]"
+                  />
+                  <span>
+                    <span className="block font-medium">{joinBoxLabel(businessInfo.name)}</span>
+                    <span className="block text-xs text-black/60">{JOIN_BOX_LINE}</span>
+                  </span>
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={onCheckout}

@@ -80,7 +80,7 @@ test("the recipient comes from resolveContactRecipient(), imported from the shar
     code,
     /import \{ resolveContactRecipient, resolveSiteContact \} from "@\/lib\/contactRecipient";/,
   );
-  assert.match(code, /const \{ to, siteName, branding \} = resolveContactRecipient\(body, site\);/);
+  assert.match(code, /const \{ to \} = resolveContactRecipient\(body, site\);/);
 });
 
 test("the recipient is resolved in exactly one place, never re-derived with a body fallback", () => {
@@ -563,11 +563,9 @@ test("flush behaviour (review-templates-184.md item 2)", async (t) => {
         fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", siteName: null }),
       );
       assert.equal(nullSiteNameRes.status, 200, "a null siteName must be treated as absent, not rejected");
-      assert.equal(
-        sendContactEmailBody?.siteName,
-        "Test Site",
-        "a null siteName must resolve to the site's stored name upstream, not leak as null",
-      );
+      // F607 (release C): no siteName is forwarded at all any more; the owner's
+      // email takes the stored business name in VR_Client_API.
+      assert.equal(sendContactEmailBody && "siteName" in sendContactEmailBody, false, "a null siteName never leaks upstream");
 
       const nullBrandingRes = await POST(
         fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", branding: null }),
@@ -733,7 +731,7 @@ test("/migrate blank notes, and every remaining rejection is visible (research-a
     assert.equal(sent[0].message, NO_NOTES_MESSAGE);
     assert.deepEqual(sent[0].customFields, { siteUrl: SENTINEL_VALUES.siteUrl, formType: "migration" });
     assert.equal(sent[0].customerEmail, SENTINEL_VALUES.email);
-    assert.match(String(sent[0].customHtml), /No notes were added\./);
+    assert.equal("customHtml" in sent[0], false, "F607: the route sends no email of its own making");
     assert.equal(__sentryStubControl.captureCalls.length, 0, "an accepted submission is not a rejection");
   });
 
@@ -904,5 +902,79 @@ test("/migrate blank notes, and every remaining rejection is visible (research-a
     );
     assert.equal(other.status, 400);
     assert.equal(__sentryStubControl.captureCalls.length, 1, "a different rejection keeps its own window");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F607 (release C, SW-C3; scope F165-G1-08): a visitor can no longer shape the
+// owner's contact email. The route forwards the form's fields only; the
+// business name, logo and colours come from the stored business, in
+// VR_Client_API (release-c/client 604c681, 9683193).
+// ---------------------------------------------------------------------------
+
+test("F607: what the contact route sends upstream", async (t) => {
+  process.env.SITE_ID = "6a0000000000000000000a01";
+  const { POST } = await import("./route.ts");
+  const { __sentryStubControl } = (await import("@sentry/nextjs")) as unknown as SentryStubModule; // see SentryStubModule
+  const sent: Array<Record<string, unknown>> = [];
+  t.beforeEach(() => {
+    sent.length = 0;
+    __sentryStubControl.reset();
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.includes("/tenant/siteDetails")) {
+        return new Response(
+          JSON.stringify({ businessInfo: { name: "Stored Bakery", contactInfo: { email: "owner@example.com" } } }),
+          { status: 200 },
+        );
+      }
+      if (url.includes("/tenant/sendContactEmail")) {
+        sent.push(JSON.parse(String(init?.body)));
+        return new Response(JSON.stringify({ success: true }), { status: 200 });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    };
+  });
+  t.afterEach(() => {
+    globalThis.fetch = realFetch;
+    __sentryStubControl.reset();
+  });
+  t.after(() => {
+    if (realSiteId === undefined) delete process.env.SITE_ID;
+    else process.env.SITE_ID = realSiteId;
+  });
+
+  await t.test("REFUSE: a made-up name, logo, colours and HTML never reach the owner's email request", async () => {
+    const hostile = {
+      name: "Ada",
+      customerEmail: "ada@example.com",
+      message: "hi",
+      siteName: "Totally Real Bank",
+      branding: { primary: "#ff0000", surface: "#000000", textPrimary: "#ffffff", logoUrl: "https://evil.example/logo.png" },
+      customHtml: "<h1>Click here to verify your account</h1>",
+      htmlInfo: { title: "Urgent" },
+    };
+    const res = await POST(fakeRequest(JSON.parse(JSON.stringify(hostile))));
+    assert.equal(res.status, 200);
+    assert.equal(sent.length, 1, "the submission is still forwarded, to be stored and emailed");
+    for (const key of ["siteName", "branding", "customHtml", "htmlInfo"]) {
+      assert.equal(key in sent[0], false, `${key} is never sent upstream`);
+    }
+    const wire = JSON.stringify(sent[0]);
+    for (const planted of ["Totally Real Bank", "evil.example", "#ff0000", "Click here to verify", "Urgent"]) {
+      assert.equal(wire.includes(planted), false, `${planted} reached the upstream request`);
+    }
+  });
+
+  await t.test("ALLOW: the form's own fields and the stored recipient are forwarded, exactly", async () => {
+    const res = await POST(fakeRequest({ name: "Ada", customerEmail: "ada@example.com", message: "hi", customFields: { phone: "555 0100" } }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(Object.keys(sent[0]).sort(), ["contactEmail", "customFields", "customerEmail", "message", "name", "siteId"]);
+    assert.equal(sent[0].contactEmail, "owner@example.com", "the stored address, as before");
+    assert.equal(sent[0].name, "Ada");
+    assert.equal(sent[0].message, "hi");
+    assert.equal(sent[0].customerEmail, "ada@example.com");
+    assert.equal(sent[0].siteId, "6a0000000000000000000a01");
+    assert.deepEqual(sent[0].customFields, { phone: "555 0100" });
   });
 });

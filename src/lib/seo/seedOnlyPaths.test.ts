@@ -222,7 +222,7 @@ test('REFUSE: the [slug] route 404s a seed-only page in the un-suspended parent,
   const guard = page.indexOf('isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();');
   assert.ok(guard > 0, 'the guard is in the route');
   assert.ok(guard < page.indexOf('return renderComposedPage('), 'before renderComposedPage');
-  assert.ok(guard < page.indexOf('<Suspense fallback='), 'before the composed arm streams');
+  assert.ok(guard < page.indexOf('<ComposedFormatBody'), 'before the composed arm renders');
   assert.ok(page.indexOf('assertUpstreamHealthy(siteData);') < guard, 'after the degraded-read refusal');
   const item = read('../../app/[slug]/[itemId]/page.tsx');
   assert.ok(item.includes('if (isSeedOnlySlug(await getSeedOnlyPaths(), nestedPage.slug)) return notFound();'), 'the nested page arm too');

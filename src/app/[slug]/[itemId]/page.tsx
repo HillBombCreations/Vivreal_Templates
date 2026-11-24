@@ -33,7 +33,7 @@ import { productItemMetaText } from "@/lib/seo/productItemMeta";
 import { resolveStorefrontItemSummary } from "@/lib/detail/storefrontItem";
 import { getIntegrationItems, getCollectionItems, getAllCollectionItems } from "@/lib/api/collections";
 import { renderComposedPage } from "@/lib/renderComposedPage";
-import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
+import { liveProductsOverrides } from "@/components/PageTemplates/liveProductsOverrides";
 import { parseProductQuery } from "@/lib/composition/productQuery";
 import ProductDetailRenderer from "@/components/PageTemplates/ProductDetailRenderer";
 import ContentRenderer from "@/components/ContentRenderer";
@@ -325,11 +325,13 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
     // without the overrides its grid renders the bare (CartAdapter-less) arm.
     // Owner ideas T10/T11: read only when the nested page can use it.
     const sp = pageReadsQuery(nestedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
+    // F323: the shop takes the same parsed query the items are read by.
+    const productQuery = parseProductQuery(sp);
     return renderComposedPage({
       siteData,
       composedPage: nestedPage,
-      components: LIVE_PRODUCTS_OVERRIDES,
-      productQuery: parseProductQuery(sp),
+      components: liveProductsOverrides(productQuery),
+      productQuery,
     });
   }
 
@@ -414,9 +416,9 @@ export default async function DynamicItemPage({ params, searchParams }: Props) {
    * read" are the same value (`@/lib/api/degradedRead`). A transient
    * VR_Client_API wobble therefore made every detail URL on the site answer
    * 404, and unlike the generic-page sibling of this defect (fixed in
-   * `renderComposedPage.tsx`, which sits inside a Suspense boundary and could
-   * only swap the body under an already-flushed 200) this component is
-   * UN-SUSPENDED. The 404 was real, and a real 404 tells a crawler that a live,
+   * `renderComposedPage.tsx`, which until F323 sat inside a Suspense boundary
+   * and could only swap the body under an already-flushed 200) this component
+   * is UN-SUSPENDED. The 404 was real, and a real 404 tells a crawler that a live,
    * published item is gone.
    *
    * Being un-suspended is also what makes the fix strictly better here: the

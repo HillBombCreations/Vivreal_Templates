@@ -20,7 +20,7 @@
  *    search box and `?view=` round-trip through the address);
  *  - a storefront anywhere in the blocks, at any depth, switched on or off:
  *    a `products` or `products-grid` block, or a group coordinated as
- *    `products` (the two arms `LIVE_PRODUCTS_OVERRIDES` controls);
+ *    `products` (the two arms `liveProductsOverrides` controls);
  *  - a block-less (legacy) page: its sections come from `getPageBindingsByRole`
  *    at render time and cannot be ruled out from config, so it keeps today's
  *    behaviour.

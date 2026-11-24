@@ -33,7 +33,7 @@
 //     recommended ("stub Sentry.flush and fetch with controlled promises").
 //   - `@/x` rewrites to this package's own `./src/x.ts`, so every OTHER
 //     import (`@/lib/contactRecipient`, `@/lib/leadAttribution`,
-//     `@/lib/api/errorCapture`, `@hillbombcreations/email-brand`) stays the
+//     `@/lib/api/errorCapture`) stays the
 //     REAL module. Only the two things a plain-node process cannot load at
 //     all are faked; everything else in the request path is the genuine
 //     code, including the real `resolveSiteContact` / `resolveContactRecipient`

@@ -84,8 +84,15 @@ export const SHELL_READS_BUDGET_MS = 3_000;
 /** The reads budget before any shell was served: one cold Client (Init max 4.13 s plus 0.88 s, 5.01 s) and 0.5 s over it. */
 export const SHELL_READS_BUDGET_COLD_MS = 5_500;
 
-/** One read's deadline while `L` exists: clears the slowest warm handler (881 ms). */
-export const SHELL_READ_DEADLINE_MS = 1_500;
+/**
+ * One read's deadline while `L` exists. SW-C28 (release C, decisions.md:1163;
+ * research-overnight-2026-11-21.md 2): 2,500, above the cold key checker the
+ * read can meet even on a busy instance (VR_Client_Auth Init 1,495 and 1,518
+ * ms plus about 380 ms of work, 1,898 ms, the 15:29:48Z home page snapshot)
+ * with this file's 0.5 s margin; it also clears the slowest warm handler
+ * (881 ms). It was 1,500, which cut that read and served the snapshot.
+ */
+export const SHELL_READ_DEADLINE_MS = 2_500;
 
 /**
  * One read's deadline before any shell was served: a cold Client still answers.

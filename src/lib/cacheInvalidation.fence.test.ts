@@ -775,7 +775,7 @@ test('the probe wait, the budgets and the deadlines are the design\'s (I3)', () 
   assert.equal(n.SITE_VERSION_TIMEOUT_MS, 1_500);
   assert.equal(n.SHELL_READS_BUDGET_MS, 3_000);
   assert.equal(n.SHELL_READS_BUDGET_COLD_MS, 5_500);
-  assert.equal(n.SHELL_READ_DEADLINE_MS, 1_500);
+  assert.equal(n.SHELL_READ_DEADLINE_MS, 2_500); // SW-C28 (release C): was 1,500
   assert.equal(n.SHELL_READ_DEADLINE_COLD_MS, 5_500);
   assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_COLD_MS <= 7_000, 'FULL at S0 at most 7.0 s');
   assert.ok(n.SITE_VERSION_TIMEOUT_MS + n.SHELL_READS_BUDGET_MS <= 4_500, 'FULL with L at most 4.5 s');

@@ -557,12 +557,13 @@ test('SOURCE PIN: the LIVE generic-format guard refuses BEFORE it can notFound()
   //
   // QA-G1-2 moved the guard out of ComposedPageBody and into the un-suspended
   // parent, so a 404 is a real status and a refusal a real 5xx. Sliced to the
-  // parent's body up to its <Suspense>, the same discipline the [slug] pin below
+  // parent's body up to its <ComposedPageBody (its <Suspense> until F323 removed
+  // the box), the same discipline the [slug] pin below
   // uses: over whole-file text one comment mentioning either call makes this
   // pass or fail for no reason, and this file's comments are dense.
   const whole = source('../../renderComposedPage.tsx');
   const parentAt = whole.indexOf('export async function renderComposedPage(');
-  const boundaryAt = whole.indexOf('<Suspense', parentAt);
+  const boundaryAt = whole.indexOf('<ComposedPageBody', parentAt);
   assert.ok(parentAt > 0 && boundaryAt > parentAt, 'sanity: this test read nothing');
   const code = whole.slice(parentAt, boundaryAt);
   const refusalAt = code.indexOf('refuseUnknownEmptiness(');

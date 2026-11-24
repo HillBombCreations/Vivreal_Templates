@@ -276,3 +276,50 @@ test("[T-385 B2 ALLOW] a per-line count is stored exactly as checkout named it, 
   assert.equal(next["cookie_Large"]?.stock, 2, "a per-line stock is the line's own count");
   assert.equal(next["cookie_Small"]?.stock, 4);
 });
+
+// F392 (release C; Templates #230 T-385 delta review notes N5 and N6, backlog
+// F392): a bag trimmed by checkout never lets "+" pass the real count.
+
+test("[F392 N6 REFUSE] a refusal that only removes a shared line teaches the bag the count: + on the line left stops there", () => {
+  // Sourdough 2 + Rye 3 stored at 6; the real count is 2, so checkout keeps
+  // Sourdough's 2 and names Rye with 0 left (the line is removed).
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 2), bread_Rye: sharedLine("Rye", 3) };
+  const { cart: next, changed } = cartStock.applyShortStock(cart, [{ priceId: "price_rye", available: 0 }]);
+  assert.deepEqual(changed, [{ name: "Bread (Rye)", available: 0 }]);
+  assert.equal(next["bread_Rye"], undefined, "a line with none left is removed, never written as 0");
+  assert.equal(next["bread_Sourdough"]?.stock, 2, "the line left stores the real count");
+  assert.equal(cartStock.lineCap(next, "bread_Sourdough"), 2);
+  assert.equal(cartStock.atLineCap(next, "bread_Sourdough"), true, "+ is off at the real count");
+  assert.equal(cartStock.nextLineQuantity(next, "bread_Sourdough", 3), 2, "+ cannot pass it");
+});
+
+test("[F392 N6 REFUSE] a refusal that names a shared line it keeps teaches the bag the count too", () => {
+  // Sourdough 2 + Rye 1 stored at 6; checkout names Sourdough with 3 left (kept).
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 2), bread_Rye: sharedLine("Rye", 1) };
+  const { cart: next, changed } = cartStock.applyShortStock(cart, [{ priceId: "price_sourdough", available: 3 }]);
+  assert.deepEqual(changed, [], "nothing was brought down");
+  assert.equal(next["bread_Sourdough"]?.stock, 3);
+  assert.equal(next["bread_Rye"]?.stock, 3, "every shared line of the product stores it");
+  assert.equal(cartStock.lineCap(next, "bread_Rye"), 1, "Rye may keep 1 beside Sourdough's 2, no more");
+});
+
+test("[F392 N6 ALLOW] a product checkout did not name keeps its lines as they were, and a per-line count is its own", () => {
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 2), cookie_Large: perLineCookie("Large", 3, 3) };
+  const { cart: next } = cartStock.applyShortStock(cart, [{ priceId: "price_large", available: 2 }]);
+  assert.deepEqual(next["bread_Sourdough"], cart["bread_Sourdough"], "an unnamed product is untouched");
+  assert.equal(next["cookie_Large"]?.stock, 2, "a per-line stock is the line's own count, as before");
+});
+
+test("[F392 N5 REFUSE] trash and - on a stored line with no numeric quantity remove it, never a quantity of NaN", () => {
+  const broken = { ...sharedLine("Sourdough", 1), quantity: undefined } as unknown as CartItem; // a stored shape no writer makes
+  const cart: Cart = { bread_Sourdough: broken };
+  const qty = cartStock.nextLineQuantity(cart, "bread_Sourdough", 0);
+  assert.equal(qty, 0, "0 means the caller removes the line");
+  assert.equal(Number.isNaN(qty), false);
+});
+
+test("[F392 N5 ALLOW] an increase on a good line still stops at its cap", () => {
+  const cart: Cart = { bread_Sourdough: sharedLine("Sourdough", 2, 4) };
+  assert.equal(cartStock.nextLineQuantity(cart, "bread_Sourdough", 9), 4);
+  assert.equal(cartStock.nextLineQuantity(cart, "bread_Sourdough", 1), 1, "a decrease is taken as asked");
+});

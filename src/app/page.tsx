@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { getSiteData } from "@/lib/api/siteData";
 import { assertUpstreamHealthy } from "@/lib/api/siteData/degraded";
 import { resolveSitePublicBase, buildOgImageUrl } from "@/lib/og/ogImage";
@@ -14,7 +13,6 @@ import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-r
 import Navbar from "@/components/Navigation/Navbar";
 import { darkRenderedHero } from "@/components/Navigation/darkRenderedHero";
 import Footer from "@/components/Footer";
-import HomeLoading from "@/components/HomeLoading";
 import { enforceDynamicUnlessIsr } from "@/lib/renderGate";
 import { homeMetaText, readBusinessFacts } from "@/lib/seo/pageMetaText";
 import type { PageWithBlocks } from "@hillbombcreations/site-renderer/bindings";
@@ -94,23 +92,17 @@ async function Resolved() {
   );
 }
 
-// GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c): this
-// Suspense boundary is page-authored, not the deleted implicit `loading.tsx`
-// wrap — but it has the SAME failure mode. `HomePage` is a synchronous shell;
-// `Resolved()` is the async child that does all the awaiting. Streaming
-// begins the instant this boundary suspends, which flushes a 200 shell
-// before `Resolved()` runs. A `notFound()`/`permanentRedirect()` placed
-// inside `Resolved()` (or anything it calls) would be a soft-200 on day one,
-// exactly like the bug this fix closes elsewhere. Home never guards today,
-// so this is documentary only — no behavioural change. Any future guard on
-// this route MUST run in `HomePage` itself (the un-suspended parent), not
-// inside `Resolved()`.
+// GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c; F323):
+// this route has no page-authored box (release C, F323). Before F323 a
+// `<Suspense fallback={<HomeLoading />}>` wrapped `Resolved()`: the home page
+// reached readers that run no scripts as a grey box with the whole body hidden,
+// and a guard inside `Resolved()` could only swap the body under a 200 already
+// on the wire. Now the page is sent complete, so a guard anywhere in the render
+// sets a real status. Adding a box back fails `pageBoundaries.test.ts` and the
+// build check's no-script read (`scripts/isr-build-check.mjs`).
 //
-// The degraded-render guard below is the first such guard, and it sits here
-// BECAUSE of that note. Inside `Resolved()` it would have been worthless: the
-// shell has already flushed by then, so the throw would swap the body and leave
-// a 200 on the wire, which is the soft-status bug this route was audited for
-// once already.
+// The degraded-render guard below still runs here, first, so a failed read is
+// refused before any of the page is drawn.
 export default async function HomePage() {
   // ISR gate. FIRST statement: with SITE_RENDER_MODE unset nothing below this
   // line runs during `next build`, which is what keeps a fleet build's upstream
@@ -131,11 +123,7 @@ export default async function HomePage() {
   // The extra read is free: `getSiteData()` goes through `unstable_cache` and
   // `Resolved()` asks for the same value in the same request.
   assertUpstreamHealthy(await getSiteData());
-  return (
-    <Suspense fallback={<HomeLoading />}>
-      <Resolved />
-    </Suspense>
-  );
+  return <Resolved />;
 }
 
 export const generateMetadata = async () => {

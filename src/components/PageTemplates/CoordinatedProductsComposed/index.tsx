@@ -13,6 +13,7 @@ import type {
 import { useSiteData } from "@/contexts/SiteDataContext";
 import SiteRendererBridge from "@/components/SiteRendererBridge";
 import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsLiveAdapters";
+import type { ProductQuery } from "@/lib/composition/productQuery";
 
 /**
  * Live wiring for the ATOMIZED products topology — `group(coordinated:'products')`.
@@ -47,16 +48,20 @@ import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsL
  *      defect visible only after publish.
  *   2. It reads its inputs from `shaped` (the once-resolved payload) plus the
  *      group-level layout knobs `filterSide`/`gridColumns`/toolbar+filters config.
+ *
+ * `query` is the route's parsed product query (F323), which seeds the controls.
  */
 export default function CoordinatedProductsComposed({
   shaped,
   slots,
   pageHeadingLevel,
-}: CoordinatedProductsProps) {
+  query,
+}: CoordinatedProductsProps & { query: ProductQuery }) {
   const siteData = useSiteData();
   const adapters = useProductsLiveAdapters({
     slug: shaped.slug,
     detailEnabled: shaped.detailEnabled,
+    query,
   });
 
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";

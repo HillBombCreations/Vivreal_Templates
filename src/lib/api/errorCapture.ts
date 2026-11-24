@@ -276,9 +276,11 @@ export const DEGRADED_REFUSAL_FINGERPRINT = 'templates.degradedRead.refused';
  *
  * Both refusals have the same cause and the same fix, but not the same
  * consequence, and an operator triaging one needs to know which they are
- * looking at. The generic-page refusal fires inside a Suspense boundary, so the
- * 200 has already flushed and only the body changes. This one fires in an
- * un-suspended page component, so the response really is a 5xx. Collapsing them
+ * looking at. The generic-page refusal fired inside a Suspense boundary until
+ * F323 (release C) removed that box, so the 200 had already flushed and only
+ * the body changed; it now sets a real status too. This one fires in a
+ * detail-page component, which never had a box, so its response has always
+ * been a 5xx. Collapsing them
  * into one Issue would hide that difference behind an event count, and it would
  * make "did any page actually fail" unanswerable again, which is the exact
  * blindness the explicit capture exists to remove.

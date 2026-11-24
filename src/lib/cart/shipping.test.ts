@@ -126,7 +126,8 @@ test('REFUSE: a rate checkout no longer offers says so in the cart\'s words, and
   assert.equal(r.reason, CHECKOUT_SHOP_RULE);
   assert.equal(r.error, 'That shipping choice is no longer offered. Pick another.');
   assert.match(dialog, /if \(err\.code === "SHIPPING_RATE_UNAVAILABLE"\) setPickedRate\(null\);/);
-  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\)/);
+  // Release C (F642): the extras gain the Square answers beside these (cartAsks.questions.test.ts).
+  assert.match(dialog, /extras: \{\s*\.\.\.checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\),/);
   const rates = choicesSrc.indexOf('{shipping.show === "rates" ? (');
   const free = choicesSrc.indexOf('{shipping.show === "free" ? (');
   assert.ok(rates > 0 && free > 0, 'the cart draws the list and the free line from the section');

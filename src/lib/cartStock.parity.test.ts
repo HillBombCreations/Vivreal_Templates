@@ -14,6 +14,8 @@ interface StockCase {
   provider: StockProvider;
   objectValue: Record<string, unknown>;
   lineId: string;
+  /** D-P9-5: the option the cart line names (the size the shopper picked), when the case names one. */
+  option?: string;
   /** `null`: checkout finds no product for the line, so it is unavailable. */
   expected: { tracked: boolean; available: number | null } | null;
 }
@@ -31,7 +33,12 @@ const table = JSON.parse(raw) as { cases: StockCase[] }; // shape asserted just 
 // F393 (SW-B25 amended, T-385S): the Square sized plain-count case became "one
 // shared count" (tracked, available 0), and nothing else changed; Client pins
 // the same hash at CL-STK4.
-const SHARED_TABLE_SHA256 = "7b12b5f67b052fe88ef528809e6dac9aebeb595019ab4656adb4196a7bef7d7d";
+// D-P9-5 (release C, vivreal-hq design-dp95-per-size-stock.md S11): VR_Client_API
+// owns the file; one `about` paragraph added, "stripe single-price, a size map is
+// ignored" replaced by "no size named is unavailable", ten cases added, some
+// naming the `option` the cart line sends. 21 cases became 31; Client pins the
+// same hash (release-c/client `3555c68`).
+const SHARED_TABLE_SHA256 = "f78fe0ac973a4b6773fb9648017c350c0e29b179e3c35ad4829595e096fc10d9";
 
 test("the table is byte identical to Client's copy (sha256, LF line endings)", () => {
   const digest = createHash("sha256").update(raw.replace(/\r\n/g, "\n")).digest("hex");
@@ -51,9 +58,21 @@ test("the table is read and covers both providers and both verdicts", () => {
   }
 });
 
+/** D-P9-5 S1, written out here so the runner does not take the rule it checks from the code it checks. */
+const isPlainObject = (v: unknown) => typeof v === "object" && v !== null && !Array.isArray(v);
+const isShape = (c: StockCase) =>
+  !isPlainObject(c.provider === "square" ? c.objectValue.price : c.objectValue.default_price) && isPlainObject(c.objectValue.stock);
+
+test("[D-P9-5 T-1] the table holds 31 cases, and names an option both on the shape and on a product that ignores it", () => {
+  assert.equal(table.cases.length, 31);
+  assert.ok(table.cases.some((c) => c.option !== undefined && isShape(c)), "a case names a size of the shape");
+  assert.ok(table.cases.some((c) => c.option !== undefined && !isShape(c)), "a case names a size another product ignores");
+  assert.ok(table.cases.some((c) => c.option === undefined && isShape(c) && c.expected === null), "the shape with no size named is unavailable");
+});
+
 for (const c of table.cases) {
   test(`tracked-stock case: ${c.name}`, () => {
-    assert.deepEqual(trackedStock(c.provider, c.objectValue, c.lineId), c.expected);
+    assert.deepEqual(trackedStock(c.provider, c.objectValue, c.lineId, c.option), c.expected);
   });
 }
 

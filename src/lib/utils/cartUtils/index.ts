@@ -6,7 +6,7 @@ import type { Product } from "@/types/Products";
 import { resolveVariant, getSafeFieldValue, resolveVariantableString } from "../variantUtils/index.ts";
 import type { Dispatch, SetStateAction } from "react";
 import { parseCartQuote, type CartQuote } from "../../cartQuote.ts";
-import { bagLineStock, capQuantity, isSharedStock, sharedAllowance } from "../../cartStock.ts";
+import { bagLineStock, capQuantity, isOptionStock, isSharedStock, sharedAllowance } from "../../cartStock.ts";
 import { CHECKOUT_NO_LONGER_AVAILABLE, CHECKOUT_OUT_OF_STOCK, CHECKOUT_SHOP_RULE, type ShortStockLine } from "../../checkoutRequest.ts";
 import { readDeliveryQuote, type CheckoutExtras, type DeliveryQuote } from "../../cart/cartSettings.ts";
 import { sitePath } from "../../sitePath.ts";
@@ -46,7 +46,8 @@ export function handleAddToCart({
   // QA-W2-1: the bag never holds more than the line's tracked stock, by
   // checkout's own rule (lib/cartStock.ts). Nothing left means nothing to add;
   // `addRefusal` tells the caller it was sold out, not unbuyable.
-  const stock = lineStock(product, priceID);
+  // D-P9-5: on one price with a count per option, that rule reads the option.
+  const stock = lineStock(product, priceID, variant);
   if (stock === 0 || stock === null) return false;
 
   const existing = cart[cartKey];
@@ -71,10 +72,33 @@ export function handleAddToCart({
     ...(unit && { unit }),
     ...(stock !== undefined ? { stock } : {}),
     ...(shared ? { sharedStock: true as const } : {}),
+    ...(isOptionStock(product) ? { optionStock: true as const } : {}),
   };
 
   setCart((prev) => ({ ...prev, [cartKey]: item }));
   return true;
+}
+
+/**
+ * Buy now's one-line cart (`cartAdapter.ts`), the line `handleAddToCart` would
+ * store with no stock read: Buy now goes straight to checkout, which checks it.
+ * D-P9-5 (S6): a product with one price and a count per option carries
+ * `optionStock`, so checkout is sent the picked option.
+ */
+export function buyNowCart(product: Product, selectedVariant: string | null, quantity: number, priceID: string): Cart {
+  const variant = resolveVariant(selectedVariant, product) ?? "default";
+  return {
+    [`${product._id}_${variant}`]: {
+      _id: product._id,
+      quantity,
+      name: getSafeFieldValue(product, "name", selectedVariant) ?? "",
+      price: getSafeFieldValue(product, "price", selectedVariant) ?? "",
+      priceID,
+      imageUrl: getSafeFieldValue(product, "imageUrl", selectedVariant) ?? "",
+      variant,
+      ...(isOptionStock(product) ? { optionStock: true as const } : {}),
+    },
+  };
 }
 
 interface CheckoutProps {
@@ -150,8 +174,8 @@ export class CheckoutCouponError extends Error {
  * The line's tracked stock by checkout's rule: `undefined` when untracked,
  * `null` when checkout holds no product for the line (it cannot be sold).
  */
-function lineStock(product: Product, priceID: string): number | undefined | null {
-  return bagLineStock(product, priceID);
+function lineStock(product: Product, priceID: string, option: string): number | undefined | null {
+  return bagLineStock(product, priceID, option);
 }
 
 /** Shown when Add to cart refuses because the chosen size has none left. */
@@ -167,10 +191,11 @@ export function addRefusal(
   cart: Cart = {},
 ): { title: string; description: string } {
   const priceID = resolveVariantableString(product.checkoutIdentifier ?? product.default_price, selectedVariant) ?? "";
-  const stock = priceID.trim() ? lineStock(product, priceID) : null;
+  const variant = resolveVariant(selectedVariant, product) ?? "default";
+  const stock = priceID.trim() ? lineStock(product, priceID, variant) : null;
   // F385: every unit of a shared count already sits in the bag on the
   // product's other options, so this one is sold out too.
-  const cartKey = `${product._id}_${resolveVariant(selectedVariant, product) ?? "default"}`;
+  const cartKey = `${product._id}_${variant}`;
   const sharedGone =
     typeof stock === "number" && isSharedStock(product) && sharedAllowance(cart, product._id, cartKey, stock) === 0;
   if (stock === 0 || sharedGone) {
@@ -222,10 +247,13 @@ export async function handleCheckout({
     throw new CheckoutLineError(UNBUYABLE_LINE_MESSAGE);
   }
 
+  // D-P9-5 (S2): a line of one price with a count per option names its option,
+  // which checkout checks, holds and records by; every other line's body is unchanged.
   const products = Object.values(cart).map((item) => ({
     price: item.priceID,
     quantity: item.quantity,
     name: item.name,
+    ...(item.optionStock ? { option: item.variant } : {}),
   }));
 
   if (products.length === 0) return;

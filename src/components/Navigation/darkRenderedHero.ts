@@ -31,11 +31,10 @@ export const COLLECTION_READING_HERO_VARIANTS: readonly string[] = ['feature-ite
 
 /**
  * Owner find 3, orchestrator decision for `[slug]` routes: their header
- * renders above the Suspense boundary, before the page's collection reads.
- * Only a Mood dark page whose stored hero reads collections waits for those
- * reads above the boundary, so its header can be given `renderedHero`. Every
- * other page streams exactly as before, with no extra await. A header that
- * streams in late was rejected (layout shift).
+ * renders before the page's collection reads. Only a Mood dark page whose
+ * stored hero reads collections waits for those reads before the header, so
+ * its header can be given `renderedHero`. Every other page draws its header
+ * with no extra await. A header drawn late was rejected (layout shift).
  */
 export function needsHeroInputAbove(
   chrome: unknown,

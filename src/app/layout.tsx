@@ -288,7 +288,9 @@ const RootLayout = async ({ children }: { children: ReactNode }) => {
                   screen changing — the site looks frozen and people click
                   again. Suspense because RouteProgress reads
                   useSearchParams, which opts the tree into client rendering
-                  without one.
+                  without one. It is the one useSearchParams() caller left
+                  (F323: the shop takes its query from the route), and its
+                  content is under 500 bytes, so React sends it in place.
                 */}
                 <Suspense fallback={null}>
                     <RouteProgress />

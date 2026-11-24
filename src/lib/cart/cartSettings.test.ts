@@ -23,6 +23,9 @@ import {
   readDeliveryQuote,
 } from './cartSettings.ts';
 import { CHECKOUT_SHOP_RULE, checkoutRefusal } from '../checkoutRequest.ts';
+import * as cartSettingsModule from './cartSettings.ts';
+// The renderer's REAL pickup rule, by relative path: the package entry imports next/link.
+import { pickupWindows } from '../../../node_modules/@hillbombcreations/site-renderer/dist/lib/pickupWindows.js';
 
 const dialog = fs.readFileSync(new URL('../../components/Navigation/CartDialog.tsx', import.meta.url), 'utf8');
 
@@ -73,7 +76,8 @@ test('REFUSE: under the minimum the button stays disabled; ALLOW: exactly at it'
 
 test('ALLOW: the promo box hides when switched off', () => {
   assert.equal(readCartSettings({ showPromo: false }).showPromo, false);
-  assert.match(dialog, /\{itemsArray\.length > 0 && settings\.showPromo \? \(/);
+  // F426 D4 (release C): the dialog asks one rule, the switch AND the plan.
+  assert.match(dialog, /\{itemsArray\.length > 0 && showsPromoBox\(settings, siteData\?\.tier\) \? \(/);
 });
 
 test('ALLOW: a pickup time and a note ride checkout; the note is cleaned and capped', () => {
@@ -139,7 +143,10 @@ test('REFUSE (B3): no values.cart, delivery on, ships: the checkout body is toda
   assert.equal(choiceBlock({ settings, kind, pickupOffered: false, pickupAt: null, deliveryInArea: false }), null, 'nothing blocks checkout');
   // F58 and F59 add the picked delivery day and shipping rate to the same call; checkoutChoice drops each
   // for another way or with no setting (deliveryDay.test.ts, shipping.test.ts).
-  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\)/, 'the dialog sends exactly this');
+  // Release C (F642): the extras gain the Square answers beside these, sent
+  // only when a question was answered (cartAsks.questions.test.ts), so this
+  // cart's body is still exactly these.
+  assert.match(dialog, /extras: \{\s*\.\.\.checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay, shipRateId \}\)\),/, 'the dialog sends exactly this');
   assert.match(dialog, /const kind = currentKind\(choices, pickedKind\);/);
 });
 
@@ -192,7 +199,13 @@ test('REFUSE: a shop rule keeps the cart open with its own words; an unknown cod
 test('REFUSE: the two shortcuts past the cart (Added to bag, Buy now) open it when a choice is needed', () => {
   for (const rel of ['../../components/PageTemplates/ProductDetailClient/FloatingCartDialog.tsx', '../cartAdapter.ts']) {
     const src = fs.readFileSync(new URL(rel, import.meta.url), 'utf8');
-    const ask = src.indexOf('if (cartNeedsChoices(readCartSettings(siteData?.cart), { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) })) {');
+    // Release C (SQP-T3): both doors read the settings and ways once, then ask
+    // `cartNeedsChoices` (with the Square question, cartAsks.doors.test.ts).
+    assert.ok(
+      src.includes('const ways = { deliveryOn: deliveryConfigOf(siteData?.pageConfigs)?.enabled === true, ships: shipsOrders(siteData?.businessInfo) };'),
+      `${rel} reads the shop's ways`,
+    );
+    const ask = src.indexOf('cartNeedsChoices(settings, ways)');
     assert.ok(ask > 0, `${rel} asks first`);
     assert.ok(ask < src.indexOf('await handleCheckout('), `${rel} asks before checking out`);
   }
@@ -203,4 +216,65 @@ test('REFUSE: the cart quote forwards only a cleaned ZIP and this site\'s id, ne
   assert.match(route, /cleanZip\(rawFulfilment\.zip\)/);
   assert.match(route, /zip && siteId \? \{ siteId, fulfilment: \{ kind: "delivery", zip \} \} : \{\}/);
   assert.ok(!/fee/i.test(route.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')), 'no fee anywhere in the code');
+});
+
+// F426 D4, the tier half (release C): Free and Basic shops cannot make promo
+// codes (tier-quotas couponsEnabled false), so their carts draw no code box.
+// Read through the module namespace, so at a base without the rule each row
+// fails on its own assertion rather than the file failing to load.
+
+function promoRule(): { showsPromoBox: (s: ReturnType<typeof readCartSettings>, tier: unknown) => boolean } {
+  const ns = cartSettingsModule as unknown as Record<string, unknown>; // named exports, checked below
+  assert.equal(typeof ns.showsPromoBox, 'function', 'cartSettings exports showsPromoBox');
+  return ns as unknown as { showsPromoBox: (s: ReturnType<typeof readCartSettings>, tier: unknown) => boolean }; // checked above
+}
+
+test('ALLOW (F426 D4): a Pro or Enterprise shop with the switch on draws the promo code box', () => {
+  const { showsPromoBox } = promoRule();
+  for (const tier of ['pro', 'enterprise', ' Pro ', 'ENTERPRISE']) {
+    assert.equal(showsPromoBox(readCartSettings(undefined), tier), true, `tier ${JSON.stringify(tier)}`);
+  }
+});
+
+test('REFUSE (F426 D4): a Free or Basic shop, or one with no known plan, draws no promo code box', () => {
+  const { showsPromoBox } = promoRule();
+  for (const tier of ['free', 'basic', 'Basic', undefined, null, '', 'starter', 'pro-legacy', 3]) {
+    assert.equal(showsPromoBox(readCartSettings(undefined), tier), false, `tier ${JSON.stringify(tier)}`);
+  }
+  assert.equal(showsPromoBox(readCartSettings({ showPromo: false }), 'pro'), false, 'the owner switch still hides it');
+  assert.doesNotMatch(dialog, /&& settings\.showPromo \? \(/, 'the dialog never draws the box on the switch alone');
+});
+
+// F429 part 2 (release C; QR-18 2b; walk D-12): the pickup day row offers only
+// days with a time left, read off the renderer's real `pickupWindows`.
+const choices = fs.readFileSync(new URL('../../components/Navigation/CartChoices.tsx', import.meta.url), 'utf8');
+
+function offeredDays(): <T extends { times: readonly unknown[] }>(days: readonly T[]) => T[] {
+  const ns = cartSettingsModule as unknown as Record<string, unknown>; // named exports, checked below
+  assert.equal(typeof ns.pickupDaysOffered, 'function', 'cartSettings exports pickupDaysOffered');
+  return ns.pickupDaysOffered as <T extends { times: readonly unknown[] }>(days: readonly T[]) => T[]; // checked above
+}
+
+/** Open daily 9am to 5pm in Chicago; 5:30pm there on Friday 20 November 2026, past today's last time. */
+const LATE_TODAY = pickupWindows({
+  hours: { weekly: ['Daily: 9am to 5pm'] },
+  timeZone: 'America/Chicago',
+  now: new Date('2026-11-20T23:30:00.000Z'),
+  noticeMinutes: 120,
+  daysAhead: 2,
+});
+
+test('REFUSE (F429 part 2): today with no times left is not offered', () => {
+  assert.equal(LATE_TODAY[0]?.date, '2026-11-20', 'control: the renderer still returns today');
+  assert.equal(LATE_TODAY[0]?.times.length, 0, 'control: with no times left');
+  const offered = offeredDays()(LATE_TODAY);
+  assert.equal(offered.some((d) => d.date === '2026-11-20'), false, 'a day with no time is not a button');
+  assert.doesNotMatch(choices, /No pickup times this day/, 'the cart never draws an empty day to explain');
+});
+
+test('ALLOW (F429 part 2): a day with times left is offered, in order, with its times', () => {
+  const offered = offeredDays()(LATE_TODAY);
+  assert.deepEqual(offered.map((d) => d.date), ['2026-11-21', '2026-11-22']);
+  assert.ok(offered.every((d) => d.times.length > 0));
+  assert.match(choices, /pickupDaysOffered\(\s*pickupWindows\(/, 'the cart offers the filtered days');
 });

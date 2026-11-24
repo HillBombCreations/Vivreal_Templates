@@ -1,12 +1,10 @@
 import 'server-only';
-import { Suspense } from 'react';
 import { notFound } from 'next/navigation';
 import Navbar from '@/components/Navigation/Navbar';
 import { darkRenderedHero, needsHeroInputAbove } from '@/components/Navigation/darkRenderedHero';
 import Footer from '@/components/Footer';
 import {
   composePage,
-  ComposedPageSkeleton,
   renderedHeroFor,
   resolvePagePalette,
   TitleBand,
@@ -26,14 +24,13 @@ import ListLoadFailedNotice from '@/components/ListLoadFailedNotice';
 import { refuseUnknownEmptiness } from '@/lib/degradedPageRefusal';
 import type { PageConfig, SiteData } from '@/types/SiteData';
 import type { ProductQuery } from '@/lib/composition/productQuery';
-import { skeletonLabelsFor } from '@/lib/composition/skeletonLabels';
 
 /**
  * composePage component overrides (CompositionOptions.components). Typed
  * loosely here for the same reason [slug]/page.tsx types its `components`
  * local `any`: the installed renderer's CompositionComponentOverrides lags
  * the working-tree keys during bumps. The values are always the live composed
- * wrappers (see liveProductsOverrides.ts).
+ * wrappers (see liveProductsOverrides.tsx).
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ComposeComponents = any;
@@ -76,40 +73,6 @@ export async function composedPageIsEmpty(args: {
 }
 
 /**
- * Derive the structure hints ComposedPageSkeleton needs from the SAME page
- * config that drives the real render — format, labels, the primary binding's
- * displayAs, whether a filter (second collection) binding exists, and the
- * enabled block count. All synchronous: no data fetch, so the Suspense
- * fallback below can be page-shaped from the first flush.
- */
-export function skeletonPropsFor(composedPage: PageConfig) {
-  const blocks = (composedPage.blocks ?? []).filter((b) => b?.enabled !== false);
-  let displayAs: string | undefined;
-  let hasFilters = false;
-  for (const block of blocks) {
-    const bindings = (block?.config?.bindings ?? []) as Array<
-      { collectionId?: string | null; displayAs?: string } | undefined
-    >;
-    const collectionBindings = bindings.filter((bd) => !!bd?.collectionId);
-    if (collectionBindings.length === 0) continue;
-    displayAs ??= collectionBindings[0]?.displayAs;
-    // The collection block's second collection binding is the filter binding
-    // (renderer blocks.ts `case 'collection'` — primary = first, filter = second).
-    if (collectionBindings.length > 1) hasFilters = true;
-    break;
-  }
-  return {
-    format: composedPage.format,
-    labels: skeletonLabelsFor(composedPage),
-    // Renderer default for a collection block's primary binding is 'grid'.
-    displayAs: displayAs ?? 'grid',
-    hasFilters,
-    blockCount: blocks.length || 1,
-    slug: composedPage.slug,
-  };
-}
-
-/**
  * Renders the generic composed-page path (about / standard / list / grid /
  * static / collection-list).
  *
@@ -124,13 +87,13 @@ export function skeletonPropsFor(composedPage: PageConfig) {
  * and interactive/detail formats (shows, team, checkout-*) must NOT be routed
  * here — they are handled by their own arms in [slug]/page.tsx.
  *
- * Streaming split (2026-07-13): the shell (Navbar / transitional title band /
- * Footer) renders SYNCHRONOUSLY — siteData + pageConfig are already resolved —
- * while the slow part (buildPageContext's collection fetches + composePage)
- * streams in behind a Suspense boundary whose fallback is the renderer's
- * ComposedPageSkeleton, derived from the same composedPage config. The user
- * sees the real navbar + real page title + a structure-matched shimmer
- * immediately, and the content pops in without layout shift.
+ * F323 (release C): the page is sent complete. There is no page-authored
+ * Suspense boundary, so no grey waiting box and no hidden segment: a reader
+ * that runs no scripts (a search engine, a link preview) gets the whole page,
+ * and a guard anywhere in the render sets a real status. On Amplify a request
+ * render already arrived in one piece, so visitors with scripts see the same
+ * page, minus the box's flash. `pageBoundaries.test.ts` and the build check's
+ * no-script read (`scripts/isr-build-check.mjs` `checkNoScriptReads`) pin it.
  */
 export async function renderComposedPage({
   siteData,
@@ -143,7 +106,7 @@ export async function renderComposedPage({
   composedPage: PageConfig;
   /**
    * Optional composePage component overrides — the live storefront wrappers
-   * (LIVE_PRODUCTS_OVERRIDES). An override only fires when composePage renders
+   * (liveProductsOverrides). An override only fires when composePage renders
    * that arm, so passing them for pages without a storefront is a no-op.
    * Without them a storefront group on a generic/catalog page renders the bare
    * uncontrolled arm — no CartAdapter, so Add/Buy silently no-op (the first
@@ -164,17 +127,14 @@ export async function renderComposedPage({
   lookupQuery?: string;
 }) {
   // QA-G1-2: a REAL 404 for an empty generic page. The emptiness verdict needs
-  // the page's collection reads, and a status can only be set before the first
-  // byte flushes, which is the instant the Suspense boundary below suspends. So
-  // a page that COULD be empty has its data read here, above the boundary, and
-  // the resolved context is handed to the body, which then renders it without
-  // reading again: one read per request, as before.
+  // the page's collection reads. Since F323 the page has no box and is sent
+  // complete, so a status set anywhere in the render is real; the read stays
+  // here, before the shell, and the resolved context is handed to the body,
+  // which then renders it without reading again: one read per request.
   //
-  // Only pages that could be empty pay for it. A page with authored copy (a
+  // Only pages that could be empty pay for it here. A page with authored copy (a
   // written hero, static prose, a form) is never empty whatever its lists hold,
-  // so it skips this read and streams exactly as before. The pages that wait are
-  // the ones whose whole body is collection items, which show nothing useful
-  // until those reads land anyway.
+  // so it skips this read and the body reads its data itself.
   //
   // Ordering is the old body guard's, unchanged: a failed read REFUSES (a 5xx,
   // now a real one too, "come back later") before an empty read can 404, because
@@ -203,7 +163,7 @@ export async function renderComposedPage({
   }
 
   // Owner find 3 (renderer 1.92.0): a Mood dark page whose stored hero reads
-  // collections (a `feature-item`) also reads above the boundary, so the header
+  // collections (a `feature-item`) also reads before the shell, so the header
   // can be told what top the hero will actually render. It reuses the read
   // above when there was one, and the body is handed the same context, so the
   // page is still read once. Every other page is unchanged: no extra await.
@@ -244,20 +204,14 @@ export async function renderComposedPage({
   //
   // The MOUNT POINT stays here deliberately. The renderer also offers
   // `options.titleBand: true`, which renders the band inside composePage; that
-  // is the seam the Studio preview uses. This route streams, and the band
-  // being synchronous OUTSIDE the Suspense boundary is what puts the real page
-  // heading on screen before the collection fetches resolve. Owning the mount
-  // point is what obliges this file to keep passing `suppressSrTitle` below,
-  // so composePage does not stack its sr-only h1 on top.
+  // is the seam the Studio preview uses. Here the band is Templates chrome
+  // beside the body, as it has always been, so the bytes of a page that draws
+  // it do not move. Owning the mount point is what obliges this file to keep
+  // passing `suppressSrTitle` below, so composePage does not stack its sr-only
+  // h1 on top.
   const showTransitionalTitleBand = shouldRenderTitleBand(
     composedPage as unknown as RendererPageConfig,
   );
-
-  // The transitional title band already renders the page title in the shell for
-  // generic formats — strip labels from the skeleton there so the fallback
-  // doesn't double-render the same heading while streaming.
-  const skeletonProps = skeletonPropsFor(composedPage);
-  if (showTransitionalTitleBand) skeletonProps.labels = undefined;
 
   // Renderer #140 review N1 (1.98.5): the band sits inside the page's treated
   // area. composePage paints a colour treatment or a chosen page background on
@@ -286,25 +240,22 @@ export async function renderComposedPage({
       chrome={siteData.chrome}
     />
   );
-  // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-  // streaming begins the instant this boundary suspends, which flushes a
-  // 200 shell before ComposedPageBody runs. Anything that must set a
-  // STATUS therefore runs above this boundary, and since QA-G1-2 the
-  // emptiness guard does (top of renderComposedPage), so an empty page
-  // answers a real 404 and a failed read a real 5xx. Nothing inside
-  // ComposedPageBody may call notFound().
+  // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c; F323):
+  // the body has no page-authored box, so the page is sent complete and a
+  // status set anywhere in the render is real. The emptiness guard still runs
+  // at the top of renderComposedPage, where it reads once for the body. Adding
+  // a box here would hide the page from readers that run no scripts and turn
+  // any later guard into a soft 200: `pageBoundaries.test.ts` refuses it.
   const body = (
-    <Suspense fallback={<ComposedPageSkeleton {...skeletonProps} />}>
-      <ComposedPageBody
-        siteData={siteData}
-        composedPage={composedPage}
-        components={components}
-        productQuery={productQuery}
-        lookupQuery={lookupQuery}
-        suppressSrTitle={showTransitionalTitleBand}
-        context={context}
-      />
-    </Suspense>
+    <ComposedPageBody
+      siteData={siteData}
+      composedPage={composedPage}
+      components={components}
+      productQuery={productQuery}
+      lookupQuery={lookupQuery}
+      suppressSrTitle={showTransitionalTitleBand}
+      context={context}
+    />
   );
 
   if (bandTreatment) {
@@ -330,13 +281,12 @@ export async function renderComposedPage({
 }
 
 /**
- * The slow half — collection fetches (buildPageContext) + composePage. Runs
- * behind the Suspense boundary above so the shell + skeleton flush first.
+ * The page body: collection fetches (buildPageContext) + composePage.
  *
  * When `renderComposedPage` already read the page's data to decide emptiness
  * (QA-G1-2), that `context` is passed in and rendered as is, so the read
- * happens once. The emptiness guard lives above the boundary, not here: from
- * here a 404 could only swap the body under an already-committed 200.
+ * happens once. The emptiness guard lives in `renderComposedPage`, with the
+ * read it needs, so the body never decides a status.
  */
 async function ComposedPageBody({
   siteData,
@@ -371,8 +321,8 @@ async function ComposedPageBody({
       productQuery,
     }));
 
-  // No emptiness guard here. Since QA-G1-2 it runs above the Suspense boundary
-  // in `renderComposedPage`, where a 404 is a real status. A page that skipped
+  // No emptiness guard here. Since QA-G1-2 it runs in `renderComposedPage`,
+  // with the read it needs. A page that skipped
   // the early read is either one `pageCouldBeEmpty` rules out (so
   // `decidePageEmptiness` can only answer not-empty for it) or one the shopper
   // searched or filtered, whose zero rows mean "no matches" and must render.
@@ -396,11 +346,9 @@ async function ComposedPageBody({
   };
   // H177: the inline rich-text image resolver.
   //
-  // It is mounted HERE, inside the Suspense boundary, and not up in
-  // `renderComposedPage` beside Navbar/TitleBand. The map is a RESULT of
-  // `buildPageContext`, which is the await this component exists to hold; the
-  // shell above has not got it yet and could only get it by awaiting the same
-  // call, which would delete the streaming split for every generic page.
+  // It is mounted HERE, beside the body, and not up in `renderComposedPage`
+  // beside Navbar/TitleBand. The map is a RESULT of `buildPageContext`, which
+  // is the await this component holds; the shell does not have it.
   //
   // Nothing in the synchronous shell needs it: Navbar, TitleBand and Footer are
   // Templates chrome, not CMS rich text.

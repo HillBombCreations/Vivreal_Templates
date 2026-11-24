@@ -87,7 +87,8 @@ test('REFUSE: a day checkout no longer takes says so, and the cart asks the shop
   assert.equal(r.reason, CHECKOUT_SHOP_RULE);
   assert.equal(r.error, 'That delivery day is no longer available. Pick another day.');
   assert.match(dialog, /if \(err\.code === "DELIVERY_DAY_UNAVAILABLE"\) void onCheckZip\(\);/);
-  assert.match(dialog, /extras: checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay(, shipRateId)? \}\)\)/);
+  // Release C (F642): the extras gain the Square answers beside these (cartAsks.questions.test.ts).
+  assert.match(dialog, /extras: \{\s*\.\.\.checkoutExtras\(checkoutChoice\(\{ settings, choices, kind, note, pickupAt, zip, deliveryOn: deliveryDay(, shipRateId)? \}\)\),/);
   // A new ZIP, a new bag or a new quote clears the pick.
   assert.equal((dialog.match(/setDeliveryDay\(null\);/g) ?? []).length, 3);
 });

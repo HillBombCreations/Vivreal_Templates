@@ -1,11 +1,8 @@
-import { Suspense } from "react";
 import { notFound, permanentRedirect } from "next/navigation";
 import Navbar from "@/components/Navigation/Navbar";
 import { darkRenderedHero, needsHeroInputAbove } from "@/components/Navigation/darkRenderedHero";
 import Footer from "@/components/Footer";
-import { ComposedPageSkeleton } from "@hillbombcreations/site-renderer";
 import type { PageConfig as RendererPageConfig } from "@hillbombcreations/site-renderer";
-import { skeletonPropsFor } from "@/lib/renderComposedPage";
 import { getSiteData, getPageLabel } from "@/lib/api/siteData";
 import { resolveMissingItemRedirect } from "@/lib/redirects";
 import { assertUpstreamHealthy, isDegradedSiteData, refuseNegativeClaimFromFloor } from "@/lib/api/siteData/degraded";
@@ -47,7 +44,7 @@ import { getCollectionItems, getIntegrationItems } from "@/lib/api/collections";
 import { SNAPSHOT_RECORDER } from "@/lib/api/client";
 import { fillSnapshotAtBuild } from "@/lib/api/snapshot/fill";
 import { pageMustDecideEmptiness } from "@/lib/api/composition/pageEmptiness";
-import { LIVE_PRODUCTS_OVERRIDES } from "@/components/PageTemplates/liveProductsOverrides";
+import { liveProductsOverrides } from "@/components/PageTemplates/liveProductsOverrides";
 import CoordinatedScheduleComposed from "@/components/PageTemplates/CoordinatedScheduleComposed";
 import { parseProductQuery } from "@/lib/composition/productQuery";
 import { readLookupQuery } from "@/lib/composition/lookupQuery";
@@ -380,9 +377,8 @@ export default async function DynamicPage({
 
   // W25 review C2 (owner decision): a page whose body is entirely kit seed is
   // not served until the owner writes real text (see src/lib/seo/seedOnlyPaths.ts).
-  // HERE, in the un-suspended parent and before renderComposedPage and the
-  // composed arm's <Suspense>, so the 404 is a real status (see the GUARD NOTE
-  // below). After assertUpstreamHealthy, and a failed list read never counts,
+  // HERE, before renderComposedPage and the composed arm, so the 404 is decided
+  // before any page read (see the GUARD NOTE below). After assertUpstreamHealthy, and a failed list read never counts,
   // so an upstream wobble cannot 404 a live page.
   if (pageConfig && isSeedOnlySlug(await getSeedOnlyPaths(), pageConfig.slug)) return notFound();
 
@@ -621,11 +617,13 @@ export default async function DynamicPage({
         // storefront, lookup or schedule gets the empty query and caches
         // like the home page. See src/lib/pages/pageReadsQuery.ts.
         const sp = pageReadsQuery(composedPage) && mayReadQuery() ? ((await searchParams) ?? {}) : {};
+        // F323: the shop takes the same parsed query the items are read by.
+        const productQuery = parseProductQuery(sp);
         return renderComposedPage({
           siteData,
           composedPage,
-          components: LIVE_PRODUCTS_OVERRIDES,
-          productQuery: parseProductQuery(sp),
+          components: liveProductsOverrides(productQuery),
+          productQuery,
           lookupQuery: readLookupQuery(sp, composedPage),
         });
       }
@@ -643,7 +641,7 @@ export default async function DynamicPage({
     const productQuery = parseProductQuery(sp);
 
     // Components override: the live storefront wrappers (BOTH products
-    // topologies — see liveProductsOverrides.ts) for every composed format,
+    // topologies, see liveProductsOverrides.tsx) for every composed format,
     // plus per-format extras (SubscribePage SP-6 Task 3, CoordinatedSchedule
     // S2). An override only fires when composePage renders that arm, so
     // pages without the block are unaffected. The Studio preview (which never
@@ -653,7 +651,7 @@ export default async function DynamicPage({
     // `any`: CompositionComponentOverrides in the installed renderer can lag
     // working-tree keys during bumps.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let components: any = { ...LIVE_PRODUCTS_OVERRIDES };
+    let components: any = { ...liveProductsOverrides(productQuery) };
 
     // S2/OD#3 — schedule active view from `?view=` searchParam.
     // Validated against the three legal values (agenda|month|map); any other
@@ -729,34 +727,24 @@ export default async function DynamicPage({
         chrome={siteData.chrome}
       />
     );
-    // Streaming split (2026-07-13): buildPageContext's collection fetches
-    // are the slow half — they stream in behind this boundary while the
-    // shell (Navbar/band/Footer) + a structure-derived skeleton flush
-    // immediately. Same model as renderComposedPage; the fallback is
-    // derived from the SAME composedPage config as the real render.
-    //
-    // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c):
-    // this is a page-authored Suspense boundary, not the deleted
-    // implicit loading.tsx wrap — but it has the same failure mode.
-    // Streaming begins the instant this boundary suspends, which
-    // flushes a 200 shell before ComposedFormatBody runs. The
-    // `notFound()` inside ComposedFormatBody (the isEmpty guard below)
-    // therefore CANNOT set a 404 status — it only swaps the body. Any
-    // future guard on this route must run in the un-suspended parent
-    // (DynamicPage, above this boundary), not inside ComposedFormatBody.
+    // GUARD NOTE (docs/bugs/templates-soft-404-and-301-status, Change 1c; F323):
+    // the body has no page-authored box (release C, F323), so the page is
+    // sent complete: a reader that runs no scripts gets the whole page, and
+    // the `notFound()` inside ComposedFormatBody (the isEmpty guard below)
+    // sets a real 404. Same model as renderComposedPage. A box here would
+    // hide the page from those readers and turn that guard back into a soft
+    // 200: `pageBoundaries.test.ts` refuses one.
     const body = (
-      <Suspense fallback={<ComposedPageSkeleton {...skeletonPropsFor(composedPage)} />}>
-        <ComposedFormatBody
-          siteData={siteData}
-          composedPage={composedPage}
-          format={format}
-          productQuery={productQuery}
-          components={components}
-          scheduleView={scheduleView}
-          suppressSrTitle={showTransitionalTitleBand}
-          {...(heroContext ? { context: heroContext } : {})}
-        />
-      </Suspense>
+      <ComposedFormatBody
+        siteData={siteData}
+        composedPage={composedPage}
+        format={format}
+        productQuery={productQuery}
+        components={components}
+        scheduleView={scheduleView}
+        suppressSrTitle={showTransitionalTitleBand}
+        {...(heroContext ? { context: heroContext } : {})}
+      />
     );
 
     if (bandTreatment) {
@@ -796,13 +784,11 @@ export default async function DynamicPage({
 }
 
 /**
- * The slow half of the composed-format arm — buildPageContext (collection /
- * integration fetches) + composePage. Runs behind the Suspense boundary in
- * DynamicPage so the shell + structure-derived skeleton flush first.
+ * The body of the composed-format arm: buildPageContext (collection /
+ * integration fetches) + composePage.
  *
- * The generic-format isEmpty guard moved here with the fetch; it now fires
- * mid-stream (Next emits a client-side correction to the not-found boundary).
- * Accepted tradeoff for streaming — mirrors renderComposedPage's body.
+ * The generic-format isEmpty guard lives here with the fetch. Since F323 the
+ * page has no box, so its `notFound()` sets a real 404 status.
  */
 async function ComposedFormatBody({
   siteData,
@@ -854,7 +840,7 @@ async function ComposedFormatBody({
   // predict, and a stale copy of a 404 rule is how the band drifted.
   //
   // The LIVE copy, and the full reasoning for the ordering, the GENERIC_FORMATS
-  // scope and what a mid-stream refusal can and cannot set, is
+  // scope and the refusal, is
   // `src/lib/renderComposedPage.tsx`. In one line: a failed collection read
   // resolves to `[]` exactly as an empty collection does, so `isEmpty` alone
   // turned an upstream wobble into a 404 on real published pages. Refuse first,

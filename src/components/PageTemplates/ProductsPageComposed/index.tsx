@@ -9,6 +9,7 @@ import type {
 import { useSiteData } from "@/contexts/SiteDataContext";
 import SiteRendererBridge from "@/components/SiteRendererBridge";
 import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsLiveAdapters";
+import type { ProductQuery } from "@/lib/composition/productQuery";
 
 /**
  * Live ProductsPage injected into composePage via `CompositionOptions.components`
@@ -19,9 +20,9 @@ import { useProductsLiveAdapters } from "@/components/PageTemplates/useProductsL
  *
  * It receives the renderer's `ProductsPageProps` from `renderSection` — `items`
  * already mapped to `ContentItem[]` by the server-side product bridge, `filters`
- * already shaped. It seeds the controls from the URL (the server already applied
- * those same params to `items`) and routes filter/sort/search changes back to
- * the URL. This is the composePage analog of `ProductsPageClient`, which it
+ * already shaped, plus the route's parsed `query` (F323). It seeds the controls
+ * from that query (the server already applied it to `items`) and routes
+ * filter/sort/search changes back to the URL. This is the composePage analog of `ProductsPageClient`, which it
  * supersedes for migrated routes (legacy client kept as the rollback path).
  *
  * The controlled-query / detail-routing / pagination wiring is shared with the
@@ -38,9 +39,10 @@ export default function ProductsPageComposed({
   sectionConfig,
   showHeader,
   pageHeadingLevel,
-}: ProductsPageProps) {
+  query,
+}: ProductsPageProps & { query: ProductQuery }) {
   const siteData = useSiteData();
-  const adapters = useProductsLiveAdapters({ slug, detailEnabled });
+  const adapters = useProductsLiveAdapters({ slug, detailEnabled, query });
 
   const siteLogo = siteData?.logo?.currentFile?.source || "/logo.png";
 

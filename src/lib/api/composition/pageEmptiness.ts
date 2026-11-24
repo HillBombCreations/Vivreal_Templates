@@ -250,11 +250,12 @@ function servedIfItDraws(verdict: EmptinessVerdict, drawsContent: () => boolean)
 /**
  * The structural half of the verdict, from the page config alone: no read.
  *
- * QA-G1-2: `renderComposedPage` calls this BEFORE its Suspense boundary to decide
- * which pages must have their data read before the shell flushes. Only a page
- * this returns true for can ever be judged empty, so only those pages give up
- * the streaming split to earn a real 404 status; every page with authored copy
- * keeps streaming exactly as before. `decidePageEmptiness` below reads the same
+ * QA-G1-2: `renderComposedPage` calls this before it draws the shell, to decide
+ * which pages must have their data read first. Only a page this returns true
+ * for can ever be judged empty, so only those pages read before the shell to
+ * earn a real 404 status; every page with authored copy reads in its body.
+ * (F323 removed the Suspense boundary that made the order matter for the
+ * status; the order is kept so the page is still read once.) `decidePageEmptiness` below reads the same
  * function, so the two cannot disagree about which pages could be empty.
  */
 export function pageCouldBeEmpty(args: {
@@ -276,8 +277,8 @@ export function pageCouldBeEmpty(args: {
 const GENERIC_FORMATS = new Set(['standard', 'list', 'grid']);
 
 /**
- * QA-G1-2: true when this page's body could be empty, so its data must be read
- * BEFORE the Suspense boundary for a 404 to carry a real status. Generic formats
+ * QA-G1-2: true when this page's body could be empty, so its data is read
+ * before the shell and the 404 carries a real status. Generic formats
  * only, and only pages whose config holds no authored content
  * (`pageCouldBeEmpty`, the same structural test the verdict itself applies).
  * Config only, no read, and no request input: `generateMetadata` calls it

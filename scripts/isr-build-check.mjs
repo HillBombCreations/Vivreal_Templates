@@ -53,6 +53,17 @@
  *     Gate unset: f. home never shows words older than a page the same
  *     server served (P1, I1).
  *
+ *  4. F323 (release C, T-323-3): every 200 read of `NO_SCRIPT_PATHS` passes the
+ *     no-script measure (`scripts/no-script-read.mjs`): its `<h1>` and at least
+ *     90 % of its text visible without scripts, and its own words visible.
+ *     Shop pages (T-SH-3): the first after-flip 200 read of `/about` that holds
+ *     the storefront the owner added passes the same measure, the storefront's
+ *     words visible (the shop takes its query from the route, so a stored page
+ *     that gains one renders it on the server, with no box).
+ *
+ *   --serve keeps the fixture and `next start` up after the assertions, for
+ *   the scripts-on render check (F323 R-323-L); stop it with Ctrl-C.
+ *
  * Prints the route table (static, ISR, dynamic) so a before and after can be
  * compared. Exit 0 only when every assertion holds. The assertions are pure
  * and exported; scripts/isr-build-check.test.mjs pins them with planted
@@ -65,6 +76,8 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { passesWithoutScripts, readWithoutScripts } from './no-script-read.mjs';
+
 export const SITE_ID = '6a0000000000000000000a01';
 export const POSTS = '6a0000000000000000000c01';
 const UPSTREAM_PORT = 4711;
@@ -72,7 +85,24 @@ const APP_PORT = 4712;
 /** The fixture site's revalidate webhook secret (never a real one). */
 const REVALIDATE_SECRET = 'fixture-revalidate-secret';
 
-const block = (id, dispatchId, config = {}, order = 0) => ({ id, type: { kind: 'page-template', dispatchId }, order, enabled: true, config });
+/**
+ * The registry kind of each section the fixture uses. F323 (T-323-3's
+ * precondition, design-home-pages.md 5): every measured page must hold an
+ * `<h1>`, and it did not: every section was typed `page-template`, which the
+ * site engine draws only for its page templates (`products`, `collection`), so
+ * the section headers, the link profile and the link stack drew nothing and the
+ * fixture's pages were the menu and the footer alone. The other checks only
+ * looked for their words anywhere in the HTML (the page data carries them), so
+ * they passed on empty bodies. Each section now has its own kind.
+ */
+const STATIC_SECTIONS = new Set(['section-header', 'link-profile', 'link-stack']);
+const block = (id, dispatchId, config = {}, order = 0) => ({
+  id,
+  type: { kind: STATIC_SECTIONS.has(dispatchId) ? 'static' : 'page-template', dispatchId },
+  order,
+  enabled: true,
+  config,
+});
 
 /** F41: the page the owner adds after the build, with no webhook. */
 export const NEW_PAGE_SLUG = 'whats-new';
@@ -358,6 +388,48 @@ export const READ_PATHS = [
 export const STOREFRONT_TEXT = 'First loaf';
 
 /**
+ * F323 (T-323-3): the paths a reader without scripts must get complete, each
+ * with the words it must show. `/shop` and `/menu` draw the storefront in a
+ * request render, so their item title must be visible too: no box may hide it
+ * (T-SH-3, a sorted shop read too).
+ */
+export const NO_SCRIPT_PATHS = {
+  '/': [HOME_BEFORE_TEXT],
+  '/about': [],
+  '/links': [],
+  '/book': [OWNER_BOOK_TEXT],
+  '/shop': [STOREFRONT_TEXT],
+  '/menu': [STOREFRONT_TEXT],
+  '/menu?sort=price': [STOREFRONT_TEXT],
+  '/events': [],
+  '/faq?q=loaf': [],
+  '/blog/first-loaf': ['First loaf'],
+};
+
+/** One read's no-script verdict, or null when the path is not measured or did not answer 200. */
+export function noScriptVerdict(read) {
+  const mustShow = NO_SCRIPT_PATHS[read.path];
+  if (!mustShow || read.second?.status !== 200) return null;
+  return passesWithoutScripts(readWithoutScripts(read.second.body ?? ''), mustShow);
+}
+
+/** F323: every measured 200 read passes the no-script measure. `reads` as `checkResponses` takes them. Returns failures. */
+export function checkNoScriptReads(reads) {
+  const failures = [];
+  const byPath = new Map(reads.map((r) => [r.path, r]));
+  for (const p of Object.keys(NO_SCRIPT_PATHS)) {
+    const r = byPath.get(p);
+    if (!r) {
+      failures.push(`${p} was not read for the no-script measure`);
+      continue;
+    }
+    const verdict = noScriptVerdict(r);
+    if (verdict && !verdict.ok) failures.push(`${p} without scripts: ${verdict.reasons.join('; ')}`);
+  }
+  return failures;
+}
+
+/**
  * Review B2: after the build, the owner adds a shop section to the cached
  * `/about`, the save sends a signed `site.updated`, and `/about` is read again.
  * It must never answer 500, AND it must show the new storefront (unfiltered)
@@ -376,6 +448,20 @@ export function checkAfterFlip(flip, after) {
     failures.push('/about never showed the storefront the owner added (the regeneration failed behind a stale copy)');
   }
   return failures;
+}
+
+/**
+ * Shop pages (T-SH-3): the first after-flip 200 read whose HTML holds the
+ * storefront the owner added must pass the no-script measure with the
+ * storefront's words visible, so a reader without scripts gets it in place,
+ * not in a hidden segment or only in the page's data script. No such read is
+ * `checkAfterFlip`'s failure, not this one's. `after` as `checkAfterFlip` takes it.
+ */
+export function checkAfterFlipNoScript(after) {
+  const first = after.find((r) => r.status === 200 && (r.body ?? '').includes(STOREFRONT_TEXT));
+  if (!first) return [];
+  const verdict = passesWithoutScripts(readWithoutScripts(first.body), [STOREFRONT_TEXT]);
+  return verdict.ok ? [] : [`${first.path} after the owner added a storefront, without scripts: ${verdict.reasons.join('; ')}`];
 }
 
 /**
@@ -663,9 +749,21 @@ async function timedRead(p) {
 
 /** Stop `next start` and wait for the port to close, so the next server or run cannot read this one. */
 async function stopServer(server) {
-  if (process.platform === 'win32') await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
-  else server.kill('SIGTERM');
+  if (process.platform === 'win32') {
+    await run('taskkill', ['/pid', String(server.pid), '/T', '/F'], {});
+  } else {
+    // `npx` runs `next start` as its own child, so a SIGTERM to `npx` alone can
+    // leave the real server answering: the F41 "restarted server" phase then
+    // reads the OLD server and reports a false failure, and the next run finds
+    // the port taken. The server is started in its own process group (below),
+    // and the whole group is stopped.
+    try { process.kill(-server.pid, 'SIGTERM'); } catch { /* already gone */ }
+  }
   for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+  if (process.platform !== 'win32' && (await get('/robots.txt')).status > 0) {
+    try { process.kill(-server.pid, 'SIGKILL'); } catch { /* already gone */ }
+    for (let i = 0; i < 40 && (await get('/robots.txt')).status > 0; i += 1) await new Promise((r) => setTimeout(r, 250));
+  }
 }
 
 async function waitUp() {
@@ -747,7 +845,7 @@ async function main() {
     }
     // ISR_CHECK_SERVER_LOG=<absolute path> keeps the server's own output for diagnosis.
     const serverLog = process.env.ISR_CHECK_SERVER_LOG ? fs.openSync(process.env.ISR_CHECK_SERVER_LOG, 'w') : 'ignore';
-    const startServer = () => spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32' });
+    const startServer = () => spawn('npx', ['next', 'start', '-p', String(APP_PORT)], { cwd: root, env, stdio: ['ignore', serverLog, serverLog], shell: process.platform === 'win32', detached: process.platform !== 'win32' });
     let server = startServer();
     try {
       if (!(await waitUp())) failures.push('next start did not come up');
@@ -815,9 +913,12 @@ async function main() {
           const first = await get(p);
           const second = await get(p);
           reads.push({ path: p, first, second });
-          console.log(`  ${String(second.status).padEnd(4)} ${(second.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${(second.headers['cache-control'] ?? '').toString().padEnd(60)} ${p}`);
+          const noScript = noScriptVerdict({ path: p, second });
+          const noScriptCell = noScript === null ? '-' : noScript.ok ? 'complete' : 'HIDDEN';
+          console.log(`  ${String(second.status).padEnd(4)} ${(second.headers['x-nextjs-cache'] ?? '-').toString().padEnd(6)} ${(second.headers['cache-control'] ?? '').toString().padEnd(60)} ${noScriptCell.padEnd(9)} ${p}`);
         }
         failures.push(...checkResponses(reads, { gateOn }));
+        failures.push(...checkNoScriptReads(reads));
 
         // Review B2: the owner adds a shop section to the cached /about.
         state.aboutStorefront = true;
@@ -830,6 +931,7 @@ async function main() {
           await new Promise((res) => setTimeout(res, 1000));
         }
         failures.push(...checkAfterFlip(flip, after));
+        failures.push(...checkAfterFlipNoScript(after));
 
         if (!gateOn) {
           // F41 f, gate unset (RW-4 P1, I1): home is a KNOWN reader, so it
@@ -1006,6 +1108,10 @@ async function main() {
           console.log(`  F41 j public page, every shell read failing: ${publicRead.status} ${publicRead.body.includes(DRAFT_TEXT) ? 'DRAFT WORDS' : publicRead.body.includes(CHANGED_TEXT) ? 'public page' : 'not its page'} /${NEW_PAGE_SLUG}`);
           failures.push(...checkPreviewNeverLearned({ preview, publicRead }));
         }
+      }
+      if (process.argv.includes('--serve')) {
+        console.log(`\n--serve: next start on http://127.0.0.1:${APP_PORT} with the fixture upstream; Ctrl-C to stop`);
+        await new Promise((resolve) => process.once('SIGINT', resolve));
       }
     } finally {
       await stopServer(server);

@@ -21,6 +21,10 @@
 //     `runFleetBuild` a stub client, as `fleet-build.test.mjs` does.
 //
 // Only test processes load this. `fleet-build.mjs` itself never does.
+//
+// F160 (release C): it also loads the network half, `network-test-guard.mjs`,
+// so the one preload refuses any connection off this machine as well.
+import './network-test-guard.mjs';
 import childProcess from 'node:child_process';
 import path from 'node:path';
 import { syncBuiltinESMExports } from 'node:module';
